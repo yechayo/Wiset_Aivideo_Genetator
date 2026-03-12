@@ -17,22 +17,8 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background-image: url('https://maas-log-prod.cn-wlcb.ufileos.com/anthropic/a1c5a218-8137-4c6a-915b-e3832937e0d0/bd8a4062abd1fb1883ca828236575ed6.png?UCloudPublicKey=TOKEN_e15ba47a-d098-4fbd-9afc-a0dcf0e4e621&Expires=1773298428&Signature=WxRgsVY1REmibsOMFKsSFhq4vxY=');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  background: #000000;
   z-index: 0;
-
-  // 背景遮罩层 - 让背景稍暗一点，突出登录面板
-  &::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.2);
-  }
 }
 
 // 玻璃态面板
@@ -167,6 +153,21 @@
   color: rgba(255, 255, 255, 0.6);
   text-decoration: none;
   transition: color 0.3s ease;
+
+  &:hover {
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: underline;
+  }
+}
+
+.modeToggleBtn {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.3s ease;
+  padding: 0;
 
   &:hover {
     color: rgba(255, 255, 255, 0.9);

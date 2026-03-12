@@ -15,8 +15,8 @@ export default defineConfig({
     port: 5173,
     // Tauri 需要固定端口，如果端口被占用则失败
     strictPort: true,
-    // 如果设置了 Tauri 期望的主机，使用它
-    host: host || false,
+    // 监听所有网络接口，允许内网访问
+    host: '0.0.0.0',
     hmr: host ? {
       protocol: 'ws',
       host,
