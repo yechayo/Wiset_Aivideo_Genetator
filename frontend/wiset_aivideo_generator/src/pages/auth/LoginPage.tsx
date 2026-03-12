@@ -1,11 +1,14 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styles from './glass-effect.module.less';
 import { register, login } from '../../services/authService';
 import { setAuthData } from '../../utils/tokenStorage';
+import { EyeIcon, EyeOffIcon } from '../../components/icons/Icons';
 
 type AuthMode = 'login' | 'register';
 
 function LoginPage() {
+  const navigate = useNavigate();
   const [mode, setMode] = useState<AuthMode>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -41,7 +44,7 @@ function LoginPage() {
         const { accessToken, refreshToken, username: returnedUsername, userId } = response.data;
         setAuthData(accessToken, refreshToken, { username: returnedUsername, userId });
         alert('登录成功！');
-        // TODO: 跳转到主页
+        navigate('/dashboard');
       }
     } catch (error) {
       alert(error instanceof Error ? error.message : '登录失败，请稍后重试');
@@ -92,7 +95,7 @@ function LoginPage() {
         const { accessToken, refreshToken, username: returnedUsername, userId } = response.data;
         setAuthData(accessToken, refreshToken, { username: returnedUsername, userId });
         alert('注册成功！');
-        // TODO: 跳转到主页
+        navigate('/dashboard');
       }
     } catch (error) {
       alert(error instanceof Error ? error.message : '注册失败，请稍后重试');
@@ -150,7 +153,7 @@ function LoginPage() {
           <div className={styles.inputWrapper}>
             <input
               type={showPassword ? 'text' : 'password'}
-              className={`${styles.glassInput} ${styles.noPrefix}`}
+              className={`${styles.glassInput} ${styles.noPrefix} ${styles.withToggle}`}
               placeholder="请输入密码"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -161,8 +164,9 @@ function LoginPage() {
               type="button"
               className={styles.passwordToggle}
               onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? '隐藏密码' : '显示密码'}
             >
-              {showPassword ? '👁️' : '👁️‍🗨️'}
+              {showPassword ? <EyeOffIcon /> : <EyeIcon />}
             </button>
           </div>
 
@@ -186,7 +190,7 @@ function LoginPage() {
             <div className={styles.inputWrapper}>
               <input
                 type={showConfirmPassword ? 'text' : 'password'}
-                className={`${styles.glassInput} ${styles.noPrefix}`}
+                className={`${styles.glassInput} ${styles.noPrefix} ${styles.withToggle}`}
                 placeholder="请确认密码"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -197,8 +201,9 @@ function LoginPage() {
                 type="button"
                 className={styles.passwordToggle}
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                aria-label={showConfirmPassword ? '隐藏密码' : '显示密码'}
               >
-                {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
+                {showConfirmPassword ? <EyeOffIcon /> : <EyeIcon />}
               </button>
             </div>
           )}
