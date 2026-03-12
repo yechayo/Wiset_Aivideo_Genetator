@@ -91,6 +91,16 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+
+  // 禁用浏览器原生的密码显示按钮 (Edge)
+  &::-ms-reveal {
+    display: none;
+  }
+
+  // 禁用浏览器原生的密码显示按钮 (Chrome/Edge)
+  &::-webkit-textfield-decoration-container {
+    visibility: hidden;
+  }
 }
 
 .noPrefix {

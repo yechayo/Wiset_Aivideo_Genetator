@@ -150,7 +150,7 @@ function LoginPage() {
           </div>
 
           {/* 密码输入 */}
-          <div className={styles.inputWrapper}>
+          <div className={styles.inputWrapper} key="password-input">
             <input
               type={showPassword ? 'text' : 'password'}
               className={`${styles.glassInput} ${styles.noPrefix} ${styles.withToggle}`}
@@ -172,7 +172,7 @@ function LoginPage() {
 
           {/* 邮箱输入 - 仅注册模式显示 */}
           {mode === 'register' && (
-            <div className={styles.inputWrapper}>
+            <div className={styles.inputWrapper} key="email-input">
               <input
                 type="email"
                 className={`${styles.glassInput} ${styles.noPrefix}`}
@@ -187,7 +187,7 @@ function LoginPage() {
 
           {/* 确认密码输入 - 仅注册模式显示 */}
           {mode === 'register' && (
-            <div className={styles.inputWrapper}>
+            <div className={styles.inputWrapper} key="confirm-password-input">
               <input
                 type={showConfirmPassword ? 'text' : 'password'}
                 className={`${styles.glassInput} ${styles.noPrefix} ${styles.withToggle}`}
