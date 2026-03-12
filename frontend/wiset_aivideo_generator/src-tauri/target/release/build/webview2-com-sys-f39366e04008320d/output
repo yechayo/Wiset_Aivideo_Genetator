@@ -1,2 +1,0 @@
-cargo:rustc-link-search=native=D:\projiect\Wiset\frontend\wiset_aivideo_generator\src-tauri\target\release\build\webview2-com-sys-f39366e04008320d\out\x64
-cargo:rustc-link-lib=advapi32
