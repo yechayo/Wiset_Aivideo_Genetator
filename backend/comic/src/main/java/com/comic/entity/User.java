@@ -9,17 +9,13 @@ import java.time.LocalDateTime;
 @TableName("user")
 public class User {
 
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.INPUT)
     private Long id;
 
     private String username;
-
-    /** 存储 BCrypt 加密后的密文，禁止明文存储 */
     private String password;
-
     private String email;
 
-    /** 逻辑删除标记：0 正常，1 已删除 */
     @TableLogic
     private Integer deleted;
 

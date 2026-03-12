@@ -2,7 +2,7 @@ package com.comic.controller;
 
 import com.comic.common.Result;
 import com.comic.dto.*;
-import com.comic.service.AuthService;
+import com.comic.service.auth.AuthService;
 import javax.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;

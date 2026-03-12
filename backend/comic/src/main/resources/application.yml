@@ -5,6 +5,8 @@
 
 server:
   port: 8080
+  # 监听所有网络接口，允许内网访问
+  address: 0.0.0.0
 
 spring:
   # ---------- 数据源：本地用 SQLite，上服务器换 PostgreSQL ----------
