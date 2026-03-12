@@ -32,13 +32,33 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 处理业务异常（用户名已存在、密码错误、Token 无效等）
+     * 处理业务异常（BusinessException）
+     */
+    @ExceptionHandler(BusinessException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleBusinessException(BusinessException e) {
+        log.warn("业务异常: {}", e.getMessage());
+        return Result.fail(e.getCode(), e.getMessage());
+    }
+
+    /**
+     * 处理AI调用异常
+     */
+    @ExceptionHandler(AiCallException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Result<Void> handleAiException(AiCallException e) {
+        log.error("AI调用失败: {}", e.getMessage());
+        return Result.fail(503, "AI服务暂时不可用，请稍后重试");
+    }
+
+    /**
+     * 处理其他运行时异常（用户名已存在、密码错误、Token 无效等）
      * Service 层直接 throw new RuntimeException("xxx") 即可
      */
     @ExceptionHandler(RuntimeException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Result<Void> handleBusiness(RuntimeException e) {
-        log.warn("业务异常: {}", e.getMessage());
+    public Result<Void> handleRuntimeException(RuntimeException e) {
+        log.warn("运行时异常: {}", e.getMessage());
         return Result.fail(e.getMessage());
     }
 

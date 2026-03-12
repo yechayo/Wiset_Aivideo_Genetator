@@ -7,8 +7,19 @@ server:
   port: 8080
   # 监听所有网络接口，允许内网访问
   address: 0.0.0.0
+  servlet:
+    context-path: /
 
 spring:
+  application:
+    name: comic
+
+    # 缓存配置（本地用Caffeine内存缓存）
+    cache:
+      type: caffeine
+      caffeine:
+        spec: maximumSize=500,expireAfterWrite=10m
+
   # ---------- 数据源：本地用 SQLite，上服务器换 PostgreSQL ----------
   datasource:
     url: jdbc:sqlite:./comic.db
@@ -23,6 +34,16 @@ spring:
   security:
     user:
       name: ignored
+
+  # Spring AI - Anthropic Claude 配置
+  ai:
+    anthropic:
+      api-key: ${CLAUDE_API_KEY:请设置CLAUDE_API_KEY环境变量}
+      chat:
+        options:
+          model: claude-opus-4-5
+          max-tokens: 4096
+          temperature: 0.7
 
 # ---------- MyBatis-Plus ----------
 mybatis-plus:
@@ -45,3 +66,51 @@ comic:
     refresh-token-expiration: 604800000   # RefreshToken 7 天（毫秒）
   blacklist:
     max-size: 10000   # 黑名单最大缓存条数
+  ai:
+    max-concurrent: 3        # 最大并发AI调用数
+    timeout-seconds: 60      # 单次调用超时（秒）
+    retry-times: 3           # 失败重试次数
+  job:
+    buffer-size: 3           # 预生成集数缓冲量
+    worker-threads: 3        # 任务处理线程数
+
+# 日志配置
+logging:
+  level:
+    com.comic: DEBUG
+    org.springframework.ai: INFO
+  file:
+    name: ./logs/comic.log
+
+---
+# =============================================
+# 生产环境配置（部署服务器时激活）
+# 启动命令：java -jar comic.jar --spring.profiles.active=prod
+# =============================================
+#spring:
+#  config:
+#    activate:
+#      on-profile: prod
+#
+#  datasource:
+#    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:comic}
+#    username: ${DB_USER:postgres}
+#    password: ${DB_PASSWORD}
+#    driver-class-name: org.postgresql.Driver
+#    hikari:
+#      maximum-pool-size: 10
+#      minimum-idle: 2
+#
+#  cache:
+#    type: caffeine   # 单机部署仍用Caffeine，多节点再换Redis
+#
+## MyBatis-Plus 全局配置
+#mybatis-plus:
+#  configuration:
+#    map-underscore-to-camel-case: true
+#  global-config:
+#    db-config:
+#      id-type: auto
+#      logic-delete-field: deleted
+#      logic-delete-value: 1
+#      logic-not-delete-value: 0
