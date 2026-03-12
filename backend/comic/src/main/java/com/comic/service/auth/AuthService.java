@@ -1,4 +1,4 @@
-package com.comic.service;
+package com.comic.service.auth;
 
 import com.comic.dto.*;
 import com.comic.entity.User;
