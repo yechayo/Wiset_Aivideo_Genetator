@@ -1,0 +1,14 @@
+D:\projiect\Wiset\frontend\wiset_aivideo_generator\src-tauri\target\release\deps\thiserror-60227e8ba7a926bf.d: C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\lib.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\aserror.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\display.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\var.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\private.rs D:\projiect\Wiset\frontend\wiset_aivideo_generator\src-tauri\target\release\build\thiserror-dad860774c17f130\out/private.rs
+
+D:\projiect\Wiset\frontend\wiset_aivideo_generator\src-tauri\target\release\deps\libthiserror-60227e8ba7a926bf.rlib: C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\lib.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\aserror.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\display.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\var.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\private.rs D:\projiect\Wiset\frontend\wiset_aivideo_generator\src-tauri\target\release\build\thiserror-dad860774c17f130\out/private.rs
+
+D:\projiect\Wiset\frontend\wiset_aivideo_generator\src-tauri\target\release\deps\libthiserror-60227e8ba7a926bf.rmeta: C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\lib.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\aserror.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\display.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\var.rs C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\private.rs D:\projiect\Wiset\frontend\wiset_aivideo_generator\src-tauri\target\release\build\thiserror-dad860774c17f130\out/private.rs
+
+C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\lib.rs:
+C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\aserror.rs:
+C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\display.rs:
+C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\var.rs:
+C:\Users\jjunq\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-2.0.18\src\private.rs:
+D:\projiect\Wiset\frontend\wiset_aivideo_generator\src-tauri\target\release\build\thiserror-dad860774c17f130\out/private.rs:
+
+# env-dep:OUT_DIR=D:\\projiect\\Wiset\\frontend\\wiset_aivideo_generator\\src-tauri\\target\\release\\build\\thiserror-dad860774c17f130\\out

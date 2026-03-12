@@ -1,0 +1,195 @@
+// 玻璃态效果样式
+
+.loginContainer {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+// 背景图片层
+.loginBackground {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url('https://maas-log-prod.cn-wlcb.ufileos.com/anthropic/a1c5a218-8137-4c6a-915b-e3832937e0d0/bd8a4062abd1fb1883ca828236575ed6.png?UCloudPublicKey=TOKEN_e15ba47a-d098-4fbd-9afc-a0dcf0e4e621&Expires=1773298428&Signature=WxRgsVY1REmibsOMFKsSFhq4vxY=');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: 0;
+
+  // 背景遮罩层 - 让背景稍暗一点，突出登录面板
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.2);
+  }
+}
+
+// 玻璃态面板
+.glassPanel {
+  position: relative;
+  z-index: 1;
+  width: 420px;
+  padding: 48px 40px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 24px;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}
+
+// 标题样式
+.loginTitle {
+  margin: 0 0 8px 0;
+  font-size: 32px;
+  font-weight: 700;
+  color: #ffffff;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+.loginSubtitle {
+  margin: 0 0 32px 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
+}
+
+// 表单样式
+.loginForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+// 输入框容器
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.glassInput {
+  width: 100%;
+  padding: 14px 16px;
+  padding-left: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  &:focus {
+    border-color: rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.noPrefix {
+  padding-left: 16px;
+}
+
+// 密码输入框 - 带显示/隐藏按钮
+.inputWrapper {
+  .glassInput {
+    padding-right: 48px;
+  }
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 12px;
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.3s ease;
+  padding: 4px;
+
+  &:hover {
+    opacity: 1;
+  }
+}
+
+// 登录按钮
+.loginButton {
+  width: 100%;
+  padding: 14px;
+  margin-top: 8px;
+  border: none;
+  background: #ffffff;
+  color: #1a1a2e;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.9);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+// 底部选项
+.loginFooter {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.footerLink {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: none;
+  transition: color 0.3s ease;
+
+  &:hover {
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: underline;
+  }
+}
+
+// 底部协议文字
+.agreementText {
+  margin-top: 20px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.agreementLink {
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  transition: color 0.3s ease;
+
+  &:hover {
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: underline;
+  }
+}
