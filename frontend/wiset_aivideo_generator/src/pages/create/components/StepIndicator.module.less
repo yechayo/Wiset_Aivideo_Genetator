@@ -1,0 +1,101 @@
+// Step 指示器容器
+.stepIndicator {
+  position: sticky;
+  top: -32px;
+  z-index: 100;
+  background: rgba(10, 10, 10, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin: -32px -40px 32px -40px;
+  padding: 16px 40px;
+  box-sizing: border-box;
+}
+
+.stepContainer {
+  width: 100%;
+}
+
+.stepList {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stepItemGroup {
+  display: flex;
+  align-items: center;
+}
+
+// 步骤项
+.stepItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+// 已完成且可点击的步骤
+.stepItem.clickable {
+  cursor: pointer;
+
+  &:hover {
+    color: rgba(255, 255, 255, 0.8);
+
+    .stepNumber {
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+  }
+}
+
+// 当前或已完成的步骤
+.stepItem.active {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+// 已完成的步骤显示勾选标记
+.stepItem.completed .stepNumber {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+
+  &::after {
+    content: '✓';
+    font-size: 12px;
+    font-weight: bold;
+  }
+}
+
+// 当前步骤的数字圆圈
+.stepItem:not(.completed) .stepNumber {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+}
+
+.stepNumber {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+// 步骤之间的箭头
+.stepArrow {
+  color: rgba(255, 255, 255, 0.15);
+  margin: 0 12px;
+  font-weight: 300;
+}

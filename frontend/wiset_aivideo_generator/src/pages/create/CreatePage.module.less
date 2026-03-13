@@ -275,6 +275,30 @@
   height: 18px;
 }
 
+// 数字输入框
+.input {
+  width: 100%;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  font-size: 15px;
+  color: #ffffff;
+  transition: all 0.3s ease;
+  font-family: inherit;
+  box-sizing: border-box;
+
+  &:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.2);
+  }
+}
+
 // 时长按钮组
 .durationGroup {
   display: flex;

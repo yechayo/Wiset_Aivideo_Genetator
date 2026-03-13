@@ -1,89 +1,166 @@
 /**
- * API客户端基础配置
+ * API客户端基础配置 - 使用 axios
  */
+
+import axios, { AxiosError } from 'axios';
+import type { InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import { useAuthStore } from '../stores/authStore';
+import { refreshAccessToken } from './authService';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 /**
- * 通用API请求函数
+ * Token 刷新状态管理
  */
-async function request<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
+let isRefreshing = false;
+let failedQueue: Array<{ resolve: (value: string) => void; reject: (reason: any) => void }> = [];
 
-  const config: RequestInit = {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  };
-
-  try {
-    const response = await fetch(url, config);
-
-    // 处理非JSON响应（如204 No Content）
-    if (response.status === 204) {
-      return undefined as T;
+/**
+ * 处理队列中的请求
+ */
+const processQueue = (error: Error | null, token: string | null = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else if (token) {
+      prom.resolve(token);
+    } else {
+      prom.reject(new Error('Token 刷新失败'));
     }
+  });
+  failedQueue = [];
+};
 
-    const data = await response.json();
+/**
+ * 创建 axios 实例
+ */
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
 
-    if (!response.ok) {
-      throw new Error(data.message || `HTTP Error: ${response.status}`);
+/**
+ * 请求拦截器 - 自动添加 token
+ */
+apiClient.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    const token = useAuthStore.getState().getAccessToken();
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
-
-    return data;
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error('请求失败，请稍后重试');
+    return config;
+  },
+  (error: AxiosError) => {
+    return Promise.reject(error);
   }
+);
+
+/**
+ * 响应拦截器 - 处理 401 和 token 刷新
+ */
+apiClient.interceptors.response.use(
+  (response: AxiosResponse) => {
+    return response.data;
+  },
+  async (error: AxiosError) => {
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // 处理 401 错误
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      const refreshToken = useAuthStore.getState().getRefreshToken();
+
+      // 如果没有 refreshToken，直接登出
+      if (!refreshToken) {
+        useAuthStore.getState().clearAuth();
+        window.location.href = '/login';
+        return Promise.reject(new Error('未登录或登录已过期'));
+      }
+
+      // 如果正在刷新，将请求加入队列等待
+      if (isRefreshing) {
+        return new Promise<string>((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((newToken) => {
+            if (originalRequest.headers) {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            }
+            return apiClient(originalRequest);
+          })
+          .catch((err) => {
+            return Promise.reject(err);
+          });
+      }
+
+      // 开始刷新流程
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        // 调用刷新接口
+        const refreshResult = await refreshAccessToken(refreshToken);
+
+        if (refreshResult.code === 0 && refreshResult.data?.accessToken) {
+          // 更新 store 中的 accessToken
+          useAuthStore.getState().updateAccessToken(refreshResult.data.accessToken);
+
+          // 处理队列中的请求
+          processQueue(null, refreshResult.data.accessToken);
+
+          // 重试当前请求
+          if (originalRequest.headers) {
+            originalRequest.headers.Authorization = `Bearer ${refreshResult.data.accessToken}`;
+          }
+          return apiClient(originalRequest);
+        } else {
+          throw new Error('刷新 token 失败');
+        }
+      } catch (refreshError) {
+        // 刷新失败：清除认证信息并跳转登录
+        processQueue(refreshError as Error, null);
+        useAuthStore.getState().clearAuth();
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    // 处理其他错误
+    const errorMessage = (error.response?.data as any)?.message || error.message || '请求失败，请稍后重试';
+    return Promise.reject(new Error(errorMessage));
+  }
+);
+
+/**
+ * GET 请求
+ */
+export function get<T>(endpoint: string, config = {}): Promise<T> {
+  return apiClient.get<T>(endpoint, config).then(res => res as unknown as T);
 }
 
 /**
- * GET请求
+ * POST 请求
  */
-export function get<T>(endpoint: string, token?: string): Promise<T> {
-  return request<T>(endpoint, {
-    method: 'GET',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+export function post<T>(endpoint: string, data?: any, config = {}): Promise<T> {
+  return apiClient.post<T>(endpoint, data, config).then(res => res as unknown as T);
 }
 
 /**
- * POST请求
+ * PUT 请求
  */
-export function post<T>(endpoint: string, data?: any, token?: string): Promise<T> {
-  return request<T>(endpoint, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: data ? JSON.stringify(data) : undefined,
-  });
+export function put<T>(endpoint: string, data?: any, config = {}): Promise<T> {
+  return apiClient.put<T>(endpoint, data, config).then(res => res as unknown as T);
 }
 
 /**
- * PUT请求
+ * DELETE 请求
  */
-export function put<T>(endpoint: string, data?: any, token?: string): Promise<T> {
-  return request<T>(endpoint, {
-    method: 'PUT',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: data ? JSON.stringify(data) : undefined,
-  });
-}
-
-/**
- * DELETE请求
- */
-export function del<T>(endpoint: string, token?: string): Promise<T> {
-  return request<T>(endpoint, {
-    method: 'DELETE',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+export function del<T>(endpoint: string, config = {}): Promise<T> {
+  return apiClient.delete<T>(endpoint, config).then(res => res as unknown as T);
 }
 
 export { API_BASE_URL };
+export default apiClient;
