@@ -1,7 +1,6 @@
 package com.comic.service.story;
 
-import com.comic.ai.ClaudeService;
-import com.comic.ai.PromptBuilder;
+import com.comic.ai.text.TextGenerationService;
 import com.comic.common.AiCallException;
 import com.comic.dto.CharacterStateDTO;
 import com.comic.dto.WorldConfigDTO;
@@ -20,7 +19,7 @@ import java.util.List;
 /**
  * 分镜生成服务（核心业务，Java 8 版）
  *
- * 流程：加载世界观 + 角色状态 → 构建Prompt → 调用Claude（带重试）
+ * 流程：加载世界观 + 角色状态 → 构建Prompt → 调用AI（带重试）
  *       → 解析验证JSON → 更新角色状态 → 保存结果
  */
 @Service
@@ -28,8 +27,7 @@ import java.util.List;
 @Slf4j
 public class StoryboardService {
 
-    private final ClaudeService claudeService;
-    private final PromptBuilder promptBuilder;
+    private final TextGenerationService textGenerationService;
     private final CharacterService characterService;
     private final WorldRuleService worldRuleService;
     private final EpisodeRepository episodeRepository;
@@ -65,15 +63,12 @@ public class StoryboardService {
     }
 
     private String generateWithRetry(Episode episode) {
-        WorldConfigDTO world = worldRuleService.getWorldConfig(episode.getSeriesId());
-        List<CharacterStateDTO> charStates = characterService.getCurrentStates(episode.getSeriesId());
+        WorldConfigDTO world = worldRuleService.getWorldConfig(episode.getProjectId());
+        List<CharacterStateDTO> charStates = characterService.getCurrentStates(episode.getProjectId());
 
-        String systemPrompt = promptBuilder.buildStoryboardSystemPrompt(world, charStates);
-        String userPrompt = promptBuilder.buildEpisodeUserPrompt(
-                episode.getEpisodeNum(),
-                episode.getOutlineNode(),
-                getRecentMemory(episode.getSeriesId(), episode.getEpisodeNum())
-        );
+        // 构建基础系统提示词
+        String systemPrompt = buildSystemPrompt(world, charStates);
+        String userPrompt = buildUserPrompt(episode);
 
         Exception lastError = null;
 
@@ -82,16 +77,16 @@ public class StoryboardService {
                 log.info("第{}集，第{}次尝试...", episode.getEpisodeNum(), attempt);
 
                 String currentSystemPrompt = attempt > 1
-                        ? promptBuilder.addStricterConstraints(systemPrompt, attempt)
+                        ? addStricterConstraints(systemPrompt, attempt)
                         : systemPrompt;
 
-                String rawResult = claudeService.call(currentSystemPrompt, userPrompt);
+                String rawResult = textGenerationService.generate(currentSystemPrompt, userPrompt);
                 String cleanResult = cleanJsonOutput(rawResult);
 
                 JsonNode jsonNode = objectMapper.readTree(cleanResult);
                 validateStoryboardJson(jsonNode);
 
-                characterService.updateStatesFromStoryboard(episode.getSeriesId(), jsonNode);
+                characterService.updateStatesFromStoryboard(episode.getProjectId(), jsonNode);
 
                 episode.setRetryCount(attempt - 1);
                 return cleanResult;
@@ -138,9 +133,9 @@ public class StoryboardService {
         }
     }
 
-    private String getRecentMemory(String seriesId, int currentEp) {
+    private String getRecentMemory(String projectId, int currentEp) {
         int startEp = Math.max(1, currentEp - 5);
-        List<Episode> recentEps = episodeRepository.findRecentEpisodes(seriesId, startEp, currentEp - 1);
+        List<Episode> recentEps = episodeRepository.findRecentEpisodes(projectId, startEp, currentEp - 1);
 
         if (recentEps.isEmpty()) {
             return "这是第一集，没有历史剧情。";
@@ -154,5 +149,56 @@ public class StoryboardService {
               .append("\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * 构建系统提示词
+     */
+    private String buildSystemPrompt(WorldConfigDTO world, List<CharacterStateDTO> charStates) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一个专业的分镜设计师，擅长将剧本转化为详细的分镜脚本。\n\n");
+        sb.append("## 世界观设定\n");
+        if (world != null) {
+            sb.append("系列名称：").append(world.getSeriesName() != null ? world.getSeriesName() : "").append("\n");
+            sb.append("类型：").append(world.getGenre() != null ? world.getGenre() : "").append("\n");
+            sb.append("目标受众：").append(world.getTargetAudience() != null ? world.getTargetAudience() : "").append("\n");
+            sb.append("世界规则：\n").append(world.getRulesText()).append("\n");
+        }
+        sb.append("\n## 角色状态\n");
+        if (charStates != null && !charStates.isEmpty()) {
+            for (CharacterStateDTO charState : charStates) {
+                sb.append(charState.toPromptText()).append("\n");
+            }
+        }
+        sb.append("\n请生成符合以上设定的分镜脚本，以JSON格式返回。");
+        return sb.toString();
+    }
+
+    /**
+     * 构建用户提示词
+     */
+    private String buildUserPrompt(Episode episode) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("请为第").append(episode.getEpisodeNum()).append("集生成分镜脚本。\n\n");
+        sb.append("## 剧集大纲\n");
+        sb.append(episode.getOutlineNode() != null ? episode.getOutlineNode() : "").append("\n\n");
+        sb.append("## 历史剧情\n");
+        sb.append(getRecentMemory(episode.getProjectId(), episode.getEpisodeNum())).append("\n\n");
+        sb.append("请生成分镜JSON，包含：\n");
+        sb.append("- panels: 分镜数组\n");
+        sb.append("- 每个panel包含：scene, characters, shot_size, camera_angle, dialogue, effects");
+        return sb.toString();
+    }
+
+    /**
+     * 添加更严格的约束（重试时使用）
+     */
+    private String addStricterConstraints(String basePrompt, int attempt) {
+        String additional = "\n\n【重要】这是第" + attempt + "次尝试，请严格遵守：\n"
+                + "1. 必须返回有效的JSON格式\n"
+                + "2. 不能有语法错误\n"
+                + "3. 必须包含panels数组\n"
+                + "4. 每个panel必须包含所有必需字段";
+        return basePrompt + additional;
     }
 }

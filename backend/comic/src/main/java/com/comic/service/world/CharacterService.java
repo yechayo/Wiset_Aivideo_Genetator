@@ -25,9 +25,9 @@ public class CharacterService {
     private final CharacterRepository characterRepository;
     private final ObjectMapper objectMapper;
 
-    @Cacheable(value = "characterStates", key = "#seriesId")
-    public List<CharacterStateDTO> getCurrentStates(String seriesId) {
-        List<Character> characters = characterRepository.findBySeriesId(seriesId);
+    @Cacheable(value = "characterStates", key = "#projectId")
+    public List<CharacterStateDTO> getCurrentStates(String projectId) {
+        List<Character> characters = characterRepository.findByProjectId(projectId);
         List<CharacterStateDTO> dtos = new ArrayList<>();
 
         for (Character c : characters) {
@@ -43,8 +43,8 @@ public class CharacterService {
         return dtos;
     }
 
-    @CacheEvict(value = "characterStates", key = "#seriesId")
-    public void updateStatesFromStoryboard(String seriesId, JsonNode storyboardJson) {
+    @CacheEvict(value = "characterStates", key = "#projectId")
+    public void updateStatesFromStoryboard(String projectId, JsonNode storyboardJson) {
         JsonNode panels = storyboardJson.get("panels");
         if (panels == null || !panels.isArray() || panels.size() == 0) return;
 
@@ -56,7 +56,7 @@ public class CharacterService {
             String charId = charNode.path("char_id").asText();
             if (charId == null || charId.isEmpty()) continue;
 
-            Character character = characterRepository.findBySeriesIdAndCharId(seriesId, charId);
+            Character character = characterRepository.findByProjectIdAndCharId(projectId, charId);
             if (character == null) continue;
 
             try {

@@ -14,15 +14,15 @@ spring:
   application:
     name: comic
 
-    # 缓存配置（本地用Caffeine内存缓存）
-    cache:
-      type: caffeine
-      caffeine:
-        spec: maximumSize=500,expireAfterWrite=10m
+  # 缓存配置（本地用Caffeine内存缓存）
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=500,expireAfterWrite=10m
 
   # ---------- 数据源：本地用 SQLite，上服务器换 PostgreSQL ----------
   datasource:
-    url: jdbc:sqlite:./comic.db
+    url: jdbc:sqlite:./comic.db?journal_mode=WAL&foreign_keys=true
     driver-class-name: org.sqlite.JDBC
 
   # ---------- 自动建表 ----------
@@ -34,6 +34,12 @@ spring:
   security:
     user:
       name: ignored
+
+  # ---------- 文件上传配置 ----------
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
 
   # Spring AI - Anthropic Claude 配置
   ai:
@@ -50,9 +56,10 @@ mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl   # 开发期打印 SQL，上线可去掉
     map-underscore-to-camel-case: true
+    jdbc-type-for-null: NULL
   global-config:
     db-config:
-      id-type: auto
+      id-type: assign_id           # 使用雪花算法生成主键，解决 SQLite 兼容性问题
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
@@ -66,13 +73,52 @@ comic:
     refresh-token-expiration: 604800000   # RefreshToken 7 天（毫秒）
   blacklist:
     max-size: 10000   # 黑名单最大缓存条数
+  # ========== AI 配置（按功能分类） ==========
   ai:
-    max-concurrent: 3        # 最大并发AI调用数
-    timeout-seconds: 60      # 单次调用超时（秒）
-    retry-times: 3           # 失败重试次数
+    # 文本生成配置（剧本、对话等）
+    text:
+      provider: glm                # 文本用 GLM 官方 API
+      max-concurrent: 5           # 最大并发数
+      timeout-seconds: 120        # 超时时间
+      retry-times: 3              # 重试次数
+
+    # 图片生成配置（角色立绘、分镜图等）
+    image:
+      provider: seedream          # 图片用 Seedream（火山引擎）
+      max-concurrent: 2           # 并发数限制（图片生成资源占用大）
+      timeout-seconds: 180        # 超时时间
+      default-style: anime        # 默认风格
+      default-width: 1024
+      default-height: 1024
+
+    # 视频生成配置（分镜视频等）
+    video:
+      provider: seedance          # 视频用 Seedance（火山引擎）
+      max-concurrent: 1           # 视频生成资源占用极大，限制为1
+      timeout-seconds: 600        # 超时时间（10分钟）
+      default-duration: 5         # 默认时长（秒）
+      default-aspect-ratio: "16:9"
+
+  # ========== 火山引擎 Ark SDK 配置（用于 Seedream/Seedance） ==========
+  ark:
+    api-key: ${ARK_API_KEY:your-ark-api-key-here}
+    base-url: https://ark.cn-beijing.volces.com/api/v3
+    seedream-model: doubao-seedream-5-0-260128  # Seedream 图片模型
+    seedance-model: doubao-seedance-1-5-pro-251215  # Seedance 视频模型
+
+  # ========== GLM 官方 API 配置 ==========
+  glm:
+    api-key: 4c23ad5ecb3b401d8bdb32e0e087ed32.CgmjtEobL8r5GYmN
+    base-url: https://open.bigmodel.cn/api/paas/v4
+    model: glm-4-flash
+
   job:
     buffer-size: 3           # 预生成集数缓冲量
     worker-threads: 3        # 任务处理线程数
+  file:
+    upload-dir: ./uploads    # 文件上传目录
+    base-url: http://localhost:8080/files  # 文件访问基础URL
+    max-size: 100MB          # 最大文件大小
 
 # 日志配置
 logging:

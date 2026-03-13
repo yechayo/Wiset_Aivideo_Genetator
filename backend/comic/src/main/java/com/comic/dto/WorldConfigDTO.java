@@ -5,7 +5,6 @@ import java.util.List;
 
 @Data
 public class WorldConfigDTO {
-    private String seriesId;
     private String seriesName;
     private String genre;
     private String targetAudience;

@@ -3,6 +3,9 @@ package com.comic.controller;
 import com.comic.common.Result;
 import com.comic.dto.*;
 import com.comic.service.auth.AuthService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import javax.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -44,6 +47,8 @@ public class AuthController {
      * 成功后该 Token 立即失效，前端需同步清除本地存储
      */
     @PostMapping("/logout")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "退出登录", description = "退出登录并使当前 Token 失效。需要在 Header 中传递：Authorization: Bearer {accessToken}")
     public Result<Void> logout(@RequestHeader("Authorization") String authHeader) {
         if (!StringUtils.hasText(authHeader) || !authHeader.startsWith("Bearer ")) {
             throw new RuntimeException("Authorization Header 格式错误");
@@ -66,8 +71,10 @@ public class AuthController {
      * @AuthenticationPrincipal 由 Spring Security 自动注入，无需手动解析 Token
      */
     @GetMapping("/me")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "获取当前用户信息", description = "获取当前登录用户的详细信息。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
     public Result<UserInfoResponse> getCurrentUser(
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
         return Result.ok(authService.getUserInfo(userDetails.getUsername()));
     }
 }

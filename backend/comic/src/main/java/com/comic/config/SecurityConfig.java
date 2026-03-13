@@ -50,10 +50,21 @@ public class SecurityConfig {
 
             // 接口权限规则
             .authorizeHttpRequests()
+                // 认证接口白名单
                 .antMatchers("/api/auth/register",
                              "/api/auth/login",
                              "/api/auth/refresh").permitAll()
+                // 测试接口白名单
+                .antMatchers("/api/test/**").permitAll()
+                // Swagger UI 白名单
+                .antMatchers("/swagger-ui.html",
+                             "/swagger-ui/**",
+                             "/v3/api-docs/**",
+                             "/swagger-resources/**",
+                             "/webjars/**").permitAll()
+                // OPTIONS 预检请求放行
                 .antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                // 其他请求需要认证
                 .anyRequest().authenticated()
 
             .and()

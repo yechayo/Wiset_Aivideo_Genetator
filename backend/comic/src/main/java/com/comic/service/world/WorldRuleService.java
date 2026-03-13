@@ -35,7 +35,6 @@ public class WorldRuleService {
         }
 
         WorldConfigDTO config = new WorldConfigDTO();
-        config.setSeriesId(projectId);
 
         // 根据项目类型生成基础世界观规则
         config.setSeriesName(generateSeriesName(project.getStoryPrompt()));
@@ -107,9 +106,8 @@ public class WorldRuleService {
     /**
      * 获取默认配置（兼容旧版本）
      */
-    private WorldConfigDTO getDefaultConfig(String seriesId) {
+    private WorldConfigDTO getDefaultConfig(String projectId) {
         WorldConfigDTO config = new WorldConfigDTO();
-        config.setSeriesId(seriesId);
         config.setSeriesName("天墟传说");
         config.setGenre("热血玄幻");
         config.setTargetAudience("18-30岁男性");

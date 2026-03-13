@@ -5,11 +5,10 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("character")
+@TableName("t_character")
 public class Character {
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
-    private String seriesId;
     private String charId;
     private String name;
     private String role;

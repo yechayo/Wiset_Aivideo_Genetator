@@ -1,7 +1,6 @@
 package com.comic.service.character;
 
-import com.comic.ai.ClaudeService;
-import com.comic.ai.PromptBuilder;
+import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.dto.CharacterDraftDTO;
 import com.comic.entity.Character;
@@ -31,8 +30,7 @@ public class CharacterExtractService {
     private final ProjectRepository projectRepository;
     private final EpisodeRepository episodeRepository;
     private final CharacterRepository characterRepository;
-    private final ClaudeService claudeService;
-    private final PromptBuilder promptBuilder;
+    private final TextGenerationService textGenerationService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -56,15 +54,17 @@ public class CharacterExtractService {
 
         try {
             // 获取所有剧本内容
-            List<Episode> episodes = episodeRepository.findBySeriesId(project.getSeriesId());
+            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
             String scriptContent = buildScriptContent(episodes);
 
             // 构建prompt
-            String systemPrompt = promptBuilder.buildCharacterExtractSystemPrompt();
-            String userPrompt = promptBuilder.buildCharacterExtractUserPrompt(scriptContent);
+            String systemPrompt = "你是一个专业的角色设计师，擅长从剧本中提取和分析角色信息。\n\n"
+                    + "请仔细阅读以下剧本内容，提取出所有重要角色，并为每个角色生成详细的角色档案。";
+            String userPrompt = "请从以下剧本中提取角色信息：\n\n" + scriptContent + "\n\n"
+                    + "请以JSON数组格式返回，每个角色包含：name, role, personality, appearance, background";
 
-            // 调用Claude提取角色
-            String result = claudeService.call(systemPrompt, userPrompt);
+            // 调用AI提取角色
+            String result = textGenerationService.generate(systemPrompt, userPrompt);
 
             // 解析结果
             List<CharacterDraftDTO> characters = parseCharacters(result, projectId);

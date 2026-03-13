@@ -175,4 +175,211 @@ public class PromptBuilder {
         }
         return systemPrompt;
     }
+
+    // ================= 两级剧本生成新增方法 =================
+
+    /**
+     * 动态计算剧本参数
+     */
+    public ScriptParams calculateScriptParameters(int totalEpisodes) {
+        int episodesPerChapter = 4;
+        int chapterCount = (int) Math.ceil((double) totalEpisodes / episodesPerChapter);
+
+        int minCharacters = (int) Math.round(10 + (totalEpisodes * 0.15));
+        int maxCharacters = (int) Math.round(minCharacters * 1.3);
+
+        int minItems = (int) Math.round(8 + (totalEpisodes * 0.1));
+        int maxItems = (int) Math.round(minItems * 1.25);
+
+        return new ScriptParams(chapterCount, episodesPerChapter, minCharacters, maxCharacters, minItems, maxItems);
+    }
+
+    /**
+     * 构建剧本大纲生成的系统提示词（SCRIPT_PLANNER）
+     */
+    public String buildScriptOutlineSystemPrompt(int totalEpisodes, String genre, String targetAudience) {
+        ScriptParams params = calculateScriptParameters(totalEpisodes);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一位专精于短剧和微电影的专业编剧。\n");
+        sb.append("你的任务是根据用户的核心创意和约束条件，创建一个引人入胜的**中文剧本大纲**。\n\n");
+
+        sb.append("**核心原则：剧本大纲只在章节层面规划，不细化到每集**\n\n");
+
+        sb.append("## 剧集规模要求\n\n");
+        sb.append("本剧为 **").append(totalEpisodes).append(" 集**，需要规划 **").append(params.chapterCount).append(" 个章节**，\n");
+        sb.append("每个章节包含 **").append(params.episodesPerChapter).append(" 集**。\n\n");
+
+        sb.append("### 角色数量要求：").append(params.minCharacters).append("-").append(params.maxCharacters).append(" 个角色\n\n");
+        sb.append("**角色分级与描述重点：**\n\n");
+        sb.append("**A. 核心角色（3-5人）- 需要详细小传**\n");
+        sb.append("- **主角团队**（2-3人）：故事的绝对核心\n");
+        sb.append("- **核心反派**（1-2人）：与主角对抗的主要力量\n");
+        sb.append("描述要求（每个角色80-120字）\n\n");
+
+        sb.append("**B. 重要配角（8-12人）- 简单描述**\n");
+        sb.append("- 导师/盟友/中立角色等\n");
+        sb.append("描述要求（每个角色20-40字）\n\n");
+
+        sb.append("**C. 其他角色（剩余数量）- 一笔带过**\n");
+        sb.append("- 群演、背景角色、一次性角色等\n");
+        sb.append("描述要求（每个角色5-10字）\n\n");
+
+        sb.append("### 物品数量要求：").append(params.minItems).append("-").append(params.maxItems).append(" 个关键物品\n\n");
+        sb.append("**物品分级与描述：**\n\n");
+        sb.append("**A. 核心物品（3-5个）- 推动主线**\n");
+        sb.append("描述要求（每个物品30-50字）\n\n");
+        sb.append("**B. 辅助物品（5-8个）- 特定章节使用**\n");
+        sb.append("描述要求（每个物品15-25字）\n\n");
+        sb.append("**C. 世界物品（剩余数量）- 丰富设定**\n");
+        sb.append("描述要求（每个物品10-15字）\n\n");
+
+        sb.append("## 章节结构与节奏要求\n\n");
+        sb.append("### 核心原则：每章包含2-5集，描述这几集的整体故事\n\n");
+        sb.append("### 节奏规律（必须严格遵循）\n\n");
+        sb.append("1. **小高潮**：每3-5集设置一次小高潮\n");
+        sb.append("2. **大转折**：每10-15集设置一次大转折\n\n");
+
+        sb.append("## 输出格式要求 (必须严格遵守 Markdown 格式)\n\n");
+        sb.append("# 剧名 (Title)\n");
+        sb.append("**一句话梗概**: [一句话总结故事核心]\n");
+        sb.append("**类型**: [").append(genre).append("] | **主题**: [主题] | **背景**: [故事背景] | **视觉风格**: [Visual Style]\n\n");
+        sb.append("----\n\n");
+        sb.append("## 主要人物小传\n\n");
+        sb.append("### 核心角色（详细小传，80-120字/人）\n");
+        sb.append("* **[姓名]**: [角色定位] - [年龄] [外貌特征]。性格：[性格特点]。背景：[重要经历]。\n\n");
+        sb.append("### 重要配角（简单描述，20-40字/人）\n");
+        sb.append("* **[姓名]**: [角色定位和作用，简短描述]\n\n");
+        sb.append("### 其他角色（一笔带过，5-10字/人）\n");
+        sb.append("* **[姓名]**: [身份或作用]\n\n");
+        sb.append("----\n\n");
+        sb.append("## 关键物品设定\n\n");
+        sb.append("### 核心物品（30-50字/个）\n");
+        sb.append("* **[物品名称]**: [物品描述、功能、象征意义]\n\n");
+        sb.append("### 辅助物品（15-25字/个）\n");
+        sb.append("* **[物品名称]**: [物品描述和出现时机]\n\n");
+        sb.append("### 世界物品（10-15字/个）\n");
+        sb.append("* **[物品名称]**: [简要描述]\n\n");
+        sb.append("----\n\n");
+        sb.append("## 剧集结构规划（共 ").append(totalEpisodes).append(" 集，").append(params.chapterCount).append(" 章）\n\n");
+        sb.append("### 章节格式标准（每章100-150字）\n\n");
+        sb.append("#### 第X章：章节名称（第A-B集）\n\n");
+        sb.append("**涉及角色**：[本章主要角色，3-5人]\n\n");
+        sb.append("**关键物品**：[本章重要物品，2-3个]\n\n");
+        sb.append("**章节剧情**（100-150字）：\n");
+        sb.append("[这几集的整体故事描述，包含起承转合]\n\n");
+        sb.append("- [第A集]：[发生了什么]\n");
+        sb.append("- [第A+1集]：[情节推进]\n");
+        sb.append("- [第B集]：[本章高潮/转折]\n\n");
+        sb.append("**关键节点**：[标注：小高潮 或 大转折]\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * 构建剧本大纲生成的用户提示词
+     */
+    public String buildScriptOutlineUserPrompt(String storyPrompt, String genre, String setting,
+                                                int totalEpisodes, int episodeDuration, String visualStyle) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("核心创意: ").append(storyPrompt).append("\n");
+        sb.append("类型: ").append(genre != null ? genre : "N/A").append("\n");
+        sb.append("背景: ").append(setting != null ? setting : "N/A").append("\n");
+        sb.append("预估集数: ").append(totalEpisodes).append("\n");
+        sb.append("单集时长: ").append(episodeDuration).append(" 分钟\n");
+        sb.append("视觉风格: ").append(visualStyle != null ? visualStyle : "N/A").append("\n");
+        return sb.toString();
+    }
+
+    /**
+     * 构建分集生成的系统提示词（SCRIPT_EPISODE）
+     */
+    public String buildScriptEpisodeSystemPrompt() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一位专业的短剧分集编剧，擅长创作连贯、一致的系列剧集。\n");
+        sb.append("你的任务是根据提供的【剧本大纲】和【指定章节】，将该章节拆分为 N 个具体的剧集脚本。\n\n");
+
+        sb.append("**连贯性和一致性要求**\n\n");
+        sb.append("1. **角色一致性**: 严格遵循全局角色设定中的角色外貌、性格、说话方式\n");
+        sb.append("2. **物品命名一致性**: 严格使用全局物品设定中的标准名称\n");
+        sb.append("3. **剧情连贯性**: 参考前序剧集摘要，确保时间线、事件顺序合理衔接\n");
+        sb.append("4. **场景连贯性**: 场景描述应该符合既定的视觉风格\n\n");
+
+        sb.append("**输出要求：**\n");
+        sb.append("请直接输出一个 **JSON 数组**，格式如下：\n");
+        sb.append("[\n");
+        sb.append("  {\n");
+        sb.append("    \"title\": \"第X集：[分集标题]\",\n");
+        sb.append("    \"content\": \"[详细剧本内容，包含场景描写、动作指令和对白]\",\n");
+        sb.append("    \"characters\": \"[本集涉及的角色列表]\",\n");
+        sb.append("    \"keyItems\": \"[本集出现的关键物品列表]\",\n");
+        sb.append("    \"visualStyleNote\": \"[针对本集的视觉风格备注]\",\n");
+        sb.append("    \"continuityNote\": \"[本集的连贯性说明]\"\n");
+        sb.append("  }\n");
+        sb.append("]\n\n");
+
+        sb.append("**内容要求：**\n");
+        sb.append("1. **全中文写作**\n");
+        sb.append("2. **剧本内容长度要求**：每分钟时长需要 200-250字 的详细剧本内容\n");
+        sb.append("3. **内容结构要求**：\n");
+        sb.append("   - 场景描述：详细的环境描写、光影氛围、空间布局\n");
+        sb.append("   - 肢体动作：角色的身体姿势、动作细节、位置移动\n");
+        sb.append("   - 表情细节：眼神、微表情、情绪变化\n");
+        sb.append("   - 精彩对白：符合角色性格的对话\n");
+        sb.append("   - 情感描写：内心活动、情感转变\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * 构建分集生成的用户提示词
+     */
+    public String buildScriptEpisodeUserPrompt(String outline, String chapter, String globalCharacters,
+                                                String globalItems, String previousSummary, int splitCount,
+                                                int duration, String modificationSuggestion) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("剧本大纲全文：\n");
+        sb.append(outline).append("\n\n");
+
+        sb.append("目标章节：").append(chapter).append("\n");
+        sb.append("拆分集数：").append(splitCount).append("\n");
+        sb.append("单集时长参考：").append(duration).append(" 分钟\n");
+
+        if (modificationSuggestion != null && !modificationSuggestion.isEmpty()) {
+            sb.append("\n修改建议：").append(modificationSuggestion).append("\n");
+        }
+
+        sb.append("\n=== 全局角色设定 ===\n");
+        sb.append(globalCharacters).append("\n\n");
+
+        sb.append("=== 全局物品设定 ===\n");
+        sb.append(globalItems).append("\n\n");
+
+        sb.append("=== 前序剧集摘要（用于保持连贯性）===\n");
+        sb.append(previousSummary).append("\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * 剧本参数内部类
+     */
+    public static class ScriptParams {
+        public final int chapterCount;
+        public final int episodesPerChapter;
+        public final int minCharacters;
+        public final int maxCharacters;
+        public final int minItems;
+        public final int maxItems;
+
+        public ScriptParams(int chapterCount, int episodesPerChapter, int minCharacters,
+                           int maxCharacters, int minItems, int maxItems) {
+            this.chapterCount = chapterCount;
+            this.episodesPerChapter = episodesPerChapter;
+            this.minCharacters = minCharacters;
+            this.maxCharacters = maxCharacters;
+            this.minItems = minItems;
+            this.maxItems = maxItems;
+        }
+    }
 }

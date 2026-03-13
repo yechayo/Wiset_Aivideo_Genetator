@@ -20,4 +20,13 @@ public interface ProjectRepository extends BaseMapper<Project> {
             .orderByDesc(Project::getCreatedAt)
             .last("LIMIT 1"));
     }
+
+    /**
+     * 获取用户的所有项目列表
+     */
+    default java.util.List<Project> findAllByUserId(String userId) {
+        return selectList(new LambdaQueryWrapper<Project>()
+            .eq(Project::getUserId, userId)
+            .orderByDesc(Project::getCreatedAt));
+    }
 }

@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 @Data
 @TableName("project")
 public class Project {
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     private String projectId;          // 项目唯一标识（UUID）
@@ -28,8 +28,12 @@ public class Project {
     // → IMAGE_GENERATING → IMAGE_REVIEW → ASSET_LOCKED → PRODUCING → COMPLETED
     private String status;
 
-    private String seriesId;           // 生成的seriesId（关联到Episode）
     private String scriptRevisionNote; // 剧本修改意见
+
+    // 两级剧本生成新增字段
+    private String scriptOutline;        // 剧本大纲（Markdown格式）
+    private String selectedChapter;      // 当前选中的章节
+    private Integer episodesPerChapter;  // 每章集数（默认4）
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

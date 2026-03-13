@@ -150,6 +150,13 @@ public class PipelineService {
         return project;
     }
 
+    /**
+     * 获取用户的所有项目列表
+     */
+    public List<Project> getProjectsByUserId(String userId) {
+        return projectRepository.findAllByUserId(userId);
+    }
+
     // ================= 私有方法 =================
 
     private String calculateNextStatus(String currentStatus, String event) {
@@ -187,8 +194,8 @@ public class PipelineService {
     private void triggerNextStage(String projectId, String status) {
         switch (status) {
             case "SCRIPT_GENERATING":
-                // 触发剧本生成
-                scriptService.generateScript(projectId);
+                // 触发剧本大纲生成（两级生成：第一步）
+                scriptService.generateScriptOutline(projectId);
                 break;
 
             case "CHARACTER_EXTRACTING":
