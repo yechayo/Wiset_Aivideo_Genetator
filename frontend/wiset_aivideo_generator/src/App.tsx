@@ -2,11 +2,12 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/auth/LoginPage';
 import Layout from './pages/layout/Layout';
 import Dashboard from './pages/dashboard/Dashboard';
-import { isAuthenticated } from './utils/tokenStorage';
+import { useAuthStore } from './stores/authStore';
 import { ToastProvider, ToastContainer } from './components/toast';
 
 // 受保护的路由组件
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   return isAuthenticated() ? <>{children}</> : <Navigate to="/login" replace />;
 }
 

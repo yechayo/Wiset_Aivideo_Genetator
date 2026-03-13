@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './glass-effect.module.less';
 import { register, login } from '../../services/authService';
-import { setAuthData } from '../../utils/tokenStorage';
-import { saveCredentials, getCredentials, clearCredentials as clearStoredCredentials, hasCredentials } from '../../utils/credentialsStorage';
+import { useAuthStore } from '../../stores/authStore';
+import { saveCredentials, getCredentials, clearCredentials as clearStoredCredentials } from '../../utils/credentialsStorage';
 import { EyeIcon, EyeOffIcon } from '../../components/icons/Icons';
 import { useToast } from '../../components/toast';
 
@@ -12,6 +12,7 @@ type AuthMode = 'login' | 'register';
 function LoginPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const setAuthData = useAuthStore((state) => state.setAuthData);
   const [mode, setMode] = useState<AuthMode>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');

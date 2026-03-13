@@ -1,20 +1,20 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import styles from './Layout.module.less';
-import { getUserInfo, clearAuth, isAuthenticated } from '../../utils/tokenStorage';
+import { useAuthStore } from '../../stores/authStore';
 import { HomeIcon, VideoIcon, FolderIcon, SettingsIcon, LogOutIcon } from '../../components/icons/Icons';
 
 function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const userInfo = getUserInfo();
+  const { userInfo, clearAuth, isAuthenticated } = useAuthStore();
 
   useEffect(() => {
     // 检查登录状态
     if (!isAuthenticated()) {
       navigate('/login');
     }
-  }, [navigate]);
+  }, [navigate, isAuthenticated]);
 
   const handleLogout = () => {
     clearAuth();
