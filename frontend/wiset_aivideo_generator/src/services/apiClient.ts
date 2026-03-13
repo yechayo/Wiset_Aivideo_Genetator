@@ -6,6 +6,7 @@ import axios, { AxiosError } from 'axios';
 import type { InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import { useAuthStore } from '../stores/authStore';
 import { refreshAccessToken } from './authService';
+import type { ApiResponse } from './types/auth.types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
@@ -164,3 +165,11 @@ export function del<T>(endpoint: string, config = {}): Promise<T> {
 
 export { API_BASE_URL };
 export default apiClient;
+
+/**
+ * 判断 API 响应是否成功
+ * Mock 模式使用 code === 0，真实 API 使用 code === 200
+ */
+export function isApiSuccess(response: ApiResponse): boolean {
+  return response.code === 0 || response.code === 200;
+}

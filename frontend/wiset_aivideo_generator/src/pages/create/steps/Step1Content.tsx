@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import styles from '../CreatePage.module.less';
 import { ChevronDownIcon } from '../../../components/icons/Icons';
-import { createProject } from '../../../services';
+import { createProject, generateScript, isApiSuccess } from '../../../services';
 import type { CreateProjectRequest, Project } from '../../../services';
 import type { StepContentProps } from '../types';
+import ScriptGeneratingOverlay from '../components/ScriptGeneratingOverlay';
+import { useProjectStore } from '../../../stores';
 
 // 画面风格选项
 const visualStyleOptions = [
@@ -72,6 +74,10 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
   const [totalEpisodes, setTotalEpisodes] = useState(10);
   const [episodeDuration, setEpisodeDuration] = useState('1');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+
+  // 使用 projectStore 存储项目数据
+  const setCurrentProject = useProjectStore((state) => state.setCurrentProject);
 
   // 处理生成
   const handleGenerate = async () => {
@@ -92,16 +98,51 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
         episodeDuration: parseFloat(episodeDuration),
       };
 
-      const result = await createProject(requestData);
+      // 1. 创建项目
+      const createResult = await createProject(requestData);
 
-      if (result.code === 200 && result.data) {
-        console.log('项目创建成功:', result.data);
-        // 保存项目数据并完成此步骤
-        onProjectCreated(result.data);
+      if (isApiSuccess(createResult) && createResult.data) {
+        console.log('项目创建成功:', createResult.data);
+
+        // 获取项目 ID（优先使用 projectId，回退到 id）
+        const projectId = createResult.data.projectId || (createResult.data.id ? String(createResult.data.id) : null);
+
+        // 验证 id 存在
+        if (!projectId) {
+          console.error('创建成功但缺少项目 ID');
+          alert('项目创建成功但缺少 ID，请重试');
+          return;
+        }
+
+        // 保存到 store 和 props（兼容旧的 props 传递）
+        setCurrentProject(createResult.data);
+        onProjectCreated(createResult.data);
+
+        // 2. 自动触发剧本生成
+        console.log('开始生成剧本，项目 ID:', projectId);
+
+        setIsGeneratingScript(true);
+        try {
+          const scriptResult = await generateScript(projectId);
+          console.log('剧本生成响应:', scriptResult);
+
+          if (isApiSuccess(scriptResult)) {
+            console.log('剧本生成成功');
+          } else {
+            console.warn('剧本生成返回非成功状态:', scriptResult.message);
+          }
+        } catch (scriptError) {
+          console.error('剧本生成失败:', scriptError);
+          // 即使剧本生成失败，也继续流程
+        } finally {
+          setIsGeneratingScript(false);
+        }
+
+        // 完成此步骤，进入下一步
         onComplete();
       } else {
-        console.error('创建失败:', result.message);
-        alert(`创建失败: ${result.message}`);
+        console.error('创建失败:', createResult.message);
+        alert(`创建失败: ${createResult.message}`);
       }
     } catch (error) {
       console.error('API调用失败:', error);
@@ -262,12 +303,18 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
         <button
           className={styles.generateButton}
           onClick={handleGenerate}
-          disabled={!storyIdea.trim() || !visualStyle || !targetAudience || isGenerating}
+          disabled={!storyIdea.trim() || !visualStyle || !targetAudience || isGenerating || isGeneratingScript}
         >
           <SparklesIcon className={styles.buttonIcon} />
-          <span>{isGenerating ? '生成中...' : '生成剧本'}</span>
+          <span>{isGenerating ? '创建中...' : '生成剧本'}</span>
         </button>
       </div>
+
+      {/* 剧本生成加载遮罩 */}
+      <ScriptGeneratingOverlay
+        isVisible={isGeneratingScript}
+        message="AI 正在根据您的创意生成剧本，这可能需要几秒到几分钟时间..."
+      />
     </div>
   );
 };

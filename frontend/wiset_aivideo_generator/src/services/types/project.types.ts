@@ -38,6 +38,7 @@ export interface CreateProjectRequest {
  */
 export interface Project {
   id?: number;
+  projectId?: string; // 后端返回的项目 ID（字符串类型）
   storyPrompt: string;
   genre: string;
   targetAudience: string;
@@ -58,4 +59,13 @@ export type ReviseScriptRequest = Record<string, string>;
  */
 export interface ReviseScriptResponse {
   [key: string]: any;
+}
+
+/**
+ * 触发剧本生成响应
+ */
+export interface GenerateScriptResponse {
+  // 根据实际返回数据结构扩展
+  scriptId?: string;
+  status?: string;
 }

@@ -2,12 +2,14 @@
  * 项目相关API服务
  */
 
-import { post } from './apiClient';
+import { get, post } from './apiClient';
 import type {
   CreateProjectRequest,
+  GenerateScriptResponse,
   Project,
   ReviseScriptRequest,
-  ReviseScriptResponse
+  ReviseScriptResponse,
+  Script
 } from './types/project.types';
 import type { ApiResponse } from './types/auth.types';
 
@@ -64,4 +66,22 @@ export async function reviseScript(
   data: ReviseScriptRequest
 ): Promise<ApiResponse<ReviseScriptResponse>> {
   return post<ApiResponse<ReviseScriptResponse>>(`/api/projects/${projectId}/revise-script`, data);
+}
+
+/**
+ * 触发剧本生成
+ * @param projectId 项目ID
+ * @returns 生成响应
+ */
+export async function generateScript(projectId: string): Promise<ApiResponse<GenerateScriptResponse>> {
+  return post<ApiResponse<GenerateScriptResponse>>(`/api/projects/${projectId}/generate-script`);
+}
+
+/**
+ * 获取剧本内容
+ * @param projectId 项目ID
+ * @returns 剧本内容
+ */
+export async function getScript(projectId: string): Promise<ApiResponse<Script>> {
+  return get<ApiResponse<Script>>(`/api/projects/${projectId}/script`);
 }
