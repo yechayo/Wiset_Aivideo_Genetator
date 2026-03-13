@@ -1,0 +1,239 @@
+// Toast 组件样式 - 玻璃态风格
+
+// ========== 颜色变量 ==========
+@success-bg: rgba(74, 222, 128, 0.15);
+@success-border: rgba(74, 222, 128, 0.3);
+@success-icon: #4ade80;
+
+@error-bg: rgba(248, 113, 113, 0.15);
+@error-border: rgba(248, 113, 113, 0.3);
+@error-icon: #f87171;
+
+@warning-bg: rgba(250, 204, 21, 0.15);
+@warning-border: rgba(250, 204, 21, 0.3);
+@warning-icon: #facc15;
+
+@info-bg: rgba(96, 165, 250, 0.15);
+@info-border: rgba(96, 165, 250, 0.3);
+@info-icon: #60a5fa;
+
+// ========== 动画定义 ==========
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+// ========== Toast 容器 ==========
+.container {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+
+  // 位置变体
+  &.topRight {
+    top: 24px;
+    right: 24px;
+  }
+
+  &.topCenter {
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  &.topLeft {
+    top: 24px;
+    left: 24px;
+  }
+
+  &.bottomRight {
+    bottom: 24px;
+    right: 24px;
+  }
+
+  &.bottomCenter {
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  &.bottomLeft {
+    bottom: 24px;
+    left: 24px;
+  }
+}
+
+// ========== Toast 卡片 ==========
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  min-width: 320px;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+  color: #ffffff;
+  transition: all 0.3s ease;
+
+  // 进入动画
+  &.entering {
+    animation: slideInRight 0.3s ease forwards;
+  }
+
+  // 退出动画
+  &.exiting {
+    animation: slideOutRight 0.3s ease forwards;
+  }
+
+  // Hover 效果
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(31, 38, 135, 0.45);
+  }
+
+  // 类型样式 - 左侧边框颜色
+  &.success {
+    border-left: 4px solid @success-icon;
+
+    .icon {
+      color: @success-icon;
+    }
+  }
+
+  &.error {
+    border-left: 4px solid @error-icon;
+
+    .icon {
+      color: @error-icon;
+    }
+  }
+
+  &.warning {
+    border-left: 4px solid @warning-icon;
+
+    .icon {
+      color: @warning-icon;
+    }
+  }
+
+  &.info {
+    border-left: 4px solid @info-icon;
+
+    .icon {
+      color: @info-icon;
+    }
+  }
+}
+
+// ========== 图标 ==========
+.icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+
+// ========== 内容区域 ==========
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0; // 防止文本溢出
+}
+
+.message {
+  font-size: 14px;
+  line-height: 1.5;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+// ========== 关闭按钮 ==========
+.closeButton {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  padding: 0;
+
+  svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.3);
+    outline-offset: 2px;
+  }
+}
+
+// ========== 响应式设计 ==========
+@media (max-width: 640px) {
+  .container {
+    &.topRight,
+    &.topLeft,
+    &.bottomRight,
+    &.bottomLeft {
+      left: 16px;
+      right: 16px;
+      transform: none;
+    }
+
+    &.topCenter,
+    &.bottomCenter {
+      left: 16px;
+      right: 16px;
+      transform: none;
+    }
+  }
+
+  .toast {
+    min-width: 0;
+    max-width: none;
+  }
+}

@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './glass-effect.module.less';
 import { register, login } from '../../services/authService';
 import { setAuthData } from '../../utils/tokenStorage';
+import { saveCredentials, getCredentials, clearCredentials as clearStoredCredentials, hasCredentials } from '../../utils/credentialsStorage';
 import { EyeIcon, EyeOffIcon } from '../../components/icons/Icons';
+import { useToast } from '../../components/toast';
 
 type AuthMode = 'login' | 'register';
 
 function LoginPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [mode, setMode] = useState<AuthMode>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -17,23 +20,38 @@ function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [hasStoredCredentials, setHasStoredCredentials] = useState(false);
+
+  // 初始化：检查是否有保存的凭证并自动填充
+  useEffect(() => {
+    const saved = getCredentials();
+    if (saved) {
+      setUsername(saved.username);
+      setPassword(saved.password);
+      setRememberMe(true);
+      setHasStoredCredentials(true);
+    } else {
+      setHasStoredCredentials(false);
+    }
+  }, []);
 
   // 登录
   const handleLogin = async () => {
     if (!username) {
-      alert('请输入账号');
+      toast.warning('请输入账号');
       return;
     }
     if (username.length < 3 || username.length > 20) {
-      alert('账号长度应为3-20个字符');
+      toast.warning('账号长度应为3-20个字符');
       return;
     }
     if (!password) {
-      alert('请输入密码');
+      toast.warning('请输入密码');
       return;
     }
     if (password.length < 6 || password.length > 50) {
-      alert('密码长度应为6-50个字符');
+      toast.warning('密码长度应为6-50个字符');
       return;
     }
 
@@ -43,11 +61,21 @@ function LoginPage() {
       if (response.data) {
         const { accessToken, refreshToken, username: returnedUsername, userId } = response.data;
         setAuthData(accessToken, refreshToken, { username: returnedUsername, userId });
-        alert('登录成功！');
+
+        // 根据复选框状态保存或清除凭证
+        if (rememberMe) {
+          saveCredentials(username, password);
+          setHasStoredCredentials(true);
+        } else {
+          clearStoredCredentials();
+          setHasStoredCredentials(false);
+        }
+
+        toast.success('登录成功！');
         navigate('/dashboard');
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : '登录失败，请稍后重试');
+      toast.error(error instanceof Error ? error.message : '登录失败，请稍后重试');
     } finally {
       setIsLoading(false);
     }
@@ -56,31 +84,31 @@ function LoginPage() {
   // 注册
   const handleRegister = async () => {
     if (!username) {
-      alert('请输入账号');
+      toast.warning('请输入账号');
       return;
     }
     if (username.length < 3 || username.length > 20) {
-      alert('账号长度应为3-20个字符');
+      toast.warning('账号长度应为3-20个字符');
       return;
     }
     if (!password) {
-      alert('请输入密码');
+      toast.warning('请输入密码');
       return;
     }
     if (password.length < 6 || password.length > 50) {
-      alert('密码长度应为6-50个字符');
+      toast.warning('密码长度应为6-50个字符');
       return;
     }
     if (!confirmPassword) {
-      alert('请确认密码');
+      toast.warning('请确认密码');
       return;
     }
     if (password !== confirmPassword) {
-      alert('两次输入的密码不一致');
+      toast.warning('两次输入的密码不一致');
       return;
     }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      alert('请输入有效的邮箱地址');
+      toast.warning('请输入有效的邮箱地址');
       return;
     }
 
@@ -94,11 +122,11 @@ function LoginPage() {
       if (response.data) {
         const { accessToken, refreshToken, username: returnedUsername, userId } = response.data;
         setAuthData(accessToken, refreshToken, { username: returnedUsername, userId });
-        alert('注册成功！');
+        toast.success('注册成功！');
         navigate('/dashboard');
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : '注册失败，请稍后重试');
+      toast.error(error instanceof Error ? error.message : '注册失败，请稍后重试');
     } finally {
       setIsLoading(false);
     }
@@ -119,6 +147,16 @@ function LoginPage() {
     if (e.key === 'Enter') {
       handleLogin();
     }
+  };
+
+  // 清除记住的凭证
+  const handleClearCredentials = () => {
+    clearStoredCredentials();
+    setUsername('');
+    setPassword('');
+    setRememberMe(false);
+    setHasStoredCredentials(false);
+    toast.info('已清除记住的账号');
   };
 
   return (
@@ -170,6 +208,20 @@ function LoginPage() {
             </button>
           </div>
 
+          {/* 记住密码选项 - 仅登录模式显示 */}
+          {mode === 'login' && (
+            <div className={styles.rememberMeSection}>
+              <label className={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                记住账号密码
+              </label>
+            </div>
+          )}
+
           {/* 邮箱输入 - 仅注册模式显示 */}
           {mode === 'register' && (
             <div className={styles.inputWrapper} key="email-input">
@@ -220,7 +272,21 @@ function LoginPage() {
 
         {/* 底部选项 */}
         <div className={styles.loginFooter}>
-          <a href="#" className={styles.footerLink}>忘记密码？</a>
+          <div>
+            <a href="#" className={styles.footerLink}>忘记密码？</a>
+            {mode === 'login' && hasStoredCredentials && (
+              <>
+                <span className={styles.footerDivider}>|</span>
+                <button
+                  type="button"
+                  className={styles.clearCredentialsBtn}
+                  onClick={handleClearCredentials}
+                >
+                  清除记住的账号
+                </button>
+              </>
+            )}
+          </div>
           <button
             type="button"
             className={styles.modeToggleBtn}
