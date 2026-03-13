@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/auth/LoginPage';
 import Layout from './pages/layout/Layout';
 import Dashboard from './pages/dashboard/Dashboard';
+import CreatePage from './pages/create/CreatePage';
 import { useAuthStore } from './stores/authStore';
 import { ToastProvider, ToastContainer } from './components/toast';
 
@@ -27,7 +28,7 @@ function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="create" element={<Dashboard />} />
+            <Route path="create" element={<CreatePage />} />
             <Route path="projects" element={<Dashboard />} />
             <Route path="settings" element={<Dashboard />} />
           </Route>

@@ -39,10 +39,10 @@ function Dashboard() {
           <h1>欢迎回来 👋</h1>
           <p className={styles.subtitle}>开始你的 AI 视频创作之旅</p>
         </div>
-        <button className={styles.createButton}>
+        <Link to="/create" className={styles.createButton}>
           <PlusIcon className={styles.plusIcon} />
           <span>新建项目</span>
-        </button>
+        </Link>
       </div>
 
       {/* 数据统计卡片 */}
@@ -112,10 +112,10 @@ function Dashboard() {
           </div>
           <h3 className={styles.emptyTitle}>还没有项目</h3>
           <p className={styles.emptyDescription}>创建你的第一个 AI 视频项目</p>
-          <button className={styles.emptyButton}>
+          <Link to="/create" className={styles.emptyButton}>
             <PlusIcon />
             <span>创建视频</span>
-          </button>
+          </Link>
         </div>
       </div>
     </div>
