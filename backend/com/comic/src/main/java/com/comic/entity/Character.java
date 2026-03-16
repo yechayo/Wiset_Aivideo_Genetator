@@ -43,6 +43,16 @@ public class Character {
     private Boolean isGeneratingExpression;   // 正在生成表情
     private Boolean isGeneratingThreeView;    // 正在生成三视图
 
+    // 视觉风格和生成模式
+    private String visualStyle;          // 3D/REAL/ANIME，默认3D
+    private String generationMode;       // grid/multiple，默认grid
+
+    // 大全图URL
+    private String expressionGridUrl;    // 九宫格大全图URL
+    private String threeViewGridUrl;     // 三视图大全图URL
+    private String expressionGridPrompt; // 九宫格提示词记录
+    private String threeViewGridPrompt;  // 三视图提示词记录
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)

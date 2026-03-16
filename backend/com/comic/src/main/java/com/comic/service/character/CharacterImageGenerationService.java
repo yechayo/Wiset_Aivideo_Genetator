@@ -1,5 +1,6 @@
 package com.comic.service.character;
 
+import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.PromptBuilder;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.common.BusinessException;
@@ -29,6 +30,7 @@ public class CharacterImageGenerationService {
     private final CharacterRepository characterRepository;
     private final ImageGenerationService imageGenerationService;
     private final PromptBuilder promptBuilder;
+    private final CharacterPromptManager characterPromptManager;
     private final ObjectMapper objectMapper;
 
     // 表情类型定义
@@ -40,7 +42,8 @@ public class CharacterImageGenerationService {
     private static final String[] VIEW_TYPES = {"正面", "侧面", "背面"};
 
     /**
-     * 生成九宫格表情图
+     * 生成九宫格表情图（升级版）
+     * 根据 generationMode 选择生成方式
      */
     @Transactional
     public void generateExpressionSheet(String charId) {
@@ -54,6 +57,85 @@ public class CharacterImageGenerationService {
             log.info("配角跳过表情生成: charId={}, name={}", charId, character.getName());
             throw new BusinessException("配角不需要生成表情图");
         }
+
+        // 根据生成模式选择生成方式
+        String mode = character.getGenerationMode();
+        if (mode == null) {
+            mode = "grid"; // 默认使用新模式
+        }
+
+        if ("grid".equals(mode)) {
+            // 新模式：一次性生成大全图
+            log.info("使用grid模式生成九宫格: charId={}", charId);
+            generateExpressionGrid(charId);
+        } else {
+            // 旧模式：逐张生成
+            log.info("使用multiple模式生成九宫格: charId={}", charId);
+            generateExpressionMultiple(charId);
+        }
+    }
+
+    /**
+     * 新方法：生成九宫格大全图（一次性生成）
+     */
+    @Transactional
+    private void generateExpressionGrid(String charId) {
+        Character character = characterRepository.findByCharId(charId);
+
+        // 检查是否已在生成中
+        if (Boolean.TRUE.equals(character.getIsGeneratingExpression())) {
+            throw new BusinessException("表情图正在生成中，请勿重复提交");
+        }
+
+        // 更新状态为生成中
+        character.setExpressionStatus("GENERATING");
+        character.setIsGeneratingExpression(true);
+        character.setExpressionError(null);
+        characterRepository.updateById(character);
+
+        try {
+            log.info("开始生成九宫格大全图: charId={}, name={}, visualStyle={}",
+                     charId, character.getName(), character.getVisualStyle());
+
+            // 获取视觉风格
+            CharacterPromptManager.VisualStyle visualStyle = CharacterPromptManager.VisualStyle.D_3D;
+            if (character.getVisualStyle() != null) {
+                visualStyle = CharacterPromptManager.VisualStyle.valueOf(character.getVisualStyle());
+            }
+
+            // 使用新提示词管理器构建提示词
+            String prompt = characterPromptManager.buildExpressionGridPrompt(character, visualStyle);
+            log.info("九宫格提示词长度: {} char", prompt.length());
+
+            // 生成大全图（使用更大尺寸以确保清晰度）
+            String imageUrl = imageGenerationService.generate(prompt, 2048, 2048, visualStyle.getCode().toLowerCase());
+            log.info("九宫格大全图生成完成: {}", imageUrl);
+
+            // 保存结果
+            character.setExpressionGridUrl(imageUrl);
+            character.setExpressionGridPrompt(prompt);
+            character.setExpressionStatus("COMPLETED");
+            character.setIsGeneratingExpression(false);
+            characterRepository.updateById(character);
+
+            log.info("九宫格大全图生成完成: charId={}", charId);
+
+        } catch (Exception e) {
+            log.error("九宫格大全图生成失败: charId={}", charId, e);
+            character.setExpressionStatus("FAILED");
+            character.setExpressionError(e.getMessage());
+            character.setIsGeneratingExpression(false);
+            characterRepository.updateById(character);
+            throw new BusinessException("九宫格大全图生成失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 旧方法：逐张生成九宫格表情（保持兼容）
+     */
+    @Transactional
+    private void generateExpressionMultiple(String charId) {
+        Character character = characterRepository.findByCharId(charId);
 
         // 检查是否已在生成中
         if (Boolean.TRUE.equals(character.getIsGeneratingExpression())) {
@@ -69,7 +151,7 @@ public class CharacterImageGenerationService {
         List<ExpressionImage> expressions = new ArrayList<>();
 
         try {
-            log.info("开始生成九宫格表情: charId={}, name={}", charId, character.getName());
+            log.info("开始生成九宫格表情（逐张）: charId={}, name={}", charId, character.getName());
 
             for (String expressionType : EXPRESSION_TYPES) {
                 String prompt = promptBuilder.buildExpressionPrompt(character, expressionType);
@@ -92,10 +174,10 @@ public class CharacterImageGenerationService {
             character.setIsGeneratingExpression(false);
             characterRepository.updateById(character);
 
-            log.info("九宫格表情生成完成: charId={}", charId);
+            log.info("九宫格表情（逐张）生成完成: charId={}", charId);
 
         } catch (Exception e) {
-            log.error("九宫格表情生成失败: charId={}", charId, e);
+            log.error("九宫格表情（逐张）生成失败: charId={}", charId, e);
             character.setExpressionStatus("FAILED");
             character.setExpressionError(e.getMessage());
             character.setIsGeneratingExpression(false);
@@ -105,7 +187,8 @@ public class CharacterImageGenerationService {
     }
 
     /**
-     * 生成三视图
+     * 生成三视图（升级版）
+     * 根据 generationMode 选择生成方式
      */
     @Transactional
     public void generateThreeViewSheet(String charId) {
@@ -113,6 +196,85 @@ public class CharacterImageGenerationService {
         if (character == null) {
             throw new BusinessException("角色不存在: " + charId);
         }
+
+        // 根据生成模式选择生成方式
+        String mode = character.getGenerationMode();
+        if (mode == null) {
+            mode = "grid"; // 默认使用新模式
+        }
+
+        if ("grid".equals(mode)) {
+            // 新模式：一次性生成大全图
+            log.info("使用grid模式生成三视图: charId={}", charId);
+            generateThreeViewGrid(charId);
+        } else {
+            // 旧模式：逐张生成
+            log.info("使用multiple模式生成三视图: charId={}", charId);
+            generateThreeViewMultiple(charId);
+        }
+    }
+
+    /**
+     * 新方法：生成三视图大全图（一次性生成）
+     */
+    @Transactional
+    private void generateThreeViewGrid(String charId) {
+        Character character = characterRepository.findByCharId(charId);
+
+        // 检查是否已在生成中
+        if (Boolean.TRUE.equals(character.getIsGeneratingThreeView())) {
+            throw new BusinessException("三视图正在生成中，请勿重复提交");
+        }
+
+        // 更新状态为生成中
+        character.setThreeViewStatus("GENERATING");
+        character.setIsGeneratingThreeView(true);
+        character.setThreeViewError(null);
+        characterRepository.updateById(character);
+
+        try {
+            log.info("开始生成三视图大全图: charId={}, name={}, visualStyle={}",
+                     charId, character.getName(), character.getVisualStyle());
+
+            // 获取视觉风格
+            CharacterPromptManager.VisualStyle visualStyle = CharacterPromptManager.VisualStyle.D_3D;
+            if (character.getVisualStyle() != null) {
+                visualStyle = CharacterPromptManager.VisualStyle.valueOf(character.getVisualStyle());
+            }
+
+            // 使用新提示词管理器构建提示词
+            String prompt = characterPromptManager.buildThreeViewGridPrompt(character, visualStyle);
+            log.info("三视图提示词长度: {} char", prompt.length());
+
+            // 生成大全图（横向布局：1024x1536）
+            String imageUrl = imageGenerationService.generate(prompt, 1024, 1536, visualStyle.getCode().toLowerCase());
+            log.info("三视图大全图生成完成: {}", imageUrl);
+
+            // 保存结果
+            character.setThreeViewGridUrl(imageUrl);
+            character.setThreeViewGridPrompt(prompt);
+            character.setThreeViewStatus("COMPLETED");
+            character.setIsGeneratingThreeView(false);
+            characterRepository.updateById(character);
+
+            log.info("三视图大全图生成完成: charId={}", charId);
+
+        } catch (Exception e) {
+            log.error("三视图大全图生成失败: charId={}", charId, e);
+            character.setThreeViewStatus("FAILED");
+            character.setThreeViewError(e.getMessage());
+            character.setIsGeneratingThreeView(false);
+            characterRepository.updateById(character);
+            throw new BusinessException("三视图大全图生成失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 旧方法：逐张生成三视图（保持兼容）
+     */
+    @Transactional
+    private void generateThreeViewMultiple(String charId) {
+        Character character = characterRepository.findByCharId(charId);
 
         // 检查是否已在生成中
         if (Boolean.TRUE.equals(character.getIsGeneratingThreeView())) {
@@ -128,7 +290,7 @@ public class CharacterImageGenerationService {
         List<ThreeViewImage> views = new ArrayList<>();
 
         try {
-            log.info("开始生成三视图: charId={}, name={}", charId, character.getName());
+            log.info("开始生成三视图（逐张）: charId={}, name={}", charId, character.getName());
 
             for (String viewType : VIEW_TYPES) {
                 String prompt = promptBuilder.buildThreeViewPrompt(character, viewType);
@@ -151,10 +313,10 @@ public class CharacterImageGenerationService {
             character.setIsGeneratingThreeView(false);
             characterRepository.updateById(character);
 
-            log.info("三视图生成完成: charId={}", charId);
+            log.info("三视图（逐张）生成完成: charId={}", charId);
 
         } catch (Exception e) {
-            log.error("三视图生成失败: charId={}", charId, e);
+            log.error("三视图（逐张）生成失败: charId={}", charId, e);
             character.setThreeViewStatus("FAILED");
             character.setThreeViewError(e.getMessage());
             character.setIsGeneratingThreeView(false);
@@ -274,5 +436,46 @@ public class CharacterImageGenerationService {
      */
     public static String[] getViewTypes() {
         return VIEW_TYPES.clone();
+    }
+
+    /**
+     * 设置角色的视觉风格
+     */
+    @Transactional
+    public void setVisualStyle(String charId, String visualStyle) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在: " + charId);
+        }
+
+        // 验证风格参数
+        try {
+            CharacterPromptManager.VisualStyle.valueOf(visualStyle);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("无效的视觉风格: " + visualStyle + "，支持的值: 3D, REAL, ANIME");
+        }
+
+        character.setVisualStyle(visualStyle);
+        characterRepository.updateById(character);
+        log.info("设置视觉风格: charId={}, visualStyle={}", charId, visualStyle);
+    }
+
+    /**
+     * 设置角色的生成模式
+     */
+    @Transactional
+    public void setGenerationMode(String charId, String generationMode) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在: " + charId);
+        }
+
+        if (!"grid".equals(generationMode) && !"multiple".equals(generationMode)) {
+            throw new BusinessException("无效的生成模式: " + generationMode + "，支持的值: grid, multiple");
+        }
+
+        character.setGenerationMode(generationMode);
+        characterRepository.updateById(character);
+        log.info("设置生成模式: charId={}, generationMode={}", charId, generationMode);
     }
 }
