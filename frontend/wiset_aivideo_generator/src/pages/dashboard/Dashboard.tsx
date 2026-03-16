@@ -114,7 +114,7 @@ function Dashboard() {
           <p className={styles.emptyDescription}>创建你的第一个 AI 视频项目</p>
           <Link to="/create" className={styles.emptyButton}>
             <PlusIcon />
-            <span>创建视频</span>
+            <span>创建新项目</span>
           </Link>
         </div>
       </div>
