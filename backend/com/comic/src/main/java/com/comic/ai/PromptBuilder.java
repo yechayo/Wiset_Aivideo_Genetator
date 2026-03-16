@@ -2,6 +2,7 @@ package com.comic.ai;
 
 import com.comic.dto.CharacterStateDTO;
 import com.comic.dto.WorldConfigDTO;
+import com.comic.entity.Character;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -255,8 +256,7 @@ public class PromptBuilder {
                 int endEp = startEp + episodesInThisChapter - 1;
                 sb.append("（第").append(startEp).append("-").append(endEp).append("集）");
             }
-            sb.append("\n");
-        }
+            sb.append("\n");        }
 
         sb.append("\n**重要提醒**：所有章节的集数加起来必须等于 ").append(totalEpisodes).append(" 集，绝对不能超出！\n\n");
 
@@ -411,6 +411,73 @@ public class PromptBuilder {
         return sb.toString();
     }
 
+    // ================= 单集剧本生成方法 =================
+
+    /**
+     * 构建单集剧本生成的系统提示词
+     */
+    public String buildSingleEpisodeScriptSystemPrompt() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一位专业的短剧编剧，擅长创作完整、紧凑的单集故事。\n");
+        sb.append("你的任务是根据提供的【单集大纲】，创作详细的单集剧本内容。\n\n");
+
+        sb.append("**核心要求**\n\n");
+        sb.append("1. **完整性**：这是一个独立的单集故事，需要完整的起承转合\n");
+        sb.append("2. **紧凑性**：节奏紧凑，每场戏都有明确目的\n");
+        sb.append("3. **角色一致性**：严格遵循角色设定中的外貌、性格、说话方式\n");
+        sb.append("4. **视觉化**：剧本要适合视频拍摄，包含详细的场景、动作、表情描写\n\n");
+
+        sb.append("**输出要求：**\n");
+        sb.append("请直接输出一个 **JSON 对象**，格式如下：\n");
+        sb.append("{\n");
+        sb.append("  \"title\": \"单集标题\",\n");
+        sb.append("  \"content\": \"[详细剧本内容，包含场景描写、动作指令和对白]\",\n");
+        sb.append("  \"characters\": \"[本集涉及的角色列表]\",\n");
+        sb.append("  \"keyItems\": \"[本集出现的关键物品列表]\",\n");
+        sb.append("  \"visualStyleNote\": \"[视觉风格备注]\",\n");
+        sb.append("  \"continuityNote\": \"[连贯性说明]\"\n");
+        sb.append("}\n\n");
+
+        sb.append("**内容要求：**\n");
+        sb.append("1. **全中文写作**\n");
+        sb.append("2. **剧本内容长度**：根据时长要求，每分钟需要 200-250字 的详细剧本内容\n");
+        sb.append("3. **内容结构**：\n");
+        sb.append("   - 场景描述：详细的环境描写、光影氛围、空间布局\n");
+        sb.append("   - 肢体动作：角色的身体姿势、动作细节、位置移动\n");
+        sb.append("   - 表情细节：眼神、微表情、情绪变化\n");
+        sb.append("   - 精彩对白：符合角色性格的对话\n");
+        sb.append("   - 情感描写：内心活动、情感转变\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * 构建单集剧本生成的用户提示词
+     */
+    public String buildSingleEpisodeScriptUserPrompt(String outline, String globalCharacters,
+                                                      String globalItems, int duration,
+                                                      String modificationSuggestion) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("单集剧本大纲：\n");
+        sb.append(outline).append("\n\n");
+
+        sb.append("单集时长：").append(duration).append(" 分钟\n\n");
+
+        if (modificationSuggestion != null && !modificationSuggestion.isEmpty()) {
+            sb.append("修改建议：").append(modificationSuggestion).append("\n\n");
+        }
+
+        sb.append("=== 角色设定 ===\n");
+        sb.append(globalCharacters).append("\n\n");
+
+        sb.append("=== 物品设定 ===\n");
+        sb.append(globalItems).append("\n\n");
+
+        sb.append("请根据以上大纲和设定，创作完整的单集剧本。输出 JSON：");
+
+        return sb.toString();
+    }
+
     /**
      * 剧本参数内部类
      */
@@ -522,5 +589,76 @@ public class PromptBuilder {
         sb.append("**主题表达**：[这个单集想要表达什么]\n");
 
         return sb.toString();
+    }
+
+    // ================= 角色图片生成提示词方法 =================
+
+    /**
+     * 构建九宫格表情生成提示词
+     */
+    public String buildExpressionPrompt(Character character, String expressionType) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("A character portrait of ").append(character.getName()).append(".\n");
+        sb.append("Appearance: ").append(character.getAppearance()).append(".\n");
+        sb.append("Personality: ").append(character.getPersonality()).append(".\n");
+        sb.append("Current expression: ").append(expressionType).append(".\n");
+        sb.append("\n");
+        sb.append("Requirements:\n");
+        sb.append("- no text, no watermark, no letters, no words, no captions\n");
+        sb.append("- high quality, detailed character art\n");
+        sb.append("- clean background\n");
+        sb.append("- focus on facial expression showing ").append(expressionType);
+
+        return sb.toString();
+    }
+
+    /**
+     * 构建三视图生成提示词
+     */
+    public String buildThreeViewPrompt(Character character, String viewType) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("A character ").append(viewType).append(" view of ").append(character.getName()).append(".\n");
+        sb.append("Appearance: ").append(character.getAppearance()).append(".\n");
+        sb.append("Personality: ").append(character.getPersonality()).append(".\n");
+        sb.append("View type: ").append(viewType).append(" view (");
+        switch (viewType) {
+            case "正面":
+                sb.append("front view, showing full face and body from the front");
+                break;
+            case "侧面":
+                sb.append("side view, showing character profile from the side");
+                break;
+            case "背面":
+                sb.append("back view, showing character from behind");
+                break;
+            default:
+                sb.append(viewType);
+        }
+        sb.append(").\n");
+        sb.append("\n");
+        sb.append("Requirements:\n");
+        sb.append("- no text, no watermark, no letters, no words, no captions\n");
+        sb.append("- high quality, detailed character art\n");
+        sb.append("- clean background\n");
+        sb.append("- full body character reference sheet style\n");
+        sb.append("- consistent character design throughout");
+
+        return sb.toString();
+    }
+
+    /**
+     * 获取表情类型列表
+     */
+    public static String[] getExpressionTypes() {
+        return new String[]{"开心", "悲伤", "愤怒", "惊讶", "恐惧", "厌恶", "轻蔑", "害羞", "平静"};
+    }
+
+    /**
+     * 获取视图类型列表
+     */
+    public static String[] getViewTypes() {
+        return new String[]{"正面", "侧面", "背面"};
     }
 }
