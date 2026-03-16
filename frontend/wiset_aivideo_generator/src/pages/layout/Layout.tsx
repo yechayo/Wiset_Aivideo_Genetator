@@ -23,7 +23,7 @@ function Layout() {
 
   const navItems = [
     { path: '/dashboard', icon: HomeIcon, label: '首页' },
-    { path: '/create', icon: VideoIcon, label: '创建视频' },
+    { path: '/create', icon: VideoIcon, label: '创建新项目' },
     { path: '/projects', icon: FolderIcon, label: '我的项目' },
     { path: '/settings', icon: SettingsIcon, label: '设置' },
   ];
