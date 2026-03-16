@@ -1,0 +1,32 @@
+2026-03-13 18:07:10.537  INFO 59824 --- [main] com.comic.ComicApplication               : Starting ComicApplication using Java 1.8.0_361 on C0cc with PID 59824 (D:\Wiset\Wiset_Aivideo_Genetator\backend\com\comic\target\classes started by 16602 in D:\Wiset\Wiset_Aivideo_Genetator\backend\com)
+2026-03-13 18:07:10.542 DEBUG 59824 --- [main] com.comic.ComicApplication               : Running with Spring Boot v2.7.18, Spring v5.3.31
+2026-03-13 18:07:10.542  INFO 59824 --- [main] com.comic.ComicApplication               : No active profile set, falling back to 1 default profile: "default"
+2026-03-13 18:07:11.368  INFO 59824 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port(s): 8080 (http)
+2026-03-13 18:07:11.373  INFO 59824 --- [main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-03-13 18:07:11.373  INFO 59824 --- [main] org.apache.catalina.core.StandardEngine  : Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-03-13 18:07:11.463  INFO 59824 --- [main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-03-13 18:07:11.463  INFO 59824 --- [main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 895 ms
+2026-03-13 18:07:11.712  INFO 59824 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-03-13 18:07:11.802  INFO 59824 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-03-13 18:07:11.961 DEBUG 59824 --- [main] com.comic.security.JwtFilter             : Filter 'jwtFilter' configured for use
+2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 🤖 文本生成服务配置
+2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: glm
+2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 GLM 进行文本生成（剧本、对话等）
+2026-03-13 18:07:12.372  INFO 59824 --- [main] com.comic.service.job.JobQueueService    : 任务队列已启动，工作线程数: 3
+2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 🎨 图片生成服务配置
+2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedream
+2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedream 进行图片生成（角色立绘、分镜图等）
+2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 🎬 视频生成服务配置
+2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedance
+2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedance 进行视频生成（分镜视频等）
+2026-03-13 18:07:12.465  INFO 59824 --- [main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@718fd7c1, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@4bc6da03, org.springframework.security.web.context.SecurityContextPersistenceFilter@11d2dd2d, org.springframework.security.web.header.HeaderWriterFilter@1fecfaea, org.springframework.web.filter.CorsFilter@4f59a516, org.springframework.security.web.authentication.logout.LogoutFilter@69cd7630, com.comic.security.JwtFilter@17092fff, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@174721c4, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@47b33e07, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@4e22368c, org.springframework.security.web.session.SessionManagementFilter@2db6d68d, org.springframework.security.web.access.ExceptionTranslationFilter@51da32e5, org.springframework.security.web.access.intercept.AuthorizationFilter@1f736d00]
+2026-03-13 18:07:12.710  INFO 59824 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
+2026-03-13 18:07:12.717  INFO 59824 --- [main] com.comic.ComicApplication               : Started ComicApplication in 2.409 seconds (JVM running for 2.673)
+2026-03-13 18:10:40.511  INFO 59824 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-03-13 18:10:40.515  INFO 59824 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.

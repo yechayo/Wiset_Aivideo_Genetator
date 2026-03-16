@@ -2748,3 +2748,16 @@ Caused by: java.net.SocketTimeoutException: Read timed out
 2026-03-13 17:39:55.402  INFO 59376 --- [main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@64763e49, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@23468512, org.springframework.security.web.context.SecurityContextPersistenceFilter@122635ef, org.springframework.security.web.header.HeaderWriterFilter@800d065, org.springframework.web.filter.CorsFilter@69cd7630, org.springframework.security.web.authentication.logout.LogoutFilter@3592c1c4, com.comic.security.JwtFilter@6415f61e, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@3d53e6f7, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@262a1fad, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@7e8279e5, org.springframework.security.web.session.SessionManagementFilter@5e593b08, org.springframework.security.web.access.ExceptionTranslationFilter@11381415, org.springframework.security.web.access.intercept.AuthorizationFilter@58f2466c]
 2026-03-13 17:39:55.644  INFO 59376 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
 2026-03-13 17:39:55.651  INFO 59376 --- [main] com.comic.ComicApplication               : Started ComicApplication in 2.299 seconds (JVM running for 2.577)
+2026-03-13 17:47:19.653  INFO 59376 --- [http-nio-0.0.0.0-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-03-13 17:47:19.653  INFO 59376 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-03-13 17:47:19.654  INFO 59376 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+2026-03-13 17:47:19.864  WARN 59376 --- [http-nio-0.0.0.0-8080-exec-1] c.c.exception.GlobalExceptionHandler     : 运行时异常: 
+### Error querying database.  Cause: org.sqlite.SQLiteException: [SQLITE_ERROR] SQL error or missing database (no such column: script_outline)
+### The error may exist in com/comic/repository/ProjectRepository.java (best guess)
+### The error may involve com.comic.repository.ProjectRepository.selectList
+### The error occurred while executing a query
+### SQL: SELECT  id,project_id,user_id,story_prompt,genre,target_audience,total_episodes,episode_duration,status,script_revision_note,script_outline,selected_chapter,episodes_per_chapter,created_at,updated_at  FROM project      WHERE  (project_id = ?)
+### Cause: org.sqlite.SQLiteException: [SQLITE_ERROR] SQL error or missing database (no such column: script_outline)
+; uncategorized SQLException; SQL state [null]; error code [1]; [SQLITE_ERROR] SQL error or missing database (no such column: script_outline); nested exception is org.sqlite.SQLiteException: [SQLITE_ERROR] SQL error or missing database (no such column: script_outline)
+2026-03-13 17:49:19.720  INFO 59376 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-03-13 17:49:19.728  INFO 59376 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
