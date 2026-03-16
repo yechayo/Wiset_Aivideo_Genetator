@@ -85,14 +85,30 @@ public class CharacterController {
     // ================= 角色图片生成相关接口 =================
 
     /**
-     * 生成角色九宫格表情
+     * 生成角色九宫格表情（升级版）
      * POST /api/characters/{charId}/generate-expression
      */
     @PostMapping("/{charId}/generate-expression")
     @Operation(summary = "生成九宫格表情", description = "为指定角色生成九宫格表情图。配角会自动跳过。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
     public Result<Void> generateExpression(
-            @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
+            @Parameter(description = "角色ID", required = true) @PathVariable String charId,
+            @Parameter(description = "生成模式：grid(大全图)或multiple(逐张)", required = false) @RequestParam(defaultValue = "grid") String mode) {
+        characterImageGenerationService.setGenerationMode(charId, mode);
         characterImageGenerationService.generateExpressionSheet(charId);
+        return Result.ok();
+    }
+
+    /**
+     * 设置角色视觉风格
+     * PUT /api/characters/{charId}/visual-style
+     */
+    @PutMapping("/{charId}/visual-style")
+    @Operation(summary = "设置视觉风格", description = "设置角色的视觉风格（3D/REAL/ANIME）。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
+    public Result<Void> setVisualStyle(
+            @Parameter(description = "角色ID", required = true) @PathVariable String charId,
+            @RequestBody Map<String, String> body) {
+        String visualStyle = body.get("visualStyle");
+        characterImageGenerationService.setVisualStyle(charId, visualStyle);
         return Result.ok();
     }
 
@@ -143,7 +159,7 @@ public class CharacterController {
             @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
-            return Result.error("角色不存在");
+            return Result.fail("角色不存在");
         }
 
         CharacterStatusDTO dto = new CharacterStatusDTO();
@@ -158,11 +174,23 @@ public class CharacterController {
         dto.setIsGeneratingThreeView(character.getIsGeneratingThreeView());
         dto.setStandardImageUrl(character.getStandardImageUrl());
 
-        // 获取表情图和三视图列表
-        List<ExpressionImage> expressionSheet = characterImageGenerationService.getExpressionSheet(charId);
-        List<ThreeViewImage> threeViewSheet = characterImageGenerationService.getThreeViewSheet(charId);
-        dto.setExpressionSheet(expressionSheet);
-        dto.setThreeViewSheet(threeViewSheet);
+        // 新增：设置视觉风格和生成模式
+        dto.setVisualStyle(character.getVisualStyle());
+        dto.setGenerationMode(character.getGenerationMode());
+
+        // 根据生成模式返回不同数据
+        String generationMode = character.getGenerationMode();
+        if ("grid".equals(generationMode)) {
+            // 新模式：返回大全图URL
+            dto.setExpressionGridUrl(character.getExpressionGridUrl());
+            dto.setThreeViewGridUrl(character.getThreeViewGridUrl());
+        } else {
+            // 旧模式：返回分图列表
+            List<ExpressionImage> expressionSheet = characterImageGenerationService.getExpressionSheet(charId);
+            List<ThreeViewImage> threeViewSheet = characterImageGenerationService.getThreeViewSheet(charId);
+            dto.setExpressionSheet(expressionSheet);
+            dto.setThreeViewSheet(threeViewSheet);
+        }
 
         return Result.ok(dto);
     }
