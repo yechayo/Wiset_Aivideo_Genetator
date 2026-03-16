@@ -24,6 +24,25 @@ public class Character {
     private Boolean confirmed;        // 是否已确认
     private Boolean locked;           // 是否已锁定资产
 
+    // 角色图片生成相关字段
+    // 生成状态字段
+    private String expressionStatus;    // 表情生成状态: pending/generating/completed/failed
+    private String threeViewStatus;     // 三视图生成状态: pending/generating/completed/failed
+
+    // 生成内容存储（JSON格式）
+    private String expressionSheet;     // 九宫格表情图JSON数组
+    private String threeViewSheet;      // 三视图JSON数组
+    private String expressionPrompt;    // 表情生成提示词
+    private String threeViewPrompt;     // 三视图生成提示词
+
+    // 错误信息
+    private String expressionError;     // 表情生成错误信息
+    private String threeViewError;      // 三视图生成错误信息
+
+    // 生成标志
+    private Boolean isGeneratingExpression;   // 正在生成表情
+    private Boolean isGeneratingThreeView;    // 正在生成三视图
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)
