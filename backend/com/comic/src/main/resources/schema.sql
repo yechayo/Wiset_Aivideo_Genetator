@@ -76,6 +76,24 @@ CREATE TABLE IF NOT EXISTS t_character (
     standard_image_url TEXT,
     confirmed INTEGER DEFAULT 0,
     locked INTEGER DEFAULT 0,
+    -- 角色图片生成相关字段
+    expression_status TEXT,
+    three_view_status TEXT,
+    expression_sheet TEXT,
+    three_view_sheet TEXT,
+    expression_prompt TEXT,
+    three_view_prompt TEXT,
+    expression_error TEXT,
+    three_view_error TEXT,
+    is_generating_expression INTEGER DEFAULT 0,
+    is_generating_three_view INTEGER DEFAULT 0,
+    -- 视觉风格和生成模式
+    visual_style TEXT DEFAULT '3D',
+    generation_mode TEXT DEFAULT 'grid',
+    expression_grid_url TEXT,
+    three_view_grid_url TEXT,
+    expression_grid_prompt TEXT,
+    three_view_grid_prompt TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
