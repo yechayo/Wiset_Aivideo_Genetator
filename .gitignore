@@ -1,2 +1,20 @@
 # Claude Code
 .claude/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
