@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/auth/LoginPage';
 import Layout from './pages/layout/Layout';
 import Dashboard from './pages/dashboard/Dashboard';
+import ProjectsPage from './pages/projects/ProjectsPage';
+import ProjectDetailPage from './pages/projects/ProjectDetailPage';
 import { useAuthStore } from './stores/authStore';
 import { ToastProvider, ToastContainer } from './components/toast';
 import CreateLayout from './pages/create/CreateLayout';
@@ -28,7 +30,8 @@ function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="projects" element={<Dashboard />} />
+            <Route path="projects" element={<ProjectsPage />} />
+            <Route path="projects/:projectId" element={<ProjectDetailPage />} />
             <Route path="settings" element={<Dashboard />} />
 
             {/* 创建流程路由 - 所有步骤都由 CreateLayout 处理 */}

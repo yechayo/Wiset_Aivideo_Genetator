@@ -109,3 +109,20 @@ export async function generateEpisodes(
 export async function confirmScript(projectId: string): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(`/api/projects/${projectId}/confirm-script`);
 }
+
+/**
+ * 获取项目列表
+ * @returns 项目列表
+ */
+export async function getProjects(): Promise<ApiResponse<Project[]>> {
+  return get<ApiResponse<Project[]>>('/api/projects');
+}
+
+/**
+ * 获取项目详情
+ * @param projectId 项目ID
+ * @returns 项目详情
+ */
+export async function getProject(projectId: string): Promise<ApiResponse<Project>> {
+  return get<ApiResponse<Project>>(`/api/projects/${projectId}`);
+}
