@@ -255,7 +255,6 @@ public class PromptBuilder {
                 int endEp = startEp + episodesInThisChapter - 1;
                 sb.append("（第").append(startEp).append("-").append(endEp).append("集）");
             }
-
             sb.append("\n");
         }
 
