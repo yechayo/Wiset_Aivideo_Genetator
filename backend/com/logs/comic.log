@@ -1,32 +1,825 @@
-2026-03-13 18:07:10.537  INFO 59824 --- [main] com.comic.ComicApplication               : Starting ComicApplication using Java 1.8.0_361 on C0cc with PID 59824 (D:\Wiset\Wiset_Aivideo_Genetator\backend\com\comic\target\classes started by 16602 in D:\Wiset\Wiset_Aivideo_Genetator\backend\com)
-2026-03-13 18:07:10.542 DEBUG 59824 --- [main] com.comic.ComicApplication               : Running with Spring Boot v2.7.18, Spring v5.3.31
-2026-03-13 18:07:10.542  INFO 59824 --- [main] com.comic.ComicApplication               : No active profile set, falling back to 1 default profile: "default"
-2026-03-13 18:07:11.368  INFO 59824 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port(s): 8080 (http)
-2026-03-13 18:07:11.373  INFO 59824 --- [main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-03-13 18:07:11.373  INFO 59824 --- [main] org.apache.catalina.core.StandardEngine  : Starting Servlet engine: [Apache Tomcat/9.0.83]
-2026-03-13 18:07:11.463  INFO 59824 --- [main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
-2026-03-13 18:07:11.463  INFO 59824 --- [main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 895 ms
-2026-03-13 18:07:11.712  INFO 59824 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
-2026-03-13 18:07:11.802  INFO 59824 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
-2026-03-13 18:07:11.961 DEBUG 59824 --- [main] com.comic.security.JwtFilter             : Filter 'jwtFilter' configured for use
-2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
-2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 🤖 文本生成服务配置
-2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
-2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: glm
-2026-03-13 18:07:12.255  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 GLM 进行文本生成（剧本、对话等）
-2026-03-13 18:07:12.372  INFO 59824 --- [main] com.comic.service.job.JobQueueService    : 任务队列已启动，工作线程数: 3
-2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
-2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 🎨 图片生成服务配置
-2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
-2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedream
-2026-03-13 18:07:12.402  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedream 进行图片生成（角色立绘、分镜图等）
-2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
-2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 🎬 视频生成服务配置
-2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
-2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedance
-2026-03-13 18:07:12.403  INFO 59824 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedance 进行视频生成（分镜视频等）
-2026-03-13 18:07:12.465  INFO 59824 --- [main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@718fd7c1, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@4bc6da03, org.springframework.security.web.context.SecurityContextPersistenceFilter@11d2dd2d, org.springframework.security.web.header.HeaderWriterFilter@1fecfaea, org.springframework.web.filter.CorsFilter@4f59a516, org.springframework.security.web.authentication.logout.LogoutFilter@69cd7630, com.comic.security.JwtFilter@17092fff, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@174721c4, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@47b33e07, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@4e22368c, org.springframework.security.web.session.SessionManagementFilter@2db6d68d, org.springframework.security.web.access.ExceptionTranslationFilter@51da32e5, org.springframework.security.web.access.intercept.AuthorizationFilter@1f736d00]
-2026-03-13 18:07:12.710  INFO 59824 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
-2026-03-13 18:07:12.717  INFO 59824 --- [main] com.comic.ComicApplication               : Started ComicApplication in 2.409 seconds (JVM running for 2.673)
-2026-03-13 18:10:40.511  INFO 59824 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
-2026-03-13 18:10:40.515  INFO 59824 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-03-16 09:40:44.280  INFO 6676 --- [main] com.comic.ComicApplication               : Starting ComicApplication using Java 1.8.0_361 on C0cc with PID 6676 (D:\Wiset\Wiset_Aivideo_Genetator\backend\com\comic\target\classes started by 16602 in D:\Wiset\Wiset_Aivideo_Genetator\backend\com)
+2026-03-16 09:40:44.284 DEBUG 6676 --- [main] com.comic.ComicApplication               : Running with Spring Boot v2.7.18, Spring v5.3.31
+2026-03-16 09:40:44.284  INFO 6676 --- [main] com.comic.ComicApplication               : No active profile set, falling back to 1 default profile: "default"
+2026-03-16 09:40:45.260  INFO 6676 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port(s): 8080 (http)
+2026-03-16 09:40:45.266  INFO 6676 --- [main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-03-16 09:40:45.267  INFO 6676 --- [main] org.apache.catalina.core.StandardEngine  : Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-03-16 09:40:45.376  INFO 6676 --- [main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-03-16 09:40:45.376  INFO 6676 --- [main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1061 ms
+2026-03-16 09:40:45.637  INFO 6676 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-03-16 09:40:45.728  INFO 6676 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-03-16 09:40:45.899 DEBUG 6676 --- [main] com.comic.security.JwtFilter             : Filter 'jwtFilter' configured for use
+2026-03-16 09:40:46.213  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 09:40:46.213  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : 🤖 文本生成服务配置
+2026-03-16 09:40:46.213  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 09:40:46.213  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: glm
+2026-03-16 09:40:46.213  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 GLM 进行文本生成（剧本、对话等）
+2026-03-16 09:40:46.335  INFO 6676 --- [main] com.comic.service.job.JobQueueService    : 任务队列已启动，工作线程数: 3
+2026-03-16 09:40:46.356  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 09:40:46.356  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : 🎨 图片生成服务配置
+2026-03-16 09:40:46.356  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 09:40:46.357  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedream
+2026-03-16 09:40:46.357  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedream 进行图片生成（角色立绘、分镜图等）
+2026-03-16 09:40:46.357  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 09:40:46.357  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : 🎬 视频生成服务配置
+2026-03-16 09:40:46.357  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 09:40:46.357  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedance
+2026-03-16 09:40:46.357  INFO 6676 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedance 进行视频生成（分镜视频等）
+2026-03-16 09:40:46.438  INFO 6676 --- [main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@6f25bf88, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@42ea7565, org.springframework.security.web.context.SecurityContextPersistenceFilter@2d5a1588, org.springframework.security.web.header.HeaderWriterFilter@322e49ee, org.springframework.web.filter.CorsFilter@7b5cc918, org.springframework.security.web.authentication.logout.LogoutFilter@5ae15, com.comic.security.JwtFilter@2f0ed952, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@125d47c4, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@1c240cf2, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@62b3a2f6, org.springframework.security.web.session.SessionManagementFilter@19489b27, org.springframework.security.web.access.ExceptionTranslationFilter@174721c4, org.springframework.security.web.access.intercept.AuthorizationFilter@2213639b]
+2026-03-16 09:40:46.703  INFO 6676 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
+2026-03-16 09:40:46.708  INFO 6676 --- [main] com.comic.ComicApplication               : Started ComicApplication in 2.714 seconds (JVM running for 3.051)
+2026-03-16 09:41:46.360  INFO 6676 --- [http-nio-0.0.0.0-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-03-16 09:41:46.360  INFO 6676 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-03-16 09:41:46.361  INFO 6676 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+2026-03-16 09:41:46.659  INFO 6676 --- [http-nio-0.0.0.0-8080-exec-1] com.comic.service.auth.AuthService       : 新用户注册成功: hwh
+2026-03-16 09:43:30.618  INFO 6676 --- [http-nio-0.0.0.0-8080-exec-5] c.c.service.pipeline.PipelineService     : 项目已创建: projectId=PROJ-0d3a545c, userId=1
+2026-03-16 09:44:45.309  INFO 6676 --- [http-nio-0.0.0.0-8080-exec-7] com.comic.ai.text.GlmTextService         : GLM 文本生成: 并发槽位 4/0
+2026-03-16 09:45:21.200  INFO 6676 --- [http-nio-0.0.0.0-8080-exec-7] com.comic.ai.text.GlmTextService         : GLM 文本生成完成: # 《规则之夜》 (Rule of the Night)
+**一句话梗概**: 在一个规则待完善的世界中，一群人在寻找真相的过程中，不断揭开恐怖的真相。
+**类型**: 恐怖 | **主题**: 规则
+2026-03-16 09:45:21.201  INFO 6676 --- [http-nio-0.0.0.0-8080-exec-7] com.comic.service.script.ScriptService   : 剧本大纲生成完成: projectId=PROJ-0d3a545c
+2026-03-16 10:00:00.635  INFO 6924 --- [main] com.comic.ComicApplication               : Starting ComicApplication using Java 1.8.0_361 on C0cc with PID 6924 (D:\Wiset\Wiset_Aivideo_Genetator\backend\com\comic\target\classes started by 16602 in D:\Wiset\Wiset_Aivideo_Genetator\backend\com)
+2026-03-16 10:00:00.636 DEBUG 6924 --- [main] com.comic.ComicApplication               : Running with Spring Boot v2.7.18, Spring v5.3.31
+2026-03-16 10:00:00.636  INFO 6924 --- [main] com.comic.ComicApplication               : No active profile set, falling back to 1 default profile: "default"
+2026-03-16 10:00:01.367  INFO 6924 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port(s): 8080 (http)
+2026-03-16 10:00:01.371  INFO 6924 --- [main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-03-16 10:00:01.372  INFO 6924 --- [main] org.apache.catalina.core.StandardEngine  : Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-03-16 10:00:01.461  INFO 6924 --- [main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-03-16 10:00:01.462  INFO 6924 --- [main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 805 ms
+2026-03-16 10:00:01.718  INFO 6924 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-03-16 10:00:01.800  INFO 6924 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-03-16 10:00:01.910 DEBUG 6924 --- [main] com.comic.security.JwtFilter             : Filter 'jwtFilter' configured for use
+2026-03-16 10:00:02.218  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:00:02.218  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : 🤖 文本生成服务配置
+2026-03-16 10:00:02.218  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:00:02.218  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: glm
+2026-03-16 10:00:02.218  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 GLM 进行文本生成（剧本、对话等）
+2026-03-16 10:00:02.329  INFO 6924 --- [main] com.comic.service.job.JobQueueService    : 任务队列已启动，工作线程数: 3
+2026-03-16 10:00:02.350  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:00:02.351  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : 🎨 图片生成服务配置
+2026-03-16 10:00:02.351  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:00:02.351  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedream
+2026-03-16 10:00:02.351  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedream 进行图片生成（角色立绘、分镜图等）
+2026-03-16 10:00:02.351  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:00:02.351  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : 🎬 视频生成服务配置
+2026-03-16 10:00:02.351  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:00:02.351  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedance
+2026-03-16 10:00:02.351  INFO 6924 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedance 进行视频生成（分镜视频等）
+2026-03-16 10:00:02.408  INFO 6924 --- [main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@69cd7630, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@7e8279e5, org.springframework.security.web.context.SecurityContextPersistenceFilter@3d53e6f7, org.springframework.security.web.header.HeaderWriterFilter@38d80d65, org.springframework.web.filter.CorsFilter@2b53840a, org.springframework.security.web.authentication.logout.LogoutFilter@4aeb0e2b, com.comic.security.JwtFilter@5a0bef24, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@3ece79fe, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@6b4125ed, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@3caafa67, org.springframework.security.web.session.SessionManagementFilter@122635ef, org.springframework.security.web.access.ExceptionTranslationFilter@800d065, org.springframework.security.web.access.intercept.AuthorizationFilter@64763e49]
+2026-03-16 10:00:02.639  INFO 6924 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
+2026-03-16 10:00:02.645  INFO 6924 --- [main] com.comic.ComicApplication               : Started ComicApplication in 2.228 seconds (JVM running for 2.492)
+2026-03-16 10:08:19.653  INFO 6924 --- [http-nio-0.0.0.0-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-03-16 10:08:19.653  INFO 6924 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-03-16 10:08:19.654  INFO 6924 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms
+2026-03-16 10:08:19.832  INFO 6924 --- [http-nio-0.0.0.0-8080-exec-1] com.comic.ai.text.GlmTextService         : GLM 文本生成: 并发槽位 4/0
+2026-03-16 10:08:52.997  INFO 6924 --- [http-nio-0.0.0.0-8080-exec-1] com.comic.ai.text.GlmTextService         : GLM 文本生成完成: # 《暗影之城》 (Shadow City)
+
+**一句话梗概**: 在一个规则待完善的末世城市，一群幸存者为了寻找失落的宝藏，揭开了一场关于恐惧与救赎的惊悚冒险。
+
+**类型**: 恐怖 | **主
+2026-03-16 10:08:52.999  INFO 6924 --- [http-nio-0.0.0.0-8080-exec-1] com.comic.service.script.ScriptService   : 剧本大纲生成完成: projectId=PROJ-0d3a545c
+2026-03-16 10:41:19.922  INFO 6924 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-03-16 10:41:19.928  INFO 6924 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-03-16 10:41:23.067  INFO 21604 --- [main] com.comic.ComicApplication               : Starting ComicApplication using Java 1.8.0_361 on C0cc with PID 21604 (D:\Wiset\Wiset_Aivideo_Genetator\backend\com\comic\target\classes started by 16602 in D:\Wiset\Wiset_Aivideo_Genetator\backend\com)
+2026-03-16 10:41:23.068 DEBUG 21604 --- [main] com.comic.ComicApplication               : Running with Spring Boot v2.7.18, Spring v5.3.31
+2026-03-16 10:41:23.069  INFO 21604 --- [main] com.comic.ComicApplication               : No active profile set, falling back to 1 default profile: "default"
+2026-03-16 10:41:23.991  INFO 21604 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port(s): 8080 (http)
+2026-03-16 10:41:23.996  INFO 21604 --- [main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-03-16 10:41:23.996  INFO 21604 --- [main] org.apache.catalina.core.StandardEngine  : Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-03-16 10:41:24.080  INFO 21604 --- [main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-03-16 10:41:24.080  INFO 21604 --- [main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 986 ms
+2026-03-16 10:41:24.351  INFO 21604 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-03-16 10:41:24.433  INFO 21604 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-03-16 10:41:24.540 DEBUG 21604 --- [main] com.comic.security.JwtFilter             : Filter 'jwtFilter' configured for use
+2026-03-16 10:41:24.838  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:41:24.839  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : 🤖 文本生成服务配置
+2026-03-16 10:41:24.839  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:41:24.839  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: glm
+2026-03-16 10:41:24.839  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 GLM 进行文本生成（剧本、对话等）
+2026-03-16 10:41:24.946  INFO 21604 --- [main] com.comic.service.job.JobQueueService    : 任务队列已启动，工作线程数: 3
+2026-03-16 10:41:24.964  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:41:24.964  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : 🎨 图片生成服务配置
+2026-03-16 10:41:24.964  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:41:24.964  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedream
+2026-03-16 10:41:24.964  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedream 进行图片生成（角色立绘、分镜图等）
+2026-03-16 10:41:24.965  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:41:24.965  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : 🎬 视频生成服务配置
+2026-03-16 10:41:24.965  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 10:41:24.965  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedance
+2026-03-16 10:41:24.965  INFO 21604 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedance 进行视频生成（分镜视频等）
+2026-03-16 10:41:25.011  INFO 21604 --- [main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@552cede7, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@1b7f06c7, org.springframework.security.web.context.SecurityContextPersistenceFilter@718fd7c1, org.springframework.security.web.header.HeaderWriterFilter@1859ffda, org.springframework.web.filter.CorsFilter@151732fb, org.springframework.security.web.authentication.logout.LogoutFilter@44286963, com.comic.security.JwtFilter@4b4ee511, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@4f59a516, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@61cda923, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@729c8063, org.springframework.security.web.session.SessionManagementFilter@1f736d00, org.springframework.security.web.access.ExceptionTranslationFilter@e9474f, org.springframework.security.web.access.intercept.AuthorizationFilter@5c6a5192]
+2026-03-16 10:41:25.251  INFO 21604 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
+2026-03-16 10:41:25.256  INFO 21604 --- [main] com.comic.ComicApplication               : Started ComicApplication in 2.405 seconds (JVM running for 2.649)
+2026-03-16 10:41:38.599  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-03-16 10:41:38.599  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-03-16 10:41:38.599  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms
+2026-03-16 10:41:38.823  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-1] com.comic.service.script.ScriptService   : systemPrompt: 你是一位专精于短剧和微电影的专业编剧。
+你的任务是根据用户的核心创意和约束条件，创建一个引人入胜的**中文剧本大纲**。
+
+**核心原则：剧本大纲只在章节层面规划，不细化到每集**
+
+## 剧集规模要求
+
+本剧为 **2 集**，需要规划 **1 个章节**，
+每个章节包含 **4 集**。
+
+### 角色数量要求：10-13 个角色
+
+**角色分级与描述重点：**
+
+**A. 核心角色（3-5人）- 需要详细小传**
+- **主角团队**（2-3人）：故事的绝对核心
+- **核心反派**（1-2人）：与主角对抗的主要力量
+描述要求（每个角色80-120字）
+
+**B. 重要配角（8-12人）- 简单描述**
+- 导师/盟友/中立角色等
+描述要求（每个角色20-40字）
+
+**C. 其他角色（剩余数量）- 一笔带过**
+- 群演、背景角色、一次性角色等
+描述要求（每个角色5-10字）
+
+### 物品数量要求：8-10 个关键物品
+
+**物品分级与描述：**
+
+**A. 核心物品（3-5个）- 推动主线**
+描述要求（每个物品30-50字）
+
+**B. 辅助物品（5-8个）- 特定章节使用**
+描述要求（每个物品15-25字）
+
+**C. 世界物品（剩余数量）- 丰富设定**
+描述要求（每个物品10-15字）
+
+## 章节结构与节奏要求
+
+### 核心原则：每章包含2-5集，描述这几集的整体故事
+
+### 节奏规律（必须严格遵循）
+
+1. **小高潮**：每3-5集设置一次小高潮
+2. **大转折**：每10-15集设置一次大转折
+
+## 输出格式要求 (必须严格遵守 Markdown 格式)
+
+# 剧名 (Title)
+**一句话梗概**: [一句话总结故事核心]
+**类型**: [恐怖] | **主题**: [主题] | **背景**: [故事背景] | **视觉风格**: [Visual Style]
+
+----
+
+## 主要人物小传
+
+### 核心角色（详细小传，80-120字/人）
+* **[姓名]**: [角色定位] - [年龄] [外貌特征]。性格：[性格特点]。背景：[重要经历]。
+
+### 重要配角（简单描述，20-40字/人）
+* **[姓名]**: [角色定位和作用，简短描述]
+
+### 其他角色（一笔带过，5-10字/人）
+* **[姓名]**: [身份或作用]
+
+----
+
+## 关键物品设定
+
+### 核心物品（30-50字/个）
+* **[物品名称]**: [物品描述、功能、象征意义]
+
+### 辅助物品（15-25字/个）
+* **[物品名称]**: [物品描述和出现时机]
+
+### 世界物品（10-15字/个）
+* **[物品名称]**: [简要描述]
+
+----
+
+## 剧集结构规划（共 2 集，1 章）
+
+### 章节格式标准（每章100-150字）
+
+#### 第X章：章节名称（第A-B集）
+
+**涉及角色**：[本章主要角色，3-5人]
+
+**关键物品**：[本章重要物品，2-3个]
+
+**章节剧情**（100-150字）：
+[这几集的整体故事描述，包含起承转合]
+
+- [第A集]：[发生了什么]
+- [第A+1集]：[情节推进]
+- [第B集]：[本章高潮/转折]
+
+**关键节点**：[标注：小高潮 或 大转折]
+
+2026-03-16 10:41:38.826  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-1] com.comic.service.script.ScriptService   : userPrompt: 核心创意: 1
+类型: 恐怖
+背景: 1. 世界规则待完善
+
+预估集数: 2
+单集时长: 0 分钟
+视觉风格: REAL
+
+2026-03-16 10:41:38.826  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-1] com.comic.ai.text.GlmTextService         : GLM 文本生成: 并发槽位 4/0
+2026-03-16 10:42:10.237  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-1] com.comic.ai.text.GlmTextService         : GLM 文本生成完成: # 《暗影规则》 (Shadow Rules)
+
+**一句话梗概**: 在一个世界规则待完善的世界里，一群探险者揭开了一个古老的诅咒，揭开的过程中，他们必须面对自己的恐惧和世界的真相。
+
+**类型**
+2026-03-16 10:42:10.237  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-1] com.comic.service.script.ScriptService   : 剧本大纲生成完成: projectId=PROJ-0d3a545c
+2026-03-16 10:59:41.660  WARN 21604 --- [http-nio-0.0.0.0-8080-exec-10] c.c.exception.GlobalExceptionHandler     : 运行时异常: 用户名或密码错误
+2026-03-16 10:59:53.466  WARN 21604 --- [http-nio-0.0.0.0-8080-exec-3] c.c.exception.GlobalExceptionHandler     : 运行时异常: 用户名或密码错误
+2026-03-16 11:00:06.453  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-9] com.comic.service.auth.AuthService       : 新用户注册成功: test
+2026-03-16 11:00:59.415  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-2] com.comic.service.auth.AuthService       : 用户登录成功: test
+2026-03-16 11:01:37.528  WARN 21604 --- [http-nio-0.0.0.0-8080-exec-4] c.c.exception.GlobalExceptionHandler     : 运行时异常: Required request body is missing: public com.comic.common.Result<java.lang.Void> com.comic.controller.ProjectController.generateEpisodes(java.lang.String,java.util.Map<java.lang.String, java.lang.Object>)
+2026-03-16 11:02:11.306  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-3] c.c.service.pipeline.PipelineService     : 项目已创建: projectId=PROJ-c2241c6e, userId=2
+2026-03-16 11:02:11.323  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-9] com.comic.service.script.ScriptService   : systemPrompt: 你是一位专精于短剧和微电影的专业编剧。
+你的任务是根据用户的核心创意和约束条件，创建一个引人入胜的**中文剧本大纲**。
+
+**核心原则：剧本大纲只在章节层面规划，不细化到每集**
+
+## 剧集规模要求
+
+本剧为 **1 集**，需要规划 **1 个章节**，
+每个章节包含 **4 集**。
+
+### 角色数量要求：10-13 个角色
+
+**角色分级与描述重点：**
+
+**A. 核心角色（3-5人）- 需要详细小传**
+- **主角团队**（2-3人）：故事的绝对核心
+- **核心反派**（1-2人）：与主角对抗的主要力量
+描述要求（每个角色80-120字）
+
+**B. 重要配角（8-12人）- 简单描述**
+- 导师/盟友/中立角色等
+描述要求（每个角色20-40字）
+
+**C. 其他角色（剩余数量）- 一笔带过**
+- 群演、背景角色、一次性角色等
+描述要求（每个角色5-10字）
+
+### 物品数量要求：8-10 个关键物品
+
+**物品分级与描述：**
+
+**A. 核心物品（3-5个）- 推动主线**
+描述要求（每个物品30-50字）
+
+**B. 辅助物品（5-8个）- 特定章节使用**
+描述要求（每个物品15-25字）
+
+**C. 世界物品（剩余数量）- 丰富设定**
+描述要求（每个物品10-15字）
+
+## 章节结构与节奏要求
+
+### 核心原则：每章包含2-5集，描述这几集的整体故事
+
+### 节奏规律（必须严格遵循）
+
+1. **小高潮**：每3-5集设置一次小高潮
+2. **大转折**：每10-15集设置一次大转折
+
+## 输出格式要求 (必须严格遵守 Markdown 格式)
+
+# 剧名 (Title)
+**一句话梗概**: [一句话总结故事核心]
+**类型**: [2d-anime] | **主题**: [主题] | **背景**: [故事背景] | **视觉风格**: [Visual Style]
+
+----
+
+## 主要人物小传
+
+### 核心角色（详细小传，80-120字/人）
+* **[姓名]**: [角色定位] - [年龄] [外貌特征]。性格：[性格特点]。背景：[重要经历]。
+
+### 重要配角（简单描述，20-40字/人）
+* **[姓名]**: [角色定位和作用，简短描述]
+
+### 其他角色（一笔带过，5-10字/人）
+* **[姓名]**: [身份或作用]
+
+----
+
+## 关键物品设定
+
+### 核心物品（30-50字/个）
+* **[物品名称]**: [物品描述、功能、象征意义]
+
+### 辅助物品（15-25字/个）
+* **[物品名称]**: [物品描述和出现时机]
+
+### 世界物品（10-15字/个）
+* **[物品名称]**: [简要描述]
+
+----
+
+## 剧集结构规划（共 1 集，1 章）
+
+### 章节格式标准（每章100-150字）
+
+#### 第X章：章节名称（第A-B集）
+
+**涉及角色**：[本章主要角色，3-5人]
+
+**关键物品**：[本章重要物品，2-3个]
+
+**章节剧情**（100-150字）：
+[这几集的整体故事描述，包含起承转合]
+
+- [第A集]：[发生了什么]
+- [第A+1集]：[情节推进]
+- [第B集]：[本章高潮/转折]
+
+**关键节点**：[标注：小高潮 或 大转折]
+
+2026-03-16 11:02:11.323  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-9] com.comic.service.script.ScriptService   : userPrompt: 核心创意: 小红帽穿越狼人杀世界
+类型: 2d-anime
+背景: 1. 世界规则待完善
+
+预估集数: 1
+单集时长: 0 分钟
+视觉风格: REAL
+
+2026-03-16 11:02:11.323  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-9] com.comic.ai.text.GlmTextService         : GLM 文本生成: 并发槽位 4/0
+2026-03-16 11:02:45.664  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-9] com.comic.ai.text.GlmTextService         : GLM 文本生成完成: # 《小红帽的狼人杀奇遇》 (Red Riding Hood's Werewolf Mystery)
+
+**一句话梗概**: 小红帽意外穿越到狼人杀世界，与一群玩家共同经历一场充满悬疑与冒险的游戏。
+
+2026-03-16 11:02:45.665  INFO 21604 --- [http-nio-0.0.0.0-8080-exec-9] com.comic.service.script.ScriptService   : 剧本大纲生成完成: projectId=PROJ-c2241c6e
+2026-03-16 11:40:50.581  INFO 21604 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-03-16 11:40:50.587  INFO 21604 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-03-16 11:41:00.087  INFO 10232 --- [main] com.comic.ComicApplication               : Starting ComicApplication using Java 1.8.0_361 on C0cc with PID 10232 (D:\Wiset\Wiset_Aivideo_Genetator\backend\com\comic\target\classes started by 16602 in D:\Wiset\Wiset_Aivideo_Genetator\backend\com)
+2026-03-16 11:41:00.092 DEBUG 10232 --- [main] com.comic.ComicApplication               : Running with Spring Boot v2.7.18, Spring v5.3.31
+2026-03-16 11:41:00.092  INFO 10232 --- [main] com.comic.ComicApplication               : No active profile set, falling back to 1 default profile: "default"
+2026-03-16 11:41:01.024  INFO 10232 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port(s): 8080 (http)
+2026-03-16 11:41:01.029  INFO 10232 --- [main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-03-16 11:41:01.029  INFO 10232 --- [main] org.apache.catalina.core.StandardEngine  : Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-03-16 11:41:01.112  INFO 10232 --- [main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-03-16 11:41:01.112  INFO 10232 --- [main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 999 ms
+2026-03-16 11:41:01.385  INFO 10232 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-03-16 11:41:01.473  INFO 10232 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-03-16 11:41:01.587 DEBUG 10232 --- [main] com.comic.security.JwtFilter             : Filter 'jwtFilter' configured for use
+2026-03-16 11:41:01.895  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:41:01.895  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : 🤖 文本生成服务配置
+2026-03-16 11:41:01.895  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:41:01.895  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: glm
+2026-03-16 11:41:01.895  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 GLM 进行文本生成（剧本、对话等）
+2026-03-16 11:41:02.004  INFO 10232 --- [main] com.comic.service.job.JobQueueService    : 任务队列已启动，工作线程数: 3
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : 🎨 图片生成服务配置
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedream
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedream 进行图片生成（角色立绘、分镜图等）
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : 🎬 视频生成服务配置
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedance
+2026-03-16 11:41:02.025  INFO 10232 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedance 进行视频生成（分镜视频等）
+2026-03-16 11:41:02.071  INFO 10232 --- [main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@5c6a5192, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@1c8f6c66, org.springframework.security.web.context.SecurityContextPersistenceFilter@1f736d00, org.springframework.security.web.header.HeaderWriterFilter@e9474f, org.springframework.web.filter.CorsFilter@552cede7, org.springframework.security.web.authentication.logout.LogoutFilter@6048e26a, com.comic.security.JwtFilter@7a45d714, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@718fd7c1, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@3c770db4, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@1b7f06c7, org.springframework.security.web.session.SessionManagementFilter@7f0b93b4, org.springframework.security.web.access.ExceptionTranslationFilter@12d2ddde, org.springframework.security.web.access.intercept.AuthorizationFilter@4a9a878]
+2026-03-16 11:41:02.301  INFO 10232 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
+2026-03-16 11:41:02.306  INFO 10232 --- [main] com.comic.ComicApplication               : Started ComicApplication in 2.438 seconds (JVM running for 2.687)
+2026-03-16 11:41:15.492  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-03-16 11:41:15.492  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-03-16 11:41:15.492  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms
+2026-03-16 11:41:15.682  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-6] c.c.service.pipeline.PipelineService     : 项目已创建: projectId=PROJ-a69cc6c9, userId=2
+2026-03-16 11:41:15.741  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-3] com.comic.service.script.ScriptService   : systemPrompt: 你是一位专精于短剧和微电影的专业编剧。
+你的任务是根据用户的核心创意和约束条件，创作一部**单集完整剧本**。
+
+**核心原则：这是一部单集作品，请直接创作完整的单集剧本，无需章节规划**
+
+## 角色数量要求：10-13 个角色
+
+**角色分级与描述重点：**
+
+**A. 核心角色（2-4人）- 需要详细小传**
+- **主角团队**（1-2人）：故事的绝对核心
+- **核心反派/对手**（0-1人）：与主角对抗的力量
+描述要求（每个角色60-100字）
+
+**B. 重要配角（2-6人）- 简单描述**
+- 导师/盟友/中立角色等
+描述要求（每个角色15-30字）
+
+**C. 其他角色（剩余数量）- 一笔带过**
+- 群演、背景角色等
+描述要求（每个角色5-10字）
+
+### 物品数量要求：8-10 个关键物品
+
+**物品分级与描述：**
+
+**A. 核心物品（2-4个）- 推动剧情**
+描述要求（每个物品20-40字）
+
+**B. 辅助物品（3-6个）- 场景使用**
+描述要求（每个物品10-20字）
+
+**C. 世界物品（剩余数量）- 丰富设定**
+描述要求（每个物品8-15字）
+
+## 单集剧本结构要求
+
+### 核心原则：创作一个完整的单集故事，包含起承转合
+
+### 节奏要求（必须严格遵循）
+
+1. **开场**（15%）：快速建立场景、角色和冲突
+2. **发展**（50%）：冲突升级，角色面临挑战
+3. **高潮**（25%）：冲突达到顶点，做出关键选择
+4. **结尾**（10%）：解决冲突，给出结局或悬念
+
+## 输出格式要求 (必须严格遵守 Markdown 格式)
+
+# 剧名 (Title)
+**一句话梗概**: [一句话总结故事核心]
+**类型**: [2d-anime] | **主题**: [主题] | **背景**: [故事背景] | **视觉风格**: [Visual Style]
+
+----
+
+## 主要人物小传
+
+### 核心角色（详细小传，60-100字/人）
+* **[姓名]**: [角色定位] - [年龄] [外貌特征]。性格：[性格特点]。背景：[重要经历]。
+
+### 重要配角（简单描述，15-30字/人）
+* **[姓名]**: [角色定位和作用，简短描述]
+
+### 其他角色（一笔带过，5-10字/人）
+* **[姓名]**: [身份或作用]
+
+----
+
+## 关键物品设定
+
+### 核心物品（20-40字/个）
+* **[物品名称]**: [物品描述、功能、象征意义]
+
+### 辅助物品（10-20字/个）
+* **[物品名称]**: [物品描述和出现时机]
+
+### 世界物品（8-15字/个）
+* **[物品名称]**: [简要描述]
+
+----
+
+## 单集剧本大纲
+
+**故事时长**：单集完整故事
+
+**核心冲突**：[本集的核心矛盾是什么]
+
+**故事走向**（150-200字）：
+[完整描述这个单集故事，包含起承转合]
+
+**关键场景**：
+- [开场场景]：[发生了什么，建立了什么]
+- [转折场景]：[什么事件改变了局势]
+- [高潮场景]：[最终的对决或选择]
+- [结局场景]：[如何结束，留下什么]
+
+**情感基调**：[整体的情感氛围]
+**主题表达**：[这个单集想要表达什么]
+
+2026-03-16 11:41:15.741  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-3] com.comic.service.script.ScriptService   : userPrompt: 核心创意: 小红帽穿越狼人杀世界
+类型: 2d-anime
+背景: 1. 世界规则待完善
+
+预估集数: 1
+单集时长: 0 分钟
+视觉风格: REAL
+
+2026-03-16 11:41:15.741  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-3] com.comic.ai.text.GlmTextService         : GLM 文本生成: 并发槽位 4/0
+2026-03-16 11:41:56.129  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-3] com.comic.ai.text.GlmTextService         : GLM 文本生成完成: # 《小红帽的狼人杀之夜》 (Little Red Riding Hood's Werewolf Night)
+
+**一句话梗概**: 小红帽意外穿越到狼人杀世界，被迫参与一场生死游戏。
+
+**类型*
+2026-03-16 11:41:56.129  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-3] com.comic.service.script.ScriptService   : 剧本大纲生成完成: projectId=PROJ-a69cc6c9
+2026-03-16 11:44:42.697  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-4] c.c.service.pipeline.PipelineService     : 项目已创建: projectId=PROJ-c7d06b5d, userId=2
+2026-03-16 11:44:42.712  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-2] com.comic.service.script.ScriptService   : systemPrompt: 你是一位专精于短剧和微电影的专业编剧。
+你的任务是根据用户的核心创意和约束条件，创建一个引人入胜的**中文剧本大纲**。
+
+**核心原则：剧本大纲只在章节层面规划，不细化到每集**
+
+## 剧集规模要求
+
+本剧为 **2 集**，需要规划 **2 个章节**。
+请根据总集数合理分配每章包含的集数（平均约1集/章），最后一章可以适当调整。
+
+### 角色数量要求：10-13 个角色
+
+**角色分级与描述重点：**
+
+**A. 核心角色（3-5人）- 需要详细小传**
+- **主角团队**（2-3人）：故事的绝对核心
+- **核心反派**（1-2人）：与主角对抗的主要力量
+描述要求（每个角色80-120字）
+
+**B. 重要配角（8-12人）- 简单描述**
+- 导师/盟友/中立角色等
+描述要求（每个角色20-40字）
+
+**C. 其他角色（剩余数量）- 一笔带过**
+- 群演、背景角色、一次性角色等
+描述要求（每个角色5-10字）
+
+### 物品数量要求：8-10 个关键物品
+
+**物品分级与描述：**
+
+**A. 核心物品（3-5个）- 推动主线**
+描述要求（每个物品30-50字）
+
+**B. 辅助物品（5-8个）- 特定章节使用**
+描述要求（每个物品15-25字）
+
+**C. 世界物品（剩余数量）- 丰富设定**
+描述要求（每个物品10-15字）
+
+## 章节结构与节奏要求
+
+### 核心原则：每个章节描述包含的集数的整体故事
+
+### 节奏规律（必须严格遵循）
+
+1. **小高潮**：每3-5集设置一次小高潮
+2. **大转折**：每10-15集设置一次大转折
+
+## 输出格式要求 (必须严格遵守 Markdown 格式)
+
+# 剧名 (Title)
+**一句话梗概**: [一句话总结故事核心]
+**类型**: [2d-anime] | **主题**: [主题] | **背景**: [故事背景] | **视觉风格**: [Visual Style]
+
+----
+
+## 主要人物小传
+
+### 核心角色（详细小传，80-120字/人）
+* **[姓名]**: [角色定位] - [年龄] [外貌特征]。性格：[性格特点]。背景：[重要经历]。
+
+### 重要配角（简单描述，20-40字/人）
+* **[姓名]**: [角色定位和作用，简短描述]
+
+### 其他角色（一笔带过，5-10字/人）
+* **[姓名]**: [身份或作用]
+
+----
+
+## 关键物品设定
+
+### 核心物品（30-50字/个）
+* **[物品名称]**: [物品描述、功能、象征意义]
+
+### 辅助物品（15-25字/个）
+* **[物品名称]**: [物品描述和出现时机]
+
+### 世界物品（10-15字/个）
+* **[物品名称]**: [简要描述]
+
+----
+
+## 剧集结构规划（共 2 集，2 章）
+
+### 章节格式标准（每章100-150字）
+
+#### 第X章：章节名称（第A-B集）
+
+**涉及角色**：[本章主要角色，3-5人]
+
+**关键物品**：[本章重要物品，2-3个]
+
+**章节剧情**（100-150字）：
+[这几集的整体故事描述，包含起承转合]
+
+- [第A集]：[发生了什么]
+- [第A+1集]：[情节推进]
+- [第B集]：[本章高潮/转折]
+
+**关键节点**：[标注：小高潮 或 大转折]
+
+2026-03-16 11:44:42.712  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-2] com.comic.service.script.ScriptService   : userPrompt: 核心创意: 小红帽穿越狼人杀世界
+类型: 2d-anime
+背景: 1. 世界规则待完善
+
+预估集数: 2
+单集时长: 0 分钟
+视觉风格: REAL
+
+2026-03-16 11:44:42.712  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-2] com.comic.ai.text.GlmTextService         : GLM 文本生成: 并发槽位 4/0
+2026-03-16 11:45:12.453  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-2] com.comic.ai.text.GlmTextService         : GLM 文本生成完成: # 《小红帽的狼人杀冒险》 (Red Riding Hood's Werewolf Adventure)
+
+**一句话梗概**: 小红帽意外穿越到狼人杀世界，凭借智慧和勇气，她必须揭露隐藏的狼人，同时
+2026-03-16 11:45:12.453  INFO 10232 --- [http-nio-0.0.0.0-8080-exec-2] com.comic.service.script.ScriptService   : 剧本大纲生成完成: projectId=PROJ-c7d06b5d
+2026-03-16 11:53:01.164  INFO 30300 --- [main] com.comic.ComicApplication               : Starting ComicApplication using Java 1.8.0_361 on C0cc with PID 30300 (D:\Wiset\Wiset_Aivideo_Genetator\backend\com\comic\target\classes started by 16602 in D:\Wiset\Wiset_Aivideo_Genetator\backend\com)
+2026-03-16 11:53:01.165 DEBUG 30300 --- [main] com.comic.ComicApplication               : Running with Spring Boot v2.7.18, Spring v5.3.31
+2026-03-16 11:53:01.165  INFO 30300 --- [main] com.comic.ComicApplication               : No active profile set, falling back to 1 default profile: "default"
+2026-03-16 11:53:02.121  INFO 30300 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port(s): 8080 (http)
+2026-03-16 11:53:02.126  INFO 30300 --- [main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-03-16 11:53:02.126  INFO 30300 --- [main] org.apache.catalina.core.StandardEngine  : Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-03-16 11:53:02.211  INFO 30300 --- [main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-03-16 11:53:02.211  INFO 30300 --- [main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1017 ms
+2026-03-16 11:53:02.496  INFO 30300 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-03-16 11:53:02.580  INFO 30300 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-03-16 11:53:02.693 DEBUG 30300 --- [main] com.comic.security.JwtFilter             : Filter 'jwtFilter' configured for use
+2026-03-16 11:53:03.006  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:03.006  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : 🤖 文本生成服务配置
+2026-03-16 11:53:03.006  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:03.006  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: glm
+2026-03-16 11:53:03.006  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 GLM 进行文本生成（剧本、对话等）
+2026-03-16 11:53:03.114  INFO 30300 --- [main] com.comic.service.job.JobQueueService    : 任务队列已启动，工作线程数: 3
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : 🎨 图片生成服务配置
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedream
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedream 进行图片生成（角色立绘、分镜图等）
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : 🎬 视频生成服务配置
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedance
+2026-03-16 11:53:03.135  INFO 30300 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedance 进行视频生成（分镜视频等）
+2026-03-16 11:53:03.188  INFO 30300 --- [main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@6ad179b4, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@2efd2f21, org.springframework.security.web.context.SecurityContextPersistenceFilter@2213639b, org.springframework.security.web.header.HeaderWriterFilter@4f59a516, org.springframework.web.filter.CorsFilter@59c500f7, org.springframework.security.web.authentication.logout.LogoutFilter@7c90b7b7, com.comic.security.JwtFilter@3ebe4ccc, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@6f25bf88, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@317890ea, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@316cda31, org.springframework.security.web.session.SessionManagementFilter@5382184b, org.springframework.security.web.access.ExceptionTranslationFilter@718fd7c1, org.springframework.security.web.access.intercept.AuthorizationFilter@776015fc]
+2026-03-16 11:53:03.408  WARN 30300 --- [main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Failed to start bean 'webServerStartStop'; nested exception is org.springframework.boot.web.server.PortInUseException: Port 8080 is already in use
+2026-03-16 11:53:03.410  INFO 30300 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-03-16 11:53:03.412  INFO 30300 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-03-16 11:53:03.415  INFO 30300 --- [main] o.apache.catalina.core.StandardService   : Stopping service [Tomcat]
+2026-03-16 11:53:03.420  INFO 30300 --- [main] ConditionEvaluationReportLoggingListener : 
+
+Error starting ApplicationContext. To display the conditions report re-run your application with 'debug' enabled.
+2026-03-16 11:53:03.434 ERROR 30300 --- [main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Web server failed to start. Port 8080 was already in use.
+
+Action:
+
+Identify and stop the process that's listening on port 8080 or configure this application to listen on another port.
+
+2026-03-16 11:53:12.272  INFO 10232 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-03-16 11:53:12.281  INFO 10232 --- [SpringApplicationShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-03-16 11:53:13.534  INFO 29724 --- [main] com.comic.ComicApplication               : Starting ComicApplication using Java 1.8.0_361 on C0cc with PID 29724 (D:\Wiset\Wiset_Aivideo_Genetator\backend\com\comic\target\classes started by 16602 in D:\Wiset\Wiset_Aivideo_Genetator\backend\com)
+2026-03-16 11:53:13.534 DEBUG 29724 --- [main] com.comic.ComicApplication               : Running with Spring Boot v2.7.18, Spring v5.3.31
+2026-03-16 11:53:13.534  INFO 29724 --- [main] com.comic.ComicApplication               : No active profile set, falling back to 1 default profile: "default"
+2026-03-16 11:53:14.487  INFO 29724 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port(s): 8080 (http)
+2026-03-16 11:53:14.492  INFO 29724 --- [main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-03-16 11:53:14.492  INFO 29724 --- [main] org.apache.catalina.core.StandardEngine  : Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-03-16 11:53:14.574  INFO 29724 --- [main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-03-16 11:53:14.574  INFO 29724 --- [main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1014 ms
+2026-03-16 11:53:14.842  INFO 29724 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-03-16 11:53:14.920  INFO 29724 --- [main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-03-16 11:53:15.031 DEBUG 29724 --- [main] com.comic.security.JwtFilter             : Filter 'jwtFilter' configured for use
+2026-03-16 11:53:15.345  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:15.345  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : 🤖 文本生成服务配置
+2026-03-16 11:53:15.345  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:15.345  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: glm
+2026-03-16 11:53:15.345  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 GLM 进行文本生成（剧本、对话等）
+2026-03-16 11:53:15.462  INFO 29724 --- [main] com.comic.service.job.JobQueueService    : 任务队列已启动，工作线程数: 3
+2026-03-16 11:53:15.483  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:15.483  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : 🎨 图片生成服务配置
+2026-03-16 11:53:15.483  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:15.483  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedream
+2026-03-16 11:53:15.483  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedream 进行图片生成（角色立绘、分镜图等）
+2026-03-16 11:53:15.483  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:15.483  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : 🎬 视频生成服务配置
+2026-03-16 11:53:15.483  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : =================================================
+2026-03-16 11:53:15.486  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : 提供商: seedance
+2026-03-16 11:53:15.486  INFO 29724 --- [main] com.comic.config.AiServiceConfiguration  : ✅ 使用 Seedance 进行视频生成（分镜视频等）
+2026-03-16 11:53:15.535  INFO 29724 --- [main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@7f42e06e, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@6ad179b4, org.springframework.security.web.context.SecurityContextPersistenceFilter@77cb452c, org.springframework.security.web.header.HeaderWriterFilter@4bc6da03, org.springframework.web.filter.CorsFilter@2efd2f21, org.springframework.security.web.authentication.logout.LogoutFilter@6f31df32, com.comic.security.JwtFilter@3ebe4ccc, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@2c26ba07, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@202898d7, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@59c500f7, org.springframework.security.web.session.SessionManagementFilter@5f0a2638, org.springframework.security.web.access.ExceptionTranslationFilter@523a7801, org.springframework.security.web.access.intercept.AuthorizationFilter@7e7743ec]
+2026-03-16 11:53:15.778  INFO 29724 --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
+2026-03-16 11:53:15.783  INFO 29724 --- [main] com.comic.ComicApplication               : Started ComicApplication in 2.515 seconds (JVM running for 2.758)
+2026-03-16 11:54:14.340  INFO 29724 --- [http-nio-0.0.0.0-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-03-16 11:54:14.340  INFO 29724 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-03-16 11:54:14.341  INFO 29724 --- [http-nio-0.0.0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+2026-03-16 11:54:14.533  INFO 29724 --- [http-nio-0.0.0.0-8080-exec-2] c.c.service.pipeline.PipelineService     : 项目已创建: projectId=PROJ-237b6661, userId=2
+2026-03-16 11:54:14.591  INFO 29724 --- [http-nio-0.0.0.0-8080-exec-4] com.comic.service.script.ScriptService   : systemPrompt: 你是一位专精于短剧和微电影的专业编剧。
+你的任务是根据用户的核心创意和约束条件，创建一个引人入胜的**中文剧本大纲**。
+
+**核心原则：剧本大纲只在章节层面规划，不细化到每集**
+
+## 剧集规模要求（必须严格遵守）
+
+**总集数限制**：本剧总共 **2 集**，不能多也不能少！
+**章节规划**：需要规划 **2 个章节**。
+
+**每章集数分配**：
+- 第1章：包含 1 集（第1-1集）
+- 第2章：包含 1 集（第2-2集）
+
+**重要提醒**：所有章节的集数加起来必须等于 2 集，绝对不能超出！
+
+### 角色数量要求：10-13 个角色
+
+**角色分级与描述重点：**
+
+**A. 核心角色（3-5人）- 需要详细小传**
+- **主角团队**（2-3人）：故事的绝对核心
+- **核心反派**（1-2人）：与主角对抗的主要力量
+描述要求（每个角色80-120字）
+
+**B. 重要配角（8-12人）- 简单描述**
+- 导师/盟友/中立角色等
+描述要求（每个角色20-40字）
+
+**C. 其他角色（剩余数量）- 一笔带过**
+- 群演、背景角色、一次性角色等
+描述要求（每个角色5-10字）
+
+### 物品数量要求：8-10 个关键物品
+
+**物品分级与描述：**
+
+**A. 核心物品（3-5个）- 推动主线**
+描述要求（每个物品30-50字）
+
+**B. 辅助物品（5-8个）- 特定章节使用**
+描述要求（每个物品15-25字）
+
+**C. 世界物品（剩余数量）- 丰富设定**
+描述要求（每个物品10-15字）
+
+## 章节结构与节奏要求
+
+### 核心原则：每个章节描述包含的集数的整体故事
+
+### 节奏规律（必须严格遵循）
+
+1. **小高潮**：每3-5集设置一次小高潮
+2. **大转折**：每10-15集设置一次大转折
+
+## 输出格式要求 (必须严格遵守 Markdown 格式)
+
+# 剧名 (Title)
+**一句话梗概**: [一句话总结故事核心]
+**类型**: [cyberpunk] | **主题**: [主题] | **背景**: [故事背景] | **视觉风格**: [Visual Style]
+
+----
+
+## 主要人物小传
+
+### 核心角色（详细小传，80-120字/人）
+* **[姓名]**: [角色定位] - [年龄] [外貌特征]。性格：[性格特点]。背景：[重要经历]。
+
+### 重要配角（简单描述，20-40字/人）
+* **[姓名]**: [角色定位和作用，简短描述]
+
+### 其他角色（一笔带过，5-10字/人）
+* **[姓名]**: [身份或作用]
+
+----
+
+## 关键物品设定
+
+### 核心物品（30-50字/个）
+* **[物品名称]**: [物品描述、功能、象征意义]
+
+### 辅助物品（15-25字/个）
+* **[物品名称]**: [物品描述和出现时机]
+
+### 世界物品（10-15字/个）
+* **[物品名称]**: [简要描述]
+
+----
+
+## 剧集结构规划（共 2 集，2 章）
+
+### 章节格式标准（每章100-150字）
+
+#### 第X章：章节名称（第A-B集）
+
+**涉及角色**：[本章主要角色，3-5人]
+
+**关键物品**：[本章重要物品，2-3个]
+
+**章节剧情**（100-150字）：
+[这几集的整体故事描述，包含起承转合]
+
+- [第A集]：[发生了什么]
+- [第A+1集]：[情节推进]
+- [第B集]：[本章高潮/转折]
+
+**关键节点**：[标注：小高潮 或 大转折]
+
+2026-03-16 11:54:14.591  INFO 29724 --- [http-nio-0.0.0.0-8080-exec-4] com.comic.service.script.ScriptService   : userPrompt: 核心创意:  哈利波特大战僵尸
+类型: cyberpunk
+背景: 1. 世界规则待完善
+
+预估集数: 2
+单集时长: 0 分钟
+视觉风格: REAL
+
+2026-03-16 11:54:14.591  INFO 29724 --- [http-nio-0.0.0.0-8080-exec-4] com.comic.ai.text.GlmTextService         : GLM 文本生成: 并发槽位 4/0
+2026-03-16 11:54:52.304  INFO 29724 --- [http-nio-0.0.0.0-8080-exec-4] com.comic.ai.text.GlmTextService         : GLM 文本生成完成: # 剧名：《哈城幻影》 (Harcen's Illusion)
+**一句话梗概**: 在一个科技与魔法并存的世界里，哈利波特与僵尸展开了一场充满未来科技与魔法对决的冒险。
+**类型**: cyberp
+2026-03-16 11:54:52.304  INFO 29724 --- [http-nio-0.0.0.0-8080-exec-4] com.comic.service.script.ScriptService   : 剧本大纲生成完成: projectId=PROJ-237b6661
