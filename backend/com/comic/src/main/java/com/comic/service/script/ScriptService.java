@@ -84,6 +84,9 @@ public class ScriptService {
                 "REAL" // 默认视觉风格
             );
 
+            log.info("systemPrompt: {}", systemPrompt);
+            log.info("userPrompt: {}", userPrompt);
+
             // 调用文本生成服务生成大纲
             String outlineContent = textGenerationService.generate(systemPrompt, userPrompt);
 

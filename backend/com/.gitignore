@@ -1,0 +1,22 @@
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Log files
+logs/
+*.log
+*.log.*
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+
+# Build files
+target/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
