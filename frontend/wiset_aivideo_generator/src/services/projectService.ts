@@ -5,11 +5,13 @@
 import { get, post } from './apiClient';
 import type {
   CreateProjectRequest,
+  GenerateEpisodesRequest,
   GenerateScriptResponse,
   Project,
   ReviseScriptRequest,
   ReviseScriptResponse,
-  Script
+  Script,
+  ScriptContentResponse
 } from './types/project.types';
 import type { ApiResponse } from './types/auth.types';
 
@@ -82,6 +84,28 @@ export async function generateScript(projectId: string): Promise<ApiResponse<Gen
  * @param projectId 项目ID
  * @returns 剧本内容
  */
-export async function getScript(projectId: string): Promise<ApiResponse<Script>> {
-  return get<ApiResponse<Script>>(`/api/projects/${projectId}/script`);
+export async function getScript(projectId: string): Promise<ApiResponse<ScriptContentResponse>> {
+  return get<ApiResponse<ScriptContentResponse>>(`/api/projects/${projectId}/script`);
+}
+
+/**
+ * 生成指定章节的剧集
+ * @param projectId 项目ID
+ * @param data 生成参数
+ * @returns 生成响应
+ */
+export async function generateEpisodes(
+  projectId: string,
+  data: GenerateEpisodesRequest
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/generate-episodes`, data);
+}
+
+/**
+ * 确认剧本，进入下一阶段
+ * @param projectId 项目ID
+ * @returns 确认响应
+ */
+export async function confirmScript(projectId: string): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/confirm-script`);
 }

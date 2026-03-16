@@ -15,6 +15,10 @@ const Step3page = ({ project, onComplete, onBack }: Step3pageProps) => {
     onComplete();
   };
 
+  const handleBack = () => {
+    onBack();
+  };
+
   return (
     <div className={styles.content}>
       <div className={styles.header}>
@@ -29,7 +33,7 @@ const Step3page = ({ project, onComplete, onBack }: Step3pageProps) => {
       </div>
 
       <div className={styles.buttonContainer}>
-        <button className={styles.backButton} onClick={onBack}>
+        <button className={styles.backButton} onClick={handleBack}>
           返回上一步
         </button>
         <button className={styles.confirmButton} onClick={handleNext}>
