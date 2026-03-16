@@ -34,16 +34,34 @@ export interface CreateProjectRequest {
 }
 
 /**
+ * 项目状态枚举
+ */
+export type ProjectStatus =
+  | 'DRAFT'
+  | 'SCRIPT_GENERATING'
+  | 'OUTLINE_REVIEW'
+  | 'SCRIPT_REVIEW'
+  | 'SCRIPT_CONFIRMED'
+  | 'EPISODE_GENERATING'
+  | 'COMPLETED';
+
+/**
  * 项目信息
  */
 export interface Project {
   id?: number;
-  projectId?: string; // 后端返回的项目 ID（字符串类型）
-  storyPrompt: string;
-  genre: string;
-  targetAudience: string;
-  totalEpisodes: number;
-  episodeDuration: number;
+  projectId?: string; // 项目唯一标识（UUID）
+  userId?: string; // 用户ID
+  storyPrompt: string; // 故事提示词/大纲
+  genre: string; // 类型（热血玄幻、都市异能等）
+  targetAudience: string; // 目标受众
+  totalEpisodes: number; // 总集数
+  episodeDuration: number; // 单集时长（秒）
+  status?: ProjectStatus; // 项目状态
+  scriptRevisionNote?: string; // 剧本修改意见
+  scriptOutline?: string; // 剧本大纲
+  selectedChapter?: string; // 当前选中的章节
+  episodesPerChapter?: number; // 每章集数（默认4）
   script?: Script;
   createdAt?: string;
   updatedAt?: string;
