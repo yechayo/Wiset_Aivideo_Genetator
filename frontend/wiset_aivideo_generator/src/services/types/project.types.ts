@@ -69,3 +69,39 @@ export interface GenerateScriptResponse {
   scriptId?: string;
   status?: string;
 }
+
+/**
+ * 剧集信息
+ */
+export interface Episode {
+  id?: number;
+  title: string;
+  content: string;
+  characters: string;
+  keyItems: string;
+  continuityNote?: string;
+  chapterTitle?: string;
+  episodeNum?: number;
+}
+
+/**
+ * 完整的脚本内容响应
+ */
+export interface ScriptContentResponse {
+  outline: string;
+  chapters: string[];
+  nextChapter: string | null;
+  project: Project;
+  generatedChapters: string[];
+  pendingChapters: string[];
+  episodes: Episode[];
+}
+
+/**
+ * 生成剧集请求参数
+ */
+export interface GenerateEpisodesRequest {
+  chapter: string;
+  episodeCount: number;
+  modificationSuggestion?: string;
+}

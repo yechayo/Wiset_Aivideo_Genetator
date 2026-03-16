@@ -9,7 +9,11 @@ interface Step5pageProps extends StepContentProps {
 /**
  * Step 5: 生成进度
  */
-const Step5page = ({ project: _project, onComplete: _onComplete, onBack }: Step5pageProps) => {
+const Step5page = ({ project, onBack }: Step5pageProps) => {
+  const handleBack = () => {
+    onBack();
+  };
+
   return (
     <div className={styles.content}>
       <div className={styles.header}>
@@ -21,10 +25,13 @@ const Step5page = ({ project: _project, onComplete: _onComplete, onBack }: Step5
 
       <div className={styles.emptyContent}>
         第五步内容开发中...
+        <br />
+        <br />
+        当前项目: {project?.storyPrompt || '未知'}
       </div>
 
       <div className={styles.buttonContainer}>
-        <button className={styles.backButton} onClick={onBack}>
+        <button className={styles.backButton} onClick={handleBack}>
           返回上一步
         </button>
       </div>

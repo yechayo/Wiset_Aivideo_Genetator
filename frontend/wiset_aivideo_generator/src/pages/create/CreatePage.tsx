@@ -1,110 +1,44 @@
-import { useState } from 'react';
-import styles from './CreatePage.module.less';
-import type { Project } from '../../services';
-import { CREATE_STEPS } from './constants/steps';
-import StepIndicator from './components/StepIndicator';
-import Step1Content from './steps/Step1Content';
-import Step2page from './steps/Step2page';
-import Step3page from './steps/Step3page';
-import Step4page from './steps/Step4page';
-import Step5page from './steps/Step5page';
+import { useEffect, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useCreateStore } from '../../stores/createStore';
+import { useProjectStore } from '../../stores';
 
 /**
- * 创建流程页面容器
- * 统一管理步骤状态，渲染对应的步骤内容
+ * 创建流程入口页面
+ * 重定向到当前步骤
  */
 const CreatePage = () => {
-  // 步骤状态
-  const [currentStep, setCurrentStep] = useState(1);
-  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
-  const [projectData, setProjectData] = useState<Project | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { currentStep } = useCreateStore();
+  const { currentProject } = useProjectStore();
+  const [hasRedirected, setHasRedirected] = useState(false);
 
-  // 处理步骤完成
-  const handleStepComplete = () => {
-    setCompletedSteps((prev) => [...prev, currentStep]);
-    setCurrentStep((prev) => Math.min(prev + 1, CREATE_STEPS.length));
-  };
+  useEffect(() => {
+    // 防止多次重定向
+    if (hasRedirected) return;
 
-  // 处理步骤跳转（仅可跳转到已完成的步骤）
-  const handleStepClick = (stepId: number) => {
-    if (completedSteps.includes(stepId)) {
-      setCurrentStep(stepId);
-    }
-  };
-
-  // 处理项目创建完成
-  const handleProjectCreated = (project: Project) => {
-    setProjectData(project);
-  };
-
-  // 渲染当前步骤内容
-  const renderStepContent = () => {
-    // 如果没有项目数据且不在第一步，显示第一步
-    if (!projectData && currentStep > 1) {
-      setCurrentStep(1);
-      return null;
+    // 如果已经在 /create/:step 路径上，不需要重定向
+    if (location.pathname.match(/^\/create\/\d+$/)) {
+      return;
     }
 
-    switch (currentStep) {
-      case 1:
-        return (
-          <Step1Content
-            onComplete={handleStepComplete}
-            onProjectCreated={handleProjectCreated}
-            onBack={() => {}}
-          />
-        );
-      case 2:
-        return projectData ? (
-          <Step2page
-            project={projectData}
-            onComplete={handleStepComplete}
-            onBack={() => handleStepClick(1)}
-          />
-        ) : null;
-      case 3:
-        return projectData ? (
-          <Step3page
-            project={projectData}
-            onComplete={handleStepComplete}
-            onBack={() => handleStepClick(2)}
-          />
-        ) : null;
-      case 4:
-        return projectData ? (
-          <Step4page
-            project={projectData}
-            onComplete={handleStepComplete}
-            onBack={() => handleStepClick(3)}
-          />
-        ) : null;
-      case 5:
-        return projectData ? (
-          <Step5page
-            project={projectData}
-            onComplete={() => {}}
-            onBack={() => handleStepClick(4)}
-          />
-        ) : null;
-      default:
-        return null;
+    // 计算目标步骤
+    let targetStep: number;
+    if (currentProject) {
+      // 如果有项目，从 store 中获取当前步骤
+      targetStep = currentStep;
+    } else {
+      // 没有项目，从第一步开始
+      targetStep = 1;
     }
-  };
 
-  return (
-    <div className={styles.createContainer}>
-      {/* Step 指示器 */}
-      <StepIndicator
-        steps={CREATE_STEPS}
-        currentStep={currentStep}
-        completedSteps={completedSteps}
-        onStepClick={handleStepClick}
-      />
+    setHasRedirected(true);
+    navigate(`/create/${targetStep}`, { replace: true });
+  }, [hasRedirected, currentProject, currentStep, location.pathname, navigate]);
 
-      {/* 步骤内容 */}
-      {renderStepContent()}
-    </div>
-  );
+  // 渲染空白（会立即重定向）
+  return null;
 };
 
 export default CreatePage;

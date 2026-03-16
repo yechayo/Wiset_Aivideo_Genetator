@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { Project } from '../services';
 
 interface ProjectState {
@@ -18,28 +19,35 @@ interface ProjectState {
   getProjectId: () => string | null;
 }
 
-export const useProjectStore = create<ProjectState>((set, get) => ({
-  currentProject: null,
+export const useProjectStore = create<ProjectState>()(
+  persist(
+    (set, get) => ({
+      currentProject: null,
 
-  setCurrentProject: (project) => {
-    set({ currentProject: project });
-  },
+      setCurrentProject: (project) => {
+        set({ currentProject: project });
+      },
 
-  updateCurrentProject: (updates) => {
-    const current = get().currentProject;
-    if (current) {
-      set({ currentProject: { ...current, ...updates } });
+      updateCurrentProject: (updates) => {
+        const current = get().currentProject;
+        if (current) {
+          set({ currentProject: { ...current, ...updates } });
+        }
+      },
+
+      clearCurrentProject: () => {
+        set({ currentProject: null });
+      },
+
+      getProjectId: () => {
+        const project = get().currentProject;
+        if (!project) return null;
+        // 优先使用 projectId（字符串），回退到 id（数字）
+        return project.projectId || (project.id ? String(project.id) : null);
+      },
+    }),
+    {
+      name: 'wiset-project-storage', // localStorage key
     }
-  },
-
-  clearCurrentProject: () => {
-    set({ currentProject: null });
-  },
-
-  getProjectId: () => {
-    const project = get().currentProject;
-    if (!project) return null;
-    // 优先使用 projectId（字符串），回退到 id（数字）
-    return project.projectId || (project.id ? String(project.id) : null);
-  },
-}));
+  )
+);
