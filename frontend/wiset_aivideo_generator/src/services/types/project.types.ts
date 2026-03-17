@@ -27,7 +27,8 @@ export interface Script {
  */
 export interface CreateProjectRequest {
   storyPrompt: string;
-  genre: string;
+  genre?: string;
+  visualStyle?: string;
   targetAudience: string;
   totalEpisodes: number;
   episodeDuration: number;
@@ -54,6 +55,7 @@ export interface Project {
   userId?: string; // 用户ID
   storyPrompt: string; // 故事提示词/大纲
   genre: string; // 类型（热血玄幻、都市异能等）
+  visualStyle?: string; // 画面风格（3D/REAL/ANIME）
   targetAudience: string; // 目标受众
   totalEpisodes: number; // 总集数
   episodeDuration: number; // 单集时长（秒）
@@ -146,6 +148,7 @@ export interface ProjectListItem {
   projectId: string;
   storyPrompt: string;
   genre: string;
+  visualStyle?: string;
   targetAudience: string;
   totalEpisodes: number;
   episodeDuration: number;
@@ -158,4 +161,38 @@ export interface ProjectListItem {
   completedSteps: number[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+// ================= 角色相关类型 =================
+
+/**
+ * 角色草稿（从剧本提取的角色）
+ */
+export interface CharacterDraft {
+  charId: string;
+  name: string;
+  role: string;          // 主角/反派/配角
+  personality: string;
+  appearance: string;
+  background: string;
+  confirmed: boolean;
+}
+
+/**
+ * 角色生成状态（含图片URL）
+ */
+export interface CharacterStatus {
+  charId: string;
+  name: string;
+  role: string;
+  expressionStatus: string;    // pending/generating/completed/failed
+  threeViewStatus: string;
+  expressionError: string;
+  threeViewError: string;
+  isGeneratingExpression: boolean;
+  isGeneratingThreeView: boolean;
+  standardImageUrl: string;
+  visualStyle: string;         // 3D/REAL/ANIME
+  expressionGridUrl: string;
+  threeViewGridUrl: string;
 }

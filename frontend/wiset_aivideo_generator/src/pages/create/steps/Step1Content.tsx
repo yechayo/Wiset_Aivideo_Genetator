@@ -7,13 +7,11 @@ import type { StepContentProps } from '../types';
 import ScriptGeneratingOverlay from '../components/ScriptGeneratingOverlay';
 import { useProjectStore } from '../../../stores';
 
-// 画面风格选项
+// 画面风格选项（与后端 CharacterStatus.visualStyle 保持一致）
 const visualStyleOptions = [
-  { value: '2d-anime', label: '2D 动漫' },
-  { value: '3d-realistic', label: '3D 写实' },
-  { value: 'ink-chinese', label: '水墨国风' },
-  { value: 'cyberpunk', label: '赛博朋克' },
-  { value: 'japanese-manga', label: '日系漫画' },
+  { value: '3D', label: '3D' },
+  { value: 'REAL', label: '写实' },
+  { value: 'ANIME', label: '动漫' },
 ];
 
 // 目标受众选项
@@ -25,13 +23,13 @@ const targetAudienceOptions = [
   { value: 'all-ages', label: '全年龄' },
 ];
 
-// 时长选项
+// 时长选项（单位：秒）
 const durationOptions = [
-  { value: '0.5', label: '30秒' },
-  { value: '1', label: '1分钟' },
-  { value: '2', label: '2分钟' },
-  { value: '3', label: '3分钟' },
-  { value: '5', label: '5分钟' },
+  { value: '30', label: '30秒' },
+  { value: '60', label: '1分钟' },
+  { value: '120', label: '2分钟' },
+  { value: '180', label: '3分钟' },
+  { value: '300', label: '5分钟' },
 ];
 
 // AI生成图标
@@ -72,7 +70,7 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
   const [visualStyle, setVisualStyle] = useState('');
   const [targetAudience, setTargetAudience] = useState('');
   const [totalEpisodes, setTotalEpisodes] = useState(10);
-  const [episodeDuration, setEpisodeDuration] = useState('1');
+  const [episodeDuration, setEpisodeDuration] = useState('60');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
 
@@ -92,7 +90,7 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
       // 映射表单字段到 API 字段
       const requestData: CreateProjectRequest = {
         storyPrompt: storyIdea,
-        genre: visualStyle,
+        visualStyle,
         targetAudience,
         totalEpisodes: generateMode === 'series' ? totalEpisodes : 1,
         episodeDuration: parseFloat(episodeDuration),
@@ -139,7 +137,7 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
         }
 
         // 完成此步骤，进入下一步
-        onComplete();
+        onComplete?.();
       } else {
         console.error('创建失败:', createResult.message);
         alert(`创建失败: ${createResult.message}`);
