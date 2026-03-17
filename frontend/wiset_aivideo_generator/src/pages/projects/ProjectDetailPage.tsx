@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import styles from './ProjectDetailPage.module.less';
 import { ArrowLeftIcon, EditIcon } from '../../components/icons/Icons';
 import { getProject } from '../../services/projectService';
@@ -112,10 +112,15 @@ function ProjectDetailPage() {
           <ArrowLeftIcon />
           <span>返回项目列表</span>
         </button>
-        <Link to={`/create?projectId=${project.projectId || project.id}`} className={styles.editButton}>
+        <button
+          onClick={() => {
+            navigate(`/project/${project.projectId}/step`);
+          }}
+          className={styles.editButton}
+        >
           <EditIcon />
           <span>编辑项目</span>
-        </Link>
+        </button>
       </div>
 
       {/* 项目信息卡片 */}

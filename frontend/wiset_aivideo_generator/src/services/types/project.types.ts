@@ -138,3 +138,24 @@ export interface ProjectStatusInfo {
   completedSteps: number[];
   availableActions: string[];
 }
+
+/**
+ * 项目列表项（后端返回，含状态映射）
+ */
+export interface ProjectListItem {
+  projectId: string;
+  storyPrompt: string;
+  genre: string;
+  targetAudience: string;
+  totalEpisodes: number;
+  episodeDuration: number;
+  statusCode: string;
+  statusDescription: string;
+  currentStep: number;
+  isGenerating: boolean;
+  isFailed: boolean;
+  isReview: boolean;
+  completedSteps: number[];
+  createdAt?: string;
+  updatedAt?: string;
+}

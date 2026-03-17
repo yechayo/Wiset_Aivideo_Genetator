@@ -3,29 +3,16 @@ import { Link } from 'react-router-dom';
 import styles from './ProjectsPage.module.less';
 import { PlusIcon } from '../../components/icons/Icons';
 import { getProjects } from '../../services/projectService';
-import type { Project, ProjectStatus } from '../../services/types/project.types';
+import type { ProjectListItem } from '../../services/types/project.types';
 
-// 项目状态中文映射
-const statusMap: Record<ProjectStatus, string> = {
-  DRAFT: '草稿',
-  SCRIPT_GENERATING: '剧本生成中',
-  OUTLINE_REVIEW: '大纲审核',
-  SCRIPT_REVIEW: '剧本审核',
-  SCRIPT_CONFIRMED: '剧本已确认',
-  EPISODE_GENERATING: '剧集生成中',
-  COMPLETED: '已完成',
-};
-
-// 状态颜色映射
-const statusColorMap: Record<ProjectStatus, string> = {
-  DRAFT: styles.statusDraft,
-  SCRIPT_GENERATING: styles.statusGenerating,
-  OUTLINE_REVIEW: styles.statusReview,
-  SCRIPT_REVIEW: styles.statusReview,
-  SCRIPT_CONFIRMED: styles.statusConfirmed,
-  EPISODE_GENERATING: styles.statusGenerating,
-  COMPLETED: styles.statusCompleted,
-};
+// 根据状态类型返回样式类
+function getStatusClass(item: ProjectListItem): string {
+  if (item.isFailed) return styles.statusFailed;
+  if (item.isGenerating) return styles.statusGenerating;
+  if (item.isReview) return styles.statusReview;
+  if (item.statusCode === 'COMPLETED') return styles.statusCompleted;
+  return styles.statusDraft;
+}
 
 // 格式化日期
 function formatDate(dateString?: string): string {
@@ -39,7 +26,7 @@ function formatDate(dateString?: string): string {
 }
 
 function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 获取项目列表
@@ -83,8 +70,8 @@ function ProjectsPage() {
         <div className={styles.projectGrid}>
           {projects.map((project) => (
             <Link
-              key={project.projectId || project.id}
-              to={`/projects/${project.projectId || project.id}`}
+              key={project.projectId}
+              to={`/projects/${project.projectId}`}
               className={styles.projectCard}
             >
               <div className={styles.projectHeader}>
@@ -94,11 +81,9 @@ function ProjectsPage() {
                     : project.storyPrompt}
                 </h3>
                 <span
-                  className={`${styles.projectStatus} ${
-                    project.status ? statusColorMap[project.status] : styles.statusDraft
-                  }`}
+                  className={`${styles.projectStatus} ${getStatusClass(project)}`}
                 >
-                  {project.status ? statusMap[project.status] : '草稿'}
+                  {project.statusDescription}
                 </span>
               </div>
 
@@ -114,6 +99,10 @@ function ProjectsPage() {
                 <div className={styles.metaItem}>
                   <span className={styles.metaLabel}>单集时长</span>
                   <span className={styles.metaValue}>{project.episodeDuration} 秒</span>
+                </div>
+                <div className={styles.metaItem}>
+                  <span className={styles.metaLabel}>当前步骤</span>
+                  <span className={styles.metaValue}>第 {project.currentStep} 步</span>
                 </div>
               </div>
 

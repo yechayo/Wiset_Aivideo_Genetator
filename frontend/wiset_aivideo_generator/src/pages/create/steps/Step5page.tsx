@@ -9,11 +9,7 @@ interface Step5pageProps extends StepContentProps {
 /**
  * Step 5: 生成进度
  */
-const Step5page = ({ project, onBack }: Step5pageProps) => {
-  const handleBack = () => {
-    onBack();
-  };
-
+const Step5page = ({ project }: Step5pageProps) => {
   return (
     <div className={styles.content}>
       <div className={styles.header}>
@@ -28,12 +24,6 @@ const Step5page = ({ project, onBack }: Step5pageProps) => {
         <br />
         <br />
         当前项目: {project?.storyPrompt || '未知'}
-      </div>
-
-      <div className={styles.buttonContainer}>
-        <button className={styles.backButton} onClick={handleBack}>
-          返回上一步
-        </button>
       </div>
     </div>
   );

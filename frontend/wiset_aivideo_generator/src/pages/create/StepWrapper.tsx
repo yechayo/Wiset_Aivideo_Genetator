@@ -11,12 +11,10 @@ export const Step1Wrapper = ({ children }: { children: (props: {
   onProjectCreated: (project: any) => void;
   onBack: () => void;
 }) => ReactElement }) => {
-  const { addCompletedStep } = useCreateStore();
   const { setCurrentProject } = useProjectStore();
 
   const handleComplete = () => {
-    addCompletedStep(1);
-    // 导航由组件内部处理
+    // 步骤完成由轮询自动检测，不需要本地标记
   };
 
   const handleProjectCreated = (project: any) => {
@@ -44,22 +42,27 @@ interface StepWrapperProps {
 
 export const StepWrapper = ({ children, stepNumber }: StepWrapperProps) => {
   const { currentProject } = useProjectStore();
-  const { completedSteps, addCompletedStep } = useCreateStore();
+  const { statusInfo } = useCreateStore();
 
-  // 检查是否可以访问此步骤
-  const canAccess = stepNumber === 1 || completedSteps.includes(stepNumber - 1);
+  // 使用后端状态判断是否可以访问此步骤
+  const canAccess = stepNumber === 1
+    || (statusInfo?.completedSteps?.includes(stepNumber - 1))
+    || stepNumber <= (statusInfo?.currentStep ?? 0);
 
   if (!canAccess) {
-    return <Navigate to={`/create/${stepNumber - 1}`} replace />;
+    const targetStep = stepNumber - 1;
+    const url = currentProject?.projectId
+      ? `/project/${currentProject.projectId}/step/${targetStep}`
+      : '/create';
+    return <Navigate to={url} replace />;
   }
 
   if (!currentProject) {
-    return <Navigate to="/create/1" replace />;
+    return <Navigate to="/create" replace />;
   }
 
   const handleComplete = () => {
-    addCompletedStep(stepNumber);
-    // 导航由组件内部处理
+    // 步骤完成由轮询自动检测，不需要本地标记
   };
 
   const handleBack = () => {

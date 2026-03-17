@@ -164,6 +164,10 @@ const Step2page = ({ project, onComplete, onBack }: Step2pageProps) => {
       return;
     }
 
+    // 确认前提醒用户
+    const confirmed = window.confirm('确认后将进入下一步，无法再返回修改。请确认内容无误后再继续。');
+    if (!confirmed) return;
+
     setIsLoading(true);
     try {
       // 调用确认剧本接口
@@ -288,12 +292,6 @@ const Step2page = ({ project, onComplete, onBack }: Step2pageProps) => {
 
       {/* 按钮容器 */}
       <div className={styles.buttonContainer}>
-        <button
-          className={styles.backButton}
-          onClick={onBack}
-        >
-          返回上一步
-        </button>
         <button
           className={styles.confirmButton}
           onClick={handleConfirm}

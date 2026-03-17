@@ -1,128 +1,100 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { getProjectStatus } from '../services/projectService';
 import type { ProjectStatusInfo } from '../services/types/project.types';
 
 interface CreateState {
-  // 当前步骤
-  currentStep: number;
-
-  // 已完成的步骤
-  completedSteps: number[];
-
-  // 后端状态信息
+  // 后端状态信息（唯一真理源）
   statusInfo: ProjectStatusInfo | null;
 
   // 是否正在加载状态
   isLoadingStatus: boolean;
 
-  // 设置当前步骤
-  setCurrentStep: (step: number) => void;
+  // 是否正在轮询
+  isPolling: boolean;
 
-  // 添加完成的步骤
-  addCompletedStep: (step: number) => void;
+  // 启动轮询
+  startPolling: (projectId: string) => void;
 
-  // 检查步骤是否已完成
-  isStepCompleted: (step: number) => boolean;
+  // 停止轮询
+  stopPolling: () => void;
 
-  // 获取下一个可跳转的步骤
-  getNextStep: () => number;
-
-  // 重置创建流程
-  resetCreateFlow: () => void;
-
-  // 从后端同步状态
+  // 从后端同步状态（单次）
   syncStatus: (projectId: string) => Promise<void>;
 
   // 检查是否可执行操作
   canPerformAction: (action: string) => boolean;
 
-  // 根据后端状态更新步骤
-  applyStatusInfo: (statusInfo: ProjectStatusInfo) => void;
+  // 重置创建流程
+  resetCreateFlow: () => void;
 }
 
-export const useCreateStore = create<CreateState>()(
-  persist(
-    (set, get) => ({
-      currentStep: 1,
-      completedSteps: [],
-      statusInfo: null,
-      isLoadingStatus: false,
+let pollingTimerId: ReturnType<typeof setTimeout> | null = null;
 
-      setCurrentStep: (step) => {
-        set({ currentStep: step });
-      },
+export const useCreateStore = create<CreateState>()((set, get) => ({
+  statusInfo: null,
+  isLoadingStatus: false,
+  isPolling: false,
 
-      addCompletedStep: (step) => {
-        set((state) => {
-          if (state.completedSteps.includes(step)) return state;
-          return {
-            completedSteps: [...state.completedSteps, step],
-          };
-        });
-      },
+  startPolling: (projectId: string) => {
+    // 如果已在轮询同一个项目，不重复启动
+    if (get().isPolling && get().statusInfo?.projectId === projectId) return;
 
-      isStepCompleted: (step) => {
-        return get().completedSteps.includes(step);
-      },
+    set({ isPolling: true });
 
-      getNextStep: () => {
-        const completed = get().completedSteps;
-        // 找到最小的未完成步骤
-        for (let i = 1; i <= 5; i++) {
-          if (!completed.includes(i)) return i;
+    const poll = async () => {
+      if (!get().isPolling) return;
+
+      try {
+        const response = await getProjectStatus(projectId);
+        if (response.code === 200 && response.data) {
+          set({ statusInfo: response.data });
         }
-        return 5; // 全部完成
-      },
+      } catch (error) {
+        console.error('轮询项目状态失败:', error);
+      }
 
-      resetCreateFlow: () => {
-        set({
-          currentStep: 1,
-          completedSteps: [],
-          statusInfo: null,
-        });
-      },
+      // 根据是否在生成中决定下次轮询间隔
+      if (!get().isPolling) return;
+      const interval = get().statusInfo?.isGenerating ? 3000 : 5000;
+      pollingTimerId = setTimeout(poll, interval);
+    };
 
-      /**
-       * 从后端同步项目状态
-       * 更新步骤和完成状态，确保前后端一致
-       */
-      syncStatus: async (projectId: string) => {
-        set({ isLoadingStatus: true });
-        try {
-          const response = await getProjectStatus(projectId);
-          if (response.code === 200 && response.data) {
-            get().applyStatusInfo(response.data);
-          }
-        } catch (error) {
-          console.error('同步项目状态失败:', error);
-        } finally {
-          set({ isLoadingStatus: false });
-        }
-      },
+    // 立即同步一次，然后开始轮询
+    poll();
+  },
 
-      /**
-       * 检查当前状态是否可以执行指定操作
-       */
-      canPerformAction: (action: string) => {
-        const statusInfo = get().statusInfo;
-        if (!statusInfo) return false;
-        return statusInfo.availableActions.includes(action);
-      },
-
-      /**
-       * 根据后端返回的状态信息更新本地步骤状态
-       * 注意：不覆盖 currentStep，让路由决定当前步骤
-       */
-      applyStatusInfo: (statusInfo: ProjectStatusInfo) => {
-        set({
-          statusInfo,
-          completedSteps: statusInfo.completedSteps,
-        });
-      },
-    }),
-    {
-      name: 'wiset-create-storage', // localStorage key
+  stopPolling: () => {
+    set({ isPolling: false });
+    if (pollingTimerId !== null) {
+      clearTimeout(pollingTimerId);
+      pollingTimerId = null;
     }
-  )
-);
+  },
+
+  syncStatus: async (projectId: string) => {
+    set({ isLoadingStatus: true });
+    try {
+      const response = await getProjectStatus(projectId);
+      if (response.code === 200 && response.data) {
+        set({ statusInfo: response.data });
+      }
+    } catch (error) {
+      console.error('同步项目状态失败:', error);
+    } finally {
+      set({ isLoadingStatus: false });
+    }
+  },
+
+  canPerformAction: (action: string) => {
+    const statusInfo = get().statusInfo;
+    if (!statusInfo) return false;
+    return statusInfo.availableActions.includes(action);
+  },
+
+  resetCreateFlow: () => {
+    get().stopPolling();
+    set({
+      statusInfo: null,
+    });
+  },
+}));
