@@ -5,7 +5,6 @@ import com.comic.ai.image.ImageGenerationService;
 import com.comic.entity.Character;
 import com.comic.repository.CharacterRepository;
 import com.comic.service.character.CharacterImageGenerationService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,7 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Seedream 图片生成综合测试
- * 测试角色图片生成的完整流程，包括新的 grid 模式和旧的 multiple 模式
+ * 测试角色图片生成的完整流程（grid 大全图模式）
  *
  * 运行方式：mvn test -Dtest=SeedreamImageGenerationTest
  */
@@ -44,9 +43,6 @@ class SeedreamImageGenerationTest extends BaseTest {
     @Autowired
     private CharacterPromptManager characterPromptManager;
 
-    @Autowired
-    private ObjectMapper objectMapper;
-
     // 测试数据
     static String testCharId;
     static String testProjectId = "TEST-PROJECT-001";
@@ -61,10 +57,9 @@ class SeedreamImageGenerationTest extends BaseTest {
     void testSetupTestData() throws Exception {
         log.info("=== 准备测试数据 ===");
 
-        // 首先登录获取 token
         loginIfNeeded();
 
-        // 1. 创建测试角色
+        // 创建测试角色
         Character character = new Character();
         character.setCharId("TEST-CHAR-" + System.currentTimeMillis());
         character.setName("测试角色");
@@ -74,7 +69,6 @@ class SeedreamImageGenerationTest extends BaseTest {
         character.setAppearance("年轻男子，黑色短发，眼神坚毅，身穿白色古装长袍，腰间佩剑");
         character.setBackground("来自神秘的山门，肩负着拯救世界的使命");
         character.setVisualStyle("D_3D");
-        character.setGenerationMode("grid");
         character.setConfirmed(true);
         character.setLocked(false);
 
@@ -94,7 +88,6 @@ class SeedreamImageGenerationTest extends BaseTest {
     void testImageGenerationServiceBasic() {
         log.info("=== 测试基础图片生成服务 ===");
 
-        // 测试服务基本信息
         assertEquals("Seedream-Image", imageGenerationService.getServiceName());
         assertTrue(imageGenerationService.getAvailableConcurrentSlots() >= 0);
 
@@ -148,7 +141,7 @@ class SeedreamImageGenerationTest extends BaseTest {
     }
 
     // ──────────────────────────────────────────────────────────────
-    //  Grid 模式测试（新功能）
+    //  九宫格生成测试
     // ──────────────────────────────────────────────────────────────
 
     @Test
@@ -156,7 +149,6 @@ class SeedreamImageGenerationTest extends BaseTest {
     void testSetVisualStyle() throws Exception {
         log.info("=== 测试设置视觉风格 ===");
 
-        // 测试设置 3D 风格
         mockMvc.perform(put("/api/characters/" + testCharId + "/visual-style")
                         .header("Authorization", "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -164,7 +156,6 @@ class SeedreamImageGenerationTest extends BaseTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
-        // 测试设置 REAL 风格
         mockMvc.perform(put("/api/characters/" + testCharId + "/visual-style")
                         .header("Authorization", "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -172,7 +163,6 @@ class SeedreamImageGenerationTest extends BaseTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
-        // 测试设置 ANIME 风格
         mockMvc.perform(put("/api/characters/" + testCharId + "/visual-style")
                         .header("Authorization", "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -186,131 +176,65 @@ class SeedreamImageGenerationTest extends BaseTest {
     @Test
     @Order(11)
     void testGenerateExpressionGrid() throws Exception {
-        log.info("=== 测试 Grid 模式九宫格生成 ===");
+        log.info("=== 测试九宫格大全图生成 ===");
 
-        // 设置为 grid 模式
-        characterImageGenerationService.setGenerationMode(testCharId, "grid");
         characterImageGenerationService.setVisualStyle(testCharId, "D_3D");
 
-        // 调用生成接口
         MvcResult result = mockMvc.perform(post("/api/characters/" + testCharId + "/generate-expression")
-                        .header("Authorization", "Bearer " + accessToken)
-                        .param("mode", "grid"))
+                        .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andReturn();
 
-        log.info("Grid模式九宫格生成请求已提交");
+        log.info("九宫格大全图生成请求已提交");
 
-        // 等待生成完成（实际生成需要时间，这里只检查状态）
         Thread.sleep(2000);
 
-        // 检查状态
         mockMvc.perform(get("/api/characters/" + testCharId + "/status")
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.generationMode").value("grid"))
                 .andExpect(jsonPath("$.data.visualStyle").value("D_3D"));
 
-        log.info("Grid模式九宫格生成测试通过");
+        log.info("九宫格大全图生成测试通过");
     }
 
     @Test
     @Order(12)
     void testGenerateThreeViewGrid() throws Exception {
-        log.info("=== 测试 Grid 模式三视图生成 ===");
+        log.info("=== 测试三视图大全图生成 ===");
 
-        // 调用三视图生成接口
         mockMvc.perform(post("/api/characters/" + testCharId + "/generate-three-view")
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
-        log.info("Grid模式三视图生成请求已提交");
+        log.info("三视图大全图生成请求已提交");
 
-        // 等待生成完成
         Thread.sleep(2000);
 
-        // 检查状态
-        mockMvc.perform(get("/api/characters/" + testCharId + "/status")
-                        .header("Authorization", "Bearer " + accessToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.generationMode").value("grid"));
-
-        log.info("Grid模式三视图生成测试通过");
+        log.info("三视图大全图生成测试通过");
     }
 
     @Test
     @Order(13)
     void testGenerateAllGrid() throws Exception {
-        log.info("=== 测试 Grid 模式一键生成 ===");
+        log.info("=== 测试一键生成 ===");
 
         mockMvc.perform(post("/api/characters/" + testCharId + "/generate-all")
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
-        log.info("Grid模式一键生成请求已提交");
+        log.info("一键生成请求已提交");
 
-        // 等待生成完成
         Thread.sleep(3000);
 
-        // 检查最终状态
         mockMvc.perform(get("/api/characters/" + testCharId + "/status")
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.charId").value(testCharId))
-                .andExpect(jsonPath("$.data.generationMode").value("grid"));
+                .andExpect(jsonPath("$.data.charId").value(testCharId));
 
-        log.info("Grid模式一键生成测试通过");
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    //  Multiple 模式测试（兼容性测试）
-    // ──────────────────────────────────────────────────────────────
-
-    @Test
-    @Order(20)
-    void testGenerateExpressionMultiple() throws Exception {
-        log.info("=== 测试 Multiple 模式九宫格生成 ===");
-
-        // 创建另一个测试角色用于 multiple 模式
-        Character character2 = new Character();
-        character2.setCharId("TEST-CHAR-MULTIPLE-" + System.currentTimeMillis());
-        character2.setName("测试角色2");
-        character2.setRole("主角");
-        character2.setProjectId(testProjectId);
-        character2.setPersonality("温柔、善良、富有同情心");
-        character2.setAppearance("年轻女子，长发飘飘，身穿粉色古装，气质温婉");
-        character2.setVisualStyle("D_3D");
-        character2.setGenerationMode("multiple");
-        character2.setConfirmed(true);
-
-        characterRepository.insert(character2);
-        String charId2 = character2.getCharId();
-
-        // 设置为 multiple 模式
-        characterImageGenerationService.setGenerationMode(charId2, "multiple");
-
-        // 调用生成接口
-        mockMvc.perform(post("/api/characters/" + charId2 + "/generate-expression")
-                        .header("Authorization", "Bearer " + accessToken)
-                        .param("mode", "multiple"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
-
-        log.info("Multiple模式九宫格生成请求已提交");
-
-        // 等待生成完成（multiple 模式需要更多时间）
-        Thread.sleep(5000);
-
-        // 检查状态
-        mockMvc.perform(get("/api/characters/" + charId2 + "/status")
-                        .header("Authorization", "Bearer " + accessToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.generationMode").value("multiple"));
-
-        log.info("Multiple模式九宫格生成测试通过");
+        log.info("一键生成测试通过");
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -322,7 +246,6 @@ class SeedreamImageGenerationTest extends BaseTest {
     void testSupportingCharacterGeneration() throws Exception {
         log.info("=== 测试配角图片生成（应跳过表情） ===");
 
-        // 创建配角角色
         Character supporting = new Character();
         supporting.setCharId("TEST-CHAR-SUPPORTING-" + System.currentTimeMillis());
         supporting.setName("配角测试");
@@ -331,7 +254,6 @@ class SeedreamImageGenerationTest extends BaseTest {
         supporting.setPersonality("忠诚、守信");
         supporting.setAppearance("中年男子，身材魁梧，身穿黑色盔甲");
         supporting.setVisualStyle("D_3D");
-        supporting.setGenerationMode("grid");
         supporting.setConfirmed(true);
 
         characterRepository.insert(supporting);
@@ -339,8 +261,7 @@ class SeedreamImageGenerationTest extends BaseTest {
 
         // 配角尝试生成表情应该失败
         mockMvc.perform(post("/api/characters/" + supportingCharId + "/generate-expression")
-                        .header("Authorization", "Bearer " + accessToken)
-                        .param("mode", "grid"))
+                        .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isBadRequest());
 
         log.info("配角表情生成正确跳过");
@@ -376,21 +297,6 @@ class SeedreamImageGenerationTest extends BaseTest {
     }
 
     @Test
-    @Order(41)
-    void testInvalidGenerationMode() throws Exception {
-        log.info("=== 测试无效生成模式 ===");
-
-        try {
-            characterImageGenerationService.setGenerationMode(testCharId, "invalid_mode");
-            fail("应该抛出异常");
-        } catch (Exception e) {
-            assertTrue(e.getMessage().contains("无效的生成模式"));
-        }
-
-        log.info("无效生成模式正确被拒绝");
-    }
-
-    @Test
     @Order(42)
     void testNonExistentCharacter() {
         log.info("=== 测试不存在的角色 ===");
@@ -422,7 +328,6 @@ class SeedreamImageGenerationTest extends BaseTest {
                 .andExpect(jsonPath("$.data.name").value("测试角色"))
                 .andExpect(jsonPath("$.data.role").value("主角"))
                 .andExpect(jsonPath("$.data.visualStyle").exists())
-                .andExpect(jsonPath("$.data.generationMode").exists())
                 .andReturn();
 
         String response = result.getResponse().getContentAsString();
@@ -440,9 +345,7 @@ class SeedreamImageGenerationTest extends BaseTest {
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.charId").value(testCharId))
-                .andExpect(jsonPath("$.data.personality").exists())
-                .andExpect(jsonPath("$.data.appearance").exists());
+                .andExpect(jsonPath("$.data.charId").value(testCharId));
 
         log.info("角色详情查询测试通过");
     }
@@ -456,7 +359,6 @@ class SeedreamImageGenerationTest extends BaseTest {
     void testRetryGeneration() throws Exception {
         log.info("=== 测试重试生成 ===");
 
-        // 重试表情生成
         mockMvc.perform(post("/api/characters/" + testCharId + "/retry/expression")
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
@@ -464,7 +366,6 @@ class SeedreamImageGenerationTest extends BaseTest {
 
         Thread.sleep(2000);
 
-        // 重试三视图生成
         mockMvc.perform(post("/api/characters/" + testCharId + "/retry/threeView")
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())

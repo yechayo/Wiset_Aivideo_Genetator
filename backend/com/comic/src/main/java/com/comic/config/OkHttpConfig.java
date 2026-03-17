@@ -17,7 +17,7 @@ public class OkHttpConfig {
     public OkHttpClient okHttpClient() {
         return new OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
+                .readTimeout(300, TimeUnit.SECONDS)  // DeepSeek 思考模式响应较慢，需要 5 分钟
                 .writeTimeout(60, TimeUnit.SECONDS)
                 .build();
     }
