@@ -9,14 +9,12 @@ interface Step4pageProps extends StepContentProps {
 /**
  * Step 4: 生成配置
  */
-const Step4page = ({ project, onComplete, onBack }: Step4pageProps) => {
+const Step4page = ({ project, onComplete }: Step4pageProps) => {
   const handleNext = () => {
+    const confirmed = window.confirm('确认后将开始生成，无法再返回修改。请确认配置无误后再继续。');
+    if (!confirmed) return;
     console.log('开始生成:', project);
     onComplete();
-  };
-
-  const handleBack = () => {
-    onBack();
   };
 
   return (
@@ -33,9 +31,6 @@ const Step4page = ({ project, onComplete, onBack }: Step4pageProps) => {
       </div>
 
       <div className={styles.buttonContainer}>
-        <button className={styles.backButton} onClick={handleBack}>
-          返回上一步
-        </button>
         <button className={styles.confirmButton} onClick={handleNext}>
           开始生成
         </button>

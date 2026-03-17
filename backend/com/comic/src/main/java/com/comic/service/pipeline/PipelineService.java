@@ -2,6 +2,7 @@ package com.comic.service.pipeline;
 
 import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
+import com.comic.dto.ProjectListItemDTO;
 import com.comic.dto.ProjectStatusDTO;
 import com.comic.entity.Project;
 import com.comic.repository.ProjectRepository;
@@ -115,10 +116,41 @@ public class PipelineService {
     }
 
     /**
-     * 获取用户的所有项目列表
+     * 获取用户的所有项目列表（带状态映射）
      */
-    public List<Project> getProjectsByUserId(String userId) {
-        return projectRepository.findAllByUserId(userId);
+    public List<ProjectListItemDTO> getProjectsByUserId(String userId) {
+        List<Project> projects = projectRepository.findAllByUserId(userId);
+        List<ProjectListItemDTO> result = new ArrayList<>();
+        for (Project project : projects) {
+            result.add(toListItemDTO(project));
+        }
+        return result;
+    }
+
+    /**
+     * Project → ProjectListItemDTO 转换
+     */
+    private ProjectListItemDTO toListItemDTO(Project project) {
+        ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
+
+        ProjectListItemDTO dto = new ProjectListItemDTO();
+        dto.setProjectId(project.getProjectId());
+        dto.setStoryPrompt(project.getStoryPrompt());
+        dto.setGenre(project.getGenre());
+        dto.setTargetAudience(project.getTargetAudience());
+        dto.setTotalEpisodes(project.getTotalEpisodes());
+        dto.setEpisodeDuration(project.getEpisodeDuration());
+        dto.setStatusCode(status.getCode());
+        dto.setStatusDescription(status.getDescription());
+        dto.setCurrentStep(status.getFrontendStep());
+        dto.setGenerating(status.isGenerating());
+        dto.setFailed(status.isFailed());
+        dto.setReview(status.isReview());
+        dto.setCompletedSteps(status.getCompletedSteps());
+        dto.setCreatedAt(project.getCreatedAt());
+        dto.setUpdatedAt(project.getUpdatedAt());
+
+        return dto;
     }
 
     // ================= 私有方法 =================

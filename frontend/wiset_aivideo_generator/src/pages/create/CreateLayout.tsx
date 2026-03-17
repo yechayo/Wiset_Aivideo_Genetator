@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback } from 'react';
+import { useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import styles from './CreatePage.module.less';
 import { CREATE_STEPS } from './constants/steps';
@@ -13,14 +13,28 @@ import Step5page from './steps/Step5page';
 
 /**
  * 创建流程布局组件
- * 渲染步骤指示器和当前步骤内容
- * 自动从后端同步项目状态，确保前后端步骤一致
+ *
+ * 核心原则：后端状态 = 唯一真理源
+ * - 持续轮询后端状态，用 currentStep 做路由守卫
+ * - 轮询间隔：生成中 3s，正常 5s
+ * - isGenerating 时显示 loading 遮罩，禁止操作
  */
 const CreateLayout = () => {
   const { step } = useParams<{ step: string }>();
   const navigate = useNavigate();
-  const { completedSteps, statusInfo, isLoadingStatus, addCompletedStep, syncStatus } = useCreateStore();
+  const { statusInfo, isLoadingStatus, startPolling, stopPolling } = useCreateStore();
   const { currentProject, setCurrentProject } = useProjectStore();
+
+  // 动态生成步骤 URL：有 projectId 时用项目路由，否则用 /create
+  const getStepUrl = useCallback((stepNum: number) => {
+    if (currentProject?.projectId) {
+      return `/project/${currentProject.projectId}/step/${stepNum}`;
+    }
+    return '/create';
+  }, [currentProject?.projectId]);
+
+  // 用 ref 记录上次跳转的 step，避免重复跳转
+  const lastRedirectedStep = useRef<number | null>(null);
 
   // 解析 URL 中的步骤
   const urlStep = useMemo(() => {
@@ -29,57 +43,56 @@ const CreateLayout = () => {
     return Math.min(Math.max(stepNum, 1), CREATE_STEPS.length);
   }, [step]);
 
-  // 项目变化时自动从后端同步状态（用 projectId 避免函数引用变化导致无限循环）
-  const syncStatusRef = syncStatus;
+  // 组件挂载/卸载：启动/停止轮询
   useEffect(() => {
     if (currentProject?.projectId) {
-      syncStatusRef(currentProject.projectId);
+      startPolling(currentProject.projectId);
     }
-  }, [currentProject?.projectId, syncStatusRef]);
+    return () => {
+      stopPolling();
+      lastRedirectedStep.current = null;
+    };
+  }, [currentProject?.projectId, startPolling, stopPolling]);
 
-  // 根据后端状态验证/重定向步骤（只在非生成中时生效，避免操作进行中被打断）
+  // 路由守卫 + 自动跳转
   useEffect(() => {
-    if (!statusInfo || !currentProject || isLoadingStatus) return;
+    if (!statusInfo || isLoadingStatus) return;
 
-    // 如果 URL 步骤大于后端当前步骤，重定向到后端当前步骤
-    if (urlStep > statusInfo.currentStep) {
-      navigate(`/create/${statusInfo.currentStep}`, { replace: true });
-    }
-  }, [statusInfo, urlStep, currentProject, navigate, isLoadingStatus]);
+    const backendStep = statusInfo.currentStep;
 
-  // 处理步骤点击：只允许跳转到已完成的步骤或当前步骤
-  const handleStepClick = useCallback((stepId: number) => {
-    if (statusInfo) {
-      // 使用后端返回的已完成步骤来判断
-      if (statusInfo.completedSteps.includes(stepId) || stepId === statusInfo.currentStep) {
-        navigate(`/create/${stepId}`);
-      }
-    } else {
-      // 回退到本地判断
-      if (completedSteps.includes(stepId)) {
-        navigate(`/create/${stepId}`);
-      }
+    // 跳转到同一个 step 时不重复触发
+    if (lastRedirectedStep.current === backendStep) return;
+
+    if (urlStep < backendStep) {
+      // 后端步骤前进 → 自动跳转
+      lastRedirectedStep.current = backendStep;
+      navigate(getStepUrl(backendStep), { replace: true });
+    } else if (urlStep > backendStep) {
+      // URL 步骤超过后端 → 路由守卫拉回
+      lastRedirectedStep.current = backendStep;
+      navigate(getStepUrl(backendStep), { replace: true });
     }
-  }, [statusInfo, completedSteps, navigate]);
+  }, [statusInfo, urlStep, isLoadingStatus, navigate, getStepUrl]);
+
+  // 步骤导航栏不可点击跳转（确认后不可回退）
+  const handleStepClick = undefined;
 
   // 如果没有项目数据且不在第一步，重定向到第一步
   if (!currentProject && urlStep > 1) {
-    return <Navigate to="/create/1" replace />;
+    return <Navigate to={getStepUrl(1)} replace />;
   }
 
-  // 使用后端状态信息中的完成步骤（如果有），否则用本地状态
-  const effectiveCompletedSteps = statusInfo ? statusInfo.completedSteps : completedSteps;
-  const effectiveCurrentStep = urlStep;
+  // 从 statusInfo 取 completedSteps，无 statusInfo 时为空
+  const effectiveCompletedSteps = statusInfo?.completedSteps ?? [];
 
   // 渲染当前步骤内容
   const renderStepContent = () => {
-    switch (effectiveCurrentStep) {
+    switch (urlStep) {
       case 1:
         return (
           <Step1Content
             onComplete={() => {
-              addCompletedStep(1);
-              navigate('/create/2');
+              // Step1 完成后不需要手动跳转，轮询会自动检测到状态变化
             }}
             onProjectCreated={(project) => setCurrentProject(project)}
             onBack={() => {}}
@@ -90,67 +103,59 @@ const CreateLayout = () => {
           <Step2page
             project={currentProject}
             onComplete={() => {
-              addCompletedStep(2);
-              navigate('/create/3');
-            }}
-            onBack={() => {
-              navigate('/create/1');
+              // 确认剧本后轮询会自动检测到状态变化并跳转
             }}
           />
-        ) : <Navigate to="/create/1" replace />;
+        ) : <Navigate to={getStepUrl(1)} replace />;
       case 3:
         return currentProject ? (
           <Step3page
             project={currentProject}
-            onComplete={() => {
-              addCompletedStep(3);
-              navigate('/create/4');
-            }}
-            onBack={() => {
-              navigate('/create/2');
-            }}
+            onComplete={() => {}}
           />
-        ) : <Navigate to="/create/1" replace />;
+        ) : <Navigate to={getStepUrl(1)} replace />;
       case 4:
         return currentProject ? (
           <Step4page
             project={currentProject}
-            onComplete={() => {
-              addCompletedStep(4);
-              navigate('/create/5');
-            }}
-            onBack={() => {
-              navigate('/create/3');
-            }}
+            onComplete={() => {}}
           />
-        ) : <Navigate to="/create/1" replace />;
+        ) : <Navigate to={getStepUrl(1)} replace />;
       case 5:
         return currentProject ? (
           <Step5page
             project={currentProject}
-            onComplete={() => {}}
-            onBack={() => {
-              navigate('/create/4');
-            }}
           />
-        ) : <Navigate to="/create/1" replace />;
+        ) : <Navigate to={getStepUrl(1)} replace />;
       default:
-        return <Navigate to="/create/1" replace />;
+        return <Navigate to={getStepUrl(1)} replace />;
     }
   };
+
+  const showLoadingOverlay = statusInfo?.isGenerating ?? false;
 
   return (
     <div className={styles.createContainer}>
       {/* Step 指示器 */}
       <StepIndicator
         steps={CREATE_STEPS}
-        currentStep={effectiveCurrentStep}
+        currentStep={urlStep}
         completedSteps={effectiveCompletedSteps}
         onStepClick={handleStepClick}
       />
 
       {/* 步骤内容 */}
       {renderStepContent()}
+
+      {/* 全局 loading 遮罩：生成中时禁止操作 */}
+      {showLoadingOverlay && (
+        <div className={styles.loadingOverlay}>
+          <div className={styles.loadingContent}>
+            <div className={styles.loadingSpinner} />
+            <p>{statusInfo?.statusDescription || '正在生成中...'}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

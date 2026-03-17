@@ -6,7 +6,8 @@ import ProjectsPage from './pages/projects/ProjectsPage';
 import ProjectDetailPage from './pages/projects/ProjectDetailPage';
 import { useAuthStore } from './stores/authStore';
 import { ToastProvider, ToastContainer } from './components/toast';
-import CreateLayout from './pages/create/CreateLayout';
+import CreateNewLayout from './pages/create/CreateNewLayout';
+import ProjectStepLayout from './pages/create/ProjectStepLayout';
 
 // 受保护的路由组件
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -34,9 +35,9 @@ function App() {
             <Route path="projects/:projectId" element={<ProjectDetailPage />} />
             <Route path="settings" element={<Dashboard />} />
 
-            {/* 创建流程路由 - 所有步骤都由 CreateLayout 处理 */}
-            <Route path="create" element={<CreateLayout />} />
-            <Route path="create/:step" element={<CreateLayout />} />
+            {/* 创建流程路由 */}
+            <Route path="create" element={<CreateNewLayout />} />
+            <Route path="project/:projectId/step/:step?" element={<ProjectStepLayout />} />
           </Route>
         </Routes>
       </BrowserRouter>

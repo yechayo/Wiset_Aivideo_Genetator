@@ -8,6 +8,7 @@ import type {
   GenerateEpisodesRequest,
   GenerateScriptResponse,
   Project,
+  ProjectListItem,
   ProjectStatusInfo,
   ReviseScriptRequest,
   ReviseScriptResponse,
@@ -115,8 +116,8 @@ export async function confirmScript(projectId: string): Promise<ApiResponse<void
  * 获取项目列表
  * @returns 项目列表
  */
-export async function getProjects(): Promise<ApiResponse<Project[]>> {
-  return get<ApiResponse<Project[]>>('/api/projects');
+export async function getProjects(): Promise<ApiResponse<ProjectListItem[]>> {
+  return get<ApiResponse<ProjectListItem[]>>('/api/projects');
 }
 
 /**

@@ -9,14 +9,12 @@ interface Step3pageProps extends StepContentProps {
 /**
  * Step 3: 角色配置
  */
-const Step3page = ({ project, onComplete, onBack }: Step3pageProps) => {
+const Step3page = ({ project, onComplete }: Step3pageProps) => {
   const handleNext = () => {
+    const confirmed = window.confirm('确认后将进入下一步，无法再返回修改。请确认内容无误后再继续。');
+    if (!confirmed) return;
     console.log('角色配置完成:', project);
     onComplete();
-  };
-
-  const handleBack = () => {
-    onBack();
   };
 
   return (
@@ -33,9 +31,6 @@ const Step3page = ({ project, onComplete, onBack }: Step3pageProps) => {
       </div>
 
       <div className={styles.buttonContainer}>
-        <button className={styles.backButton} onClick={handleBack}>
-          返回上一步
-        </button>
         <button className={styles.confirmButton} onClick={handleNext}>
           下一步
         </button>

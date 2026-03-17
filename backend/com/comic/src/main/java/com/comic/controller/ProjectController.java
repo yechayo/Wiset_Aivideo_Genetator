@@ -2,6 +2,7 @@ package com.comic.controller;
 
 import com.comic.common.Result;
 import com.comic.dto.ProjectCreateDTO;
+import com.comic.dto.ProjectListItemDTO;
 import com.comic.dto.ProjectStatusDTO;
 import com.comic.entity.Project;
 import com.comic.entity.User;
@@ -85,11 +86,11 @@ public class ProjectController {
      * GET /api/projects
      */
     @GetMapping
-    @Operation(summary = "获取项目列表", description = "获取当前用户创建的所有项目")
-    public Result<java.util.List<Project>> getProjects(@Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
+    @Operation(summary = "获取项目列表", description = "获取当前用户创建的所有项目（含状态映射信息）")
+    public Result<java.util.List<ProjectListItemDTO>> getProjects(@Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
         User user = userRepository.findByUsername(userDetails.getUsername());
         String userId = user.getId().toString();
-        java.util.List<Project> projects = pipelineService.getProjectsByUserId(userId);
+        java.util.List<ProjectListItemDTO> projects = pipelineService.getProjectsByUserId(userId);
         return Result.ok(projects);
     }
 
