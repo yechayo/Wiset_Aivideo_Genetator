@@ -5,10 +5,8 @@ import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
 import com.comic.dto.CharacterDraftDTO;
 import com.comic.entity.Character;
-import com.comic.entity.Episode;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
-import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +27,6 @@ import java.util.*;
 public class CharacterExtractService {
 
     private final ProjectRepository projectRepository;
-    private final EpisodeRepository episodeRepository;
     private final CharacterRepository characterRepository;
     private final TextGenerationService textGenerationService;
     private final ObjectMapper objectMapper;
@@ -54,20 +51,28 @@ public class CharacterExtractService {
         projectRepository.updateById(project);
 
         try {
-            // 获取所有剧本内容
-            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
-            String scriptContent = buildScriptContent(episodes);
+            // 从项目大纲中提取角色（大纲包含完整的角色设定，且比逐集剧本紧凑）
+            String outline = project.getScriptOutline();
+            if (outline == null || outline.trim().isEmpty()) {
+                throw new BusinessException("项目大纲为空，无法提取角色");
+            }
+
+            String storyPrompt = project.getStoryPrompt();
 
             // 构建prompt
-            String systemPrompt = "你是一个专业的角色设计师，擅长从剧本中提取和分析角色信息。\n\n"
-                    + "请仔细阅读以下剧本内容，提取出所有重要角色，并为每个角色生成详细的角色档案。";
-            String userPrompt = "请从以下剧本中提取角色信息：\n\n" + scriptContent + "\n\n"
+            String systemPrompt = "你是一个专业的角色设计师，擅长从故事大纲中提取和分析角色信息。\n\n"
+                    + "请仔细阅读以下故事大纲，提取出所有重要角色，并为每个角色生成详细的角色档案。\n"
+                    + "角色定位只能是以下三种之一：主角、反派、配角";
+            String userPrompt = "请从以下故事大纲中提取角色信息：\n\n"
+                    + "【故事创意】\n" + storyPrompt + "\n\n"
+                    + "【故事大纲】\n" + outline + "\n\n"
                     + "要求：\n"
                     + "1. 只返回纯JSON数组，不要有任何其他文字说明\n"
                     + "2. 不要使用markdown代码块标记\n"
                     + "3. 每个角色必须包含：name(姓名), role(角色定位), personality(性格), appearance(外貌), background(背景)\n"
                     + "4. 所有字段都必须有值，不能为null\n"
-                    + "5. 返回格式示例：[{\"name\":\"张三\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\"}]\n\n"
+                    + "5. role只能是：主角、反派、配角\n"
+                    + "6. 返回格式示例：[{\"name\":\"张三\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\"}]\n\n"
                     + "请直接返回JSON数组：";
 
             // 调用AI提取角色
@@ -168,15 +173,6 @@ public class CharacterExtractService {
 
     // ================= 私有方法 =================
 
-    private String buildScriptContent(List<Episode> episodes) {
-        StringBuilder sb = new StringBuilder();
-        for (Episode episode : episodes) {
-            sb.append("## 第").append(episode.getEpisodeNum()).append("集\n");
-            sb.append(episode.getOutlineNode()).append("\n\n");
-        }
-        return sb.toString();
-    }
-
     private List<CharacterDraftDTO> parseCharacters(String jsonResult, String projectId) {
         try {
             // 先清理AI返回的内容，去除可能的markdown标记和多余文字
@@ -255,6 +251,11 @@ public class CharacterExtractService {
     }
 
     private void saveCharacters(String projectId, List<CharacterDraftDTO> characters) {
+        // 查询项目，获取视觉风格
+        Project project = projectRepository.findByProjectId(projectId);
+        String visualStyle = (project != null && project.getVisualStyle() != null)
+                ? project.getVisualStyle() : "3D";
+
         // 先删除旧的角色数据
         List<Character> oldCharacters = characterRepository.findByProjectId(projectId);
         for (Character old : oldCharacters) {
@@ -272,6 +273,7 @@ public class CharacterExtractService {
             character.setAppearance(dto.getAppearance());
             character.setBackground(dto.getBackground());
             character.setConfirmed(false);
+            character.setVisualStyle(visualStyle);
             characterRepository.insert(character);
         }
     }

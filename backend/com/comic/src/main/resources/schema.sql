@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS project (
     target_audience TEXT,
     total_episodes INTEGER,
     episode_duration INTEGER,
+    visual_style TEXT DEFAULT '3D',
     status TEXT,
     script_revision_note TEXT,
     -- 两级剧本生成新增字段

@@ -29,6 +29,9 @@ public class ProjectListItemDTO {
     /** 单集时长 */
     private Integer episodeDuration;
 
+    /** 视觉风格 */
+    private String visualStyle;
+
     /** 状态码 */
     private String statusCode;
 

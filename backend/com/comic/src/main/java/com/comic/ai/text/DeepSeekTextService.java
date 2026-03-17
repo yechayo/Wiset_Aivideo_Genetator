@@ -131,16 +131,27 @@ public class DeepSeekTextService implements TextGenerationService {
                 JsonNode firstChoice = choices.get(0);
                 JsonNode message = firstChoice.get("message");
                 if (message != null) {
-                    // 思考模式：记录思考过程（可选）
+                    // 思考模式：reasoning_content 可能包含实际输出内容
                     JsonNode reasoningContent = message.get("reasoning_content");
+                    String reasoning = null;
                     if (reasoningContent != null && !reasoningContent.isNull()) {
-                        String reasoning = reasoningContent.asText();
+                        reasoning = reasoningContent.asText();
                         log.debug("DeepSeek 思考过程: {}", reasoning);
                     }
 
                     JsonNode content = message.get("content");
                     if (content != null) {
-                        return content.asText();
+                        String contentText = content.asText();
+                        // content 为空或不含有效数据时，回退到 reasoning_content
+                        if (!contentText.trim().isEmpty()) {
+                            return contentText;
+                        }
+                    }
+
+                    // content 为空时，尝试从 reasoning_content 中提取
+                    if (reasoning != null && !reasoning.trim().isEmpty()) {
+                        log.info("content 为空，回退使用 reasoning_content");
+                        return reasoning;
                     }
                 }
             }
