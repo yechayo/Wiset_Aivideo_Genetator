@@ -19,7 +19,7 @@ import Step5page from './steps/Step5page';
 const CreateLayout = () => {
   const { step } = useParams<{ step: string }>();
   const navigate = useNavigate();
-  const { completedSteps, currentStep, statusInfo, isLoadingStatus, setCurrentStep, addCompletedStep, syncStatus } = useCreateStore();
+  const { completedSteps, statusInfo, isLoadingStatus, addCompletedStep, syncStatus } = useCreateStore();
   const { currentProject, setCurrentProject } = useProjectStore();
 
   // 解析 URL 中的步骤
@@ -29,31 +29,23 @@ const CreateLayout = () => {
     return Math.min(Math.max(stepNum, 1), CREATE_STEPS.length);
   }, [step]);
 
-  // 项目变化时自动从后端同步状态
+  // 项目变化时自动从后端同步状态（用 projectId 避免函数引用变化导致无限循环）
+  const syncStatusRef = syncStatus;
   useEffect(() => {
     if (currentProject?.projectId) {
-      syncStatus(currentProject.projectId);
+      syncStatusRef(currentProject.projectId);
     }
-  }, [currentProject?.projectId, syncStatus]);
+  }, [currentProject?.projectId, syncStatusRef]);
 
-  // 根据后端状态验证/重定向步骤
+  // 根据后端状态验证/重定向步骤（只在非生成中时生效，避免操作进行中被打断）
   useEffect(() => {
-    if (!statusInfo || !currentProject) return;
+    if (!statusInfo || !currentProject || isLoadingStatus) return;
 
     // 如果 URL 步骤大于后端当前步骤，重定向到后端当前步骤
     if (urlStep > statusInfo.currentStep) {
       navigate(`/create/${statusInfo.currentStep}`, { replace: true });
     }
-  }, [statusInfo, urlStep, currentProject, navigate]);
-
-  // 同步 store 中的当前步骤（只在合法范围内）
-  useEffect(() => {
-    if (statusInfo) {
-      setCurrentStep(Math.min(urlStep, statusInfo.currentStep));
-    } else {
-      setCurrentStep(urlStep);
-    }
-  }, [urlStep, statusInfo, setCurrentStep]);
+  }, [statusInfo, urlStep, currentProject, navigate, isLoadingStatus]);
 
   // 处理步骤点击：只允许跳转到已完成的步骤或当前步骤
   const handleStepClick = useCallback((stepId: number) => {
@@ -77,7 +69,7 @@ const CreateLayout = () => {
 
   // 使用后端状态信息中的完成步骤（如果有），否则用本地状态
   const effectiveCompletedSteps = statusInfo ? statusInfo.completedSteps : completedSteps;
-  const effectiveCurrentStep = statusInfo ? Math.min(urlStep, statusInfo.currentStep) : urlStep;
+  const effectiveCurrentStep = urlStep;
 
   // 渲染当前步骤内容
   const renderStepContent = () => {
