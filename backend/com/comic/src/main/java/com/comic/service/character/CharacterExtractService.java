@@ -2,6 +2,7 @@ package com.comic.service.character;
 
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
+import com.comic.common.ProjectStatus;
 import com.comic.dto.CharacterDraftDTO;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
@@ -43,13 +44,13 @@ public class CharacterExtractService {
             throw new BusinessException("项目不存在");
         }
 
-        if (!"SCRIPT_CONFIRMED".equals(project.getStatus()) &&
-            !"CHARACTER_REVIEW".equals(project.getStatus())) {
+        if (!ProjectStatus.SCRIPT_CONFIRMED.getCode().equals(project.getStatus()) &&
+            !ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
             throw new BusinessException("请先确认剧本后再提取角色");
         }
 
         // 更新项目状态
-        project.setStatus("CHARACTER_EXTRACTING");
+        project.setStatus(ProjectStatus.CHARACTER_EXTRACTING.getCode());
         projectRepository.updateById(project);
 
         try {
@@ -61,7 +62,13 @@ public class CharacterExtractService {
             String systemPrompt = "你是一个专业的角色设计师，擅长从剧本中提取和分析角色信息。\n\n"
                     + "请仔细阅读以下剧本内容，提取出所有重要角色，并为每个角色生成详细的角色档案。";
             String userPrompt = "请从以下剧本中提取角色信息：\n\n" + scriptContent + "\n\n"
-                    + "请以JSON数组格式返回，每个角色包含：name, role, personality, appearance, background";
+                    + "要求：\n"
+                    + "1. 只返回纯JSON数组，不要有任何其他文字说明\n"
+                    + "2. 不要使用markdown代码块标记\n"
+                    + "3. 每个角色必须包含：name(姓名), role(角色定位), personality(性格), appearance(外貌), background(背景)\n"
+                    + "4. 所有字段都必须有值，不能为null\n"
+                    + "5. 返回格式示例：[{\"name\":\"张三\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\"}]\n\n"
+                    + "请直接返回JSON数组：";
 
             // 调用AI提取角色
             String result = textGenerationService.generate(systemPrompt, userPrompt);
@@ -73,7 +80,7 @@ public class CharacterExtractService {
             saveCharacters(projectId, characters);
 
             // 更新项目状态
-            project.setStatus("CHARACTER_REVIEW");
+            project.setStatus(ProjectStatus.CHARACTER_REVIEW.getCode());
             projectRepository.updateById(project);
 
             log.info("角色提取完成: projectId={}, 角色数={}", projectId, characters.size());
@@ -81,7 +88,7 @@ public class CharacterExtractService {
 
         } catch (Exception e) {
             log.error("角色提取失败: projectId={}", projectId, e);
-            project.setStatus("CHARACTER_EXTRACTING_FAILED");
+            project.setStatus(ProjectStatus.CHARACTER_EXTRACTING_FAILED.getCode());
             projectRepository.updateById(project);
             throw new BusinessException("角色提取失败: " + e.getMessage());
         }
@@ -98,7 +105,7 @@ public class CharacterExtractService {
             throw new BusinessException("项目不存在");
         }
 
-        if (!"CHARACTER_REVIEW".equals(project.getStatus())) {
+        if (!ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
             throw new BusinessException("当前状态不能确认角色");
         }
 
@@ -109,7 +116,7 @@ public class CharacterExtractService {
             characterRepository.updateById(character);
         }
 
-        project.setStatus("CHARACTER_CONFIRMED");
+        project.setStatus(ProjectStatus.CHARACTER_CONFIRMED.getCode());
         projectRepository.updateById(project);
 
         log.info("角色已确认: projectId={}", projectId);
@@ -172,9 +179,13 @@ public class CharacterExtractService {
 
     private List<CharacterDraftDTO> parseCharacters(String jsonResult, String projectId) {
         try {
+            // 先清理AI返回的内容，去除可能的markdown标记和多余文字
+            String cleanJson = extractJsonFromResponse(jsonResult);
+            log.info("清理后的JSON: {}", cleanJson);
+
             // 解析JSON
             List<Map<String, Object>> dataList = objectMapper.readValue(
-                jsonResult,
+                cleanJson,
                 new TypeReference<List<Map<String, Object>>>() {}
             );
 
@@ -182,20 +193,65 @@ public class CharacterExtractService {
             for (Map<String, Object> data : dataList) {
                 CharacterDraftDTO dto = new CharacterDraftDTO();
                 dto.setCharId(generateCharId(projectId));
-                dto.setName((String) data.get("name"));
-                dto.setRole((String) data.get("role"));
-                dto.setPersonality((String) data.get("personality"));
-                dto.setAppearance((String) data.get("appearance"));
-                dto.setBackground((String) data.getOrDefault("background", ""));
+                dto.setName(getStringValue(data, "name"));
+                dto.setRole(getStringValue(data, "role"));
+                dto.setPersonality(getStringValue(data, "personality"));
+                dto.setAppearance(getStringValue(data, "appearance"));
+                dto.setBackground(getStringValue(data, "background"));
                 dto.setConfirmed(false);
                 result.add(dto);
             }
 
             return result;
         } catch (Exception e) {
-            log.error("解析角色数据失败", e);
-            throw new BusinessException("解析角色数据失败");
+            log.error("解析角色数据失败, AI返回原始内容: {}", jsonResult, e);
+            throw new BusinessException("解析角色数据失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 从AI返回的内容中提取纯JSON
+     * 处理可能的markdown代码块标记和多余文字
+     */
+    private String extractJsonFromResponse(String response) {
+        if (response == null || response.isEmpty()) {
+            return response;
+        }
+
+        String cleaned = response.trim();
+
+        // 去除开头的markdown代码块标记
+        if (cleaned.startsWith("```json")) {
+            cleaned = cleaned.substring(7);
+        } else if (cleaned.startsWith("```")) {
+            cleaned = cleaned.substring(3);
+        }
+
+        // 去除结尾的markdown代码块标记
+        if (cleaned.endsWith("```")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 3);
+        }
+
+        // 尝试提取JSON数组（从第一个 [ 到最后一个 ]）
+        int startIndex = cleaned.indexOf('[');
+        int endIndex = cleaned.lastIndexOf(']');
+
+        if (startIndex >= 0 && endIndex > startIndex) {
+            cleaned = cleaned.substring(startIndex, endIndex + 1);
+        }
+
+        return cleaned.trim();
+    }
+
+    /**
+     * 安全地从Map中获取字符串值
+     */
+    private String getStringValue(Map<String, Object> data, String key) {
+        Object value = data.get(key);
+        if (value == null) {
+            return "";
+        }
+        return value.toString();
     }
 
     private void saveCharacters(String projectId, List<CharacterDraftDTO> characters) {

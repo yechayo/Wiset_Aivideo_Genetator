@@ -8,6 +8,7 @@ import type {
   GenerateEpisodesRequest,
   GenerateScriptResponse,
   Project,
+  ProjectStatusInfo,
   ReviseScriptRequest,
   ReviseScriptResponse,
   Script,
@@ -125,4 +126,13 @@ export async function getProjects(): Promise<ApiResponse<Project[]>> {
  */
 export async function getProject(projectId: string): Promise<ApiResponse<Project>> {
   return get<ApiResponse<Project>>(`/api/projects/${projectId}`);
+}
+
+/**
+ * 获取项目状态详情（包含步骤映射和可用操作）
+ * @param projectId 项目ID
+ * @returns 项目状态详情
+ */
+export async function getProjectStatus(projectId: string): Promise<ApiResponse<ProjectStatusInfo>> {
+  return get<ApiResponse<ProjectStatusInfo>>(`/api/projects/${projectId}/status`);
 }
