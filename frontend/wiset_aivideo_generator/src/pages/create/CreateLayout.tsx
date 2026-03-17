@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useCallback } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import styles from './CreatePage.module.less';
 import { CREATE_STEPS } from './constants/steps';
@@ -14,40 +14,74 @@ import Step5page from './steps/Step5page';
 /**
  * 创建流程布局组件
  * 渲染步骤指示器和当前步骤内容
+ * 自动从后端同步项目状态，确保前后端步骤一致
  */
 const CreateLayout = () => {
   const { step } = useParams<{ step: string }>();
   const navigate = useNavigate();
-  const { completedSteps, setCurrentStep, addCompletedStep } = useCreateStore();
+  const { completedSteps, currentStep, statusInfo, isLoadingStatus, setCurrentStep, addCompletedStep, syncStatus } = useCreateStore();
   const { currentProject, setCurrentProject } = useProjectStore();
 
-  // 解析当前步骤
-  const currentStep = useMemo(() => {
+  // 解析 URL 中的步骤
+  const urlStep = useMemo(() => {
     if (!step) return 1;
     const stepNum = parseInt(step, 10);
     return Math.min(Math.max(stepNum, 1), CREATE_STEPS.length);
   }, [step]);
 
-  // 只在步骤变化时更新 store
+  // 项目变化时自动从后端同步状态
   useEffect(() => {
-    setCurrentStep(currentStep);
-  }, [currentStep, setCurrentStep]);
-
-  // 处理步骤点击
-  const handleStepClick = (stepId: number) => {
-    if (completedSteps.includes(stepId)) {
-      navigate(`/create/${stepId}`);
+    if (currentProject?.projectId) {
+      syncStatus(currentProject.projectId);
     }
-  };
+  }, [currentProject?.projectId, syncStatus]);
+
+  // 根据后端状态验证/重定向步骤
+  useEffect(() => {
+    if (!statusInfo || !currentProject) return;
+
+    // 如果 URL 步骤大于后端当前步骤，重定向到后端当前步骤
+    if (urlStep > statusInfo.currentStep) {
+      navigate(`/create/${statusInfo.currentStep}`, { replace: true });
+    }
+  }, [statusInfo, urlStep, currentProject, navigate]);
+
+  // 同步 store 中的当前步骤（只在合法范围内）
+  useEffect(() => {
+    if (statusInfo) {
+      setCurrentStep(Math.min(urlStep, statusInfo.currentStep));
+    } else {
+      setCurrentStep(urlStep);
+    }
+  }, [urlStep, statusInfo, setCurrentStep]);
+
+  // 处理步骤点击：只允许跳转到已完成的步骤或当前步骤
+  const handleStepClick = useCallback((stepId: number) => {
+    if (statusInfo) {
+      // 使用后端返回的已完成步骤来判断
+      if (statusInfo.completedSteps.includes(stepId) || stepId === statusInfo.currentStep) {
+        navigate(`/create/${stepId}`);
+      }
+    } else {
+      // 回退到本地判断
+      if (completedSteps.includes(stepId)) {
+        navigate(`/create/${stepId}`);
+      }
+    }
+  }, [statusInfo, completedSteps, navigate]);
 
   // 如果没有项目数据且不在第一步，重定向到第一步
-  if (!currentProject && currentStep > 1) {
+  if (!currentProject && urlStep > 1) {
     return <Navigate to="/create/1" replace />;
   }
 
+  // 使用后端状态信息中的完成步骤（如果有），否则用本地状态
+  const effectiveCompletedSteps = statusInfo ? statusInfo.completedSteps : completedSteps;
+  const effectiveCurrentStep = statusInfo ? Math.min(urlStep, statusInfo.currentStep) : urlStep;
+
   // 渲染当前步骤内容
   const renderStepContent = () => {
-    switch (currentStep) {
+    switch (effectiveCurrentStep) {
       case 1:
         return (
           <Step1Content
@@ -118,8 +152,8 @@ const CreateLayout = () => {
       {/* Step 指示器 */}
       <StepIndicator
         steps={CREATE_STEPS}
-        currentStep={currentStep}
-        completedSteps={completedSteps}
+        currentStep={effectiveCurrentStep}
+        completedSteps={effectiveCompletedSteps}
         onStepClick={handleStepClick}
       />
 

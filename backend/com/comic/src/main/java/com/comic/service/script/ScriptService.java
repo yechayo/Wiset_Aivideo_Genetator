@@ -3,6 +3,7 @@ package com.comic.service.script;
 import com.comic.ai.PromptBuilder;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
+import com.comic.common.ProjectStatus;
 import com.comic.dto.WorldConfigDTO;
 import com.comic.entity.Episode;
 import com.comic.entity.Project;
@@ -36,15 +37,15 @@ public class ScriptService {
     private final WorldRuleService worldRuleService;
     private final ObjectMapper objectMapper;
 
-    // 状态常量
-    private static final String STATUS_DRAFT = "DRAFT";
-    private static final String STATUS_OUTLINE_GENERATING = "OUTLINE_GENERATING";
-    private static final String STATUS_OUTLINE_REVIEW = "OUTLINE_REVIEW";
-    private static final String STATUS_EPISODE_GENERATING = "EPISODE_GENERATING";
-    private static final String STATUS_SCRIPT_REVIEW = "SCRIPT_REVIEW";
-    private static final String STATUS_SCRIPT_CONFIRMED = "SCRIPT_CONFIRMED";
-    private static final String STATUS_OUTLINE_FAILED = "OUTLINE_GENERATING_FAILED";
-    private static final String STATUS_EPISODE_FAILED = "EPISODE_GENERATING_FAILED";
+    // 状态常量（统一使用 ProjectStatus 枚举）
+    private static final String STATUS_DRAFT = ProjectStatus.DRAFT.getCode();
+    private static final String STATUS_OUTLINE_GENERATING = ProjectStatus.OUTLINE_GENERATING.getCode();
+    private static final String STATUS_OUTLINE_REVIEW = ProjectStatus.OUTLINE_REVIEW.getCode();
+    private static final String STATUS_EPISODE_GENERATING = ProjectStatus.EPISODE_GENERATING.getCode();
+    private static final String STATUS_SCRIPT_REVIEW = ProjectStatus.SCRIPT_REVIEW.getCode();
+    private static final String STATUS_SCRIPT_CONFIRMED = ProjectStatus.SCRIPT_CONFIRMED.getCode();
+    private static final String STATUS_OUTLINE_FAILED = ProjectStatus.OUTLINE_GENERATING_FAILED.getCode();
+    private static final String STATUS_EPISODE_FAILED = ProjectStatus.EPISODE_GENERATING_FAILED.getCode();
 
     // ================= 第一步：生成剧本大纲 =================
 
@@ -216,6 +217,12 @@ public class ScriptService {
 
         String status = project.getStatus();
         boolean isSingleEpisode = project.getTotalEpisodes() != null && project.getTotalEpisodes() == 1;
+
+        // 已经是确认状态，直接返回（幂等操作）
+        if (STATUS_SCRIPT_CONFIRMED.equals(status)) {
+            log.info("剧本已确认，跳过: projectId={}", projectId);
+            return;
+        }
 
         if (STATUS_OUTLINE_REVIEW.equals(status)) {
             // 单集模式：大纲生成后可直接确认

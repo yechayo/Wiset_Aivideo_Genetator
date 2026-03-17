@@ -123,3 +123,18 @@ export interface GenerateEpisodesRequest {
   episodeCount: number;
   modificationSuggestion?: string;
 }
+
+/**
+ * 项目状态信息（从后端同步）
+ */
+export interface ProjectStatusInfo {
+  projectId: string;
+  statusCode: string;
+  statusDescription: string;
+  currentStep: number;
+  isGenerating: boolean;
+  isFailed: boolean;
+  isReview: boolean;
+  completedSteps: number[];
+  availableActions: string[];
+}

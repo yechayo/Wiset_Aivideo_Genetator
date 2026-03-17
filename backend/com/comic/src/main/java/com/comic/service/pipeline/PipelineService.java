@@ -1,6 +1,8 @@
 package com.comic.service.pipeline;
 
 import com.comic.common.BusinessException;
+import com.comic.common.ProjectStatus;
+import com.comic.dto.ProjectStatusDTO;
 import com.comic.entity.Project;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.character.CharacterExtractService;
@@ -25,69 +27,6 @@ public class PipelineService {
     private final ScriptService scriptService;
     private final CharacterExtractService characterExtractService;
 
-    // 状态流转图
-    private static final Map<String, Set<String>> STATE_TRANSITIONS = new HashMap<>();
-
-    static {
-        // DRAFT 状态可以转换到
-        STATE_TRANSITIONS.put("DRAFT", new HashSet<>(Arrays.asList("SCRIPT_GENERATING")));
-
-        // SCRIPT_GENERATING 状态可以转换到
-        STATE_TRANSITIONS.put("SCRIPT_GENERATING", new HashSet<>(Arrays.asList(
-            "SCRIPT_REVIEW", "SCRIPT_GENERATING_FAILED"
-        )));
-
-        // SCRIPT_REVIEW 状态可以转换到
-        STATE_TRANSITIONS.put("SCRIPT_REVIEW", new HashSet<>(Arrays.asList(
-            "SCRIPT_CONFIRMED", "SCRIPT_REVISION_REQUESTED"
-        )));
-
-        // SCRIPT_REVISION_REQUESTED 状态可以转换到
-        STATE_TRANSITIONS.put("SCRIPT_REVISION_REQUESTED", new HashSet<>(Arrays.asList(
-            "SCRIPT_GENERATING"
-        )));
-
-        // SCRIPT_CONFIRMED 状态可以转换到
-        STATE_TRANSITIONS.put("SCRIPT_CONFIRMED", new HashSet<>(Arrays.asList(
-            "CHARACTER_EXTRACTING"
-        )));
-
-        // CHARACTER_EXTRACTING 状态可以转换到
-        STATE_TRANSITIONS.put("CHARACTER_EXTRACTING", new HashSet<>(Arrays.asList(
-            "CHARACTER_REVIEW", "CHARACTER_EXTRACTING_FAILED"
-        )));
-
-        // CHARACTER_REVIEW 状态可以转换到
-        STATE_TRANSITIONS.put("CHARACTER_REVIEW", new HashSet<>(Arrays.asList(
-            "CHARACTER_CONFIRMED"
-        )));
-
-        // CHARACTER_CONFIRMED 状态可以转换到
-        STATE_TRANSITIONS.put("CHARACTER_CONFIRMED", new HashSet<>(Arrays.asList(
-            "IMAGE_GENERATING"
-        )));
-
-        // IMAGE_GENERATING 状态可以转换到
-        STATE_TRANSITIONS.put("IMAGE_GENERATING", new HashSet<>(Arrays.asList(
-            "IMAGE_REVIEW", "IMAGE_GENERATING_FAILED"
-        )));
-
-        // IMAGE_REVIEW 状态可以转换到
-        STATE_TRANSITIONS.put("IMAGE_REVIEW", new HashSet<>(Arrays.asList(
-            "ASSET_LOCKED"
-        )));
-
-        // ASSET_LOCKED 状态可以转换到
-        STATE_TRANSITIONS.put("ASSET_LOCKED", new HashSet<>(Arrays.asList(
-            "PRODUCING"
-        )));
-
-        // PRODUCING 状态可以转换到
-        STATE_TRANSITIONS.put("PRODUCING", new HashSet<>(Arrays.asList(
-            "COMPLETED"
-        )));
-    }
-
     /**
      * 创建新项目
      */
@@ -103,7 +42,7 @@ public class PipelineService {
         project.setTargetAudience(targetAudience);
         project.setTotalEpisodes(totalEpisodes);
         project.setEpisodeDuration(episodeDuration);
-        project.setStatus("DRAFT");
+        project.setStatus(ProjectStatus.DRAFT.getCode());
 
         projectRepository.insert(project);
 
@@ -151,6 +90,31 @@ public class PipelineService {
     }
 
     /**
+     * 获取项目状态详情（包含前端步骤映射和可用操作）
+     */
+    public ProjectStatusDTO getProjectStatusDetail(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            throw new BusinessException("项目不存在");
+        }
+
+        ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
+
+        ProjectStatusDTO dto = new ProjectStatusDTO();
+        dto.setProjectId(project.getProjectId());
+        dto.setStatusCode(status.getCode());
+        dto.setStatusDescription(status.getDescription());
+        dto.setCurrentStep(status.getFrontendStep());
+        dto.setGenerating(status.isGenerating());
+        dto.setFailed(status.isFailed());
+        dto.setReview(status.isReview());
+        dto.setCompletedSteps(status.getCompletedSteps());
+        dto.setAvailableActions(status.getAvailableActions());
+
+        return dto;
+    }
+
+    /**
      * 获取用户的所有项目列表
      */
     public List<Project> getProjectsByUserId(String userId) {
@@ -160,56 +124,55 @@ public class PipelineService {
     // ================= 私有方法 =================
 
     private String calculateNextStatus(String currentStatus, String event) {
-        // 根据事件确定下一状态
         switch (event) {
             case "start_script_generation":
-                return "SCRIPT_GENERATING";
+                return ProjectStatus.OUTLINE_GENERATING.getCode();
             case "script_generated":
-                return "SCRIPT_REVIEW";
+                return ProjectStatus.SCRIPT_REVIEW.getCode();
             case "script_confirmed":
-                return "SCRIPT_CONFIRMED";
+                return ProjectStatus.SCRIPT_CONFIRMED.getCode();
             case "script_revision_requested":
-                return "SCRIPT_REVISION_REQUESTED";
+                return ProjectStatus.OUTLINE_REVIEW.getCode();
             case "start_character_extraction":
-                return "CHARACTER_EXTRACTING";
+                return ProjectStatus.CHARACTER_EXTRACTING.getCode();
             case "characters_extracted":
-                return "CHARACTER_REVIEW";
+                return ProjectStatus.CHARACTER_REVIEW.getCode();
             case "characters_confirmed":
-                return "CHARACTER_CONFIRMED";
+                return ProjectStatus.CHARACTER_CONFIRMED.getCode();
             case "start_image_generation":
-                return "IMAGE_GENERATING";
+                return ProjectStatus.IMAGE_GENERATING.getCode();
             case "images_generated":
-                return "IMAGE_REVIEW";
+                return ProjectStatus.IMAGE_REVIEW.getCode();
             case "image_confirmed":
-                return "ASSET_LOCKED";
+                return ProjectStatus.ASSET_LOCKED.getCode();
             case "start_production":
-                return "PRODUCING";
+                return ProjectStatus.PRODUCING.getCode();
             case "production_completed":
-                return "COMPLETED";
+                return ProjectStatus.COMPLETED.getCode();
             default:
                 return null;
         }
     }
 
     private void triggerNextStage(String projectId, String status) {
-        switch (status) {
-            case "SCRIPT_GENERATING":
+        ProjectStatus projectStatus = ProjectStatus.fromCode(status);
+        switch (projectStatus) {
+            case OUTLINE_GENERATING:
                 // 触发剧本大纲生成（两级生成：第一步）
                 scriptService.generateScriptOutline(projectId);
                 break;
 
-            case "CHARACTER_EXTRACTING":
+            case CHARACTER_EXTRACTING:
                 // 触发角色提取
                 characterExtractService.extractCharacters(projectId);
                 break;
 
-            // 其他状态的触发逻辑可以在这里添加
-            case "IMAGE_GENERATING":
+            case IMAGE_GENERATING:
                 // TODO: 触发图像生成
                 log.info("图像生成功能待实现: projectId={}", projectId);
                 break;
 
-            case "PRODUCING":
+            case PRODUCING:
                 // TODO: 触发视频生产
                 log.info("视频生产功能待实现: projectId={}", projectId);
                 break;
