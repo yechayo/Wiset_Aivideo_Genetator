@@ -112,11 +112,11 @@ export const useCreateStore = create<CreateState>()(
 
       /**
        * 根据后端返回的状态信息更新本地步骤状态
+       * 注意：不覆盖 currentStep，让路由决定当前步骤
        */
       applyStatusInfo: (statusInfo: ProjectStatusInfo) => {
         set({
           statusInfo,
-          currentStep: statusInfo.currentStep,
           completedSteps: statusInfo.completedSteps,
         });
       },
