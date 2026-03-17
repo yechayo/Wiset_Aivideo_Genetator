@@ -30,8 +30,6 @@ public class Character {
     private String threeViewStatus;     // 三视图生成状态: pending/generating/completed/failed
 
     // 生成内容存储（JSON格式）
-    private String expressionSheet;     // 九宫格表情图JSON数组
-    private String threeViewSheet;      // 三视图JSON数组
     private String expressionPrompt;    // 表情生成提示词
     private String threeViewPrompt;     // 三视图生成提示词
 
@@ -43,9 +41,8 @@ public class Character {
     private Boolean isGeneratingExpression;   // 正在生成表情
     private Boolean isGeneratingThreeView;    // 正在生成三视图
 
-    // 视觉风格和生成模式
+    // 视觉风格
     private String visualStyle;          // 3D/REAL/ANIME，默认3D
-    private String generationMode;       // grid/multiple，默认grid
 
     // 大全图URL
     private String expressionGridUrl;    // 九宫格大全图URL

@@ -371,21 +371,54 @@ public class ScriptService {
     /**
      * 从大纲中提取章节列表
      * 正则匹配 "#### 第X章：..." 格式
+     * 支持多种格式变体，提高兼容性
      */
     public List<String> extractChaptersFromOutline(String outline) {
         List<String> chapters = new ArrayList<>();
         if (outline == null || outline.isEmpty()) {
+            log.warn("大纲内容为空，无法提取章节");
             return chapters;
         }
 
-        // 匹配 "#### 第X章：章节名称（第A-B集）" 格式
-        Pattern pattern = Pattern.compile("####\\s+第([一二三四五六七八九十百千万0-9]+)章[：:]\\s*([^\\n]+)");
-        Matcher matcher = pattern.matcher(outline);
+        // 匹配多种可能的章节标题格式：
+        // 1. #### 第X章：章节名称（第A-B集）
+        // 2. ### 第X章：章节名称
+        // 3. #### 第X章 章节名称
+        // 4. #### 章节X：章节名称
+        // 支持中文数字和阿拉伯数字
+        String[] patterns = {
+            "#{3,4}\\s+第([一二三四五六七八九十百千万0-9]+)章[：:]?\\s*([^\\n]*)",  // #### 第X章：...
+            "#{3,4}\\s+([一二三四五六七八九十百千万0-9]+)[、.\\s]+[^\\n]*章[：:]?\\s*([^\\n]*)"  // #### X. 章节标题...
+        };
 
-        while (matcher.find()) {
-            chapters.add(matcher.group().trim());
+        for (String patternStr : patterns) {
+            Pattern pattern = Pattern.compile(patternStr);
+            Matcher matcher = pattern.matcher(outline);
+
+            while (matcher.find()) {
+                String chapterTitle = matcher.group().trim();
+                // 确保不重复添加
+                if (!chapters.contains(chapterTitle)) {
+                    chapters.add(chapterTitle);
+                }
+            }
         }
 
+        // 如果以上格式都没匹配到，尝试更宽松的匹配：查找所有 ### 或 #### 开头的行
+        if (chapters.isEmpty()) {
+            log.warn("标准章节格式未匹配到，尝试宽松匹配");
+            Pattern loosePattern = Pattern.compile("^(#{3,4})\\s*(第.+章[^\\n]*)", Pattern.MULTILINE);
+            Matcher looseMatcher = loosePattern.matcher(outline);
+
+            while (looseMatcher.find()) {
+                String chapterTitle = looseMatcher.group(2).trim();
+                if (!chapters.contains(chapterTitle)) {
+                    chapters.add(chapterTitle);
+                }
+            }
+        }
+
+        log.info("从大纲中提取到 {} 个章节: {}", chapters.size(), chapters);
         return chapters;
     }
 

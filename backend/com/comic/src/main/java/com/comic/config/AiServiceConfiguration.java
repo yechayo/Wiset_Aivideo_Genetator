@@ -2,7 +2,7 @@ package com.comic.config;
 
 import com.comic.ai.image.SeedreamImageService;
 import com.comic.ai.image.ImageGenerationService;
-import com.comic.ai.text.GlmTextService;
+import com.comic.ai.text.DeepSeekTextService;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.ai.video.SeedanceVideoService;
 import com.comic.ai.video.VideoGenerationService;
@@ -22,31 +22,16 @@ public class AiServiceConfiguration {
 
     // ========== 文本生成服务配置 ==========
 
-    @Value("${comic.ai.text.provider:glm}")
-    private String textProvider;
-
     @Bean
     @Primary
     public TextGenerationService textGenerationService(
-            GlmTextService glmTextService
+            DeepSeekTextService deepSeekTextService
     ) {
         log.info("=================================================");
         log.info("🤖 文本生成服务配置");
         log.info("=================================================");
-        log.info("提供商: {}", textProvider);
-
-        TextGenerationService service;
-        switch (textProvider.toLowerCase()) {
-            case "glm":
-                log.info("✅ 使用 GLM 进行文本生成（剧本、对话等）");
-                service = glmTextService;
-                break;
-            default:
-                log.warn("⚠️  未知的文本提供商: {}，使用默认的 GLM", textProvider);
-                service = glmTextService;
-                break;
-        }
-        return service;
+        log.info("✅ 使用 DeepSeek（思考模式）进行文本生成（剧本、对话等）");
+        return deepSeekTextService;
     }
 
     // ========== 图片生成服务配置 ==========
