@@ -33,7 +33,8 @@ function mockCreateProject(data: CreateProjectRequest): Promise<ApiResponse<Proj
         data: {
           id: Math.floor(Math.random() * 10000) + 1,
           storyPrompt: data.storyPrompt,
-          genre: data.genre,
+          genre: data.genre || '',
+          visualStyle: data.visualStyle || '3D',
           targetAudience: data.targetAudience,
           totalEpisodes: data.totalEpisodes,
           episodeDuration: data.episodeDuration,

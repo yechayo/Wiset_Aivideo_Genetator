@@ -150,6 +150,9 @@ const ChapterList = ({
  * 剧集卡片组件
  */
 const EpisodeCard = ({ episode }: { episode: Episode }) => {
+  const [expanded, setExpanded] = useState(false);
+  const isLongContent = episode.content && episode.content.length > 200;
+
   return (
     <div className={styles.episodeCard}>
       <div className={styles.episodeHeader}>
@@ -159,7 +162,20 @@ const EpisodeCard = ({ episode }: { episode: Episode }) => {
       </div>
       <div className={styles.episodeContent}>
         {episode.content && (
-          <p className={styles.content}>{episode.content.substring(0, 200)}...</p>
+          <>
+            <p className={styles.content}>
+              {expanded ? episode.content : episode.content.substring(0, 200)}
+              {isLongContent && !expanded && '...'}
+            </p>
+            {isLongContent && (
+              <button
+                className={styles.toggleButton}
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? '收起' : '展开全文'}
+              </button>
+            )}
+          </>
         )}
         <div className={styles.episodeMeta}>
           {episode.characters && (

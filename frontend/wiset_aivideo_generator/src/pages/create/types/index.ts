@@ -32,4 +32,7 @@ export interface StepIndicatorProps {
 /**
  * 步骤内容组件 Props
  */
-export interface StepContentProps {}
+export interface StepContentProps {
+  onComplete?: () => void;
+  onProjectCreated?: (project: any) => void;
+}

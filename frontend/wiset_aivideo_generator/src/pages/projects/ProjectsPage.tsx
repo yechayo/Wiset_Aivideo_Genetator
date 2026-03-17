@@ -89,8 +89,8 @@ function ProjectsPage() {
 
               <div className={styles.projectMeta}>
                 <div className={styles.metaItem}>
-                  <span className={styles.metaLabel}>类型</span>
-                  <span className={styles.metaValue}>{project.genre}</span>
+                  <span className={styles.metaLabel}>画面风格</span>
+                  <span className={styles.metaValue}>{project.visualStyle || project.genre || '3D'}</span>
                 </div>
                 <div className={styles.metaItem}>
                   <span className={styles.metaLabel}>集数</span>
