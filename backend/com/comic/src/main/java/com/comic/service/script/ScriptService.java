@@ -81,7 +81,7 @@ public class ScriptService {
                 project.getGenre(),
                 worldConfig.getRulesText(),
                 project.getTotalEpisodes(),
-                project.getEpisodeDuration() != null ? project.getEpisodeDuration() : 1,
+                project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
                 "REAL" // 默认视觉风格
             );
 
@@ -161,7 +161,7 @@ public class ScriptService {
                     outline,
                     globalCharacters,
                     globalItems,
-                    project.getEpisodeDuration() != null ? project.getEpisodeDuration() : 1,
+                    project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
                     modificationSuggestion
                 );
             } else {
@@ -174,7 +174,7 @@ public class ScriptService {
                     globalItems,
                     previousSummary,
                     episodeCount,
-                    project.getEpisodeDuration() != null ? project.getEpisodeDuration() : 1,
+                    project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
                     modificationSuggestion
                 );
             }
@@ -640,7 +640,7 @@ public class ScriptService {
                 project.getGenre(),
                 null,
                 project.getTotalEpisodes(),
-                project.getEpisodeDuration() != null ? project.getEpisodeDuration() : 1,
+                project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
                 "REAL"
             );
 

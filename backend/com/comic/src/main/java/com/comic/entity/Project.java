@@ -21,6 +21,7 @@ public class Project {
     private String targetAudience;     // 目标受众
     private Integer totalEpisodes;     // 总集数
     private Integer episodeDuration;   // 单集时长（秒）
+    private String visualStyle;        // 视觉风格（如 3D、ANIME、COMIC 等）
 
     // 项目状态机
     // DRAFT → SCRIPT_GENERATING → SCRIPT_REVIEW → SCRIPT_CONFIRMED

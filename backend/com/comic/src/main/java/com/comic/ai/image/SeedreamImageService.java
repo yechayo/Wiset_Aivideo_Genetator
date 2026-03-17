@@ -1,6 +1,7 @@
 package com.comic.ai.image;
 
 import com.comic.config.ArkProperties;
+import com.comic.service.oss.OssService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ public class SeedreamImageService implements ImageGenerationService {
     private final ArkProperties arkProperties;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final OssService ossService;
 
     // 并发控制
     private final Semaphore semaphore = new Semaphore(2);
@@ -35,16 +37,16 @@ public class SeedreamImageService implements ImageGenerationService {
             semaphore.acquire();
             log.info("Seedream 图片生成: 并发槽位 {}/{}", semaphore.availablePermits(), semaphore.getQueueLength());
 
-            String enhancedPrompt = enhancePrompt(prompt, style);
             String size = getSizeString(width, height);
 
             // 构建请求体（Java 8 兼容）
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", arkProperties.getSeedreamModel());
-            requestBody.put("prompt", enhancedPrompt);
+            requestBody.put("prompt", prompt);
             requestBody.put("size", size);
-            requestBody.put("output_format", "png");
+            requestBody.put("response_format", "url");
             requestBody.put("watermark", false);
+            requestBody.put("sequential_image_generation", "disabled");
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
 
@@ -63,10 +65,12 @@ public class SeedreamImageService implements ImageGenerationService {
                 }
 
                 String responseBody = response.body().string();
-                String imageUrl = parseResponse(responseBody);
+                String tempUrl = parseResponse(responseBody);
 
-                log.info("Seedream 图片生成完成: {}", imageUrl);
-                return imageUrl;
+                // 转存到 OSS，获取永久公网 URL
+                String ossUrl = ossService.uploadFromUrl(tempUrl, null);
+                log.info("Seedream 图片生成完成，已转存 OSS: {}", ossUrl);
+                return ossUrl;
             }
 
         } catch (InterruptedException e) {
@@ -85,9 +89,57 @@ public class SeedreamImageService implements ImageGenerationService {
 
     @Override
     public String generateWithReference(String prompt, String referenceImage, int width, int height) {
-        // Seedream 支持参考图，需要使用特殊的 API
-        log.warn("Seedream 参考图功能待实现，使用普通生成");
-        return generate(prompt, width, height, "realistic");
+        try {
+            semaphore.acquire();
+            log.info("Seedream 参考图生成: 并发槽位 {}/{}", semaphore.availablePermits(), semaphore.getQueueLength());
+
+            String size = getSizeString(width, height);
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", arkProperties.getSeedreamModel());
+            requestBody.put("prompt", prompt);
+            requestBody.put("image", referenceImage);
+            requestBody.put("size", size);
+            requestBody.put("response_format", "url");
+            requestBody.put("watermark", false);
+            requestBody.put("sequential_image_generation", "disabled");
+
+            String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+            Request request = new Request.Builder()
+                    .url(arkProperties.getBaseUrl() + "/images/generations")
+                    .addHeader("Authorization", "Bearer " + arkProperties.getApiKey())
+                    .addHeader("Content-Type", "application/json")
+                    .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
+                    .build();
+
+            try (Response response = httpClient.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    String errorBody = response.body() != null ? response.body().string() : "无响应体";
+                    log.error("Seedream 参考图 API 调用失败: {} - {}", response.code(), errorBody);
+                    throw new RuntimeException("Seedream 参考图生成失败: " + response.code());
+                }
+
+                String responseBody = response.body().string();
+                String tempUrl = parseResponse(responseBody);
+
+                String ossUrl = ossService.uploadFromUrl(tempUrl, null);
+                log.info("Seedream 参考图生成完成，已转存 OSS: {}", ossUrl);
+                return ossUrl;
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Seedream 参考图生成被中断", e);
+        } catch (IOException e) {
+            log.error("Seedream 参考图生成 IO 异常", e);
+            throw new RuntimeException("Seedream 参考图生成失败: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Seedream 参考图生成异常", e);
+            throw new RuntimeException("Seedream 参考图生成失败: " + e.getMessage(), e);
+        } finally {
+            semaphore.release();
+        }
     }
 
     @Override
@@ -101,36 +153,11 @@ public class SeedreamImageService implements ImageGenerationService {
     }
 
     /**
-     * 增强提示词
-     */
-    private String enhancePrompt(String prompt, String style) {
-        String stylePrompt;
-        switch (style.toLowerCase()) {
-            case "anime":
-                stylePrompt = "anime style, manga art, vibrant colors, high quality";
-                break;
-            case "realistic":
-                stylePrompt = "photorealistic, highly detailed, professional photography, 8k";
-                break;
-            case "comic":
-                stylePrompt = "comic book style, bold lines, vibrant colors, detailed";
-                break;
-            default:
-                stylePrompt = "high quality, detailed, professional";
-                break;
-        }
-        return stylePrompt + ", " + prompt;
-    }
-
-    /**
      * 获取尺寸字符串
+     * Seedream 4.0 支持格式：widthxheight（总像素需在 [921600, 16777216] 范围内，宽高比在 [1/16, 16]）
      */
     private String getSizeString(int width, int height) {
-        // Seedream 支持的尺寸：1K, 2K, 4K 或 宽x高
-        if (width >= 2048 || height >= 2048) {
-            return "2K";
-        }
-        return "1024x1024";
+        return width + "x" + height;
     }
 
     /**

@@ -34,7 +34,7 @@ public class PipelineService {
     @Transactional
     public String createProject(String userId, String storyPrompt, String genre,
                                String targetAudience, Integer totalEpisodes,
-                               Integer episodeDuration) {
+                               Integer episodeDuration, String visualStyle) {
         Project project = new Project();
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
@@ -43,6 +43,7 @@ public class PipelineService {
         project.setTargetAudience(targetAudience);
         project.setTotalEpisodes(totalEpisodes);
         project.setEpisodeDuration(episodeDuration);
+        project.setVisualStyle(visualStyle);
         project.setStatus(ProjectStatus.DRAFT.getCode());
 
         projectRepository.insert(project);
@@ -140,6 +141,7 @@ public class PipelineService {
         dto.setTargetAudience(project.getTargetAudience());
         dto.setTotalEpisodes(project.getTotalEpisodes());
         dto.setEpisodeDuration(project.getEpisodeDuration());
+        dto.setVisualStyle(project.getVisualStyle());
         dto.setStatusCode(status.getCode());
         dto.setStatusDescription(status.getDescription());
         dto.setCurrentStep(status.getFrontendStep());

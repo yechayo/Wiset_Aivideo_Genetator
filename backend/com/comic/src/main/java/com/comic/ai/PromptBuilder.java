@@ -336,7 +336,7 @@ public class PromptBuilder {
         sb.append("类型: ").append(genre != null ? genre : "N/A").append("\n");
         sb.append("背景: ").append(setting != null ? setting : "N/A").append("\n");
         sb.append("预估集数: ").append(totalEpisodes).append("\n");
-        sb.append("单集时长: ").append(episodeDuration).append(" 分钟\n");
+        sb.append("单集时长: ").append(episodeDuration / 60).append(" 分钟\n");
         sb.append("视觉风格: ").append(visualStyle != null ? visualStyle : "N/A").append("\n");
         return sb.toString();
     }

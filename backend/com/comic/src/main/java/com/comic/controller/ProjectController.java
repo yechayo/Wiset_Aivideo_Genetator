@@ -50,7 +50,8 @@ public class ProjectController {
             dto.getGenre(),
             dto.getTargetAudience(),
             dto.getTotalEpisodes(),
-            dto.getEpisodeDuration()
+            dto.getEpisodeDuration(),
+            dto.getVisualStyle()
         );
 
         Map<String, String> result = new HashMap<>();
