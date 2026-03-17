@@ -3,6 +3,7 @@
  */
 
 import { post } from './apiClient';
+import { authClient } from './apiClient';
 import type {
   RegisterRequest,
   LoginRequest,
@@ -125,7 +126,9 @@ export async function refreshAccessToken(refreshToken: string): Promise<ApiRespo
   if (USE_MOCK) {
     return mockRefreshAccessToken();
   }
-  return post<ApiResponse<{ accessToken: string }>>('/api/auth/refresh', { refreshToken });
+  // 使用 authClient 避免触发 token 刷新逻辑
+  const response = await authClient.post<ApiResponse<{ accessToken: string }>>('/api/auth/refresh', { refreshToken });
+  return response.data;
 }
 
 /**

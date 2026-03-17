@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useCallback, useRef, useState } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import styles from './CreatePage.module.less';
 import { CREATE_STEPS } from './constants/steps';
@@ -24,6 +24,18 @@ const CreateLayout = () => {
   const navigate = useNavigate();
   const { statusInfo, isLoadingStatus, startPolling, stopPolling } = useCreateStore();
   const { currentProject, setCurrentProject } = useProjectStore();
+  const [pollPaused, setPollPaused] = useState(false);
+
+  // 手动暂停/恢复轮询（测试用）
+  const togglePolling = useCallback(() => {
+    if (pollPaused) {
+      if (currentProject?.projectId) startPolling(currentProject.projectId);
+      setPollPaused(false);
+    } else {
+      stopPolling();
+      setPollPaused(true);
+    }
+  }, [pollPaused, currentProject?.projectId, startPolling, stopPolling]);
 
   // 动态生成步骤 URL：有 projectId 时用项目路由，否则用 /create
   const getStepUrl = useCallback((stepNum: number) => {
@@ -91,41 +103,24 @@ const CreateLayout = () => {
       case 1:
         return (
           <Step1Content
-            onComplete={() => {
-              // Step1 完成后不需要手动跳转，轮询会自动检测到状态变化
-            }}
             onProjectCreated={(project) => setCurrentProject(project)}
-            onBack={() => {}}
           />
         );
       case 2:
         return currentProject ? (
-          <Step2page
-            project={currentProject}
-            onComplete={() => {
-              // 确认剧本后轮询会自动检测到状态变化并跳转
-            }}
-          />
+          <Step2page project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 3:
         return currentProject ? (
-          <Step3page
-            project={currentProject}
-            onComplete={() => {}}
-          />
+          <Step3page project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 4:
         return currentProject ? (
-          <Step4page
-            project={currentProject}
-            onComplete={() => {}}
-          />
+          <Step4page project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 5:
         return currentProject ? (
-          <Step5page
-            project={currentProject}
-          />
+          <Step5page project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       default:
         return <Navigate to={getStepUrl(1)} replace />;
@@ -146,6 +141,27 @@ const CreateLayout = () => {
 
       {/* 步骤内容 */}
       {renderStepContent()}
+
+      {/* 测试工具：暂停/恢复轮询 */}
+      <button
+        onClick={togglePolling}
+        style={{
+          position: 'fixed',
+          bottom: 20,
+          right: 20,
+          zIndex: 9999,
+          padding: '8px 16px',
+          borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.3)',
+          background: pollPaused ? '#ff4444' : 'rgba(255,255,255,0.1)',
+          color: '#fff',
+          fontSize: 13,
+          cursor: 'pointer',
+          fontFamily: 'monospace',
+        }}
+      >
+        {pollPaused ? '▶ 恢复轮询' : '⏸ 暂停轮询'}
+      </button>
 
       {/* 全局 loading 遮罩：生成中时禁止操作 */}
       {showLoadingOverlay && (

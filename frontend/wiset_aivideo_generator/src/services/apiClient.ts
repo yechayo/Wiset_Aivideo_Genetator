@@ -43,12 +43,55 @@ const apiClient = axios.create({
 });
 
 /**
- * 请求拦截器 - 自动添加 token
+ * 创建无需认证的 axios 实例（用于刷新 token 等操作）
+ */
+const authClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+/**
+ * 请求拦截器 - 自动添加 token 并检查过期
  */
 apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const token = useAuthStore.getState().getAccessToken();
-    if (token && config.headers) {
+  async (config: InternalAxiosRequestConfig) => {
+    // 跳过刷新 token 请求的拦截
+    if (config.url === '/api/auth/refresh') {
+      return config;
+    }
+
+    const authStore = useAuthStore.getState();
+    const token = authStore.getAccessToken();
+
+    if (!token) {
+      return config;
+    }
+
+    // 检查 token 是否即将过期（5分钟内）
+    if (authStore.isTokenExpiring() && !isRefreshing) {
+      const refreshToken = authStore.getRefreshToken();
+      if (refreshToken) {
+        try {
+          isRefreshing = true;
+          const refreshResult = await refreshAccessToken(refreshToken);
+          if (refreshResult.code === 0 && refreshResult.data?.accessToken) {
+            authStore.updateAccessToken(refreshResult.data.accessToken);
+            config.headers.Authorization = `Bearer ${refreshResult.data.accessToken}`;
+          }
+        } catch (error) {
+          console.error('Token 刷新失败:', error);
+          // 继续使用旧 token，让响应拦截器处理可能的 401/403
+          config.headers.Authorization = `Bearer ${token}`;
+        } finally {
+          isRefreshing = false;
+        }
+        return config;
+      }
+    }
+
+    if (config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -59,7 +102,7 @@ apiClient.interceptors.request.use(
 );
 
 /**
- * 响应拦截器 - 处理 401 和 token 刷新
+ * 响应拦截器 - 处理 401/403 和 token 刷新
  */
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
@@ -68,8 +111,8 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // 处理 401 错误
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // 处理 401 和 403 错误（token 过期或无效）
+    if ((error.response?.status === 401 || error.response?.status === 403) && !originalRequest._retry) {
       const refreshToken = useAuthStore.getState().getRefreshToken();
 
       // 如果没有 refreshToken，直接登出
@@ -164,6 +207,7 @@ export function del<T>(endpoint: string, config = {}): Promise<T> {
 }
 
 export { API_BASE_URL };
+export { authClient };
 export default apiClient;
 
 /**
