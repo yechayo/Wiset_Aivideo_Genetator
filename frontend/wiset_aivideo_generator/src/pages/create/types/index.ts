@@ -32,7 +32,4 @@ export interface StepIndicatorProps {
 /**
  * 步骤内容组件 Props
  */
-export interface StepContentProps {
-  onComplete: () => void;
-  onBack: () => void;
-}
+export interface StepContentProps {}

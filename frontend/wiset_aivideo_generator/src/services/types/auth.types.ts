@@ -25,6 +25,7 @@ export interface AuthResponse {
   refreshToken: string;
   username: string;
   userId: number;
+  expiresIn?: number; // token 过期时间（秒）
 }
 
 /**
