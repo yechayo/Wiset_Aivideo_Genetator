@@ -1,11 +1,11 @@
-package com.comic.dto;
+package com.comic.dto.response;
 
 import lombok.Data;
 
 import java.time.LocalDateTime;
 
 @Data
-public class TaskStatusVO {
+public class TaskStatusResponse {
     private String taskId;
     private String taskType;
     private Long projectId;

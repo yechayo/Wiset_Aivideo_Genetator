@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -36,6 +38,10 @@ public class DeepSeekTextService implements TextGenerationService {
 
     // 并发控制
     private final Semaphore semaphore = new Semaphore(5);
+
+    // 重试配置
+    private static final int MAX_RETRIES = 3;
+    private static final long RETRY_DELAY_MS = 3000;
 
     public DeepSeekTextService(OkHttpClient httpClient, ObjectMapper objectMapper) {
         this.httpClient = httpClient;
@@ -75,19 +81,37 @@ public class DeepSeekTextService implements TextGenerationService {
                     .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
                     .build();
 
-            try (Response response = httpClient.newCall(request).execute()) {
-                if (!response.isSuccessful()) {
-                    String errorBody = response.body() != null ? response.body().string() : "无响应体";
-                    log.error("DeepSeek API 调用失败: {} - {}", response.code(), errorBody);
-                    throw new RuntimeException("DeepSeek 文本生成失败: " + response.code());
+            // 带重试的请求执行
+            Exception lastException = null;
+            for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                    try (Response response = httpClient.newCall(request).execute()) {
+                        if (!response.isSuccessful()) {
+                            String errorBody = response.body() != null ? response.body().string() : "无响应体";
+                            log.error("DeepSeek API 调用失败: {} - {}", response.code(), errorBody);
+                            throw new RuntimeException("DeepSeek 文本生成失败: " + response.code());
+                        }
+
+                        String responseBody = response.body().string();
+                        String content = parseResponse(responseBody);
+
+                        log.info("DeepSeek 文本生成完成: {}", content.substring(0, Math.min(100, content.length())));
+                        return content;
+                    }
+                } catch (SocketException | SocketTimeoutException e) {
+                    lastException = e;
+                    log.warn("DeepSeek 连接异常 (第{}/{}次): {}", attempt, MAX_RETRIES, e.getMessage());
+                    if (attempt < MAX_RETRIES) {
+                        try {
+                            Thread.sleep(RETRY_DELAY_MS * attempt);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException("DeepSeek 文本生成被中断", ie);
+                        }
+                    }
                 }
-
-                String responseBody = response.body().string();
-                String content = parseResponse(responseBody);
-
-                log.info("DeepSeek 文本生成完成: {}", content.substring(0, Math.min(100, content.length())));
-                return content;
             }
+            throw new RuntimeException("DeepSeek 文本生成失败（重试" + MAX_RETRIES + "次后仍失败）: " + lastException.getMessage(), lastException);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

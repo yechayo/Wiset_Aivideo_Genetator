@@ -1,12 +1,12 @@
-package com.comic.dto;
+package com.comic.dto.response;
 
 import lombok.Data;
 
 /**
- * 角色生成状态传输对象
+ * 角色生成状态响应DTO
  */
 @Data
-public class CharacterStatusDTO {
+public class CharacterStatusResponse {
     private String charId;
     private String name;
     private String role;                      // 角色（主角/反派/配角）

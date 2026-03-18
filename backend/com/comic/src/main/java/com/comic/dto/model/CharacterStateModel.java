@@ -1,11 +1,12 @@
-package com.comic.dto;
+package com.comic.dto.model;
 
 import lombok.Data;
+
 import java.util.List;
 import java.util.Map;
 
 @Data
-public class CharacterStateDTO {
+public class CharacterStateModel {
     private String charId;
     private String name;
     private String location;

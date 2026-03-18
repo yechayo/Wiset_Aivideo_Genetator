@@ -1,7 +1,7 @@
 package com.comic.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.comic.dto.ConfigSaveDTO;
+import com.comic.dto.request.ConfigSaveRequest;
 import com.comic.entity.SystemConfig;
 import com.comic.mapper.SystemConfigMapper;
 import com.google.gson.Gson;
@@ -59,7 +59,7 @@ public class ConfigService {
     /**
      * 保存或更新配置
      */
-    public void saveConfig(ConfigSaveDTO dto) {
+    public void saveConfig(ConfigSaveRequest dto) {
         SystemConfig existingConfig = configMapper.selectOne(
                 new QueryWrapper<SystemConfig>().eq("config_key", dto.getConfigKey())
         );

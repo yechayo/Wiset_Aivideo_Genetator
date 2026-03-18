@@ -1,10 +1,10 @@
-package com.comic.dto;
+package com.comic.dto.model;
 
 import lombok.Data;
 import java.util.List;
 
 @Data
-public class WorldConfigDTO {
+public class WorldConfigModel {
     private String seriesName;
     private String genre;
     private String targetAudience;

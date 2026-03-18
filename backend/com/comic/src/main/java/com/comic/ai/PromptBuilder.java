@@ -1,7 +1,7 @@
 package com.comic.ai;
 
-import com.comic.dto.CharacterStateDTO;
-import com.comic.dto.WorldConfigDTO;
+import com.comic.dto.model.CharacterStateModel;
+import com.comic.dto.model.WorldConfigModel;
 import com.comic.entity.Character;
 import org.springframework.stereotype.Component;
 
@@ -17,7 +17,7 @@ public class PromptBuilder {
     /**
      * 构建分镜生成的系统提示词
      */
-    public String buildStoryboardSystemPrompt(WorldConfigDTO world, List<CharacterStateDTO> charStates) {
+    public String buildStoryboardSystemPrompt(WorldConfigModel world, List<CharacterStateModel> charStates) {
         StringBuilder sb = new StringBuilder();
         sb.append("## 你的角色\n");
         sb.append("你是一个专业的漫画分镜脚本编剧，擅长").append(world.getGenre()).append("风格漫画。\n\n");
@@ -26,7 +26,7 @@ public class PromptBuilder {
         sb.append(world.getRulesText()).append("\n\n");
 
         sb.append("## 当前角色状态\n");
-        for (CharacterStateDTO state : charStates) {
+        for (CharacterStateModel state : charStates) {
             sb.append(state.toPromptText()).append("\n");
         }
 
@@ -336,7 +336,7 @@ public class PromptBuilder {
         sb.append("类型: ").append(genre != null ? genre : "N/A").append("\n");
         sb.append("背景: ").append(setting != null ? setting : "N/A").append("\n");
         sb.append("预估集数: ").append(totalEpisodes).append("\n");
-        sb.append("单集时长: ").append(episodeDuration / 60).append(" 分钟\n");
+        sb.append("单集时长: ").append(episodeDuration).append(" 分钟\n");
         sb.append("视觉风格: ").append(visualStyle != null ? visualStyle : "N/A").append("\n");
         return sb.toString();
     }

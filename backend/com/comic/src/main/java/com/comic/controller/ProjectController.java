@@ -1,9 +1,9 @@
 package com.comic.controller;
 
 import com.comic.common.Result;
-import com.comic.dto.ProjectCreateDTO;
-import com.comic.dto.ProjectListItemDTO;
-import com.comic.dto.ProjectStatusDTO;
+import com.comic.dto.request.ProjectCreateRequest;
+import com.comic.dto.response.ProjectListItemResponse;
+import com.comic.dto.response.ProjectStatusResponse;
 import com.comic.entity.Project;
 import com.comic.entity.User;
 import com.comic.repository.UserRepository;
@@ -39,7 +39,7 @@ public class ProjectController {
      */
     @PostMapping
     @Operation(summary = "创建项目", description = "创建新的漫画项目。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<Map<String, String>> createProject(@RequestBody ProjectCreateDTO dto,
+    public Result<Map<String, String>> createProject(@RequestBody ProjectCreateRequest dto,
                                                      @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
         User user = userRepository.findByUsername(userDetails.getUsername());
         String userId = user.getId().toString();
@@ -77,8 +77,8 @@ public class ProjectController {
      */
     @GetMapping("/{projectId}/status")
     @Operation(summary = "获取项目状态详情", description = "返回项目当前状态的完整信息，包含前端步骤映射、已完成步骤和可用操作")
-    public Result<ProjectStatusDTO> getProjectStatusDetail(@PathVariable String projectId) {
-        ProjectStatusDTO statusDetail = pipelineService.getProjectStatusDetail(projectId);
+    public Result<ProjectStatusResponse> getProjectStatusDetail(@PathVariable String projectId) {
+        ProjectStatusResponse statusDetail = pipelineService.getProjectStatusDetail(projectId);
         return Result.ok(statusDetail);
     }
 
@@ -88,10 +88,10 @@ public class ProjectController {
      */
     @GetMapping
     @Operation(summary = "获取项目列表", description = "获取当前用户创建的所有项目（含状态映射信息）")
-    public Result<java.util.List<ProjectListItemDTO>> getProjects(@Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
+    public Result<java.util.List<ProjectListItemResponse>> getProjects(@Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
         User user = userRepository.findByUsername(userDetails.getUsername());
         String userId = user.getId().toString();
-        java.util.List<ProjectListItemDTO> projects = pipelineService.getProjectsByUserId(userId);
+        java.util.List<ProjectListItemResponse> projects = pipelineService.getProjectsByUserId(userId);
         return Result.ok(projects);
     }
 
@@ -115,7 +115,7 @@ public class ProjectController {
     public Result<Void> generateEpisodes(@PathVariable String projectId,
                                           @RequestBody Map<String, Object> body) {
         String chapter = (String) body.get("chapter");
-        Integer episodeCount = body.get("episodeCount") != null ? (Integer) body.get("episodeCount") : 4;
+        Integer episodeCount = body.get("episodeCount") != null ? Integer.parseInt(String.valueOf(body.get("episodeCount"))) : 4;
         String modificationSuggestion = (String) body.get("modificationSuggestion");
 
         if (chapter == null || chapter.isEmpty()) {
@@ -155,7 +155,7 @@ public class ProjectController {
                                      @RequestBody Map<String, Object> body) {
         String revisionNote = (String) body.get("revisionNote");
         String chapter = (String) body.get("chapter");
-        Integer episodeCount = body.get("episodeCount") != null ? (Integer) body.get("episodeCount") : 4;
+        Integer episodeCount = body.get("episodeCount") != null ? Integer.parseInt(String.valueOf(body.get("episodeCount"))) : 4;
 
         if (chapter != null && !chapter.isEmpty()) {
             scriptService.reviseEpisodes(projectId, chapter, episodeCount, revisionNote);

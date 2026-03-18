@@ -1,8 +1,8 @@
 package com.comic.controller;
 
 import com.comic.common.Result;
-import com.comic.dto.CharacterDraftDTO;
-import com.comic.dto.CharacterStatusDTO;
+import com.comic.dto.model.CharacterDraftModel;
+import com.comic.dto.response.CharacterStatusResponse;
 import com.comic.entity.Character;
 import com.comic.repository.CharacterRepository;
 import com.comic.service.character.CharacterExtractService;
@@ -36,9 +36,9 @@ public class CharacterController {
      */
     @PostMapping("/extract")
     @Operation(summary = "提取角色", description = "从剧本中自动提取角色信息。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<List<CharacterDraftDTO>> extractCharacters(@RequestBody Map<String, String> body) {
+    public Result<List<CharacterDraftModel>> extractCharacters(@RequestBody Map<String, String> body) {
         String projectId = body.get("projectId");
-        List<CharacterDraftDTO> characters = characterExtractService.extractCharacters(projectId);
+        List<CharacterDraftModel> characters = characterExtractService.extractCharacters(projectId);
         return Result.ok(characters);
     }
 
@@ -47,9 +47,9 @@ public class CharacterController {
      */
     @GetMapping
     @Operation(summary = "获取项目角色列表", description = "获取指定项目的所有角色信息。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<List<CharacterDraftDTO>> getProjectCharacters(
+    public Result<List<CharacterDraftModel>> getProjectCharacters(
             @Parameter(description = "项目ID", required = true) @RequestParam String projectId) {
-        List<CharacterDraftDTO> characters = characterExtractService.getProjectCharacters(projectId);
+        List<CharacterDraftModel> characters = characterExtractService.getProjectCharacters(projectId);
         return Result.ok(characters);
     }
 
@@ -60,7 +60,7 @@ public class CharacterController {
     @Operation(summary = "编辑角色", description = "更新角色信息。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
     public Result<Void> updateCharacter(
             @Parameter(description = "角色ID", required = true) @PathVariable String charId,
-            @RequestBody CharacterDraftDTO dto) {
+            @RequestBody CharacterDraftModel dto) {
         characterExtractService.updateCharacter(charId, dto);
         return Result.ok();
     }
@@ -141,14 +141,14 @@ public class CharacterController {
      */
     @GetMapping("/{charId}/status")
     @Operation(summary = "获取生成状态", description = "获取角色的图片生成状态和已生成的图片URL。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<CharacterStatusDTO> getGenerationStatus(
+    public Result<CharacterStatusResponse> getGenerationStatus(
             @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
             return Result.fail("角色不存在");
         }
 
-        CharacterStatusDTO dto = new CharacterStatusDTO();
+        CharacterStatusResponse dto = new CharacterStatusResponse();
         dto.setCharId(character.getCharId());
         dto.setName(character.getName());
         dto.setRole(character.getRole());
@@ -171,7 +171,7 @@ public class CharacterController {
      */
     @GetMapping("/{charId}")
     @Operation(summary = "获取角色详情", description = "获取指定角色的详细信息。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<CharacterStatusDTO> getCharacterDetail(
+    public Result<CharacterStatusResponse> getCharacterDetail(
             @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
         return getGenerationStatus(charId);
     }

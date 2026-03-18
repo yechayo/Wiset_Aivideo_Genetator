@@ -1,11 +1,11 @@
-package com.comic.dto;
+package com.comic.dto.request;
 
 import lombok.Data;
 
 import javax.validation.constraints.NotBlank;
 
 @Data
-public class Base64UploadDTO {
+public class Base64UploadRequest {
 
     @NotBlank(message = "文件名不能为空")
     private String fileName;

@@ -2,8 +2,8 @@ package com.comic.service.story;
 
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.AiCallException;
-import com.comic.dto.CharacterStateDTO;
-import com.comic.dto.WorldConfigDTO;
+import com.comic.dto.model.CharacterStateModel;
+import com.comic.dto.model.WorldConfigModel;
 import com.comic.entity.Episode;
 import com.comic.repository.EpisodeRepository;
 import com.comic.service.world.CharacterService;
@@ -63,8 +63,8 @@ public class StoryboardService {
     }
 
     private String generateWithRetry(Episode episode) {
-        WorldConfigDTO world = worldRuleService.getWorldConfig(episode.getProjectId());
-        List<CharacterStateDTO> charStates = characterService.getCurrentStates(episode.getProjectId());
+        WorldConfigModel world = worldRuleService.getWorldConfig(episode.getProjectId());
+        List<CharacterStateModel> charStates = characterService.getCurrentStates(episode.getProjectId());
 
         // 构建基础系统提示词
         String systemPrompt = buildSystemPrompt(world, charStates);
@@ -154,7 +154,7 @@ public class StoryboardService {
     /**
      * 构建系统提示词
      */
-    private String buildSystemPrompt(WorldConfigDTO world, List<CharacterStateDTO> charStates) {
+    private String buildSystemPrompt(WorldConfigModel world, List<CharacterStateModel> charStates) {
         StringBuilder sb = new StringBuilder();
         sb.append("你是一个专业的分镜设计师，擅长将剧本转化为详细的分镜脚本。\n\n");
         sb.append("## 世界观设定\n");
@@ -166,7 +166,7 @@ public class StoryboardService {
         }
         sb.append("\n## 角色状态\n");
         if (charStates != null && !charStates.isEmpty()) {
-            for (CharacterStateDTO charState : charStates) {
+            for (CharacterStateModel charState : charStates) {
                 sb.append(charState.toPromptText()).append("\n");
             }
         }

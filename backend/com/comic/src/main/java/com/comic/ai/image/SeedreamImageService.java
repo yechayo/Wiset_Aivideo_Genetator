@@ -39,16 +39,11 @@ public class SeedreamImageService implements ImageGenerationService {
 
             String size = getSizeString(width, height);
 
-            // 构建请求体（Java 8 兼容）
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", arkProperties.getSeedreamModel());
-            requestBody.put("prompt", prompt);
-            requestBody.put("size", size);
-            requestBody.put("response_format", "url");
-            requestBody.put("watermark", false);
-            requestBody.put("sequential_image_generation", "disabled");
+            // 构建请求体
+            Map<String, Object> requestBody = buildRequestBody(prompt, size);
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
+            log.info("Seedream 请求参数: {}", jsonBody);
 
             Request request = new Request.Builder()
                     .url(arkProperties.getBaseUrl() + "/images/generations")
@@ -61,7 +56,7 @@ public class SeedreamImageService implements ImageGenerationService {
                 if (!response.isSuccessful()) {
                     String errorBody = response.body() != null ? response.body().string() : "无响应体";
                     log.error("Seedream API 调用失败: {} - {}", response.code(), errorBody);
-                    throw new RuntimeException("Seedream 图片生成失败: " + response.code());
+                    throw new RuntimeException("Seedream 图片生成失败: " + response.code() + " - " + errorBody);
                 }
 
                 String responseBody = response.body().string();
@@ -95,16 +90,11 @@ public class SeedreamImageService implements ImageGenerationService {
 
             String size = getSizeString(width, height);
 
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", arkProperties.getSeedreamModel());
-            requestBody.put("prompt", prompt);
+            Map<String, Object> requestBody = buildRequestBody(prompt, size);
             requestBody.put("image", referenceImage);
-            requestBody.put("size", size);
-            requestBody.put("response_format", "url");
-            requestBody.put("watermark", false);
-            requestBody.put("sequential_image_generation", "disabled");
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
+            log.info("Seedream 参考图请求参数: {}", jsonBody);
 
             Request request = new Request.Builder()
                     .url(arkProperties.getBaseUrl() + "/images/generations")
@@ -117,7 +107,7 @@ public class SeedreamImageService implements ImageGenerationService {
                 if (!response.isSuccessful()) {
                     String errorBody = response.body() != null ? response.body().string() : "无响应体";
                     log.error("Seedream 参考图 API 调用失败: {} - {}", response.code(), errorBody);
-                    throw new RuntimeException("Seedream 参考图生成失败: " + response.code());
+                    throw new RuntimeException("Seedream 参考图生成失败: " + response.code() + " - " + errorBody);
                 }
 
                 String responseBody = response.body().string();
@@ -154,10 +144,64 @@ public class SeedreamImageService implements ImageGenerationService {
 
     /**
      * 获取尺寸字符串
-     * Seedream 4.0 支持格式：widthxheight（总像素需在 [921600, 16777216] 范围内，宽高比在 [1/16, 16]）
+     * Seedream 5.0 总像素需在 [3686400, 10404496] 范围内，宽高比在 [1/16, 16]
+     * Seedream 4.0 总像素需在 [921600, 16777216] 范围内，宽高比在 [1/16, 16]
+     * 当输入尺寸不满足当前模型要求时，按相同宽高比放大到最小像素要求
      */
     private String getSizeString(int width, int height) {
+        int totalPixels = width * height;
+        boolean isV5 = arkProperties.getSeedreamModel().contains("5-0") || arkProperties.getSeedreamModel().contains("5.0");
+        int minPixels = isV5 ? 3686400 : 921600;
+        int maxPixels = isV5 ? 10404496 : 16777216;
+
+        if (totalPixels < minPixels) {
+            double scale = Math.sqrt((double) minPixels / totalPixels);
+            int newWidth = (int) Math.ceil(width * scale);
+            int newHeight = (int) Math.ceil(height * scale);
+            newWidth = (newWidth + 63) / 64 * 64;
+            newHeight = (newHeight + 63) / 64 * 64;
+            log.info("尺寸自动调整: {}x{} -> {}x{} (模型={}, 最小像素={})", width, height, newWidth, newHeight, arkProperties.getSeedreamModel(), minPixels);
+            return newWidth + "x" + newHeight;
+        }
+
+        if (totalPixels > maxPixels) {
+            double scale = Math.sqrt((double) maxPixels / totalPixels);
+            int newWidth = (int) Math.floor(width * scale);
+            int newHeight = (int) Math.floor(height * scale);
+            newWidth = (newWidth / 64) * 64;
+            newHeight = (newHeight / 64) * 64;
+            if (newWidth < 64) newWidth = 64;
+            if (newHeight < 64) newHeight = 64;
+            log.info("尺寸自动调整(缩小): {}x{} -> {}x{} (模型={}, 最大像素={})", width, height, newWidth, newHeight, arkProperties.getSeedreamModel(), maxPixels);
+            return newWidth + "x" + newHeight;
+        }
+
         return width + "x" + height;
+    }
+
+    /**
+     * 构建请求体，根据模型版本适配参数
+     * Seedream 5.0 不支持 sequential_image_generation，使用 output_format 代替
+     * Seedream 4.0 支持 sequential_image_generation，不支持 output_format
+     */
+    private Map<String, Object> buildRequestBody(String prompt, String size) {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", arkProperties.getSeedreamModel());
+        requestBody.put("prompt", prompt);
+        requestBody.put("size", size);
+        requestBody.put("response_format", "url");
+        requestBody.put("watermark", false);
+
+        boolean isV5 = arkProperties.getSeedreamModel().contains("5-0") || arkProperties.getSeedreamModel().contains("5.0");
+        if (isV5) {
+            // 5.0: 使用 output_format，不传 sequential_image_generation
+            requestBody.put("output_format", "png");
+        } else {
+            // 4.0: 使用 sequential_image_generation
+            requestBody.put("sequential_image_generation", "disabled");
+        }
+
+        return requestBody;
     }
 
     /**

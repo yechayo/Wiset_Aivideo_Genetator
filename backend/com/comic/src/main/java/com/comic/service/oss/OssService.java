@@ -11,6 +11,9 @@ import okhttp3.Response;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PreDestroy;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.UUID;
 
@@ -89,6 +92,40 @@ public class OssService {
         } catch (Exception e) {
             log.error("上传图片到 OSS 失败: {}", imageUrl, e);
             throw new RuntimeException("上传图片到 OSS 失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 从本地文件上传到 OSS
+     *
+     * @param filePath 本地文件路径
+     * @param category 分类目录（如 "videos", "subtitles"）
+     * @return OSS 公网 URL
+     */
+    public String uploadFromFile(String filePath, String category) {
+        try {
+            File file = new File(filePath);
+            if (!file.exists()) {
+                throw new FileNotFoundException("文件不存在: " + filePath);
+            }
+
+            String fileName = file.getName();
+            String objectKey = ossProperties.getDir() + category + "/" + fileName;
+
+            try (InputStream inputStream = new FileInputStream(file)) {
+                getOssClient().putObject(
+                        ossProperties.getBucketName(),
+                        objectKey,
+                        inputStream
+                );
+            }
+
+            String publicUrl = getPublicUrl(objectKey);
+            log.info("文件已上传到 OSS: {} -> {}", filePath, publicUrl);
+            return publicUrl;
+        } catch (Exception e) {
+            log.error("上传文件到 OSS 失败: {}", filePath, e);
+            throw new RuntimeException("上传文件到 OSS 失败: " + e.getMessage(), e);
         }
     }
 
