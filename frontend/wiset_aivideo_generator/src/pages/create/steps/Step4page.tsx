@@ -1,6 +1,7 @@
 import styles from './Step2page.module.less';
 import type { Project } from '../../../services';
 import type { StepContentProps } from '../types';
+import { useCreateStore } from '../../../stores/createStore';
 
 interface Step4pageProps extends StepContentProps {
   project: Project;
@@ -10,11 +11,13 @@ interface Step4pageProps extends StepContentProps {
  * Step 4: 生成配置
  */
 const Step4page = ({ project, onComplete }: Step4pageProps) => {
+  const { isLoadingStatus } = useCreateStore();
+
   const handleNext = () => {
     const confirmed = window.confirm('确认后将开始生成，无法再返回修改。请确认配置无误后再继续。');
     if (!confirmed) return;
     console.log('开始生成:', project);
-    onComplete();
+    onComplete?.();
   };
 
   return (
@@ -26,9 +29,16 @@ const Step4page = ({ project, onComplete }: Step4pageProps) => {
         </p>
       </div>
 
-      <div className={styles.emptyContent}>
-        第四步内容开发中...
-      </div>
+      {isLoadingStatus ? (
+        <div className={styles.loadingState}>
+          <div className={styles.spinner}></div>
+          <p>正在加载配置...</p>
+        </div>
+      ) : (
+        <div className={styles.emptyContent}>
+          第四步内容开发中...
+        </div>
+      )}
 
       <div className={styles.buttonContainer}>
         <button className={styles.confirmButton} onClick={handleNext}>

@@ -10,7 +10,7 @@ import { useProjectStore } from '../../stores';
 const CreatePage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentStep } = useCreateStore();
+  const { statusInfo } = useCreateStore();
   const { currentProject } = useProjectStore();
   const [hasRedirected, setHasRedirected] = useState(false);
 
@@ -25,9 +25,9 @@ const CreatePage = () => {
 
     // 计算目标步骤
     let targetStep: number;
-    if (currentProject) {
+    if (currentProject && statusInfo?.currentStep) {
       // 如果有项目，从 store 中获取当前步骤
-      targetStep = currentStep;
+      targetStep = statusInfo.currentStep;
     } else {
       // 没有项目，从第一步开始
       targetStep = 1;
@@ -35,7 +35,7 @@ const CreatePage = () => {
 
     setHasRedirected(true);
     navigate(`/create/${targetStep}`, { replace: true });
-  }, [hasRedirected, currentProject, currentStep, location.pathname, navigate]);
+  }, [hasRedirected, currentProject, statusInfo?.currentStep, location.pathname, navigate]);
 
   // 渲染空白（会立即重定向）
   return null;

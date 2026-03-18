@@ -25,6 +25,7 @@ const CreateLayout = () => {
   const { statusInfo, isLoadingStatus, startPolling, stopPolling } = useCreateStore();
   const { currentProject, setCurrentProject } = useProjectStore();
   const [pollPaused, setPollPaused] = useState(false);
+  const [isStepTransitioning, setIsStepTransitioning] = useState(false);
 
   // 手动暂停/恢复轮询（测试用）
   const togglePolling = useCallback(() => {
@@ -86,6 +87,18 @@ const CreateLayout = () => {
     }
   }, [statusInfo, urlStep, isLoadingStatus, navigate, getStepUrl]);
 
+  // 步骤切换时的过渡loading
+  useEffect(() => {
+    if (urlStep && currentProject?.projectId) {
+      setIsStepTransitioning(true);
+      // 给步骤页面500ms加载时间
+      const timer = setTimeout(() => {
+        setIsStepTransitioning(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [urlStep, currentProject?.projectId]);
+
   // 步骤导航栏不可点击跳转（确认后不可回退）
   const handleStepClick = undefined;
 
@@ -127,7 +140,7 @@ const CreateLayout = () => {
     }
   };
 
-  const showLoadingOverlay = statusInfo?.isGenerating ?? false;
+  const showLoadingOverlay = (statusInfo?.isGenerating ?? false) || isStepTransitioning;
 
   return (
     <div className={styles.createContainer}>

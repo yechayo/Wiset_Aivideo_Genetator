@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import styles from './Step3page.module.less';
 import type { Project, CharacterDraft, CharacterStatus } from '../../../services';
 import type { StepContentProps } from '../types';
@@ -43,8 +44,9 @@ const VISUAL_STYLE_OPTIONS = [
 ];
 
 const Step3page = ({ project }: Step3pageProps) => {
-  const { statusInfo, canPerformAction } = useCreateStore();
+  const { statusInfo, canPerformAction, isLoadingStatus } = useCreateStore();
   const projectId = project.projectId;
+  const prefersReducedMotion = useReducedMotion();
 
   // 角色数据
   const [characters, setCharacters] = useState<CharacterItem[]>([]);
@@ -62,10 +64,11 @@ const Step3page = ({ project }: Step3pageProps) => {
   const [generatingAll, setGeneratingAll] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
+  // 数据轮询相关状态
+  const maxDataPollingCount = 10;
+
   // 判断是否可提取角色
   const canExtract = canPerformAction('extract_characters');
-  // 判断是否在角色审核状态
-  const isReview = statusInfo?.statusCode === 'CHARACTER_REVIEW';
   const isFailed = statusInfo?.isFailed;
 
   // 加载角色列表（含生成状态）
@@ -106,13 +109,68 @@ const Step3page = ({ project }: Step3pageProps) => {
     }
   }, [projectId]);
 
-  // 进入角色审核状态时加载角色
+  // 进入角色审核状态时加载角色（移除isReview依赖，组件mount时立即加载）
   useEffect(() => {
-    if (isReview && projectId) {
+    if (!projectId) return;
+
+    const loadDataWithPolling = async (attempt: number = 0) => {
       setLoading(true);
-      fetchCharacters().finally(() => setLoading(false));
-    }
-  }, [isReview, projectId, fetchCharacters]);
+      try {
+        const res = await getCharacters(projectId);
+        if (res.code === 200 && res.data && res.data.length > 0) {
+          // 有数据，加载角色状态并完成
+          const items: CharacterItem[] = await Promise.all(
+            res.data.map(async (draft) => {
+              try {
+                const statusRes = await getCharacterStatus(draft.charId);
+                if (statusRes.code === 200 && statusRes.data) {
+                  return { draft, status: statusRes.data };
+                }
+              } catch {
+                // 忽略单个角色状态获取失败
+              }
+              return { draft };
+            })
+          );
+          setCharacters(items);
+
+          // 检查是否有角色正在生成中
+          const generatingIds = new Set<string>();
+          for (const item of items) {
+            if (item.status) {
+              if (item.status.isGeneratingExpression || item.status.isGeneratingThreeView) {
+                generatingIds.add(item.draft.charId);
+              }
+            }
+          }
+          setGeneratingCharIds(generatingIds);
+          setLoading(false);
+        } else {
+          // 无数据，检查是否需要轮询
+          if (attempt < maxDataPollingCount) {
+            setTimeout(() => {
+              loadDataWithPolling(attempt + 1);
+            }, 2000);
+          } else {
+            // 超过最大轮询次数，显示空状态
+            setCharacters([]);
+            setLoading(false);
+          }
+        }
+      } catch (err: any) {
+        if (attempt < maxDataPollingCount) {
+          setTimeout(() => {
+            loadDataWithPolling(attempt + 1);
+          }, 2000);
+        } else {
+          setError(err.message || '获取角色列表失败');
+          setLoading(false);
+        }
+      }
+    };
+
+    loadDataWithPolling();
+  }, [projectId]);
 
   // 图片生成状态轮询
   useEffect(() => {
@@ -291,15 +349,37 @@ const Step3page = ({ project }: Step3pageProps) => {
   const isCharGenerating = (charId: string) => generatingCharIds.has(charId);
 
   // ========== 渲染 ==========
+  return (
+    <div className={styles.content}>
+      <div className={styles.header}>
+        <h1 className={styles.title}>角色配置</h1>
+        <p className={styles.subtitle}>
+          共 {characters.length} 个角色，点击角色卡片查看详情和生成图片
+        </p>
+      </div>
 
-  // 引导区：可提取角色
-  if (canExtract && !isReview) {
-    return (
-      <div className={styles.content}>
-        <div className={styles.header}>
-          <h1 className={styles.title}>角色配置</h1>
-          <p className={styles.subtitle}>从剧本中自动提取角色，配置角色形象和素材</p>
+      {isLoadingStatus || loading ? (
+        <div className={styles.loadingState}>
+          <div className={styles.spinner}></div>
+          <p>正在加载角色数据...</p>
         </div>
+      ) : error ? (
+        <div className={styles.errorState}>
+          <p>{error}</p>
+          <button className={styles.retryButton} onClick={() => {
+            setError('');
+            // 重新触发加载
+            const projectId = project.projectId;
+            if (projectId) {
+              setLoading(true);
+              fetchCharacters();
+            }
+          }}>
+            重试
+          </button>
+        </div>
+      ) : canExtract ? (
+        // 引导区：可提取角色
         <div className={styles.guideSection}>
           <div className={styles.guideIcon}>
             <UsersIcon />
@@ -317,45 +397,18 @@ const Step3page = ({ project }: Step3pageProps) => {
             {loading ? '提取中...' : '开始提取角色'}
           </button>
         </div>
-      </div>
-    );
-  }
-
-  // 错误状态
-  if (isFailed && !isReview) {
-    return (
-      <div className={styles.content}>
-        <div className={styles.header}>
-          <h1 className={styles.title}>角色配置</h1>
-          <p className={styles.subtitle}>配置角色形象</p>
-        </div>
+      ) : isFailed ? (
+        // 错误状态
         <div className={styles.errorSection}>
           <p>{error || statusInfo?.statusDescription || '角色提取失败'}</p>
           <button className={styles.retryButton} onClick={handleExtract} aria-label="重新提取角色">
             重新提取
           </button>
         </div>
-      </div>
-    );
-  }
-
-  // 角色审核状态
-  return (
-    <div className={styles.content}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>角色配置</h1>
-        <p className={styles.subtitle}>
-          共 {characters.length} 个角色，点击角色卡片查看详情和生成图片
-        </p>
-      </div>
-
-      {loading ? (
-        <div className={styles.guideSection}>
-          <p style={{ color: 'rgba(255,255,255,0.5)' }}>加载角色中...</p>
-        </div>
       ) : characters.length === 0 ? (
-        <div className={styles.guideSection}>
-          <p style={{ color: 'rgba(255,255,255,0.3)' }}>暂无角色数据</p>
+        <div className={styles.emptyState}>
+          <p>暂无角色数据</p>
+          <p className={styles.emptyHint}>角色可能还在提取中，请稍后刷新</p>
         </div>
       ) : (
         <>
@@ -408,202 +461,211 @@ const Step3page = ({ project }: Step3pageProps) => {
                     </div>
                   </div>
 
-                  {/* 展开编辑区域 */}
-                  {isExpanded && (
-                    <div className={styles.expandedContent}>
-                      <div className={styles.editHeader}>
-                        <h4 className={styles.editTitle}>角色详情</h4>
-                        <button
-                          className={styles.collapseBtn}
-                          onClick={() => { setExpandedCharId(null); setEditForm({}); }}
-                          aria-label="收起角色详情"
-                        >
-                          收起
-                        </button>
-                      </div>
-
-                      {/* 编辑表单 */}
-                      <div className={styles.editForm}>
-                        <div className={styles.formGroup}>
-                          <label className={styles.formLabel} htmlFor={`name-${char.draft.charId}`}>角色名称</label>
-                          <input
-                            id={`name-${char.draft.charId}`}
-                            className={styles.formInput}
-                            value={editForm.name || ''}
-                            onChange={(e) => handleFormChange('name', e.target.value)}
-                            placeholder="角色名称"
-                          />
-                        </div>
-                        <div className={styles.formGroup}>
-                          <label className={styles.formLabel} htmlFor={`role-${char.draft.charId}`}>角色定位</label>
-                          <select
-                            id={`role-${char.draft.charId}`}
-                            className={styles.formSelect}
-                            value={editForm.role || ''}
-                            onChange={(e) => handleFormChange('role', e.target.value)}
+                  {/* 展开编辑区域：左右双栏布局 */}
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div
+                        className={styles.expandedContent}
+                        initial={{ opacity: prefersReducedMotion ? 1 : 0, y: prefersReducedMotion ? 0 : -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: prefersReducedMotion ? 1 : 0, y: prefersReducedMotion ? 0 : -8 }}
+                        transition={{ duration: prefersReducedMotion ? 0 : 0.25, ease: [0.4, 0, 0.2, 1] }}
+                      >
+                        <div className={styles.editHeader}>
+                          <h4 className={styles.editTitle}>角色详情</h4>
+                          <button
+                            className={styles.collapseBtn}
+                            onClick={() => { setExpandedCharId(null); setEditForm({}); }}
+                            aria-label="收起角色详情"
                           >
-                            {ROLE_OPTIONS.map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
+                            收起
+                          </button>
                         </div>
-                        <div className={styles.formGroup}>
-                          <label className={styles.formLabel} htmlFor={`style-${char.draft.charId}`}>视觉风格</label>
-                          <select
-                            id={`style-${char.draft.charId}`}
-                            className={styles.formSelect}
-                            value={st?.visualStyle || project.genre || '3D'}
-                            onChange={(e) => handleStyleChange(char.draft.charId, e.target.value)}
+
+                      <div className={styles.expandedColumns}>
+                        {/* 左栏：编辑表单 */}
+                        <div className={styles.expandedLeft}>
+                          <div className={styles.editForm}>
+                            <div className={styles.formGroup}>
+                              <label className={styles.formLabel} htmlFor={`name-${char.draft.charId}`}>角色名称</label>
+                              <input
+                                id={`name-${char.draft.charId}`}
+                                className={styles.formInput}
+                                value={editForm.name || ''}
+                                onChange={(e) => handleFormChange('name', e.target.value)}
+                                placeholder="角色名称"
+                              />
+                            </div>
+                            <div className={styles.formGroup}>
+                              <label className={styles.formLabel} htmlFor={`role-${char.draft.charId}`}>角色定位</label>
+                              <select
+                                id={`role-${char.draft.charId}`}
+                                className={styles.formSelect}
+                                value={editForm.role || ''}
+                                onChange={(e) => handleFormChange('role', e.target.value)}
+                              >
+                                {ROLE_OPTIONS.map(opt => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className={styles.formGroup}>
+                              <label className={styles.formLabel} htmlFor={`style-${char.draft.charId}`}>视觉风格</label>
+                              <select
+                                id={`style-${char.draft.charId}`}
+                                className={styles.formSelect}
+                                value={st?.visualStyle || project.genre || '3D'}
+                                onChange={(e) => handleStyleChange(char.draft.charId, e.target.value)}
+                              >
+                                {VISUAL_STYLE_OPTIONS.map(opt => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className={styles.formGroup}>
+                              <label className={styles.formLabel} htmlFor={`personality-${char.draft.charId}`}>性格描述</label>
+                              <input
+                                id={`personality-${char.draft.charId}`}
+                                className={styles.formInput}
+                                value={editForm.personality || ''}
+                                onChange={(e) => handleFormChange('personality', e.target.value)}
+                                placeholder="角色性格"
+                              />
+                            </div>
+                            <div className={`${styles.formGroup} ${styles.fullWidth}`}>
+                              <label className={styles.formLabel} htmlFor={`appearance-${char.draft.charId}`}>外貌描述</label>
+                              <textarea
+                                id={`appearance-${char.draft.charId}`}
+                                className={styles.formTextarea}
+                                value={editForm.appearance || ''}
+                                onChange={(e) => handleFormChange('appearance', e.target.value)}
+                                placeholder="角色外貌特征"
+                              />
+                            </div>
+                            <div className={`${styles.formGroup} ${styles.fullWidth}`}>
+                              <label className={styles.formLabel} htmlFor={`background-${char.draft.charId}`}>背景故事</label>
+                              <textarea
+                                id={`background-${char.draft.charId}`}
+                                className={styles.formTextarea}
+                                value={editForm.background || ''}
+                                onChange={(e) => handleFormChange('background', e.target.value)}
+                                placeholder="角色背景故事"
+                              />
+                            </div>
+                          </div>
+
+                          <button
+                            className={styles.saveBtn}
+                            onClick={() => handleSave(char.draft.charId)}
+                            disabled={saving}
+                            aria-label="保存角色修改"
                           >
-                            {VISUAL_STYLE_OPTIONS.map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
+                            {saving ? '保存中...' : '保存修改'}
+                          </button>
                         </div>
-                        <div className={styles.formGroup}>
-                          <label className={styles.formLabel} htmlFor={`personality-${char.draft.charId}`}>性格描述</label>
-                          <input
-                            id={`personality-${char.draft.charId}`}
-                            className={styles.formInput}
-                            value={editForm.personality || ''}
-                            onChange={(e) => handleFormChange('personality', e.target.value)}
-                            placeholder="角色性格"
-                          />
-                        </div>
-                        <div className={`${styles.formGroup} ${styles.fullWidth}`}>
-                          <label className={styles.formLabel} htmlFor={`appearance-${char.draft.charId}`}>外貌描述</label>
-                          <textarea
-                            id={`appearance-${char.draft.charId}`}
-                            className={styles.formTextarea}
-                            value={editForm.appearance || ''}
-                            onChange={(e) => handleFormChange('appearance', e.target.value)}
-                            placeholder="角色外貌特征"
-                          />
-                        </div>
-                        <div className={`${styles.formGroup} ${styles.fullWidth}`}>
-                          <label className={styles.formLabel} htmlFor={`background-${char.draft.charId}`}>背景故事</label>
-                          <textarea
-                            id={`background-${char.draft.charId}`}
-                            className={styles.formTextarea}
-                            value={editForm.background || ''}
-                            onChange={(e) => handleFormChange('background', e.target.value)}
-                            placeholder="角色背景故事"
-                          />
-                        </div>
-                      </div>
 
-                      {/* 保存按钮 */}
-                      <div style={{ marginBottom: 24 }}>
-                        <button
-                          className={styles.saveBtn}
-                          onClick={() => handleSave(char.draft.charId)}
-                          disabled={saving}
-                          aria-label="保存角色修改"
-                        >
-                          {saving ? '保存中...' : '保存修改'}
-                        </button>
-                      </div>
+                        {/* 右栏：图片预览 */}
+                        <div className={styles.expandedRight}>
+                          {/* 九宫格表情（配角不显示） */}
+                          {!isSupporting && (
+                            <div className={styles.imageCard}>
+                              <h5 className={styles.imageCardTitle}>九宫格表情</h5>
+                              <div className={styles.imageStatus}>
+                                <span className={`${styles.statusDot} ${
+                                  st?.expressionStatus === 'GENERATING' ? styles.generating :
+                                  st?.expressionStatus === 'COMPLETED' ? styles.completed :
+                                  st?.expressionStatus === 'FAILED' ? styles.failed : styles.pending
+                                }`} />
+                                {getGenStatusText(st?.expressionStatus, '表情')}
+                              </div>
+                              {st?.expressionError && (
+                                <p className={styles.imageError}>{st.expressionError}</p>
+                              )}
+                              <div className={styles.imagePreview}>
+                                {st?.expressionGridUrl ? (
+                                  <img src={st.expressionGridUrl} alt={`${char.draft.name} 九宫格表情`} />
+                                ) : (
+                                  <div className={styles.imagePlaceholder}>
+                                    <ImageIcon />
+                                    <span>等待生成</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className={styles.imageActions}>
+                                {!st?.expressionGridUrl && st?.expressionStatus !== 'GENERATING' && (
+                                  <button
+                                    className={styles.imageGenBtn}
+                                    onClick={() => handleGenerateSingle(char.draft.charId)}
+                                    disabled={generating}
+                                    aria-label="生成九宫格表情"
+                                  >
+                                    {generating ? '生成中...' : '生成'}
+                                  </button>
+                                )}
+                                {st?.expressionStatus === 'FAILED' && (
+                                  <button
+                                    className={styles.imageRetryBtn}
+                                    onClick={() => handleRetry(char.draft.charId, 'expression')}
+                                    aria-label="重试生成九宫格表情"
+                                  >
+                                    重试
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
 
-                      {/* 图片生成区域 */}
-                      <div className={styles.imageSection}>
-                        {/* 九宫格表情（配角不显示） */}
-                        {!isSupporting && (
+                          {/* 三视图 */}
                           <div className={styles.imageCard}>
-                            <h5 className={styles.imageCardTitle}>九宫格表情</h5>
+                            <h5 className={styles.imageCardTitle}>三视图</h5>
                             <div className={styles.imageStatus}>
                               <span className={`${styles.statusDot} ${
-                                st?.expressionStatus === 'GENERATING' ? styles.generating :
-                                st?.expressionStatus === 'COMPLETED' ? styles.completed :
-                                st?.expressionStatus === 'FAILED' ? styles.failed : styles.pending
+                                st?.threeViewStatus === 'GENERATING' ? styles.generating :
+                                st?.threeViewStatus === 'COMPLETED' ? styles.completed :
+                                st?.threeViewStatus === 'FAILED' ? styles.failed : styles.pending
                               }`} />
-                              {getGenStatusText(st?.expressionStatus, '表情')}
+                              {getGenStatusText(st?.threeViewStatus, '三视图')}
                             </div>
-                            {st?.expressionError && (
-                              <p className={styles.imageError}>{st.expressionError}</p>
+                            {st?.threeViewError && (
+                              <p className={styles.imageError}>{st.threeViewError}</p>
                             )}
-                            <div className={styles.imagePreview}>
-                              {st?.expressionGridUrl ? (
-                                <img src={st.expressionGridUrl} alt={`${char.draft.name} 九宫格表情`} />
+                            <div className={`${styles.imagePreview} ${styles.threeView}`}>
+                              {st?.threeViewGridUrl ? (
+                                <img src={st.threeViewGridUrl} alt={`${char.draft.name} 三视图`} />
                               ) : (
                                 <div className={styles.imagePlaceholder}>
-                                  <ImageIcon />
+                                  <PersonStandingIcon />
                                   <span>等待生成</span>
                                 </div>
                               )}
                             </div>
                             <div className={styles.imageActions}>
-                              {!st?.expressionGridUrl && st?.expressionStatus !== 'GENERATING' && (
+                              {!st?.threeViewGridUrl && st?.threeViewStatus !== 'GENERATING' && (
                                 <button
                                   className={styles.imageGenBtn}
                                   onClick={() => handleGenerateSingle(char.draft.charId)}
                                   disabled={generating}
-                                  aria-label="生成九宫格表情"
+                                  aria-label="生成三视图"
                                 >
                                   {generating ? '生成中...' : '生成'}
                                 </button>
                               )}
-                              {st?.expressionStatus === 'FAILED' && (
+                              {st?.threeViewStatus === 'FAILED' && (
                                 <button
                                   className={styles.imageRetryBtn}
-                                  onClick={() => handleRetry(char.draft.charId, 'expression')}
-                                  aria-label="重试生成九宫格表情"
+                                  onClick={() => handleRetry(char.draft.charId, 'threeView')}
+                                  aria-label="重试生成三视图"
                                 >
                                   重试
                                 </button>
                               )}
                             </div>
                           </div>
-                        )}
-
-                        {/* 三视图 */}
-                        <div className={styles.imageCard}>
-                          <h5 className={styles.imageCardTitle}>三视图</h5>
-                          <div className={styles.imageStatus}>
-                            <span className={`${styles.statusDot} ${
-                              st?.threeViewStatus === 'GENERATING' ? styles.generating :
-                              st?.threeViewStatus === 'COMPLETED' ? styles.completed :
-                              st?.threeViewStatus === 'FAILED' ? styles.failed : styles.pending
-                            }`} />
-                            {getGenStatusText(st?.threeViewStatus, '三视图')}
-                          </div>
-                          {st?.threeViewError && (
-                            <p className={styles.imageError}>{st.threeViewError}</p>
-                          )}
-                          <div className={`${styles.imagePreview} ${styles.threeView}`}>
-                            {st?.threeViewGridUrl ? (
-                              <img src={st.threeViewGridUrl} alt={`${char.draft.name} 三视图`} />
-                            ) : (
-                              <div className={styles.imagePlaceholder}>
-                                <PersonStandingIcon />
-                                <span>等待生成</span>
-                              </div>
-                            )}
-                          </div>
-                          <div className={styles.imageActions}>
-                            {!st?.threeViewGridUrl && st?.threeViewStatus !== 'GENERATING' && (
-                              <button
-                                className={styles.imageGenBtn}
-                                onClick={() => handleGenerateSingle(char.draft.charId)}
-                                disabled={generating}
-                                aria-label="生成三视图"
-                              >
-                                {generating ? '生成中...' : '生成'}
-                              </button>
-                            )}
-                            {st?.threeViewStatus === 'FAILED' && (
-                              <button
-                                className={styles.imageRetryBtn}
-                                onClick={() => handleRetry(char.draft.charId, 'threeView')}
-                                aria-label="重试生成三视图"
-                              >
-                                重试
-                              </button>
-                            )}
-                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               );
             })}

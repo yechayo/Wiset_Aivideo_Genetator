@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import styles from './Step2page.module.less';
 import type { Project, ScriptContentResponse } from '../../../services';
 import { getScript, generateEpisodes, confirmScript, reviseScript, isApiSuccess } from '../../../services';
@@ -15,10 +15,14 @@ interface Step2pageProps extends StepContentProps {
 /**
  * Step 2: 剧本编辑
  */
-const Step2page = ({ project, onComplete, onBack }: Step2pageProps) => {
+const Step2page = ({ project, onComplete }: Step2pageProps) => {
   const [scriptData, setScriptData] = useState<ScriptContentResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // 轮询相关状态
+  const maxPollingCount = 10; // 最多轮询10次
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 生成剧集对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -32,7 +36,7 @@ const Step2page = ({ project, onComplete, onBack }: Step2pageProps) => {
   const isSingleEpisode = scriptData?.project?.totalEpisodes === 1;
 
   useEffect(() => {
-    const fetchScript = async () => {
+    const fetchScript = async (attempt: number = 0) => {
       // 获取项目 ID（优先使用 store 中的，回退到 props 中的）
       const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
 
@@ -42,7 +46,10 @@ const Step2page = ({ project, onComplete, onBack }: Step2pageProps) => {
         return;
       }
 
-      setIsLoading(true);
+      // 如果是第一次尝试或非轮询调用，设置loading
+      if (attempt === 0) {
+        setIsLoading(true);
+      }
       setError(null);
 
       try {
@@ -50,21 +57,52 @@ const Step2page = ({ project, onComplete, onBack }: Step2pageProps) => {
         console.log('剧本数据:', result);
 
         if (isApiSuccess(result) && result.data) {
+          // 有数据，清除轮询
           setScriptData(result.data);
+          if (pollingRef.current) {
+            clearTimeout(pollingRef.current);
+            pollingRef.current = null;
+          }
+          setIsLoading(false);
         } else {
-          // 剧本可能还没有生成完成，使用空数据
-          setScriptData(null);
-          console.warn('剧本数据为空或未生成');
+          // 无数据，检查是否需要轮询
+          if (attempt < maxPollingCount) {
+            // 等待2秒后重试
+            pollingRef.current = setTimeout(() => {
+              fetchScript(attempt + 1); // 递归调用
+            }, 2000);
+            return; // 保持loading状态
+          } else {
+            // 超过最大轮询次数，显示空状态
+            setScriptData(null);
+            setIsLoading(false);
+            console.warn('剧本数据为空或未生成，已达到最大轮询次数');
+          }
         }
       } catch (err) {
         console.error('获取剧本失败:', err);
-        setError('获取剧本失败，请稍后重试');
-      } finally {
-        setIsLoading(false);
+        if (attempt < maxPollingCount) {
+          // 网络错误时也重试
+          pollingRef.current = setTimeout(() => {
+            fetchScript(attempt + 1);
+          }, 2000);
+          return; // 保持loading状态
+        } else {
+          setError('获取剧本失败，请稍后重试');
+          setIsLoading(false);
+        }
       }
     };
 
     fetchScript();
+
+    // 清理函数
+    return () => {
+      if (pollingRef.current) {
+        clearTimeout(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
   }, [project, getProjectId]);
 
   // 处理大纲保存（修改大纲会删除所有已生成的剧集）
@@ -173,7 +211,7 @@ const Step2page = ({ project, onComplete, onBack }: Step2pageProps) => {
       // 调用确认剧本接口
       await confirmScript(projectId);
       // 完成此步骤，进入下一步
-      onComplete();
+      onComplete?.();
     } catch (err) {
       console.error('确认剧本失败:', err);
       setError('确认剧本失败，请稍后重试');
