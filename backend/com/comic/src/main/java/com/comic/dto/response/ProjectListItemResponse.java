@@ -1,4 +1,4 @@
-package com.comic.dto;
+package com.comic.dto.response;
 
 import lombok.Data;
 
@@ -6,11 +6,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 项目列表项 DTO
+ * 项目列表项响应DTO
  * 合并项目基本信息 + 状态映射信息，供项目列表接口使用
  */
 @Data
-public class ProjectListItemDTO {
+public class ProjectListItemResponse {
     /** 项目ID */
     private String projectId;
 

@@ -3,7 +3,7 @@ package com.comic.service.character;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
-import com.comic.dto.CharacterDraftDTO;
+import com.comic.dto.model.CharacterDraftModel;
 import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
@@ -35,7 +35,7 @@ public class CharacterExtractService {
      * 从剧本中提取角色
      */
     @Transactional
-    public List<CharacterDraftDTO> extractCharacters(String projectId) {
+    public List<CharacterDraftModel> extractCharacters(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
             throw new BusinessException("项目不存在");
@@ -79,7 +79,7 @@ public class CharacterExtractService {
             String result = textGenerationService.generate(systemPrompt, userPrompt);
 
             // 解析结果
-            List<CharacterDraftDTO> characters = parseCharacters(result, projectId);
+            List<CharacterDraftModel> characters = parseCharacters(result, projectId);
 
             // 保存到数据库
             saveCharacters(projectId, characters);
@@ -131,7 +131,7 @@ public class CharacterExtractService {
      * 编辑角色特征
      */
     @Transactional
-    public void updateCharacter(String charId, CharacterDraftDTO dto) {
+    public void updateCharacter(String charId, CharacterDraftModel dto) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
             throw new BusinessException("角色不存在");
@@ -152,12 +152,12 @@ public class CharacterExtractService {
     /**
      * 获取项目角色列表
      */
-    public List<CharacterDraftDTO> getProjectCharacters(String projectId) {
+    public List<CharacterDraftModel> getProjectCharacters(String projectId) {
         List<Character> characters = characterRepository.findByProjectId(projectId);
-        List<CharacterDraftDTO> result = new ArrayList<>();
+        List<CharacterDraftModel> result = new ArrayList<>();
 
         for (Character character : characters) {
-            CharacterDraftDTO dto = new CharacterDraftDTO();
+            CharacterDraftModel dto = new CharacterDraftModel();
             dto.setCharId(character.getCharId());
             dto.setName(character.getName());
             dto.setRole(character.getRole());
@@ -173,7 +173,7 @@ public class CharacterExtractService {
 
     // ================= 私有方法 =================
 
-    private List<CharacterDraftDTO> parseCharacters(String jsonResult, String projectId) {
+    private List<CharacterDraftModel> parseCharacters(String jsonResult, String projectId) {
         try {
             // 先清理AI返回的内容，去除可能的markdown标记和多余文字
             String cleanJson = extractJsonFromResponse(jsonResult);
@@ -185,9 +185,9 @@ public class CharacterExtractService {
                 new TypeReference<List<Map<String, Object>>>() {}
             );
 
-            List<CharacterDraftDTO> result = new ArrayList<>();
+            List<CharacterDraftModel> result = new ArrayList<>();
             for (Map<String, Object> data : dataList) {
-                CharacterDraftDTO dto = new CharacterDraftDTO();
+                CharacterDraftModel dto = new CharacterDraftModel();
                 dto.setCharId(generateCharId(projectId));
                 dto.setName(getStringValue(data, "name"));
                 dto.setRole(getStringValue(data, "role"));
@@ -250,7 +250,7 @@ public class CharacterExtractService {
         return value.toString();
     }
 
-    private void saveCharacters(String projectId, List<CharacterDraftDTO> characters) {
+    private void saveCharacters(String projectId, List<CharacterDraftModel> characters) {
         // 查询项目，获取视觉风格
         Project project = projectRepository.findByProjectId(projectId);
         String visualStyle = (project != null && project.getVisualStyle() != null)
@@ -263,7 +263,7 @@ public class CharacterExtractService {
         }
 
         // 保存新的角色数据
-        for (CharacterDraftDTO dto : characters) {
+        for (CharacterDraftModel dto : characters) {
             Character character = new Character();
             character.setProjectId(projectId);
             character.setCharId(dto.getCharId());

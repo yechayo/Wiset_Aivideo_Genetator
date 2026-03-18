@@ -1,6 +1,6 @@
 package com.comic.service.world;
 
-import com.comic.dto.CharacterStateDTO;
+import com.comic.dto.model.CharacterStateModel;
 import com.comic.entity.Character;
 import com.comic.repository.CharacterRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,13 +26,13 @@ public class CharacterService {
     private final ObjectMapper objectMapper;
 
     @Cacheable(value = "characterStates", key = "#projectId")
-    public List<CharacterStateDTO> getCurrentStates(String projectId) {
+    public List<CharacterStateModel> getCurrentStates(String projectId) {
         List<Character> characters = characterRepository.findByProjectId(projectId);
-        List<CharacterStateDTO> dtos = new ArrayList<>();
+        List<CharacterStateModel> dtos = new ArrayList<>();
 
         for (Character c : characters) {
             try {
-                CharacterStateDTO dto = objectMapper.readValue(c.getCurrentStateJson(), CharacterStateDTO.class);
+                CharacterStateModel dto = objectMapper.readValue(c.getCurrentStateJson(), CharacterStateModel.class);
                 dto.setCharId(c.getCharId());
                 dto.setName(c.getName());
                 dtos.add(dto);
@@ -60,8 +60,8 @@ public class CharacterService {
             if (character == null) continue;
 
             try {
-                CharacterStateDTO newState = objectMapper.readValue(
-                        character.getCurrentStateJson(), CharacterStateDTO.class);
+                CharacterStateModel newState = objectMapper.readValue(
+                        character.getCurrentStateJson(), CharacterStateModel.class);
 
                 String expression = charNode.path("expression").asText();
                 if (expression != null && !expression.isEmpty()) {

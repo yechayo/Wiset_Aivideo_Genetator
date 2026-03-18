@@ -2,11 +2,12 @@ package com.comic.service.pipeline;
 
 import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
-import com.comic.dto.ProjectListItemDTO;
-import com.comic.dto.ProjectStatusDTO;
+import com.comic.dto.response.ProjectListItemResponse;
+import com.comic.dto.response.ProjectStatusResponse;
 import com.comic.entity.Project;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.character.CharacterExtractService;
+import com.comic.service.production.EpisodeProductionService;
 import com.comic.service.script.ScriptService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class PipelineService {
     private final ProjectRepository projectRepository;
     private final ScriptService scriptService;
     private final CharacterExtractService characterExtractService;
+    private final EpisodeProductionService episodeProductionService;
 
     /**
      * 创建新项目
@@ -94,7 +96,7 @@ public class PipelineService {
     /**
      * 获取项目状态详情（包含前端步骤映射和可用操作）
      */
-    public ProjectStatusDTO getProjectStatusDetail(String projectId) {
+    public ProjectStatusResponse getProjectStatusDetail(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
             throw new BusinessException("项目不存在");
@@ -102,7 +104,7 @@ public class PipelineService {
 
         ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
 
-        ProjectStatusDTO dto = new ProjectStatusDTO();
+        ProjectStatusResponse dto = new ProjectStatusResponse();
         dto.setProjectId(project.getProjectId());
         dto.setStatusCode(status.getCode());
         dto.setStatusDescription(status.getDescription());
@@ -119,9 +121,9 @@ public class PipelineService {
     /**
      * 获取用户的所有项目列表（带状态映射）
      */
-    public List<ProjectListItemDTO> getProjectsByUserId(String userId) {
+    public List<ProjectListItemResponse> getProjectsByUserId(String userId) {
         List<Project> projects = projectRepository.findAllByUserId(userId);
-        List<ProjectListItemDTO> result = new ArrayList<>();
+        List<ProjectListItemResponse> result = new ArrayList<>();
         for (Project project : projects) {
             result.add(toListItemDTO(project));
         }
@@ -129,12 +131,12 @@ public class PipelineService {
     }
 
     /**
-     * Project → ProjectListItemDTO 转换
+     * Project → ProjectListItemResponse 转换
      */
-    private ProjectListItemDTO toListItemDTO(Project project) {
+    private ProjectListItemResponse toListItemDTO(Project project) {
         ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
 
-        ProjectListItemDTO dto = new ProjectListItemDTO();
+        ProjectListItemResponse dto = new ProjectListItemResponse();
         dto.setProjectId(project.getProjectId());
         dto.setStoryPrompt(project.getStoryPrompt());
         dto.setGenre(project.getGenre());
@@ -207,8 +209,8 @@ public class PipelineService {
                 break;
 
             case PRODUCING:
-                // TODO: 触发视频生产
-                log.info("视频生产功能待实现: projectId={}", projectId);
+                // 触发视频生产
+                episodeProductionService.startProductionForProject(projectId);
                 break;
 
             default:

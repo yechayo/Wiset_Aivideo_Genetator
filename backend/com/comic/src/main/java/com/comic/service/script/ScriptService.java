@@ -4,7 +4,7 @@ import com.comic.ai.PromptBuilder;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
-import com.comic.dto.WorldConfigDTO;
+import com.comic.dto.model.WorldConfigModel;
 import com.comic.entity.Episode;
 import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
@@ -67,7 +67,7 @@ public class ScriptService {
 
         try {
             // 获取世界观配置
-            WorldConfigDTO worldConfig = worldRuleService.getWorldConfig(projectId);
+            WorldConfigModel worldConfig = worldRuleService.getWorldConfig(projectId);
 
             // 构建生成大纲的prompt
             String systemPrompt = promptBuilder.buildScriptOutlineSystemPrompt(
@@ -82,7 +82,7 @@ public class ScriptService {
                 worldConfig.getRulesText(),
                 project.getTotalEpisodes(),
                 project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
-                "REAL" // 默认视觉风格
+                project.getVisualStyle() != null ? project.getVisualStyle() : "REAL"
             );
 
             log.info("systemPrompt: {}", systemPrompt);

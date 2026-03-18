@@ -1,6 +1,6 @@
 package com.comic.service.world;
 
-import com.comic.dto.WorldConfigDTO;
+import com.comic.dto.model.WorldConfigModel;
 import com.comic.entity.Project;
 import com.comic.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +26,7 @@ public class WorldRuleService {
      * @param projectId 项目ID
      */
     @Cacheable(value = "worldConfig", key = "#projectId")
-    public WorldConfigDTO getWorldConfig(String projectId) {
+    public WorldConfigModel getWorldConfig(String projectId) {
         // 从项目配置中读取
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
@@ -34,7 +34,7 @@ public class WorldRuleService {
             return getDefaultConfig(projectId);
         }
 
-        WorldConfigDTO config = new WorldConfigDTO();
+        WorldConfigModel config = new WorldConfigModel();
 
         // 根据项目类型生成基础世界观规则
         config.setSeriesName(generateSeriesName(project.getStoryPrompt()));
@@ -106,8 +106,8 @@ public class WorldRuleService {
     /**
      * 获取默认配置（兼容旧版本）
      */
-    private WorldConfigDTO getDefaultConfig(String projectId) {
-        WorldConfigDTO config = new WorldConfigDTO();
+    private WorldConfigModel getDefaultConfig(String projectId) {
+        WorldConfigModel config = new WorldConfigModel();
         config.setSeriesName("天墟传说");
         config.setGenre("热血玄幻");
         config.setTargetAudience("18-30岁男性");

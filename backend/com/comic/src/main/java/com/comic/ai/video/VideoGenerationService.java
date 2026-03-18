@@ -45,17 +45,26 @@ public interface VideoGenerationService {
      */
     class TaskStatus {
         private String taskId;
-        private String status;      // pending, processing, completed, failed
+        private String status;      // pending, processing, completed, failed, cancelled
         private int progress;       // 0-100
         private String videoUrl;
         private String errorMessage;
+        private String lastFrameUrl;     // 尾帧图片 URL
+        private String metadata;         // 元数据（resolution, duration 等）
 
         public TaskStatus(String taskId, String status, int progress, String videoUrl, String errorMessage) {
+            this(taskId, status, progress, videoUrl, errorMessage, null, null);
+        }
+
+        public TaskStatus(String taskId, String status, int progress, String videoUrl, String errorMessage,
+                         String lastFrameUrl, String metadata) {
             this.taskId = taskId;
             this.status = status;
             this.progress = progress;
             this.videoUrl = videoUrl;
             this.errorMessage = errorMessage;
+            this.lastFrameUrl = lastFrameUrl;
+            this.metadata = metadata;
         }
 
         // Getters
@@ -64,7 +73,13 @@ public interface VideoGenerationService {
         public int getProgress() { return progress; }
         public String getVideoUrl() { return videoUrl; }
         public String getErrorMessage() { return errorMessage; }
+        public String getLastFrameUrl() { return lastFrameUrl; }
+        public String getMetadata() { return metadata; }
+
         public boolean isCompleted() { return "completed".equals(status); }
         public boolean isFailed() { return "failed".equals(status); }
+        public boolean isPending() { return "pending".equals(status); }
+        public boolean isProcessing() { return "processing".equals(status); }
+        public boolean isCancelled() { return "cancelled".equals(status); }
     }
 }

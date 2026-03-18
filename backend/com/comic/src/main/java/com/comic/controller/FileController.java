@@ -1,8 +1,8 @@
 package com.comic.controller;
 
 import com.comic.common.Result;
-import com.comic.dto.Base64UploadDTO;
-import com.comic.dto.FileUploadDTO;
+import com.comic.dto.request.Base64UploadRequest;
+import com.comic.dto.response.FileUploadResponse;
 import com.comic.service.FileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -28,7 +28,7 @@ public class FileController {
      */
     @PostMapping("/upload")
     @Operation(summary = "上传文件")
-    public Result<FileUploadDTO> uploadFile(
+    public Result<FileUploadResponse> uploadFile(
             @Parameter(description = "文件")
             @RequestParam("file") MultipartFile file) {
         return Result.ok(fileService.uploadFile(file));
@@ -39,7 +39,7 @@ public class FileController {
      */
     @PostMapping("/upload/base64")
     @Operation(summary = "Base64上传")
-    public Result<FileUploadDTO> uploadBase64(@Valid @RequestBody Base64UploadDTO dto) {
+    public Result<FileUploadResponse> uploadBase64(@Valid @RequestBody Base64UploadRequest dto) {
         return Result.ok(fileService.uploadBase64(dto.getBase64Data(), dto.getFileName()));
     }
 

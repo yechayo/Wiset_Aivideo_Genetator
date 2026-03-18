@@ -1,7 +1,7 @@
 package com.comic.controller;
 
 import com.comic.common.Result;
-import com.comic.dto.ConfigSaveDTO;
+import com.comic.dto.request.ConfigSaveRequest;
 import com.comic.entity.SystemConfig;
 import com.comic.service.ConfigService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -46,7 +46,7 @@ public class ConfigController {
      */
     @PostMapping
     @Operation(summary = "保存或更新配置")
-    public Result<Void> saveConfig(@Valid @RequestBody ConfigSaveDTO dto) {
+    public Result<Void> saveConfig(@Valid @RequestBody ConfigSaveRequest dto) {
         configService.saveConfig(dto);
         return Result.ok();
     }

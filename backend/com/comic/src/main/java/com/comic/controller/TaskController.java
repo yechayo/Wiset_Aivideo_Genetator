@@ -1,7 +1,7 @@
 package com.comic.controller;
 
 import com.comic.common.Result;
-import com.comic.dto.TaskStatusVO;
+import com.comic.dto.response.TaskStatusResponse;
 import com.comic.entity.TaskExecution;
 import com.comic.service.TaskExecutionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,7 +27,7 @@ public class TaskController {
      */
     @GetMapping("/{taskId}/status")
     @Operation(summary = "查询任务状态")
-    public Result<TaskStatusVO> getTaskStatus(@PathVariable String taskId) {
+    public Result<TaskStatusResponse> getTaskStatus(@PathVariable String taskId) {
         TaskExecution task = taskExecutionService.getTask(taskId);
         if (task == null) {
             return Result.fail(404, "任务不存在");
@@ -40,7 +40,7 @@ public class TaskController {
      */
     @GetMapping("/project/{projectId}")
     @Operation(summary = "获取项目任务列表")
-    public Result<List<TaskStatusVO>> getProjectTasks(@PathVariable Long projectId) {
+    public Result<List<TaskStatusResponse>> getProjectTasks(@PathVariable Long projectId) {
         List<TaskExecution> tasks = taskExecutionService.getProjectTasks(projectId);
         return Result.ok(tasks.stream()
                 .map(this::convertToVO)
@@ -57,8 +57,8 @@ public class TaskController {
         return Result.ok();
     }
 
-    private TaskStatusVO convertToVO(TaskExecution task) {
-        TaskStatusVO vo = new TaskStatusVO();
+    private TaskStatusResponse convertToVO(TaskExecution task) {
+        TaskStatusResponse vo = new TaskStatusResponse();
         vo.setTaskId(task.getTaskId());
         vo.setTaskType(task.getTaskType());
         vo.setProjectId(task.getProjectId());

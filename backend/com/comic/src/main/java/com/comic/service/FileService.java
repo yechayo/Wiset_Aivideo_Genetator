@@ -3,7 +3,7 @@ package com.comic.service;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.comic.dto.FileUploadDTO;
+import com.comic.dto.response.FileUploadResponse;
 import com.comic.entity.FileInfo;
 import com.comic.mapper.FileMapper;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +35,7 @@ public class FileService {
     /**
      * 上传文件
      */
-    public FileUploadDTO uploadFile(MultipartFile file) {
+    public FileUploadResponse uploadFile(MultipartFile file) {
         try {
             // 1. 生成文件名
             String originalFilename = file.getOriginalFilename();
@@ -71,7 +71,7 @@ public class FileService {
             fileMapper.insert(fileInfo);
 
             // 7. 返回结果
-            FileUploadDTO dto = new FileUploadDTO();
+            FileUploadResponse dto = new FileUploadResponse();
             dto.setFileId(fileInfo.getId());
             dto.setFileName(originalFilename);
             dto.setFileUrl(fileInfo.getFileUrl());
@@ -89,7 +89,7 @@ public class FileService {
     /**
      * Base64上传
      */
-    public FileUploadDTO uploadBase64(String base64Data, String fileName) {
+    public FileUploadResponse uploadBase64(String base64Data, String fileName) {
         try {
             // 1. 解码Base64
             byte[] bytes = java.util.Base64.getDecoder().decode(base64Data);
@@ -129,7 +129,7 @@ public class FileService {
             fileMapper.insert(fileInfo);
 
             // 8. 返回结果
-            FileUploadDTO dto = new FileUploadDTO();
+            FileUploadResponse dto = new FileUploadResponse();
             dto.setFileId(fileInfo.getId());
             dto.setFileName(fileName);
             dto.setFileUrl(fileInfo.getFileUrl());

@@ -1,9 +1,9 @@
-package com.comic.dto;
+package com.comic.dto.request;
 
 import lombok.Data;
 
 @Data
-public class FileUploadDTO {
+public class FileUploadRequest {
     private Long fileId;
     private String fileName;
     private String fileUrl;

@@ -25,6 +25,12 @@ public class Episode {
     private String status;
     private String errorMsg;
     private Integer retryCount;
+
+    // 视频生产相关字段
+    private String productionStatus;        // 生产状态: NOT_STARTED, IN_PROGRESS, COMPLETED, FAILED
+    private Integer productionProgress;     // 生产进度 0-100
+    private String finalVideoUrl;           // 最终视频URL
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)

@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS episode (
     status TEXT,
     error_msg TEXT,
     retry_count INTEGER DEFAULT 0,
+    production_status TEXT DEFAULT 'NOT_STARTED',
+    production_progress INTEGER DEFAULT 0,
+    final_video_url TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -173,3 +176,82 @@ CREATE INDEX IF NOT EXISTS idx_task_execution ON t_task_execution(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_status ON t_task_execution(status);
 CREATE INDEX IF NOT EXISTS idx_task_project ON t_task_execution(project_id);
 CREATE INDEX IF NOT EXISTS idx_task_type ON t_task_execution(task_type);
+
+-- ============================================================
+--  单集视频生产流程相关表
+-- ============================================================
+
+-- 视频生产任务表 - 跟踪每个分镜的视频生成任务
+CREATE TABLE IF NOT EXISTS video_production_task (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT UNIQUE NOT NULL,
+    episode_id INTEGER NOT NULL,
+    panel_index INTEGER NOT NULL,
+    task_group TEXT NOT NULL,
+
+    -- 输入数据
+    scene_description TEXT,
+    video_prompt TEXT,
+    reference_image_url TEXT,
+    target_duration INTEGER,
+
+    -- 输出数据
+    video_task_id TEXT,
+    video_url TEXT,
+
+    -- 状态跟踪
+    status TEXT DEFAULT 'PENDING',
+    retry_count INTEGER DEFAULT 0,
+    error_message TEXT,
+
+    -- 时间戳
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (episode_id) REFERENCES episode(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_task_episode ON video_production_task(episode_id);
+CREATE INDEX IF NOT EXISTS idx_video_task_status ON video_production_task(status);
+CREATE INDEX IF NOT EXISTS idx_video_task_group ON video_production_task(task_group);
+
+-- 单集生产状态表 - 跟踪单集整体生产状态
+CREATE TABLE IF NOT EXISTS episode_production (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    episode_id INTEGER UNIQUE NOT NULL,
+
+    -- 生产状态
+    status TEXT DEFAULT 'PENDING',
+    current_stage TEXT,
+    progress_percent INTEGER DEFAULT 0,
+    progress_message TEXT,
+
+    -- 场景分析结果
+    scene_analysis_json TEXT,
+    scene_grid_url TEXT,
+
+    -- 视频生成跟踪
+    total_panels INTEGER DEFAULT 0,
+    completed_panels INTEGER DEFAULT 0,
+    total_video_groups INTEGER DEFAULT 0,
+    completed_video_groups INTEGER DEFAULT 0,
+
+    -- 最终输出
+    final_video_url TEXT,
+    subtitle_url TEXT,
+
+    -- 重试跟踪
+    retry_count INTEGER DEFAULT 0,
+    error_message TEXT,
+
+    -- 时间戳
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    started_at DATETIME,
+    completed_at DATETIME,
+
+    FOREIGN KEY (episode_id) REFERENCES episode(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_production_status ON episode_production(status);
+CREATE INDEX IF NOT EXISTS idx_production_episode ON episode_production(episode_id);
