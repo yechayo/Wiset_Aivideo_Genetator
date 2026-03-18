@@ -3,7 +3,6 @@ import { useParams, Navigate } from 'react-router-dom';
 import CreateLayout from './CreateLayout';
 import { getProject } from '../../services/projectService';
 import { useProjectStore } from '../../stores';
-import type { Project } from '../../services/types/project.types';
 
 /**
  * 编辑已有项目入口

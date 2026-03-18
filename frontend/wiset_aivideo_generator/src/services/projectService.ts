@@ -12,7 +12,6 @@ import type {
   ProjectStatusInfo,
   ReviseScriptRequest,
   ReviseScriptResponse,
-  Script,
   ScriptContentResponse
 } from './types/project.types';
 import type { ApiResponse } from './types/auth.types';

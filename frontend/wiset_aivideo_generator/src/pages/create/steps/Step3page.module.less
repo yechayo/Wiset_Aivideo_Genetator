@@ -313,12 +313,33 @@
   }
 }
 
-// 编辑表单
-.editForm {
+// 左右双栏容器
+.expandedColumns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+// 左栏：表单
+.expandedLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+// 右栏：图片（左右分布）
+.expandedRight {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-  margin-bottom: 24px;
+}
+
+// 编辑表单（单栏纵向排列）
+.editForm {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
 }
 
 .formGroup {
@@ -405,19 +426,14 @@
   }
 }
 
-// 图片生成区域
-.imageSection {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 20px;
-}
-
+// 图片卡片
 .imageCard {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 14px;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
 }
 
 .imageCardTitle {
@@ -429,7 +445,8 @@
 
 .imagePreview {
   width: 100%;
-  aspect-ratio: 1;
+  flex: 1;
+  min-height: 0;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
   display: flex;
@@ -720,4 +737,93 @@
   .collapseBtn {
     transition: none;
   }
+}
+
+// 响应式：小屏双栏变单栏
+@media (max-width: 768px) {
+  .expandedColumns {
+    grid-template-columns: 1fr;
+  }
+
+  .expandedRight {
+    grid-template-columns: 1fr;
+  }
+
+  .editForm {
+    grid-template-columns: 1fr;
+  }
+}
+
+// Loading状态（大尺寸spinner）
+.loadingState {
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 16px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+// 错误状态
+.errorState {
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  color: rgba(255, 100, 100, 0.8);
+  font-size: 16px;
+}
+
+.retryButton {
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.5);
+    outline-offset: 2px;
+  }
+}
+
+// 空状态
+.emptyState {
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 16px;
+  text-align: center;
+}
+
+.emptyHint {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.25);
+  margin: 0;
 }
