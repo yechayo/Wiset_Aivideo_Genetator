@@ -8,6 +8,7 @@ import com.comic.dto.response.ProductionStatusResponse;
 import com.comic.dto.response.VideoSegmentInfoResponse;
 import com.comic.dto.model.SceneAnalysisResultModel;
 import com.comic.dto.model.SceneGroupModel;
+import com.comic.dto.model.VideoPromptModel;
 import com.comic.dto.model.VideoSegmentModel;
 import com.comic.dto.model.VideoTaskGroupModel;
 import com.comic.entity.Character;
@@ -205,9 +206,10 @@ public class EpisodeProductionService {
                     projectId
             );
 
-            // 注入融合参考图URL到每个任务组（P1-6: 按场景组分配融合图）
-            List<String> fusedUrls = parseJsonUrlList(production.getFusedGridUrls());
-            if (fusedUrls == null || fusedUrls.isEmpty()) {
+            // 注入融合参考图URL到每个prompt和任务组（逐格融合：二维数组按 pageIndex+panelIndex 定位）
+            List<List<String>> allFusedUrls = parseFusedGridUrls(production.getFusedGridUrls());
+
+            if (allFusedUrls == null || allFusedUrls.isEmpty()) {
                 // 兼容旧逻辑：单一融合图
                 String fusedUrl = production.getFusedReferenceUrl();
                 if (fusedUrl != null && !fusedUrl.isEmpty()) {
@@ -216,13 +218,25 @@ public class EpisodeProductionService {
                     }
                 }
             } else {
-                // 按场景组分配对应的融合图
+                // 按场景组分配：每个场景组对应一页，每页有9个融合图
                 for (VideoTaskGroupModel group : taskGroups) {
                     int sceneGroupIndex = resolveSceneGroupIndex(group, sceneAnalysis.getSceneGroups());
-                    if (sceneGroupIndex < fusedUrls.size()) {
-                        group.setFusedReferenceImageUrl(fusedUrls.get(sceneGroupIndex));
-                    } else if (!fusedUrls.isEmpty()) {
-                        group.setFusedReferenceImageUrl(fusedUrls.get(fusedUrls.size() - 1));
+                    if (sceneGroupIndex < allFusedUrls.size()) {
+                        List<String> pageFusedUrls = allFusedUrls.get(sceneGroupIndex);
+                        group.setFusedReferenceImageUrl(
+                                pageFusedUrls != null && !pageFusedUrls.isEmpty() ? pageFusedUrls.get(0) : null);
+                    }
+                    // 为每个 prompt 注入对应的格子融合图
+                    if (group.getPrompts() != null) {
+                        for (VideoPromptModel prompt : group.getPrompts()) {
+                            if (sceneGroupIndex < allFusedUrls.size()) {
+                                List<String> pageFusedUrls = allFusedUrls.get(sceneGroupIndex);
+                                int panelIdx = prompt.getPanelIndex() != null ? prompt.getPanelIndex() : 0;
+                                if (pageFusedUrls != null && panelIdx < pageFusedUrls.size()) {
+                                    prompt.setFusedReferenceImageUrl(pageFusedUrls.get(panelIdx));
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -441,15 +455,18 @@ public class EpisodeProductionService {
 
         // 构建多页网格信息
         List<String> gridUrls = parseJsonUrlList(production.getSceneGridUrls());
-        List<String> fusedUrls = parseJsonUrlList(production.getFusedGridUrls());
+        List<List<String>> allFusedUrls = parseFusedGridUrls(production.getFusedGridUrls());
         List<GridInfoResponse.GridPageInfo> gridPages = new ArrayList<>();
         if (gridUrls != null && !gridUrls.isEmpty()) {
             for (int i = 0; i < gridUrls.size(); i++) {
                 GridInfoResponse.GridPageInfo page = new GridInfoResponse.GridPageInfo();
                 page.setSceneGridUrl(gridUrls.get(i));
                 page.setSceneGroupIndex(i);
-                page.setFused(fusedUrls != null && i < fusedUrls.size()
-                        && fusedUrls.get(i) != null && !fusedUrls.get(i).isEmpty());
+                // 逐格融合：每页返回该页的 fusedPanels 列表
+                List<String> pageFused = (i < allFusedUrls.size()) ? allFusedUrls.get(i) : null;
+                page.setFusedPanels(pageFused);
+                page.setFused(pageFused != null && !pageFused.isEmpty()
+                        && pageFused.stream().anyMatch(u -> u != null && !u.isEmpty()));
                 if (i < sceneGroups.size()) {
                     page.setLocation(sceneGroups.get(i).getLocation());
                     page.setCharacters(sceneGroups.get(i).getCharacters());
@@ -532,10 +549,10 @@ public class EpisodeProductionService {
     }
 
     /**
-     * 提交单页融合结果（P1-1 多页融合）
-     * 当所有页面都融合完成后自动恢复管线
+     * 提交单页融合结果（逐格融合：每页9个URL）
+     * 当所有页的所有格子都融合完成后自动恢复管线
      */
-    public int submitFusionPage(Long episodeId, int pageIndex, String fusedReferenceImageUrl) {
+    public int submitFusionPage(Long episodeId, int pageIndex, List<String> panelFusedUrls) {
         EpisodeProduction production;
         try {
             production = productionRepository.findByEpisodeId(episodeId);
@@ -558,49 +575,96 @@ public class EpisodeProductionService {
             throw new BusinessException("pageIndex 越界，当前总页数: " + totalPages);
         }
 
-        // 获取当前融合图列表
-        List<String> fusedUrls = parseJsonUrlList(production.getFusedGridUrls());
-        if (fusedUrls == null) {
-            fusedUrls = new ArrayList<>();
-        }
+        // 解析已有融合数据（二维数组结构）
+        List<List<String>> allFusedUrls = parseFusedGridUrls(production.getFusedGridUrls());
 
-        // 确保列表足够长
-        while (fusedUrls.size() <= pageIndex) {
-            fusedUrls.add(null);
+        // 确保外层列表足够长
+        while (allFusedUrls.size() <= pageIndex) {
+            allFusedUrls.add(new ArrayList<>());
         }
-        fusedUrls.set(pageIndex, fusedReferenceImageUrl);
+        // 设置当前页的融合URL
+        allFusedUrls.set(pageIndex, new ArrayList<>(panelFusedUrls));
 
-        // 保存
-        production.setFusedGridUrls(toJsonUrlList(fusedUrls));
+        // 保存（二维数组格式）
+        production.setFusedGridUrls(toJsonFusedUrls(allFusedUrls));
         // 兼容旧字段
-        production.setFusedReferenceUrl(fusedUrls.get(0));
+        production.setFusedReferenceUrl(
+                allFusedUrls.get(0).isEmpty() ? null : allFusedUrls.get(0).get(0));
         productionRepository.updateById(production);
 
-        int totalFused = (int) fusedUrls.stream()
-                .limit(totalPages)
-                .filter(url -> url != null && !url.isEmpty())
-                .count();
+        // 计算总已融合格子数
+        int panelsPerPage = 9;
+        int totalFused = 0;
+        for (int i = 0; i < totalPages; i++) {
+            if (i < allFusedUrls.size() && allFusedUrls.get(i) != null) {
+                totalFused += (int) allFusedUrls.get(i).stream()
+                        .filter(url -> url != null && !url.isEmpty())
+                        .count();
+            }
+        }
+        production.setTotalFusedPanels(totalPages * panelsPerPage);
+        production.setFusedPanels(totalFused);
+        productionRepository.updateById(production);
 
-        log.info("融合页已保存: episodeId={}, page={}/{}, totalFused={}",
-                episodeId, pageIndex + 1, totalPages, totalFused);
+        log.info("融合页已保存: episodeId={}, page={}/{}, panelsThisPage={}, totalFused={}",
+                episodeId, pageIndex + 1, totalPages, panelFusedUrls.size(), totalFused);
 
-        // 检查是否全部融合完成
-        if (fusedUrls.size() >= totalPages) {
-            boolean allDone = fusedUrls.stream()
-                    .limit(totalPages)
-                    .allMatch(url -> url != null && !url.isEmpty());
-            if (allDone) {
-                if (productionRepository.tryMarkFusionResumed(episodeId)) {
-                    log.info("所有融合页已完成，自动恢复管线: episodeId={}", episodeId);
-                    Episode episode = episodeRepository.selectById(episodeId);
-                    self().continueProductionFlow(episode, production);
-                } else {
-                    log.warn("融合恢复已被其他请求触发，忽略重复恢复: episodeId={}", episodeId);
+        // 检查是否所有页的所有格子都融合完成
+        boolean allDone = true;
+        for (int i = 0; i < totalPages; i++) {
+            if (i >= allFusedUrls.size() || allFusedUrls.get(i) == null
+                    || allFusedUrls.get(i).size() < panelsPerPage) {
+                allDone = false;
+                break;
+            }
+            for (String url : allFusedUrls.get(i)) {
+                if (url == null || url.isEmpty()) {
+                    allDone = false;
+                    break;
                 }
+            }
+            if (!allDone) break;
+        }
+
+        if (allDone) {
+            if (productionRepository.tryMarkFusionResumed(episodeId)) {
+                log.info("所有融合页已完成，自动恢复管线: episodeId={}", episodeId);
+                Episode episode = episodeRepository.selectById(episodeId);
+                self().continueProductionFlow(episode, production);
+            } else {
+                log.warn("融合恢复已被其他请求触发，忽略重复恢复: episodeId={}", episodeId);
             }
         }
 
         return totalFused;
+    }
+
+    /**
+     * 解析二维融合URL数组
+     * 格式: [["url1","url2",...],["url1","url2",...]]
+     */
+    private List<List<String>> parseFusedGridUrls(String json) {
+        if (json == null || json.isEmpty()) {
+            return new ArrayList<>();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<List<String>>>() {});
+        } catch (Exception e) {
+            log.warn("解析融合URL二维数组失败: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * 将二维URL列表序列化为JSON
+     */
+    private String toJsonFusedUrls(List<List<String>> urls) {
+        try {
+            return objectMapper.writeValueAsString(urls);
+        } catch (Exception e) {
+            log.warn("序列化融合URL二维数组失败: {}", e.getMessage());
+            return "[]";
+        }
     }
 
     /**

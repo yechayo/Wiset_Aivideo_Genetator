@@ -130,8 +130,11 @@ public class VideoProductionQueueService {
             // 获取上一段视频的URL用于连续性
             String previousVideoUrl = getPreviousVideoUrl(episodeId, representativeTask.getPanelIndex(), group.getGroupId());
 
+            // 获取该任务组中每个任务各自对应的融合参考图
+            String fusedRefUrl = getFusedReferenceForTask(group);
+
             // 尝试生成视频（带重试）
-            VideoGenerationResult result = generateVideoWithRetry(representativeTask, group, previousVideoUrl);
+            VideoGenerationResult result = generateVideoWithRetry(representativeTask, group, previousVideoUrl, fusedRefUrl);
 
             // 保存结果
             for (VideoProductionTask task : tasks) {
@@ -217,7 +220,7 @@ public class VideoProductionQueueService {
      * 生成视频（带重试）
      * 支持：文生视频、图生视频、首尾帧生成
      */
-    private VideoGenerationResult generateVideoWithRetry(VideoProductionTask task, VideoTaskGroupModel group, String previousVideoUrl) {
+    private VideoGenerationResult generateVideoWithRetry(VideoProductionTask task, VideoTaskGroupModel group, String previousVideoUrl, String fusedRefUrl) {
         int maxRetries = 3;
         Exception lastError = null;
 
@@ -233,11 +236,13 @@ public class VideoProductionQueueService {
                 String combinedPrompt = buildCombinedPrompt(group);
 
                 // 使用 Seedance 特定服务生成视频
+                // 优先使用任务级别的融合参考图（逐格融合），回退到组级别
+                String refImageUrl = fusedRefUrl != null ? fusedRefUrl : group.getFusedReferenceImageUrl();
                 String videoTaskId = seedanceVideoService.generateVideo(
                         combinedPrompt,
                         group.getTotalDuration(),
                         "16:9",  // 默认16:9宽高比
-                        group.getFusedReferenceImageUrl(),  // 首帧（融合参考图）
+                        refImageUrl,  // 首帧（融合参考图）
                         previousVideoUrl,  // 尾帧（上一段视频URL，用于连续性）
                         true,  // 生成音频
                         false  // 不使用样片模式
@@ -461,5 +466,21 @@ public class VideoProductionQueueService {
             return runtimeGroupId;
         }
         return runtimeGroupId.substring(0, idx);
+    }
+
+    /**
+     * 从任务组中获取代表任务的融合参考图URL
+     * 每个prompt可以有自己的fusedReferenceImageUrl（逐格融合时由前端逐格设置）
+     */
+    private String getFusedReferenceForTask(VideoTaskGroupModel group) {
+        if (group.getPrompts() != null && !group.getPrompts().isEmpty()) {
+            // 优先取第一个prompt的融合参考图（同一个组内通常共享或取第一个格子的）
+            VideoPromptModel firstPrompt = group.getPrompts().get(0);
+            if (firstPrompt.getFusedReferenceImageUrl() != null
+                    && !firstPrompt.getFusedReferenceImageUrl().isEmpty()) {
+                return firstPrompt.getFusedReferenceImageUrl();
+            }
+        }
+        return null;
     }
 }

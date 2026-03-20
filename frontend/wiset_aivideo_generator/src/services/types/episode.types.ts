@@ -46,6 +46,7 @@ export interface GridPageInfo {
   location: string | null;
   characters: string[] | null;
   fused: boolean;
+  fusedPanels: string[] | null;
 }
 
 /** 网格拆分/融合所需信息（GET /api/episodes/{id}/grid-info） */

@@ -241,6 +241,10 @@ CREATE TABLE IF NOT EXISTS episode_production (
     total_video_groups INTEGER DEFAULT 0,
     completed_video_groups INTEGER DEFAULT 0,
 
+    -- 逐格融合跟踪
+    total_fused_panels INTEGER DEFAULT 0,
+    fused_panels INTEGER DEFAULT 0,
+
     -- 最终输出
     final_video_url TEXT,
     subtitle_url TEXT,

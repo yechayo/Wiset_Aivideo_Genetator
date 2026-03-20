@@ -14,6 +14,10 @@ spring:
   application:
     name: comic
 
+  # 加载项目根目录的 .env 文件
+  config:
+    import: optional:file:./.env[.properties]
+
   # 缓存配置（本地用Caffeine内存缓存）
   cache:
     type: caffeine
@@ -68,7 +72,7 @@ mybatis-plus:
 comic:
   jwt:
     # 密钥至少 32 位；生产环境务必改成环境变量：${JWT_SECRET}
-    secret: "comic-secret-key-please-change-in-production!!"
+    secret: ${JWT_SECRET:comic-secret-key-please-change-in-production}
     access-token-expiration: 7200000      # AccessToken  2 小时（毫秒）
     refresh-token-expiration: 604800000   # RefreshToken 7 天（毫秒）
   blacklist:
@@ -101,7 +105,7 @@ comic:
 
   # ========== 火山引擎 Ark SDK 配置（用于 Seedream/Seedance） ==========
   ark:
-    api-key: 167746d0-87be-4d4a-ab21-2022c6822ad7
+    api-key: ${ARK_API_KEY}
     base-url: https://ark.cn-beijing.volces.com/api/v3
     seedream-model: doubao-seedream-4-0-250828  # Seedream 图片模型
     seedance-model: doubao-seedance-1-5-pro-251215  # Seedance 视频模型

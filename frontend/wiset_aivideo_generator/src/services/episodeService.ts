@@ -40,15 +40,15 @@ export async function submitFusion(episodeId: string, fusedReferenceImageUrl: st
   return post<ApiResponse<void>>(`/api/episodes/${episodeId}/submit-fusion`, { fusedReferenceImageUrl });
 }
 
-/** 提交单页融合结果（P1-1 多页融合） */
+/** 提交单页融合结果（逐格融合：每页9个URL） */
 export async function submitFusionPage(
   episodeId: string,
   pageIndex: number,
-  fusedReferenceImageUrl: string,
+  panelFusedUrls: string[],
 ): Promise<ApiResponse<{ totalFused: number; pageIndex: number }>> {
   return post<ApiResponse<{ totalFused: number; pageIndex: number }>>(
     `/api/episodes/${episodeId}/submit-fusion-page`,
-    { pageIndex, fusedReferenceImageUrl },
+    { pageIndex, panelFusedUrls },
   );
 }
 

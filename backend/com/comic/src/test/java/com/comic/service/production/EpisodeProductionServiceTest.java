@@ -164,6 +164,19 @@ class EpisodeProductionServiceTest {
         return new ArrayList<>(Arrays.asList(group1, group2));
     }
 
+    private List<List<String>> createFusedUrls2D() {
+        List<List<String>> urls = new ArrayList<>();
+        urls.add(new ArrayList<>(Arrays.asList(
+                "https://mock/fused-p0.png", "https://mock/fused-p1.png", "https://mock/fused-p2.png",
+                "https://mock/fused-p3.png", "https://mock/fused-p4.png", "https://mock/fused-p5.png",
+                "https://mock/fused-p6.png", "https://mock/fused-p7.png", "https://mock/fused-p8.png")));
+        urls.add(new ArrayList<>(Arrays.asList(
+                "https://mock/fused2-p0.png", "https://mock/fused2-p1.png", "https://mock/fused2-p2.png",
+                "https://mock/fused2-p3.png", "https://mock/fused2-p4.png", "https://mock/fused2-p5.png",
+                "https://mock/fused2-p6.png", "https://mock/fused2-p7.png", "https://mock/fused2-p8.png")));
+        return urls;
+    }
+
     private List<String> createFusedUrls() {
         return new ArrayList<>(Arrays.asList("https://mock/fused-0.png", "https://mock/fused-1.png"));
     }
@@ -331,7 +344,7 @@ class EpisodeProductionServiceTest {
         production.setStatus("BUILDING_PROMPTS");
         production.setCurrentStage("PROMPT_BUILDING");
         production.setSceneAnalysisJson(objectMapper.writeValueAsString(createSceneAnalysis()));
-        production.setFusedGridUrls(objectMapper.writeValueAsString(createFusedUrls()));
+        production.setFusedGridUrls(objectMapper.writeValueAsString(createFusedUrls2D()));
         production.setTotalPanels(3);
 
         List<VideoTaskGroupModel> taskGroups = createTaskGroups();
@@ -385,8 +398,15 @@ class EpisodeProductionServiceTest {
         EpisodeProduction production = createProduction();
         production.setStatus("BUILDING_PROMPTS");
         production.setSceneAnalysisJson(objectMapper.writeValueAsString(createSceneAnalysis()));
-        production.setFusedGridUrls(objectMapper.writeValueAsString(
-                new ArrayList<>(Arrays.asList("https://mock/fused-page0.png", "https://mock/fused-page1.png"))));
+        // fusedGridUrls 改为二维数组格式：每页9个URL
+        List<List<String>> fusedGridUrls2D = new ArrayList<>();
+        fusedGridUrls2D.add(new ArrayList<>(Arrays.asList("https://mock/fused-page0-p0.png", "https://mock/fused-page0-p1.png",
+                "https://mock/fused-page0-p2.png", "https://mock/fused-page0-p3.png", "https://mock/fused-page0-p4.png",
+                "https://mock/fused-page0-p5.png", "https://mock/fused-page0-p6.png", "https://mock/fused-page0-p7.png", "https://mock/fused-page0-p8.png")));
+        fusedGridUrls2D.add(new ArrayList<>(Arrays.asList("https://mock/fused-page1-p0.png", "https://mock/fused-page1-p1.png",
+                "https://mock/fused-page1-p2.png", "https://mock/fused-page1-p3.png", "https://mock/fused-page1-p4.png",
+                "https://mock/fused-page1-p5.png", "https://mock/fused-page1-p6.png", "https://mock/fused-page1-p7.png", "https://mock/fused-page1-p8.png")));
+        production.setFusedGridUrls(objectMapper.writeValueAsString(fusedGridUrls2D));
         production.setTotalPanels(3);
 
         List<VideoTaskGroupModel> taskGroups = createTaskGroups();
@@ -414,10 +434,15 @@ class EpisodeProductionServiceTest {
         verify(videoQueueService).submitVideoTasks(anyString(), eq(EPISODE_ID), taskCaptor.capture());
 
         List<VideoTaskGroupModel> submittedGroups = taskCaptor.getValue();
-        // group1 (panels 0-1) 对应 sceneGroup 0 -> fused-page0
-        assertEquals("https://mock/fused-page0.png", submittedGroups.get(0).getFusedReferenceImageUrl());
-        // group2 (panels 2) 对应 sceneGroup 1 -> fused-page1
-        assertEquals("https://mock/fused-page1.png", submittedGroups.get(1).getFusedReferenceImageUrl());
+        // group1 (panels 0-1) 对应 sceneGroup 0 -> 第0页的第0个格子
+        assertEquals("https://mock/fused-page0-p0.png", submittedGroups.get(0).getFusedReferenceImageUrl());
+        // group2 (panels 2) 对应 sceneGroup 1 -> 第1页的第0个格子
+        assertEquals("https://mock/fused-page1-p0.png", submittedGroups.get(1).getFusedReferenceImageUrl());
+
+        // 验证每个prompt也被注入了对应格子的融合图
+        assertNotNull(submittedGroups.get(0).getPrompts());
+        assertEquals("https://mock/fused-page0-p0.png",
+                submittedGroups.get(0).getPrompts().get(0).getFusedReferenceImageUrl());
     }
 
     @Test
@@ -454,30 +479,37 @@ class EpisodeProductionServiceTest {
     }
 
     @Test
-    @DisplayName("submitFusionPage - 提交融合页并触发恢复检测")
+    @DisplayName("submitFusionPage - 提交逐格融合URL并触发恢复检测")
     @SuppressWarnings("unchecked")
     void testSubmitFusionPage_autoResume() throws Exception {
         EpisodeProduction production = createProduction();
         production.setStatus("GRID_FUSION_PENDING");
-        // 只有1页网格图，提交1页即可触发自动恢复
+        // 只有1页网格图，提交1页9个格子即可触发自动恢复
         production.setSceneGridUrls(objectMapper.writeValueAsString(
                 new ArrayList<>(Arrays.asList("https://mock/grid-0.png"))));
         production.setFusedGridUrls(null);
 
         when(productionRepository.findByEpisodeId(EPISODE_ID)).thenReturn(production);
         when(productionRepository.updateById(any())).thenReturn(1);
-        // tryMarkFusionResumed 返回 false，模拟"已被其他请求触发"，避免进入 continueProductionFlow
+        // tryMarkFusionResumed 返回 false，避免进入 continueProductionFlow
         when(productionRepository.tryMarkFusionResumed(EPISODE_ID)).thenReturn(false);
 
-        // 提交第 0 页（唯一1页，应尝试触发恢复）
-        int fused = productionService.submitFusionPage(EPISODE_ID, 0, "https://mock/fused-0.png");
-        assertEquals(1, fused);
+        // 提交第 0 页的9个格子URL
+        List<String> panelUrls = new ArrayList<>();
+        for (int i = 0; i < 9; i++) {
+            panelUrls.add("https://mock/fused-panel-" + i + ".png");
+        }
+        int fused = productionService.submitFusionPage(EPISODE_ID, 0, panelUrls);
+        assertEquals(9, fused);
 
-        // 验证 fusedGridUrls 已更新
+        // 验证 fusedGridUrls 已更新为二维数组格式
         ArgumentCaptor<EpisodeProduction> captor = ArgumentCaptor.forClass(EpisodeProduction.class);
-        verify(productionRepository).updateById(captor.capture());
-        List<String> savedUrls = objectMapper.readValue(captor.getValue().getFusedGridUrls(), List.class);
-        assertEquals("https://mock/fused-0.png", savedUrls.get(0));
+        verify(productionRepository, atLeastOnce()).updateById(captor.capture());
+        List<List<String>> savedUrls = objectMapper.readValue(
+                captor.getValue().getFusedGridUrls(), List.class);
+        assertEquals(1, savedUrls.size());
+        assertEquals(9, savedUrls.get(0).size());
+        assertEquals("https://mock/fused-panel-0.png", savedUrls.get(0).get(0));
 
         // 验证 tryMarkFusionResumed 被调用
         verify(productionRepository).tryMarkFusionResumed(EPISODE_ID);
