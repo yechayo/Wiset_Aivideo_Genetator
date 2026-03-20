@@ -91,6 +91,16 @@ public class EpisodeProduction {
     private Integer completedVideoGroups;
 
     /**
+     * 逐格融合：总格子数（= 总分镜数）
+     */
+    private Integer totalFusedPanels;
+
+    /**
+     * 逐格融合：已完成融合的格子数
+     */
+    private Integer fusedPanels;
+
+    /**
      * 最终合成视频URL
      */
     private String finalVideoUrl;

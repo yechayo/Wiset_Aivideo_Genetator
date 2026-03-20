@@ -33,6 +33,11 @@ public class VideoPromptModel {
      */
     private Integer panelIndex;
 
+    /**
+     * 该格子对应的融合参考图URL（前端拼合后的场景+角色图）
+     */
+    private String fusedReferenceImageUrl;
+
     public VideoPromptModel() {
         this.aspectRatio = "16:9";
     }

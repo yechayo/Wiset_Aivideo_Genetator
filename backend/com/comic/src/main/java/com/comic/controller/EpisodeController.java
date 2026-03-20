@@ -118,7 +118,7 @@ public class EpisodeController {
     }
 
     /**
-     * 提交单页融合结果（P1-1 多页融合）
+     * 提交单页融合结果（P1-1多页融合）
      * POST /api/episodes/{episodeId}/submit-fusion-page
      */
     @PostMapping("/{episodeId}/submit-fusion-page")
@@ -139,11 +139,12 @@ public class EpisodeController {
         if (pageIndex < 0) {
             throw new IllegalArgumentException("pageIndex 不能小于0");
         }
-        String fusedReferenceImageUrl = (String) body.get("fusedReferenceImageUrl");
-        if (fusedReferenceImageUrl == null || fusedReferenceImageUrl.isEmpty()) {
-            throw new IllegalArgumentException("fusedReferenceImageUrl 不能为空");
+        // 接收每格的融合图URL列表（最多9个）
+        List<String> panelFusedUrls = (List<String>) body.get("panelFusedUrls");
+        if (panelFusedUrls == null || panelFusedUrls.isEmpty()) {
+            throw new IllegalArgumentException("panelFusedUrls 不能为空");
         }
-        int totalFused = productionService.submitFusionPage(episodeId, pageIndex, fusedReferenceImageUrl);
+        int totalFused = productionService.submitFusionPage(episodeId, pageIndex, panelFusedUrls);
         Map<String, Object> result = new HashMap<>();
         result.put("totalFused", totalFused);
         result.put("pageIndex", pageIndex);

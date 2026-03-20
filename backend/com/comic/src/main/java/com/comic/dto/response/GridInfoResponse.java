@@ -89,8 +89,13 @@ public class GridInfoResponse {
         private List<String> characters;
 
         /**
-         * 是否已融合提交
+         * 是否已融合提交（整页）
          */
         private boolean fused;
+
+        /**
+         * 每格的融合图URL列表（按格子顺序，最多9个）
+         */
+        private List<String> fusedPanels;
     }
 }

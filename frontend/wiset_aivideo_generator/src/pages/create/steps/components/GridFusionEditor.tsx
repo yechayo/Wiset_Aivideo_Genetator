@@ -3,7 +3,7 @@ import styles from './GridFusionEditor.module.less';
 import { useFusionStore, autoAssignCharacters } from '../../../../stores/fusionStore';
 import { getGridInfo, uploadFusionImage, submitFusionPage } from '../../../../services/episodeService';
 import { loadImage, loadImages } from '../utils/imageLoader';
-import { splitGridToPanels, compositeFusedImage, canvasToFile } from '../utils/canvasSplitter';
+import { splitGridToPanels, canvasToFile } from '../utils/canvasSplitter';
 import GridCanvas from './GridCanvas';
 import CharacterPalette from './CharacterPalette';
 import PanelToolbar from './PanelToolbar';
@@ -134,6 +134,7 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
       const fusedPanels = new Map<number, HTMLCanvasElement>();
       const state = useFusionStore.getState();
 
+      // 逐格拼合：每个格子独立生成融合图
       basePanels.forEach((panelCanvas, panelIndex) => {
         const overlay = state.panelOverlays.get(panelIndex);
         let resultCanvas = panelCanvas;
@@ -160,20 +161,28 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
         fusedPanels.set(panelIndex, resultCanvas);
       });
 
-      const fusedImage = compositeFusedImage(
-        fusedPanels, gridColumns, gridRows, panelWidth, panelHeight, separatorPixels
-      );
+      // 逐格上传：每个格子独立上传到OSS，收集所有URL
+      const panelFusedUrls: string[] = [];
+      const totalPanels = gridColumns * gridRows;
 
-      const file = await canvasToFile(fusedImage);
-      const uploadRes = await uploadFusionImage(episodeId, file);
-      if (uploadRes.code !== 200 || !uploadRes.data) {
-        throw new Error('上传融合图失败');
+      for (let i = 0; i < totalPanels; i++) {
+        const panelCanvas = fusedPanels.get(i);
+        if (panelCanvas) {
+          const file = await canvasToFile(panelCanvas);
+          const uploadRes = await uploadFusionImage(episodeId, file);
+          if (uploadRes.code !== 200 || !uploadRes.data) {
+            throw new Error(`第${i + 1}格上传失败`);
+          }
+          panelFusedUrls.push(uploadRes.data);
+        } else {
+          panelFusedUrls.push(''); // 未设置角色的格子传空字符串
+        }
       }
 
-      // Submit this page's fusion
+      // Submit this page's fusion (9个URL)
       setSubmitting(true);
       setUploading(false);
-      await submitFusionPage(episodeId, currentPageIndex, uploadRes.data);
+      await submitFusionPage(episodeId, currentPageIndex, panelFusedUrls);
 
       setSubmitting(false);
       setFusedPages((prev) => new Set(prev).add(currentPageIndex));
