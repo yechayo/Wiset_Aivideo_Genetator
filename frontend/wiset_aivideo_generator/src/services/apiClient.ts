@@ -94,6 +94,12 @@ apiClient.interceptors.request.use(
     if (config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // FormData 上传时不设置 Content-Type，让浏览器自动设置 boundary
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+
     return config;
   },
   (error: AxiosError) => {

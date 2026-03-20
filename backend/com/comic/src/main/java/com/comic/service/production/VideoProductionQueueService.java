@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -39,6 +40,8 @@ public class VideoProductionQueueService {
     private final SeedanceVideoService seedanceVideoService;  // 使用 Seedance 特定服务
     private final VideoProductionTaskRepository taskRepository;
     private final EpisodeProductionRepository productionRepository;
+
+    private static final String GROUP_ID_SEPARATOR = "::";
 
     // 并发控制：限制同时处理的视频任务数
     private final Semaphore processingSemaphore = new Semaphore(1);  // 视频生成资源消耗大，限制为1
@@ -71,12 +74,14 @@ public class VideoProductionQueueService {
 
         // 为每个任务组创建任务记录
         for (VideoTaskGroupModel group : taskGroups) {
+            String runtimeGroupId = productionId + GROUP_ID_SEPARATOR + group.getGroupId();
+            group.setGroupId(runtimeGroupId);
             for (VideoPromptModel prompt : group.getPrompts()) {
                 VideoProductionTask task = new VideoProductionTask();
                 task.setTaskId("VTASK-" + UUID.randomUUID().toString().substring(0, 8));
                 task.setEpisodeId(episodeId);
                 task.setPanelIndex(prompt.getPanelIndex());
-                task.setTaskGroup(group.getGroupId());
+                task.setTaskGroup(runtimeGroupId);
                 task.setVideoPrompt(prompt.getPromptText());
                 task.setReferenceImageUrl(prompt.getReferenceImageUrl());
                 task.setTargetDuration(prompt.getDuration());
@@ -87,11 +92,12 @@ public class VideoProductionQueueService {
             }
         }
 
-        // 异步处理任务（按顺序处理，保证连续性）
-        for (VideoTaskGroupModel group : taskGroups) {
-            final VideoTaskGroupModel taskGroup = group;
-            executorService.submit(() -> processTaskGroup(productionId, episodeId, taskGroup));
-        }
+        // 异步顺序处理任务组，确保上一组结果可作为下一组连续性输入
+        executorService.submit(() -> {
+            for (VideoTaskGroupModel taskGroup : taskGroups) {
+                processTaskGroup(productionId, episodeId, taskGroup);
+            }
+        });
 
         log.info("视频生成任务已提交: productionId={}, groups={}", productionId, taskGroups.size());
     }
@@ -108,6 +114,9 @@ public class VideoProductionQueueService {
                 return;
             }
 
+            // 恢复路径可能只有 groupId，需要从任务记录中补齐提示词/时长/参考图
+            hydrateTaskGroupIfMissing(productionId, group, tasks);
+
             // 获取第一个任务作为代表
             VideoProductionTask representativeTask = tasks.get(0);
 
@@ -118,13 +127,16 @@ public class VideoProductionQueueService {
                 taskRepository.updateById(task);
             }
 
+            // 获取上一段视频的URL用于连续性
+            String previousVideoUrl = getPreviousVideoUrl(episodeId, representativeTask.getPanelIndex(), group.getGroupId());
+
             // 尝试生成视频（带重试）
-            VideoGenerationResult result = generateVideoWithRetry(representativeTask, group);
+            VideoGenerationResult result = generateVideoWithRetry(representativeTask, group, previousVideoUrl);
 
             // 保存结果
             for (VideoProductionTask task : tasks) {
                 task.setVideoUrl(result.videoUrl);
-                task.setVideoTaskId(result.videoTaskId);  // 保存平台任务ID
+                task.setVideoTaskId(result.videoTaskId);
                 task.setStatus("COMPLETED");
                 task.setUpdatedAt(LocalDateTime.now());
                 taskRepository.updateById(task);
@@ -157,17 +169,64 @@ public class VideoProductionQueueService {
     }
 
     /**
+     * 恢复场景下补齐任务组关键字段，避免空 prompts 导致 NPE 或无效请求。
+     */
+    private void hydrateTaskGroupIfMissing(String productionId, VideoTaskGroupModel group, List<VideoProductionTask> tasks) {
+        if (tasks == null || tasks.isEmpty()) {
+            return;
+        }
+
+        tasks.sort(Comparator.comparing(
+                t -> t.getPanelIndex() == null ? Integer.MAX_VALUE : t.getPanelIndex()));
+
+        if (group.getPrompts() == null || group.getPrompts().isEmpty()) {
+            List<VideoPromptModel> prompts = new ArrayList<>();
+            for (VideoProductionTask task : tasks) {
+                VideoPromptModel prompt = new VideoPromptModel();
+                prompt.setPromptText(task.getVideoPrompt());
+                prompt.setPanelIndex(task.getPanelIndex());
+                prompt.setDuration(task.getTargetDuration());
+                prompt.setReferenceImageUrl(task.getReferenceImageUrl());
+                prompts.add(prompt);
+            }
+            group.setPrompts(prompts);
+        }
+
+        if (group.getTotalDuration() == null || group.getTotalDuration() <= 0) {
+            int totalDuration = tasks.stream()
+                    .map(VideoProductionTask::getTargetDuration)
+                    .filter(d -> d != null && d > 0)
+                    .mapToInt(Integer::intValue)
+                    .sum();
+            if (totalDuration <= 0) {
+                totalDuration = Math.max(tasks.size(), 1) * 2;
+            }
+            group.setTotalDuration(totalDuration);
+        }
+
+        if (group.getFusedReferenceImageUrl() == null || group.getFusedReferenceImageUrl().isEmpty()) {
+            EpisodeProduction production = productionRepository.findByProductionId(productionId);
+            if (production != null && production.getFusedReferenceUrl() != null
+                    && !production.getFusedReferenceUrl().isEmpty()) {
+                group.setFusedReferenceImageUrl(production.getFusedReferenceUrl());
+            }
+        }
+    }
+
+    /**
      * 生成视频（带重试）
      * 支持：文生视频、图生视频、首尾帧生成
      */
-    private VideoGenerationResult generateVideoWithRetry(VideoProductionTask task, VideoTaskGroupModel group) {
+    private VideoGenerationResult generateVideoWithRetry(VideoProductionTask task, VideoTaskGroupModel group, String previousVideoUrl) {
         int maxRetries = 3;
         Exception lastError = null;
 
         for (int attempt = 0; attempt < maxRetries; attempt++) {
+            boolean acquired = false;
             try {
                 // 并发控制
                 processingSemaphore.acquire();
+                acquired = true;
                 log.info("开始生成视频: groupId={}, attempt={}", group.getGroupId(), attempt + 1);
 
                 // 构建组合提示词
@@ -179,7 +238,7 @@ public class VideoProductionQueueService {
                         group.getTotalDuration(),
                         "16:9",  // 默认16:9宽高比
                         group.getFusedReferenceImageUrl(),  // 首帧（融合参考图）
-                        null,  // 尾帧（暂不实现连续视频）
+                        previousVideoUrl,  // 尾帧（上一段视频URL，用于连续性）
                         true,  // 生成音频
                         false  // 不使用样片模式
                 );
@@ -208,7 +267,9 @@ public class VideoProductionQueueService {
                     }
                 }
             } finally {
-                processingSemaphore.release();
+                if (acquired) {
+                    processingSemaphore.release();
+                }
             }
         }
 
@@ -233,6 +294,10 @@ public class VideoProductionQueueService {
      * 将组内所有分镜的提示词组合在一起
      */
     private String buildCombinedPrompt(VideoTaskGroupModel group) {
+        if (group.getPrompts() == null || group.getPrompts().isEmpty()) {
+            throw new IllegalStateException("任务组提示词为空: groupId=" + group.getGroupId());
+        }
+
         StringBuilder sb = new StringBuilder();
 
         for (int i = 0; i < group.getPrompts().size(); i++) {
@@ -287,7 +352,8 @@ public class VideoProductionQueueService {
             return;
         }
 
-        int newCompleted = production.getCompletedPanels() + completedCount;
+        int currentCompleted = production.getCompletedPanels() != null ? production.getCompletedPanels() : 0;
+        int newCompleted = currentCompleted + completedCount;
         production.setCompletedPanels(newCompleted);
 
         // 计算进度百分比
@@ -308,7 +374,17 @@ public class VideoProductionQueueService {
     @Scheduled(fixedDelay = 30000) // 每30秒执行一次
     public void pollPendingTasks() {
         try {
-            List<VideoProductionTask> pendingTasks = taskRepository.findPendingTasks();
+            LocalDateTime staleBefore = LocalDateTime.now().minusMinutes(10);
+            List<VideoProductionTask> pendingTasks = taskRepository.findRecoverableTasks(staleBefore);
+
+            // 将卡住的 PROCESSING 任务回收为 PENDING，避免永久卡死
+            for (VideoProductionTask task : pendingTasks) {
+                if ("PROCESSING".equals(task.getStatus())) {
+                    task.setStatus("PENDING");
+                    task.setUpdatedAt(LocalDateTime.now());
+                    taskRepository.updateById(task);
+                }
+            }
 
             if (!pendingTasks.isEmpty()) {
                 log.info("发现待处理任务: {}", pendingTasks.size());
@@ -346,7 +422,7 @@ public class VideoProductionQueueService {
      * 获取待处理任务数量
      */
     public int getPendingTaskCount() {
-        List<VideoProductionTask> pendingTasks = taskRepository.findPendingTasks();
+        List<VideoProductionTask> pendingTasks = taskRepository.findRecoverableTasks(LocalDateTime.now().minusMinutes(10));
         return pendingTasks.size();
     }
 
@@ -355,5 +431,35 @@ public class VideoProductionQueueService {
      */
     public int getAvailableSlots() {
         return processingSemaphore.availablePermits();
+    }
+
+    /**
+     * 获取当前任务之前的上一个已完成视频URL（用于连续性）
+     */
+    private String getPreviousVideoUrl(Long episodeId, int currentPanelIndex, String currentGroupId) {
+        String productionPrefix = extractProductionPrefix(currentGroupId);
+        // 查找同一剧集、分镜索引更小的已完成任务
+        List<VideoProductionTask> completedTasks = taskRepository.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<VideoProductionTask>()
+                        .eq(VideoProductionTask::getEpisodeId, episodeId)
+                        .eq(VideoProductionTask::getStatus, "COMPLETED")
+                        .isNotNull(VideoProductionTask::getVideoUrl)
+                        .likeRight(VideoProductionTask::getTaskGroup, productionPrefix + GROUP_ID_SEPARATOR)
+                        .lt(VideoProductionTask::getPanelIndex, currentPanelIndex)
+                        .orderByDesc(VideoProductionTask::getPanelIndex)
+                        .last("LIMIT 1")
+        );
+        if (!completedTasks.isEmpty()) {
+            return completedTasks.get(0).getVideoUrl();
+        }
+        return null;
+    }
+
+    private String extractProductionPrefix(String runtimeGroupId) {
+        int idx = runtimeGroupId.indexOf(GROUP_ID_SEPARATOR);
+        if (idx <= 0) {
+            return runtimeGroupId;
+        }
+        return runtimeGroupId.substring(0, idx);
     }
 }

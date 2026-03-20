@@ -1,50 +1,503 @@
-import styles from './Step2page.module.less';
-import type { Project } from '../../../services';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import styles from './Step4page.module.less';
+import type { Project, CharacterDraft, CharacterStatus } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useCreateStore } from '../../../stores/createStore';
+import {
+  getCharacters,
+  getCharacterStatus,
+  generateAllImages,
+  retryGeneration,
+} from '../../../services/characterService';
+import { advancePipeline } from '../../../services/projectService';
 
 interface Step4pageProps extends StepContentProps {
   project: Project;
 }
 
-/**
- * Step 4: 生成配置
- */
-const Step4page = ({ project, onComplete }: Step4pageProps) => {
-  const { isLoadingStatus } = useCreateStore();
+interface CharacterItem {
+  draft: CharacterDraft;
+  status?: CharacterStatus;
+}
 
-  const handleNext = () => {
-    const confirmed = window.confirm('确认后将开始生成，无法再返回修改。请确认配置无误后再继续。');
-    if (!confirmed) return;
-    console.log('开始生成:', project);
-    onComplete?.();
+const Step4page = ({ project }: Step4pageProps) => {
+  const { statusInfo, isLoadingStatus, syncStatus } = useCreateStore();
+  const projectId = project.projectId;
+  const prefersReducedMotion = useReducedMotion();
+
+  const [characters, setCharacters] = useState<CharacterItem[]>([]);
+  const [error, setError] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [expandedCharId, setExpandedCharId] = useState<string | null>(null);
+  const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const statusCode = statusInfo?.statusCode || '';
+
+  // 加载角色列表
+  const loadCharacters = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res = await getCharacters(projectId);
+      if (res.code === 200 && res.data) {
+        const items: CharacterItem[] = await Promise.all(
+          res.data.map(async (draft) => {
+            try {
+              const statusRes = await getCharacterStatus(draft.charId);
+              if (statusRes.code === 200 && statusRes.data) {
+                return { draft, status: statusRes.data };
+              }
+            } catch { /* 忽略 */ }
+            return { draft };
+          })
+        );
+
+        // 根据服务端状态回收本地生成集合，避免成功后一直处于“生成中”
+        const nextGeneratingIds = new Set<string>();
+        items.forEach((item) => {
+          const st = item.status;
+          if (st?.isGeneratingExpression || st?.isGeneratingThreeView
+            || st?.expressionStatus === 'GENERATING' || st?.threeViewStatus === 'GENERATING') {
+            nextGeneratingIds.add(item.draft.charId);
+          }
+        });
+
+        setCharacters(items);
+        setGeneratingIds(nextGeneratingIds);
+        setError('');
+      }
+    } catch (err: any) {
+      setError(err.message || '获取角色列表失败');
+    }
+  }, [projectId]);
+
+  // 启动角色状态轮询（有角色正在生成时）
+  const startPolling = useCallback(() => {
+    if (pollingRef.current) return;
+    pollingRef.current = setInterval(loadCharacters, 3000);
+  }, [loadCharacters]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
+
+  // statusCode 变化时加载角色数据
+  // IMAGE_GENERATING 期间持续轮询
+  useEffect(() => {
+    loadCharacters();
+
+    if (statusCode === 'IMAGE_GENERATING') {
+      pollingRef.current = setInterval(loadCharacters, 3000);
+    } else {
+      stopPolling();
+    }
+
+    return () => stopPolling();
+  }, [statusCode, loadCharacters, stopPolling]);
+
+  // 有角色在生成中也启动轮询
+  useEffect(() => {
+    if (generatingIds.size > 0) {
+      startPolling();
+    }
+    // 不需要在 cleanup 中停止，statusCode 变化的 effect 会处理
+  }, [generatingIds.size, startPolling]);
+
+  // 检测所有角色图片是否已生成完毕，自动推进到 IMAGE_REVIEW
+  useEffect(() => {
+    if (statusCode !== 'IMAGE_GENERATING' || characters.length === 0 || generatingIds.size > 0) return;
+
+    const allDone = characters.every((char) => {
+      const st = char.status;
+      const isSupporting = char.draft.role === '配角';
+      return st?.threeViewStatus === 'COMPLETED' && (isSupporting || st?.expressionStatus === 'COMPLETED');
+    });
+
+    if (allDone && projectId) {
+      advancePipeline(projectId, 'images_generated').catch((err) => {
+        console.error('自动推进到 IMAGE_REVIEW 失败:', err);
+      });
+    }
+  }, [statusCode, characters, generatingIds.size, projectId]);
+
+  // ========== 操作处理 ==========
+
+  const handleStartGeneration = async () => {
+    if (!projectId) return;
+    setActionLoading(true);
+    try {
+      await advancePipeline(projectId, 'start_image_generation');
+    } catch (err: any) {
+      alert(err.message || '启动生成失败');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
+  const handleConfirmImages = async () => {
+    if (!projectId) return;
+    const confirmed = window.confirm('确认后将锁定所有素材图片，无法再重新生成。请确认图片无误。');
+    if (!confirmed) return;
+    setActionLoading(true);
+    try {
+      await advancePipeline(projectId, 'image_confirmed');
+    } catch (err: any) {
+      alert(err.message || '确认失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleStartProduction = async () => {
+    if (!projectId) return;
+    const confirmed = window.confirm('确认后将开始视频生产，流程无法中断。是否继续？');
+    if (!confirmed) return;
+    setActionLoading(true);
+    try {
+      await advancePipeline(projectId, 'start_production');
+      // 立即同步后端状态，触发路由跳转到 step 5
+      if (projectId) {
+        await syncStatus(projectId);
+      }
+    } catch (err: any) {
+      alert(err.message || '启动生产失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRetryGeneration = async () => {
+    if (!projectId) return;
+    setActionLoading(true);
+    try {
+      await advancePipeline(projectId, 'start_image_generation');
+    } catch (err: any) {
+      alert(err.message || '重试失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 一键生成全部角色图片（跳过已完成的）
+  const handleGenerateAll = async () => {
+    const ids = new Set<string>();
+    for (const char of characters) {
+      const st = char.status;
+      const isSupporting = char.draft.role === '配角';
+      const allDone = st?.threeViewStatus === 'COMPLETED' && (isSupporting || st?.expressionStatus === 'COMPLETED');
+      if (allDone) continue; // 跳过已完成的角色
+
+      ids.add(char.draft.charId);
+      try {
+        await generateAllImages(char.draft.charId);
+      } catch {
+        // 单个失败不阻断
+      }
+    }
+    setGeneratingIds(ids);
+  };
+
+  // 单个角色生成全部图片
+  const handleGenerateChar = async (charId: string) => {
+    setGeneratingIds(prev => new Set(prev).add(charId));
+    try {
+      await generateAllImages(charId);
+    } catch (err: any) {
+      alert(err.message || '生成失败');
+      setGeneratingIds(prev => { const next = new Set(prev); next.delete(charId); return next; });
+    }
+  };
+
+  // 单项重试
+  const handleRetryChar = async (charId: string, type: 'expression' | 'threeView') => {
+    setGeneratingIds(prev => new Set(prev).add(charId));
+    try {
+      await retryGeneration(charId, type);
+    } catch (err: any) {
+      alert(err.message || '重试失败');
+      setGeneratingIds(prev => { const next = new Set(prev); next.delete(charId); return next; });
+    }
+  };
+
+  const handleExpand = (charId: string) => {
+    setExpandedCharId(prev => prev === charId ? null : charId);
+  };
+
+  const getGenStatusText = (status: string | undefined, label: string) => {
+    switch (status) {
+      case 'GENERATING': return `${label}生成中...`;
+      case 'COMPLETED': return `${label}已生成`;
+      case 'FAILED': return `${label}生成失败`;
+      default: return `${label}未生成`;
+    }
+  };
+
+  const getRoleClass = (role: string) => {
+    switch (role) {
+      case '主角': return styles.protagonist;
+      case '反派': return styles.antagonist;
+      default: return styles.supporting;
+    }
+  };
+
+  // ========== 渲染角色卡片 ==========
+  const renderCard = (char: CharacterItem, mode: 'generating' | 'review' | 'locked' | 'preview') => {
+    const isExpanded = expandedCharId === char.draft.charId;
+    const st = char.status;
+    const isSupporting = char.draft.role === '配角';
+    const isGenerating = generatingIds.has(char.draft.charId);
+
+    // 根据角色自身状态判断
+    const charAllDone = st?.threeViewStatus === 'COMPLETED' && (isSupporting || st?.expressionStatus === 'COMPLETED');
+    const charAnyFailed = st?.threeViewStatus === 'FAILED' || st?.expressionStatus === 'FAILED';
+    const charAnyGenerating = st?.threeViewStatus === 'GENERATING' || st?.expressionStatus === 'GENERATING';
+
+    const cardClass = [
+      styles.characterCard,
+      isExpanded ? styles.expanded : '',
+      mode === 'locked' ? styles.locked : '',
+      charAllDone ? styles.completed : '',
+      charAnyFailed ? styles.failed : '',
+      (charAnyGenerating || isGenerating) ? styles.generating : '',
+    ].filter(Boolean).join(' ');
+
+    // 状态徽章
+    const statusBadge = mode === 'locked' ? (
+      <span className={styles.lockedBadge}>已锁定</span>
+    ) : mode === 'preview' ? null : charAllDone ? (
+      <span className={styles.statusBadgeDone}>已完成</span>
+    ) : charAnyFailed ? (
+      <span className={styles.statusBadgeFailed}>有失败</span>
+    ) : (charAnyGenerating || isGenerating) ? (
+      <div className={styles.cardStatusBadge}>
+        <span className={`${styles.statusDot} ${styles.generating}`} />
+        生成中
+      </div>
+    ) : (
+      <span className={styles.statusBadgePending}>待生成</span>
+    );
+
+    // 渲染单项图片区域（表情或三视图）
+    const renderImageItem = (label: string, imageUrl?: string, status?: string, error?: string, type?: 'expression' | 'threeView') => (
+      <div className={styles.imageItem}>
+        <span className={styles.imageLabel}>{label}</span>
+        <div className={status === 'threeView' || type === 'threeView' ? `${styles.imagePreview} ${styles.threeView}` : styles.imagePreview}>
+          {imageUrl ? (
+            <img src={imageUrl} alt={label} />
+          ) : status === 'FAILED' ? (
+            <div className={styles.imagePlaceholder}>
+              <span>生成失败</span>
+              {error && <span className={styles.imageError}>{error}</span>}
+              <button className={styles.imageRetryBtn} onClick={() => handleRetryChar(char.draft.charId, type!)}>
+                重试
+              </button>
+            </div>
+          ) : (
+            <div className={styles.imagePlaceholder}>
+              <span>未生成</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+
+    const expandedContent = isExpanded ? (
+      <motion.div
+        className={styles.expandedContent}
+        initial={{ opacity: prefersReducedMotion ? 1 : 0, y: prefersReducedMotion ? 0 : -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: prefersReducedMotion ? 1 : 0, y: prefersReducedMotion ? 0 : -8 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.25, ease: [0.4, 0, 0.2, 1] }}
+      >
+        {(mode === 'generating' || mode === 'review') && (
+          <div className={styles.statusRow}>
+            {!isSupporting && (
+              <div className={styles.statusItem}>
+                <span className={`${styles.statusDot} ${
+                  st?.expressionStatus === 'COMPLETED' ? styles.completed :
+                  st?.expressionStatus === 'FAILED' ? styles.failed :
+                  st?.expressionStatus === 'GENERATING' ? styles.generating : styles.pending
+                }`} />
+                {getGenStatusText(st?.expressionStatus, '表情')}
+                {st?.expressionError && <span className={styles.imageError}>({st.expressionError})</span>}
+              </div>
+            )}
+            <div className={styles.statusItem}>
+              <span className={`${styles.statusDot} ${
+                st?.threeViewStatus === 'COMPLETED' ? styles.completed :
+                st?.threeViewStatus === 'FAILED' ? styles.failed :
+                st?.threeViewStatus === 'GENERATING' ? styles.generating : styles.pending
+              }`} />
+              {getGenStatusText(st?.threeViewStatus, '三视图')}
+              {st?.threeViewError && <span className={styles.imageError}>({st.threeViewError})</span>}
+            </div>
+          </div>
+        )}
+
+        <div className={styles.imageRow}>
+          {!isSupporting && renderImageItem(
+            '九宫格表情',
+            st?.expressionGridUrl,
+            st?.expressionStatus,
+            st?.expressionError,
+            'expression'
+          )}
+          {renderImageItem(
+            '三视图',
+            st?.threeViewGridUrl,
+            st?.threeViewStatus,
+            st?.threeViewError,
+            'threeView'
+          )}
+        </div>
+
+        {/* 手动生成/重试按钮 */}
+        {(mode === 'generating' || mode === 'review') && !charAllDone && !charAnyGenerating && !isGenerating && (
+          <div className={styles.cardActions}>
+            <button
+              className={styles.generateBtn}
+              onClick={() => handleGenerateChar(char.draft.charId)}
+            >
+              生成图片
+            </button>
+          </div>
+        )}
+
+        {mode === 'preview' && (
+          <div className={styles.statusRow}>
+            {!isSupporting && <span className={styles.statusText}>九宫格表情：待生成</span>}
+            <span className={styles.statusText}>三视图：待生成</span>
+          </div>
+        )}
+      </motion.div>
+    ) : null;
+
+    return (
+      <div
+        key={char.draft.charId}
+        className={cardClass}
+        role={isExpanded ? undefined : 'button'}
+        tabIndex={isExpanded ? -1 : 0}
+        aria-expanded={isExpanded}
+        aria-label={`${char.draft.name} - ${char.draft.role}`}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleExpand(char.draft.charId); } }}
+      >
+        <div className={styles.cardHeader} onClick={() => handleExpand(char.draft.charId)}>
+          <div className={styles.cardAvatar}>
+            {st?.standardImageUrl ? <img src={st.standardImageUrl} alt={char.draft.name} /> : <span>{char.draft.name.charAt(0)}</span>}
+          </div>
+          <div className={styles.cardInfo}>
+            <h3 className={styles.cardName}>{char.draft.name}</h3>
+            <span className={`${styles.cardRole} ${getRoleClass(char.draft.role)}`}>{char.draft.role}</span>
+          </div>
+          {statusBadge}
+        </div>
+        <AnimatePresence initial={false}>{expandedContent}</AnimatePresence>
+      </div>
+    );
+  };
+
+  // ========== 主渲染 ==========
   return (
     <div className={styles.content}>
       <div className={styles.header}>
-        <h1 className={styles.title}>生成配置</h1>
-        <p className={styles.subtitle}>
-          确认并开始生成
-        </p>
+        <h1 className={styles.title}>图片生成</h1>
+        <p className={styles.subtitle}>共 {characters.length} 个角色，点击角色卡片查看素材图片</p>
       </div>
 
       {isLoadingStatus ? (
         <div className={styles.loadingState}>
           <div className={styles.spinner}></div>
-          <p>正在加载配置...</p>
+          <p>正在加载数据...</p>
         </div>
+      ) : error && !characters.length ? (
+        <div className={styles.errorSection}>
+          <p>{error}</p>
+          <button className={styles.retryButton} onClick={() => { setError(''); loadCharacters(); }}>重试</button>
+        </div>
+      ) : statusCode === 'IMAGE_GENERATING_FAILED' ? (
+        <div className={styles.errorSection}>
+          <p>{statusInfo?.statusDescription || '图片生成失败'}</p>
+          <button className={styles.retryButton} onClick={handleRetryGeneration} disabled={actionLoading}>
+            {actionLoading ? '重试中...' : '重新生成'}
+          </button>
+        </div>
+      ) : statusCode === 'CHARACTER_CONFIRMED' ? (
+        <>
+          <div className={styles.guideSection}>
+            <div className={styles.guideIcon}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+              </svg>
+            </div>
+            <p className={styles.guideText}>角色配置已确认，接下来将自动生成所有角色的素材图片</p>
+            <p className={styles.guideHint}>系统将为每个角色生成三视图和九宫格表情图（配角仅生成三视图）</p>
+            <button className={styles.startButton} onClick={handleStartGeneration} disabled={actionLoading}>
+              {actionLoading ? '启动中...' : '开始生成图片'}
+            </button>
+          </div>
+          {characters.length > 0 && (
+            <div className={styles.characterGrid}>{characters.map(c => renderCard(c, 'preview'))}</div>
+          )}
+          <div className={styles.bottomActions}>
+            <button className={styles.startButton} onClick={handleStartGeneration} disabled={actionLoading}>
+              {actionLoading ? '启动中...' : '开始生成图片'}
+            </button>
+          </div>
+        </>
+      ) : statusCode === 'IMAGE_GENERATING' ? (
+        <>
+          <div className={styles.characterGrid}>{characters.map(c => renderCard(c, 'generating'))}</div>
+          <div className={styles.bottomActions}>
+            <button
+              className={styles.generateAllBtn}
+              onClick={handleGenerateAll}
+              disabled={generatingIds.size > 0}
+            >
+              {generatingIds.size > 0 ? <><span className={styles.miniSpinner} />生成中...</> : '一键全部生成'}
+            </button>
+          </div>
+        </>
+      ) : statusCode === 'IMAGE_REVIEW' ? (
+        <>
+          <div className={styles.characterGrid}>{characters.map(c => renderCard(c, 'review'))}</div>
+          <div className={styles.bottomActions}>
+            <button
+              className={styles.generateAllBtn}
+              onClick={handleGenerateAll}
+              disabled={generatingIds.size > 0}
+            >
+              {generatingIds.size > 0 ? <><span className={styles.miniSpinner} />生成中...</> : '一键全部生成'}
+            </button>
+            <button className={styles.confirmButton} onClick={handleConfirmImages} disabled={actionLoading || generatingIds.size > 0}>
+              {actionLoading ? '确认中...' : '确认图片，锁定素材'}
+            </button>
+          </div>
+        </>
+      ) : statusCode === 'ASSET_LOCKED' ? (
+        <>
+          <div className={styles.lockedSection}>
+            <div className={styles.lockedSummary}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+              </svg>
+              所有素材已锁定，可以开始视频生产
+            </div>
+          </div>
+          <div className={styles.characterGrid}>{characters.map(c => renderCard(c, 'locked'))}</div>
+          <div className={styles.bottomActions}>
+            <button className={styles.productionButton} onClick={handleStartProduction} disabled={actionLoading}>
+              {actionLoading ? '启动中...' : '开始生产'}
+            </button>
+          </div>
+        </>
       ) : (
-        <div className={styles.emptyContent}>
-          第四步内容开发中...
-        </div>
+        <div className={styles.emptyState}><p>等待进入图片生成阶段</p></div>
       )}
-
-      <div className={styles.buttonContainer}>
-        <button className={styles.confirmButton} onClick={handleNext}>
-          开始生成
-        </button>
-      </div>
     </div>
   );
 };

@@ -42,7 +42,8 @@ public class CharacterExtractService {
         }
 
         if (!ProjectStatus.SCRIPT_CONFIRMED.getCode().equals(project.getStatus()) &&
-            !ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
+            !ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus()) &&
+            !ProjectStatus.CHARACTER_EXTRACTING.getCode().equals(project.getStatus())) {
             throw new BusinessException("请先确认剧本后再提取角色");
         }
 

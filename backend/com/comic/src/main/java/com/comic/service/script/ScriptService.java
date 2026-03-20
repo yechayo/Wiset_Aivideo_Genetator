@@ -9,11 +9,14 @@ import com.comic.entity.Episode;
 import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
+import com.comic.service.pipeline.PipelineService;
 import com.comic.service.world.WorldRuleService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +39,10 @@ public class ScriptService {
     private final PromptBuilder promptBuilder;
     private final WorldRuleService worldRuleService;
     private final ObjectMapper objectMapper;
+
+    @Lazy
+    @Autowired
+    private PipelineService pipelineService;
 
     // 状态常量（统一使用 ProjectStatus 枚举）
     private static final String STATUS_DRAFT = ProjectStatus.DRAFT.getCode();
@@ -127,17 +134,12 @@ public class ScriptService {
             throw new BusinessException("当前状态不能生成分集，请先生成并确认大纲");
         }
 
-        // 判断是否为单集模式
-        boolean isSingleEpisode = project.getTotalEpisodes() != null && project.getTotalEpisodes() == 1;
-
-        // 多集模式：验证章节顺序（必须顺序生成）
-        if (!isSingleEpisode) {
-            validateChapterOrder(project, chapter);
-        }
+        // 验证章节顺序（必须顺序生成，单集只有一个章节，验证天然通过）
+        validateChapterOrder(project, chapter);
 
         // 更新状态
         project.setStatus(STATUS_EPISODE_GENERATING);
-        project.setSelectedChapter(isSingleEpisode ? "单集剧本" : chapter);
+        project.setSelectedChapter(chapter);
         projectRepository.updateById(project);
 
         try {
@@ -150,48 +152,31 @@ public class ScriptService {
             // 获取前序剧集摘要（保持连贯性）
             String previousSummary = buildPreviousEpisodesSummary(projectId);
 
-            // 构建分集prompt
-            String systemPrompt;
-            String userPrompt;
-
-            if (isSingleEpisode) {
-                // 单集模式：使用专门的单集 prompt
-                systemPrompt = promptBuilder.buildSingleEpisodeScriptSystemPrompt();
-                userPrompt = promptBuilder.buildSingleEpisodeScriptUserPrompt(
-                    outline,
-                    globalCharacters,
-                    globalItems,
-                    project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
-                    modificationSuggestion
-                );
-            } else {
-                // 多集模式：使用章节 prompt
-                systemPrompt = promptBuilder.buildScriptEpisodeSystemPrompt();
-                userPrompt = promptBuilder.buildScriptEpisodeUserPrompt(
-                    outline,
-                    chapter,
-                    globalCharacters,
-                    globalItems,
-                    previousSummary,
-                    episodeCount,
-                    project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
-                    modificationSuggestion
-                );
-            }
+            // 构建分集prompt（单集/多集统一使用章节 prompt）
+            String systemPrompt = promptBuilder.buildScriptEpisodeSystemPrompt();
+            String userPrompt = promptBuilder.buildScriptEpisodeUserPrompt(
+                outline,
+                chapter,
+                globalCharacters,
+                globalItems,
+                previousSummary,
+                episodeCount,
+                project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
+                modificationSuggestion
+            );
 
             // 调用文本生成服务生成分集
             String episodesJson = textGenerationService.generate(systemPrompt, userPrompt);
 
             // 解析并保存剧集
-            String chapterTitle = isSingleEpisode ? "单集剧本" : chapter;
-            List<Episode> episodes = parseAndSaveEpisodes(project, episodesJson, chapterTitle);
+            List<Episode> episodes = parseAndSaveEpisodes(project, episodesJson, chapter);
 
             // 更新状态
             project.setStatus(STATUS_SCRIPT_REVIEW);
             projectRepository.updateById(project);
 
-            log.info("分集生成完成: projectId={}, chapter={}, episodes={}, isSingleEpisode={}",
-                    projectId, chapterTitle, episodes.size(), isSingleEpisode);
+            log.info("分集生成完成: projectId={}, chapter={}, episodes={}",
+                    projectId, chapter, episodes.size());
 
         } catch (Exception e) {
             log.error("分集生成失败: projectId={}, chapter={}", projectId, chapter, e);
@@ -216,7 +201,6 @@ public class ScriptService {
         }
 
         String status = project.getStatus();
-        boolean isSingleEpisode = project.getTotalEpisodes() != null && project.getTotalEpisodes() == 1;
 
         // 已经是确认状态，直接返回（幂等操作）
         if (STATUS_SCRIPT_CONFIRMED.equals(status)) {
@@ -225,18 +209,12 @@ public class ScriptService {
         }
 
         if (STATUS_OUTLINE_REVIEW.equals(status)) {
-            // 单集模式：大纲生成后可直接确认
-            if (isSingleEpisode) {
+            // 检查是否已生成所有章节的剧集
+            if (isAllChaptersGenerated(project)) {
                 project.setStatus(STATUS_SCRIPT_CONFIRMED);
-                log.info("单集剧本确认完成: projectId={}", projectId);
+                log.info("剧本全部确认完成: projectId={}", projectId);
             } else {
-                // 多集模式：检查是否已生成所有章节
-                if (isAllChaptersGenerated(project)) {
-                    project.setStatus(STATUS_SCRIPT_CONFIRMED);
-                    log.info("剧本全部确认完成: projectId={}", projectId);
-                } else {
-                    throw new BusinessException("请先生成所有章节的剧集");
-                }
+                throw new BusinessException("请先生成所有章节的剧集");
             }
         } else if (STATUS_SCRIPT_REVIEW.equals(status)) {
             // 确认分集
@@ -251,6 +229,13 @@ public class ScriptService {
         }
 
         projectRepository.updateById(project);
+
+        // 推进管线到角色提取阶段
+        try {
+            pipelineService.advancePipeline(projectId, "start_character_extraction");
+        } catch (Exception e) {
+            log.warn("推进管线失败（角色提取将不会自动触发）: projectId={}, error={}", projectId, e.getMessage());
+        }
     }
 
     /**
@@ -265,14 +250,9 @@ public class ScriptService {
         }
 
         String status = project.getStatus();
-        boolean isSingleEpisode = project.getTotalEpisodes() != null && project.getTotalEpisodes() == 1;
 
-        // 单集模式：允许在 OUTLINE_REVIEW 或 SCRIPT_CONFIRMED 状态修改
-        // 多集模式：只允许在 OUTLINE_REVIEW 状态修改
-        boolean canRevise = STATUS_OUTLINE_REVIEW.equals(status) ||
-                           (isSingleEpisode && STATUS_SCRIPT_CONFIRMED.equals(status));
-
-        if (!canRevise) {
+        // 只允许在 OUTLINE_REVIEW 状态修改大纲
+        if (!STATUS_OUTLINE_REVIEW.equals(status)) {
             throw new BusinessException("当前状态不能修改大纲");
         }
 
@@ -329,12 +309,15 @@ public class ScriptService {
         result.put("episodes", episodes);
 
         if (isSingleEpisode) {
-            // 单集模式：不需要章节列表
-            result.put("chapters", Collections.emptyList());
-            result.put("generatedChapters", Collections.emptyList());
-            result.put("pendingChapters", Collections.emptyList());
-            result.put("nextChapter", "单集剧本");
-            result.put("needGenerateScript", episodes.isEmpty());
+            // 单集模式：用"单集剧本"作为唯一章节，与多集模式统一数据结构
+            String singleChapter = "单集剧本";
+            boolean hasEpisodes = !episodes.isEmpty();
+            result.put("chapters", Collections.singletonList(singleChapter));
+            result.put("generatedChapters", hasEpisodes ? Collections.singletonList(singleChapter) : Collections.emptyList());
+            result.put("pendingChapters", hasEpisodes ? Collections.emptyList() : Collections.singletonList(singleChapter));
+            result.put("nextChapter", hasEpisodes ? null : singleChapter);
+            // needGenerateScript 保留向后兼容，但前端不再依赖它
+            result.put("needGenerateScript", !hasEpisodes);
         } else {
             // 多集模式：提取章节列表
             List<String> chapters = extractChaptersFromOutline(project.getScriptOutline());
@@ -564,28 +547,37 @@ public class ScriptService {
             }
             cleanJson = cleanJson.trim();
 
-            // 解析 JSON
+            // 解析 JSON（支持数组和单对象两种格式）
             JsonNode rootNode = objectMapper.readTree(cleanJson);
 
+            // 如果 AI 返回的是单个对象（单集模式常见），包装成数组统一处理
+            List<JsonNode> episodeNodes = new ArrayList<>();
             if (rootNode.isArray()) {
-                int episodeNum = getNextEpisodeNum(project.getProjectId());
-
-                for (JsonNode episodeNode : rootNode) {
-                    Episode episode = new Episode();
-                    episode.setProjectId(project.getProjectId());
-                    episode.setEpisodeNum(episodeNum++);
-                    episode.setTitle(getJsonText(episodeNode, "title", "第" + (episodeNum - 1) + "集"));
-                    episode.setContent(getJsonText(episodeNode, "content", ""));
-                    episode.setCharacters(getJsonText(episodeNode, "characters", ""));
-                    episode.setKeyItems(getJsonText(episodeNode, "keyItems", ""));
-                    episode.setContinuityNote(getJsonText(episodeNode, "continuityNote", ""));
-                    episode.setChapterTitle(chapterTitle);
-                    episode.setStatus("DRAFT");
-                    episode.setRetryCount(0);
-
-                    episodeRepository.insert(episode);
-                    episodes.add(episode);
+                for (JsonNode node : rootNode) {
+                    episodeNodes.add(node);
                 }
+            } else if (rootNode.isObject()) {
+                episodeNodes.add(rootNode);
+            } else {
+                throw new BusinessException("剧集 JSON 格式不正确，期望数组或对象");
+            }
+
+            int episodeNum = getNextEpisodeNum(project.getProjectId());
+            for (JsonNode episodeNode : episodeNodes) {
+                Episode episode = new Episode();
+                episode.setProjectId(project.getProjectId());
+                episode.setEpisodeNum(episodeNum++);
+                episode.setTitle(getJsonText(episodeNode, "title", "第" + (episodeNum - 1) + "集"));
+                episode.setContent(getJsonText(episodeNode, "content", ""));
+                episode.setCharacters(getJsonText(episodeNode, "characters", ""));
+                episode.setKeyItems(getJsonText(episodeNode, "keyItems", ""));
+                episode.setContinuityNote(getJsonText(episodeNode, "continuityNote", ""));
+                episode.setChapterTitle(chapterTitle);
+                episode.setStatus("DRAFT");
+                episode.setRetryCount(0);
+
+                episodeRepository.insert(episode);
+                episodes.add(episode);
             }
 
         } catch (Exception e) {
@@ -641,7 +633,7 @@ public class ScriptService {
                 null,
                 project.getTotalEpisodes(),
                 project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
-                "REAL"
+                project.getVisualStyle() != null ? project.getVisualStyle() : "REAL"
             );
 
             // 添加修改意见

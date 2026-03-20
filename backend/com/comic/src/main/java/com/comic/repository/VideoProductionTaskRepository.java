@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.comic.entity.VideoProductionTask;
 import org.apache.ibatis.annotations.Mapper;
 
-import java.util.Arrays;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -33,13 +33,37 @@ public interface VideoProductionTaskRepository extends BaseMapper<VideoProductio
     }
 
     /**
-     * 查找待处理或处理中的任务
+     * 查找待处理任务
      */
     default List<VideoProductionTask> findPendingTasks() {
         return selectList(new LambdaQueryWrapper<VideoProductionTask>()
-                .in(VideoProductionTask::getStatus, Arrays.asList("PENDING", "PROCESSING"))
+                .eq(VideoProductionTask::getStatus, "PENDING")
                 .lt(VideoProductionTask::getRetryCount, 3)
                 .orderByAsc(VideoProductionTask::getCreatedAt));
+    }
+
+        /**
+         * 查找可恢复任务：
+         * - PENDING 任务
+         * - 长时间卡住的 PROCESSING 任务
+         */
+        default List<VideoProductionTask> findRecoverableTasks(LocalDateTime processingStaleBefore) {
+        return selectList(new LambdaQueryWrapper<VideoProductionTask>()
+            .lt(VideoProductionTask::getRetryCount, 3)
+            .and(w -> w
+                .eq(VideoProductionTask::getStatus, "PENDING")
+                .or(pw -> pw
+                    .eq(VideoProductionTask::getStatus, "PROCESSING")
+                    .lt(VideoProductionTask::getUpdatedAt, processingStaleBefore)))
+            .orderByAsc(VideoProductionTask::getCreatedAt));
+        }
+
+    /**
+     * 删除剧集下的所有生产任务
+     */
+    default void deleteByEpisodeId(Long episodeId) {
+        delete(new LambdaQueryWrapper<VideoProductionTask>()
+                .eq(VideoProductionTask::getEpisodeId, episodeId));
     }
 
     /**

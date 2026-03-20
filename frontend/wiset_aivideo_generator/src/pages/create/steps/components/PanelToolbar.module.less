@@ -1,0 +1,132 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.toolbarInfo {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  min-width: 120px;
+}
+
+.toolbarInfo strong {
+  color: #ffffff;
+}
+
+.noSelection {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.3);
+  padding: 8px 0;
+}
+
+.sliderGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sliderLabel {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  min-width: 50px;
+}
+
+.sliderValue {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sliderInput {
+  width: 100px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ffffff;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
+  }
+
+  &::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ffffff;
+    cursor: pointer;
+    border: none;
+  }
+}
+
+.toolbarActions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.actionButton {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+  }
+
+  &.danger {
+    border-color: rgba(255, 100, 100, 0.3);
+
+    &:hover {
+      background: rgba(255, 100, 100, 0.1);
+      color: rgba(255, 100, 100, 0.9);
+    }
+  }
+}
+
+.sourceSelector {
+  display: flex;
+  gap: 4px;
+}
+
+.sourceButton {
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.4);
+
+  &.active {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #ffffff;
+  }
+}

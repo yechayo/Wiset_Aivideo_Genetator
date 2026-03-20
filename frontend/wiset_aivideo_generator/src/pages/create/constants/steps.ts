@@ -11,6 +11,6 @@ export const CREATE_STEPS: Step[] = [
   { id: 1, label: '创意输入', description: '输入故事创意和生成参数' },
   { id: 2, label: '剧本编辑', description: '编辑AI生成的剧本' },
   { id: 3, label: '角色配置', description: '配置角色形象' },
-  { id: 4, label: '生成配置', description: '确认并开始生成' },
+  { id: 4, label: '图片生成', description: '生成角色素材图片' },
   { id: 5, label: '生成进度', description: '查看生成进度和下载' },
 ];

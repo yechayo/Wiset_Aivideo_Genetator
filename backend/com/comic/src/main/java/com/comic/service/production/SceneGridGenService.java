@@ -61,8 +61,14 @@ public class SceneGridGenService {
         // 获取角色参考图
         List<Character> characters = getCharactersForScene(episode.getProjectId(), sceneGroup.getCharacters());
 
+        // 尝试从分镜 JSON 提取逐格描述
+        String detailedPanelDesc = generateDetailedGridFromStoryboard(
+                episodeId, sceneGroup,
+                sceneGroup.getStartPanelIndex() != null ? sceneGroup.getStartPanelIndex() : 0
+        );
+
         // 构建九宫格提示词
-        String prompt = buildGridPrompt(project, sceneGroup, characters);
+        String prompt = buildGridPrompt(project, sceneGroup, characters, detailedPanelDesc);
 
         // 计算九宫格总尺寸
         int totalWidth = PANEL_WIDTH * GRID_COLUMNS + (GRID_COLUMNS - 1) * 4;
@@ -87,7 +93,7 @@ public class SceneGridGenService {
      * 构建九宫格提示词
      * 参考文档六部分结构
      */
-    private String buildGridPrompt(Project project, SceneGroupModel sceneGroup, List<Character> characters) {
+    private String buildGridPrompt(Project project, SceneGroupModel sceneGroup, List<Character> characters, String detailedPanelDesc) {
         StringBuilder prompt = new StringBuilder();
 
         // 第一部分：布局规范
@@ -115,17 +121,31 @@ public class SceneGridGenService {
         // 第三部分：场景一致性约束
         prompt.append("【场景一致性约束】\n");
         prompt.append("本场景位置：").append(sceneGroup.getLocation()).append("。\n");
+        if (sceneGroup.getTimeOfDay() != null) {
+            prompt.append("时间：").append(sceneGroup.getTimeOfDay()).append("。\n");
+        }
+        if (sceneGroup.getLighting() != null) {
+            prompt.append("光线：").append(sceneGroup.getLighting()).append("。\n");
+        }
+        if (sceneGroup.getMood() != null) {
+            prompt.append("氛围：").append(sceneGroup.getMood()).append("。\n");
+        }
         prompt.append("所有格子的场景环境、光线、色调必须完全一致。\n");
         prompt.append("就像同一个场景用不同机位拍摄。\n\n");
 
         // 第四部分：负面约束
         prompt.append("【负面约束】\n");
         prompt.append("绝对禁止出现任何文字、数字、字母、字幕、水印、对话框气泡、面板编号。\n");
-        prompt.append("唯一例外：场景中实物上的文字（如路牌、书封面、横幅）。\n\n");
+        prompt.append("唯一例外：场景中实物上的文字（如路牌、书封面、横幅）。\n");
+        prompt.append("每个格子必须是不同的画面内容，严禁重复相同的构图。\n\n");
 
         // 第五部分：逐格画面描述
         prompt.append("【逐格画面描述】\n");
-        prompt.append(buildPanelDescriptions(sceneGroup));
+        if (detailedPanelDesc != null && !detailedPanelDesc.isEmpty()) {
+            prompt.append(detailedPanelDesc);
+        } else {
+            prompt.append(buildFallbackPanelDescriptions(sceneGroup));
+        }
 
         // 第六部分：风格描述
         prompt.append("【风格描述】\n");
@@ -136,39 +156,41 @@ public class SceneGridGenService {
     }
 
     /**
-     * 构建逐格画面描述
-     * 根据场景组中的分镜生成九宫格描述
+     * 构建差异化的 fallback 逐格描述（无分镜 JSON 时使用）
+     * 每个格子使用不同的景别、角度和构图
      */
-    private String buildPanelDescriptions(SceneGroupModel sceneGroup) {
+    private String buildFallbackPanelDescriptions(SceneGroupModel sceneGroup) {
+        String[] shotTypes = {"远景", "全景", "中景", "中近景", "近景", "特写", "过肩镜头", "仰拍全景", "俯拍全景"};
+        String[] angles = {"视平角度", "低角度仰拍", "高角度俯拍", "侧面角度", "正面角度", "斜45度角", "鸟瞰角度", " worms-eye仰拍", "荷兰角（倾斜）"};
+        String[] actions = {
+                "建立镜头，展示整体环境",
+                "角色走入画面",
+                "角色交谈互动",
+                "角色反应/表情变化",
+                "关键道具/物品特写",
+                "角色做出重要动作",
+                "两人对峙或对视",
+                "角色独白或沉思",
+                "场景高潮或转折瞬间"
+        };
+
         StringBuilder sb = new StringBuilder();
+        String location = sceneGroup.getLocation() != null ? sceneGroup.getLocation() : "";
+        List<String> chars = sceneGroup.getCharacters() != null ? sceneGroup.getCharacters() : Collections.emptyList();
+        String charStr = chars.isEmpty() ? "" : String.join("和", chars);
 
-        // 这里简化处理，生成9个格子的描述
-        // 实际应该从storyboardJson中提取具体分镜信息
-        for (int row = 0; row < GRID_ROWS; row++) {
-            for (int col = 0; col < GRID_COLUMNS; col++) {
-                int panelNum = row * GRID_COLUMNS + col + 1;
-                sb.append("第").append(panelNum).append("格：\n");
-
-                // 根据场景信息生成描述
-                sb.append("景别：中景。\n");
-                sb.append("角度：视平角度。\n");
-                sb.append("运镜：固定镜头。\n");
-                sb.append("环境：").append(sceneGroup.getLocation()).append("。\n");
-
-                // 如果有角色，描述角色动作
-                if (sceneGroup.getCharacters() != null && !sceneGroup.getCharacters().isEmpty()) {
-                    sb.append("内容：");
-                    for (int i = 0; i < sceneGroup.getCharacters().size(); i++) {
-                        if (i > 0) sb.append("和");
-                        sb.append("角色").append(i + 1);
-                    }
-                    sb.append("在").append(sceneGroup.getLocation()).append("中。\n");
-                } else {
-                    sb.append("内容：").append(sceneGroup.getLocation()).append("的全景。\n");
-                }
-
-                sb.append("\n");
+        for (int i = 0; i < GRID_ROWS * GRID_COLUMNS; i++) {
+            sb.append("第").append(i + 1).append("格：\n");
+            sb.append("景别：").append(shotTypes[i]).append("。\n");
+            sb.append("角度：").append(angles[i]).append("。\n");
+            sb.append("运镜：固定镜头。\n");
+            sb.append("环境：").append(location).append("。\n");
+            sb.append("内容：");
+            sb.append(actions[i]);
+            if (!charStr.isEmpty()) {
+                sb.append("，").append(charStr).append("在场");
             }
+            sb.append("。\n\n");
         }
 
         return sb.toString();

@@ -2,6 +2,7 @@ package com.comic.service.oss;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
+import com.aliyun.oss.model.ObjectMetadata;
 import com.comic.config.OssProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +10,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.PreDestroy;
 import java.io.File;
@@ -125,6 +127,65 @@ public class OssService {
             return publicUrl;
         } catch (Exception e) {
             log.error("上传文件到 OSS 失败: {}", filePath, e);
+            throw new RuntimeException("上传文件到 OSS 失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 从 InputStream 上传到 OSS（支持前端 MultipartFile 上传）
+     *
+     * @param inputStream  输入流
+     * @param objectKey    OSS对象Key
+     * @param contentType  内容类型（如 "image/png"）
+     * @param contentLength 内容长度
+     * @return OSS 公网 URL
+     */
+    public String uploadFromInputStream(InputStream inputStream, String objectKey, String contentType, long contentLength) {
+        try {
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentType(contentType);
+            metadata.setContentLength(contentLength);
+
+            getOssClient().putObject(
+                    ossProperties.getBucketName(),
+                    objectKey,
+                    inputStream,
+                    metadata
+            );
+
+            String publicUrl = getPublicUrl(objectKey);
+            log.info("文件已上传到 OSS: {} -> {}", objectKey, publicUrl);
+            return publicUrl;
+        } catch (Exception e) {
+            log.error("上传文件到 OSS 失败: {}", objectKey, e);
+            throw new RuntimeException("上传文件到 OSS 失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 上传 MultipartFile 到 OSS（便捷方法）
+     *
+     * @param file       MultipartFile
+     * @param category   分类目录（如 "fusion"）
+     * @return OSS 公网 URL
+     */
+    public String uploadMultipartFile(MultipartFile file, String category) {
+        try {
+            String originalName = file.getOriginalFilename();
+            String ext = originalName != null && originalName.contains(".")
+                    ? originalName.substring(originalName.lastIndexOf("."))
+                    : ".png";
+            String fileName = UUID.randomUUID().toString().replace("-", "") + ext;
+            String objectKey = ossProperties.getDir() + category + "/" + fileName;
+
+            return uploadFromInputStream(
+                    file.getInputStream(),
+                    objectKey,
+                    file.getContentType() != null ? file.getContentType() : "image/png",
+                    file.getSize()
+            );
+        } catch (Exception e) {
+            log.error("上传MultipartFile到OSS失败", e);
             throw new RuntimeException("上传文件到 OSS 失败: " + e.getMessage(), e);
         }
     }

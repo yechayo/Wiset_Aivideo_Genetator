@@ -115,6 +115,8 @@ export interface ScriptContentResponse {
   generatedChapters: string[];
   pendingChapters: string[];
   episodes: Episode[];
+  isSingleEpisode?: boolean;
+  needGenerateScript?: boolean;
 }
 
 /**
@@ -139,6 +141,8 @@ export interface ProjectStatusInfo {
   isReview: boolean;
   completedSteps: number[];
   availableActions: string[];
+  productionProgress?: number;
+  productionSubStage?: string;
 }
 
 /**

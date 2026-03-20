@@ -57,7 +57,7 @@ public class CharacterImageGenerationService {
             // 获取视觉风格
             CharacterPromptManager.VisualStyle visualStyle = CharacterPromptManager.VisualStyle.D_3D;
             if (character.getVisualStyle() != null) {
-                visualStyle = CharacterPromptManager.VisualStyle.fromFrontendValue(character.getVisualStyle());
+                visualStyle = CharacterPromptManager.VisualStyle.fromCode(character.getVisualStyle());
             }
 
             // 构建提示词并生成大全图
@@ -124,7 +124,7 @@ public class CharacterImageGenerationService {
             // 获取视觉风格
             CharacterPromptManager.VisualStyle visualStyle = CharacterPromptManager.VisualStyle.D_3D;
             if (character.getVisualStyle() != null) {
-                visualStyle = CharacterPromptManager.VisualStyle.fromFrontendValue(character.getVisualStyle());
+                visualStyle = CharacterPromptManager.VisualStyle.fromCode(character.getVisualStyle());
             }
 
             // 构建提示词并生成大全图
@@ -227,7 +227,7 @@ public class CharacterImageGenerationService {
         }
 
         try {
-            CharacterPromptManager.VisualStyle.fromFrontendValue(visualStyle);
+            CharacterPromptManager.VisualStyle.fromCode(visualStyle);
         } catch (IllegalArgumentException e) {
             throw new BusinessException("无效的视觉风格: " + visualStyle);
         }
