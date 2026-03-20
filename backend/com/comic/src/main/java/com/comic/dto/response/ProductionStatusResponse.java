@@ -55,6 +55,11 @@ public class ProductionStatusResponse {
     private String sceneGridUrl;
 
     /**
+     * 融合后的参考图URL
+     */
+    private String fusedReferenceImageUrl;
+
+    /**
      * 最终视频URL（完成后可用）
      */
     private String finalVideoUrl;

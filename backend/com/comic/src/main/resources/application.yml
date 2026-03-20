@@ -22,7 +22,7 @@ spring:
 
   # ---------- 数据源：本地用 SQLite，上服务器换 PostgreSQL ----------
   datasource:
-    url: jdbc:sqlite:./comic.db?journal_mode=WAL&foreign_keys=true
+    url: jdbc:sqlite:./comic.db?journal_mode=WAL&foreign_keys=true&busy_timeout=30000
     driver-class-name: org.sqlite.JDBC
 
   # ---------- 自动建表 ----------
@@ -103,7 +103,7 @@ comic:
   ark:
     api-key: 167746d0-87be-4d4a-ab21-2022c6822ad7
     base-url: https://ark.cn-beijing.volces.com/api/v3
-    seedream-model: doubao-seedream-5-0-260128  # Seedream 图片模型
+    seedream-model: doubao-seedream-4-0-250828  # Seedream 图片模型
     seedance-model: doubao-seedance-1-5-pro-251215  # Seedance 视频模型
 
   # ========== DeepSeek API 配置（思考模式） ==========
@@ -117,7 +117,7 @@ comic:
   oss:
     access-key-id: ${OSS_ACCESS_KEY_ID}
     access-key-secret: ${OSS_ACCESS_KEY_SECRET}
-    bucket-name: luogenagent
+    bucket-name: zhiqiantong-test
     endpoint: oss-cn-beijing.aliyuncs.com
     dir: comic/images/
 
@@ -140,7 +140,7 @@ logging:
 ---
 # =============================================
 # 生产环境配置（部署服务器时激活）
-# 启动命令：java -jar comic.jar --spring.profiles.active=prod
+# 启动命令：java -jar comic.jar --spri ng.profiles.active=prod
 # =============================================
 #spring:
 #  config:

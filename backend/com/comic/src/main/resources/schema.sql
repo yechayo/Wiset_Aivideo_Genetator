@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS video_production_task (
     status TEXT DEFAULT 'PENDING',
     retry_count INTEGER DEFAULT 0,
     error_message TEXT,
+    last_frame_url TEXT,
 
     -- 时间戳
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -219,6 +220,7 @@ CREATE INDEX IF NOT EXISTS idx_video_task_group ON video_production_task(task_gr
 CREATE TABLE IF NOT EXISTS episode_production (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     episode_id INTEGER UNIQUE NOT NULL,
+    production_id TEXT,
 
     -- 生产状态
     status TEXT DEFAULT 'PENDING',
@@ -229,6 +231,9 @@ CREATE TABLE IF NOT EXISTS episode_production (
     -- 场景分析结果
     scene_analysis_json TEXT,
     scene_grid_url TEXT,
+    fused_reference_url TEXT,
+    scene_grid_urls TEXT,
+    fused_grid_urls TEXT,
 
     -- 视频生成跟踪
     total_panels INTEGER DEFAULT 0,

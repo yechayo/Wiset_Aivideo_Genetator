@@ -54,4 +54,14 @@ public class ProjectStatusResponse {
      * 可用的操作列表
      */
     private List<String> availableActions;
+
+    /**
+     * 生产进度百分比（仅 PRODUCING 阶段有意义）
+     */
+    private Integer productionProgress;
+
+    /**
+     * 剧集生产子阶段描述（仅 PRODUCING 阶段有意义，如"正在分析场景..."）
+     */
+    private String productionSubStage;
 }

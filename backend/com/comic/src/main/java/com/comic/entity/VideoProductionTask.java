@@ -80,6 +80,11 @@ public class VideoProductionTask {
      */
     private String errorMessage;
 
+    /**
+     * 上一段视频的尾帧URL（用于连续视频生成）
+     */
+    private String lastFrameUrl;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

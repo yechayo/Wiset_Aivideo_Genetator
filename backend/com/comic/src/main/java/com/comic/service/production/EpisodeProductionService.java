@@ -1,26 +1,42 @@
 package com.comic.service.production;
 
+import com.comic.common.BusinessException;
+import com.comic.dto.response.GridInfoResponse;
+import com.comic.dto.response.PipelineStageDTO;
+import com.comic.dto.response.ProductionPipelineResponse;
 import com.comic.dto.response.ProductionStatusResponse;
+import com.comic.dto.response.VideoSegmentInfoResponse;
 import com.comic.dto.model.SceneAnalysisResultModel;
+import com.comic.dto.model.SceneGroupModel;
 import com.comic.dto.model.VideoSegmentModel;
 import com.comic.dto.model.VideoTaskGroupModel;
+import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.EpisodeProduction;
 import com.comic.entity.Project;
+import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeProductionRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.repository.VideoProductionTaskRepository;
+import com.comic.service.story.StoryboardService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.core.type.TypeReference;
 
 /**
  * 单集视频生产主流程编排服务
@@ -35,13 +51,20 @@ public class EpisodeProductionService {
     private final EpisodeProductionRepository productionRepository;
     private final VideoProductionTaskRepository videoTaskRepository;
     private final ProjectRepository projectRepository;
+    private final CharacterRepository characterRepository;
     private final SceneAnalysisService sceneAnalysisService;
     private final SceneGridGenService sceneGridGenService;
     private final VideoPromptBuilderService videoPromptBuilderService;
     private final VideoProductionQueueService videoQueueService;
     private final SubtitleService subtitleService;
     private final VideoCompositionService videoCompositionService;
+    private final StoryboardService storyboardService;
     private final ObjectMapper objectMapper;
+    private final ApplicationContext applicationContext;
+
+    private EpisodeProductionService self() {
+        return applicationContext.getBean(EpisodeProductionService.class);
+    }
 
     /**
      * 启动单集视频生产
@@ -49,7 +72,6 @@ public class EpisodeProductionService {
      * @param episodeId 剧集ID
      * @return 生产任务ID
      */
-    @Transactional
     public String startProduction(Long episodeId) {
         Episode episode = episodeRepository.selectById(episodeId);
         if (episode == null) {
@@ -62,8 +84,20 @@ public class EpisodeProductionService {
 
         // 检查是否已有生产任务
         EpisodeProduction existing = productionRepository.findByEpisodeId(episodeId);
-        if (existing != null && !"COMPLETED".equals(existing.getStatus()) && !"FAILED".equals(existing.getStatus())) {
-            throw new IllegalStateException("剧集已有进行中的生产任务: " + existing.getProductionId());
+        if (existing != null) {
+            String existingStatus = existing.getStatus();
+            if ("COMPLETED".equals(existingStatus)) {
+                throw new IllegalStateException("剧集已完成生产，不可重复生产: " + existing.getProductionId());
+            }
+            if (!"FAILED".equals(existingStatus)) {
+                // 中间状态（如 GRID_FUSION_PENDING），清除旧记录重新开始
+                log.warn("清除中间态生产记录重新开始: episodeId={}, oldStatus={}, productionId={}",
+                        episodeId, existingStatus, existing.getProductionId());
+                productionRepository.deleteById(existing.getId());
+                // 同时清理旧的视频分段任务，避免新旧任务混合导致合成结果污染
+                videoTaskRepository.deleteByEpisodeId(episodeId);
+            }
+            // FAILED 状态允许重试，直接走下面的新建流程
         }
 
         // 创建生产记录
@@ -85,7 +119,7 @@ public class EpisodeProductionService {
         episodeRepository.updateById(episode);
 
         // 异步执行生产流程
-        executeProductionFlow(episode, production);
+        self().executeProductionFlow(episode, production);
 
         log.info("视频生产已启动: episodeId={}, productionId={}", episodeId, production.getProductionId());
         return production.getProductionId();
@@ -93,6 +127,7 @@ public class EpisodeProductionService {
 
     /**
      * 执行生产流程（异步）
+     * 阶段1-2: 场景分析 + 九宫格生成（所有场景组），完成后暂停等待前端融合
      */
     @Async
     public void executeProductionFlow(Episode episode, EpisodeProduction production) {
@@ -106,20 +141,92 @@ public class EpisodeProductionService {
             production.setTotalPanels(sceneAnalysis.getTotalPanelCount());
             productionRepository.updateById(production);
 
-            // 阶段2: 场景九宫格生成
-            updateProductionStatus(production, "GRID_GENERATING", "GRID_GENERATION", 15, "正在生成场景参考图...");
-            String sceneGridUrl = generateFirstSceneGrid(projectId, episode.getId(), sceneAnalysis);
-            production.setSceneGridUrl(sceneGridUrl);
+            // 阶段2: 为每个场景组生成九宫格图
+            List<SceneGroupModel> sceneGroups = sceneAnalysis.getSceneGroups();
+            List<String> gridUrls = new ArrayList<>();
+
+            if (!sceneGroups.isEmpty()) {
+                updateProductionStatus(production, "GRID_GENERATING", "GRID_GENERATION",
+                        11, String.format("正在生成场景参考图... (%d/%d)", 0, sceneGroups.size()));
+            }
+
+            for (int i = 0; i < sceneGroups.size(); i++) {
+                String gridUrl = sceneGridGenService.generateSceneGrid(episode.getId(), sceneGroups.get(i));
+                gridUrls.add(gridUrl);
+
+                // 每生成一张就落库，供前端轮询时实时展示
+                if (production.getSceneGridUrl() == null || production.getSceneGridUrl().isEmpty()) {
+                    production.setSceneGridUrl(gridUrl);
+                }
+                production.setSceneGridUrls(toJsonUrlList(gridUrls));
+                productionRepository.updateById(production);
+
+                int progress = 11 + (int) ((i + 1) * 6.0 / sceneGroups.size());
+                updateProductionStatus(production, "GRID_GENERATING", "GRID_GENERATION",
+                        progress,
+                        String.format("正在生成场景参考图... (%d/%d)", i + 1, sceneGroups.size()));
+
+                log.info("场景九宫格生成完成: sceneGroup={}/{}, url={}", i + 1, sceneGroups.size(), gridUrl);
+            }
+
+            // 保存所有网格图URL
+            production.setSceneGridUrl(gridUrls.isEmpty() ? null : gridUrls.get(0)); // 兼容旧字段
+            production.setSceneGridUrls(toJsonUrlList(gridUrls));
             productionRepository.updateById(production);
+
+            // 暂停等待前端融合
+            updateProductionStatus(production, "GRID_FUSION_PENDING", "GRID_FUSION", 17, "等待图片融合...");
+            log.info("管线暂停，等待前端融合: productionId={}, totalPages={}", production.getProductionId(), gridUrls.size());
+
+        } catch (Exception e) {
+            log.error("视频生产失败: productionId={}", production.getProductionId(), e);
+            handleProductionFailure(production, episode, e);
+        }
+    }
+
+    /**
+     * 继续生产流程（异步）
+     * 阶段3-7: 提示词构建 → 视频生成 → 字幕 → 合成 → 完成
+     */
+    @Async
+    public void continueProductionFlow(Episode episode, EpisodeProduction production) {
+        try {
+            String projectId = episode.getProjectId();
 
             // 阶段3: 视频提示词构建
             updateProductionStatus(production, "BUILDING_PROMPTS", "PROMPT_BUILDING", 20, "正在构建视频提示词...");
+            SceneAnalysisResultModel sceneAnalysis = objectMapper.readValue(
+                    production.getSceneAnalysisJson(), SceneAnalysisResultModel.class);
             Project project = projectRepository.findByProjectId(projectId);
             List<VideoTaskGroupModel> taskGroups = videoPromptBuilderService.buildPromptsForPanels(
                     episode.getStoryboardJson(),
                     sceneAnalysis.getSceneGroups(),
-                    project.getVisualStyle()
+                    project.getVisualStyle(),
+                    projectId
             );
+
+            // 注入融合参考图URL到每个任务组（P1-6: 按场景组分配融合图）
+            List<String> fusedUrls = parseJsonUrlList(production.getFusedGridUrls());
+            if (fusedUrls == null || fusedUrls.isEmpty()) {
+                // 兼容旧逻辑：单一融合图
+                String fusedUrl = production.getFusedReferenceUrl();
+                if (fusedUrl != null && !fusedUrl.isEmpty()) {
+                    for (VideoTaskGroupModel group : taskGroups) {
+                        group.setFusedReferenceImageUrl(fusedUrl);
+                    }
+                }
+            } else {
+                // 按场景组分配对应的融合图
+                for (VideoTaskGroupModel group : taskGroups) {
+                    int sceneGroupIndex = resolveSceneGroupIndex(group, sceneAnalysis.getSceneGroups());
+                    if (sceneGroupIndex < fusedUrls.size()) {
+                        group.setFusedReferenceImageUrl(fusedUrls.get(sceneGroupIndex));
+                    } else if (!fusedUrls.isEmpty()) {
+                        group.setFusedReferenceImageUrl(fusedUrls.get(fusedUrls.size() - 1));
+                    }
+                }
+            }
+
             production.setTotalVideoGroups(taskGroups.size());
             productionRepository.updateById(production);
 
@@ -164,19 +271,23 @@ public class EpisodeProductionService {
 
         } catch (Exception e) {
             log.error("视频生产失败: productionId={}", production.getProductionId(), e);
-
-            // 标记失败
-            production.setStatus("FAILED");
-            production.setProgressPercent(0);
-            production.setErrorMessage(e.getMessage());
-            production.setCompletedAt(LocalDateTime.now());
-            production.setRetryCount(production.getRetryCount() + 1);
-            productionRepository.updateById(production);
-
-            // 更新Episode
-            episode.setProductionStatus("FAILED");
-            episodeRepository.updateById(episode);
+            handleProductionFailure(production, episode, e);
         }
+    }
+
+    /**
+     * 处理生产失败
+     */
+    private void handleProductionFailure(EpisodeProduction production, Episode episode, Exception e) {
+        production.setStatus("FAILED");
+        production.setProgressPercent(0);
+        production.setErrorMessage(e.getMessage());
+        production.setCompletedAt(LocalDateTime.now());
+        production.setRetryCount(production.getRetryCount() + 1);
+        productionRepository.updateById(production);
+
+        episode.setProductionStatus("FAILED");
+        episodeRepository.updateById(episode);
     }
 
     /**
@@ -189,6 +300,10 @@ public class EpisodeProductionService {
         while (elapsed < maxWait) {
             EpisodeProduction latest = productionRepository.findByProductionId(production.getProductionId());
             int completed = latest.getCompletedPanels();
+
+            if (latest.getTotalPanels() == null || latest.getTotalPanels() <= 0) {
+                throw new RuntimeException("总分镜数无效，无法计算生成进度");
+            }
 
             if (completed >= latest.getTotalPanels()) {
                 return;
@@ -208,17 +323,6 @@ public class EpisodeProductionService {
     }
 
     /**
-     * 为第一个场景生成九宫格参考图
-     */
-    private String generateFirstSceneGrid(String projectId, Long episodeId, SceneAnalysisResultModel sceneAnalysis) {
-        if (sceneAnalysis.getSceneGroups() == null || sceneAnalysis.getSceneGroups().isEmpty()) {
-            return null;
-        }
-
-        return sceneGridGenService.generateSceneGrid(episodeId, sceneAnalysis.getSceneGroups().get(0));
-    }
-
-    /**
      * 获取视频片段列表
      */
     private List<VideoSegmentModel> getVideoSegments(Long episodeId) {
@@ -228,7 +332,7 @@ public class EpisodeProductionService {
                 .filter(t -> "COMPLETED".equals(t.getStatus()) && t.getVideoUrl() != null)
                 .map(t -> new VideoSegmentModel(
                         t.getVideoUrl(),
-                        t.getTargetDuration().floatValue(),
+                t.getTargetDuration() != null ? t.getTargetDuration().floatValue() : 2.0f,
                         t.getPanelIndex()
                 ))
                 .collect(java.util.stream.Collectors.toList());
@@ -277,14 +381,231 @@ public class EpisodeProductionService {
         dto.setSceneGridUrl(production.getSceneGridUrl());
         dto.setFinalVideoUrl(production.getFinalVideoUrl());
         dto.setErrorMessage(production.getErrorMessage());
+        dto.setFusedReferenceImageUrl(production.getFusedReferenceUrl());
 
         return dto;
     }
 
     /**
+     * 获取视频片段列表（P1-7）
+     */
+    public List<VideoSegmentInfoResponse> getVideoSegmentInfos(Long episodeId) {
+        List<com.comic.entity.VideoProductionTask> tasks = videoTaskRepository.findByEpisodeId(episodeId);
+        return tasks.stream()
+                .filter(t -> "COMPLETED".equals(t.getStatus()) && t.getVideoUrl() != null)
+                .sorted((a, b) -> Integer.compare(
+                        a.getPanelIndex() != null ? a.getPanelIndex() : 0,
+                        b.getPanelIndex() != null ? b.getPanelIndex() : 0))
+                .map(t -> {
+                    VideoSegmentInfoResponse info = new VideoSegmentInfoResponse();
+                    info.setPanelIndex(t.getPanelIndex());
+                    info.setVideoUrl(t.getVideoUrl());
+                    info.setTargetDuration(t.getTargetDuration());
+                    info.setVideoPrompt(t.getVideoPrompt());
+                    info.setSceneDescription(t.getSceneDescription());
+                    return info;
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 获取网格拆分/融合所需信息（支持多页）
+     */
+    public GridInfoResponse getGridInfo(Long episodeId) {
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) {
+            throw new IllegalArgumentException("剧集不存在: " + episodeId);
+        }
+
+        EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
+        if (production == null) {
+            throw new IllegalArgumentException("生产任务不存在");
+        }
+
+        GridInfoResponse response = new GridInfoResponse();
+        response.setSceneGridUrl(production.getSceneGridUrl());
+
+        // 解析场景分析结果
+        List<SceneGroupModel> sceneGroups = new ArrayList<>();
+        if (production.getSceneAnalysisJson() != null) {
+            try {
+                SceneAnalysisResultModel analysis = objectMapper.readValue(
+                        production.getSceneAnalysisJson(), SceneAnalysisResultModel.class);
+                if (analysis.getSceneGroups() != null) {
+                    sceneGroups = analysis.getSceneGroups();
+                }
+            } catch (Exception e) {
+                log.warn("解析场景分析JSON失败: {}", e.getMessage());
+            }
+        }
+
+        // 构建多页网格信息
+        List<String> gridUrls = parseJsonUrlList(production.getSceneGridUrls());
+        List<String> fusedUrls = parseJsonUrlList(production.getFusedGridUrls());
+        List<GridInfoResponse.GridPageInfo> gridPages = new ArrayList<>();
+        if (gridUrls != null && !gridUrls.isEmpty()) {
+            for (int i = 0; i < gridUrls.size(); i++) {
+                GridInfoResponse.GridPageInfo page = new GridInfoResponse.GridPageInfo();
+                page.setSceneGridUrl(gridUrls.get(i));
+                page.setSceneGroupIndex(i);
+                page.setFused(fusedUrls != null && i < fusedUrls.size()
+                        && fusedUrls.get(i) != null && !fusedUrls.get(i).isEmpty());
+                if (i < sceneGroups.size()) {
+                    page.setLocation(sceneGroups.get(i).getLocation());
+                    page.setCharacters(sceneGroups.get(i).getCharacters());
+                }
+                gridPages.add(page);
+            }
+        } else if (production.getSceneGridUrl() != null) {
+            // 兼容旧数据：只有单张网格图
+            GridInfoResponse.GridPageInfo page = new GridInfoResponse.GridPageInfo();
+            page.setSceneGridUrl(production.getSceneGridUrl());
+            page.setSceneGroupIndex(0);
+            page.setFused(production.getFusedReferenceUrl() != null && !production.getFusedReferenceUrl().isEmpty());
+            if (!sceneGroups.isEmpty()) {
+                page.setLocation(sceneGroups.get(0).getLocation());
+                page.setCharacters(sceneGroups.get(0).getCharacters());
+            }
+            gridPages.add(page);
+        }
+        response.setGridPages(gridPages);
+        response.setTotalPages(gridPages.size());
+
+        // 收集角色
+        List<String> characterNames = new ArrayList<>();
+        for (SceneGroupModel group : sceneGroups) {
+            if (group.getCharacters() != null) {
+                characterNames.addAll(group.getCharacters());
+            }
+        }
+
+        // 查询角色参考图
+        String projectId = episode.getProjectId();
+        List<Character> confirmedCharacters = characterRepository.findConfirmedByProjectId(projectId);
+        Map<String, Character> characterMap = confirmedCharacters.stream()
+                .collect(Collectors.toMap(Character::getName, c -> c, (a, b) -> a));
+
+        List<GridInfoResponse.CharacterReferenceInfo> refs = characterNames.stream()
+                .distinct()
+                .filter(characterMap::containsKey)
+                .map(name -> {
+                    Character c = characterMap.get(name);
+                    GridInfoResponse.CharacterReferenceInfo info = new GridInfoResponse.CharacterReferenceInfo();
+                    info.setCharacterName(name);
+                    info.setThreeViewGridUrl(c.getThreeViewGridUrl());
+                    info.setExpressionGridUrl(c.getExpressionGridUrl());
+                    info.setStandardImageUrl(c.getStandardImageUrl());
+                    return info;
+                })
+                .collect(Collectors.toList());
+
+        response.setCharacterReferences(refs);
+        return response;
+    }
+
+    /**
+     * 前端融合完成后恢复管线（旧接口兼容）
+     */
+    public void resumeAfterFusion(Long episodeId, String fusedReferenceImageUrl) {
+        EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
+        if (production == null) {
+            throw new IllegalArgumentException("生产任务不存在");
+        }
+
+        if (!"GRID_FUSION_PENDING".equals(production.getStatus())) {
+            throw new IllegalStateException("当前状态不允许提交融合结果: " + production.getStatus());
+        }
+
+        production.setFusedReferenceUrl(fusedReferenceImageUrl);
+        production.setFusedGridUrls(toJsonUrlList(Collections.singletonList(fusedReferenceImageUrl)));
+        productionRepository.updateById(production);
+
+        log.info("融合图已保存，恢复管线: episodeId={}, fusedUrl={}", episodeId, fusedReferenceImageUrl);
+
+        if (!productionRepository.tryMarkFusionResumed(episodeId)) {
+            log.warn("融合恢复已被其他请求触发，忽略重复请求: episodeId={}", episodeId);
+            return;
+        }
+
+        Episode episode = episodeRepository.selectById(episodeId);
+        self().continueProductionFlow(episode, production);
+    }
+
+    /**
+     * 提交单页融合结果（P1-1 多页融合）
+     * 当所有页面都融合完成后自动恢复管线
+     */
+    public int submitFusionPage(Long episodeId, int pageIndex, String fusedReferenceImageUrl) {
+        EpisodeProduction production;
+        try {
+            production = productionRepository.findByEpisodeId(episodeId);
+        } catch (Exception e) {
+            log.warn("查询生产记录失败（可能正在生产中）: episodeId={}", episodeId);
+            throw new BusinessException("正在处理中，请稍后再试");
+        }
+        if (production == null) {
+            throw new IllegalArgumentException("生产任务不存在");
+        }
+
+        if (!"GRID_FUSION_PENDING".equals(production.getStatus())) {
+            throw new BusinessException("融合阶段已结束，无需再次提交（当前状态: " + production.getStatus() + "）");
+        }
+
+        // 获取总页数并校验页码边界
+        List<String> gridUrls = parseJsonUrlList(production.getSceneGridUrls());
+        int totalPages = (gridUrls != null && !gridUrls.isEmpty()) ? gridUrls.size() : 1;
+        if (pageIndex < 0 || pageIndex >= totalPages) {
+            throw new BusinessException("pageIndex 越界，当前总页数: " + totalPages);
+        }
+
+        // 获取当前融合图列表
+        List<String> fusedUrls = parseJsonUrlList(production.getFusedGridUrls());
+        if (fusedUrls == null) {
+            fusedUrls = new ArrayList<>();
+        }
+
+        // 确保列表足够长
+        while (fusedUrls.size() <= pageIndex) {
+            fusedUrls.add(null);
+        }
+        fusedUrls.set(pageIndex, fusedReferenceImageUrl);
+
+        // 保存
+        production.setFusedGridUrls(toJsonUrlList(fusedUrls));
+        // 兼容旧字段
+        production.setFusedReferenceUrl(fusedUrls.get(0));
+        productionRepository.updateById(production);
+
+        int totalFused = (int) fusedUrls.stream()
+                .limit(totalPages)
+                .filter(url -> url != null && !url.isEmpty())
+                .count();
+
+        log.info("融合页已保存: episodeId={}, page={}/{}, totalFused={}",
+                episodeId, pageIndex + 1, totalPages, totalFused);
+
+        // 检查是否全部融合完成
+        if (fusedUrls.size() >= totalPages) {
+            boolean allDone = fusedUrls.stream()
+                    .limit(totalPages)
+                    .allMatch(url -> url != null && !url.isEmpty());
+            if (allDone) {
+                if (productionRepository.tryMarkFusionResumed(episodeId)) {
+                    log.info("所有融合页已完成，自动恢复管线: episodeId={}", episodeId);
+                    Episode episode = episodeRepository.selectById(episodeId);
+                    self().continueProductionFlow(episode, production);
+                } else {
+                    log.warn("融合恢复已被其他请求触发，忽略重复恢复: episodeId={}", episodeId);
+                }
+            }
+        }
+
+        return totalFused;
+    }
+
+    /**
      * 重试失败的生产
      */
-    @Transactional
     public void retryProduction(Long episodeId) {
         EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
         if (production == null) {
@@ -299,24 +620,439 @@ public class EpisodeProductionService {
             throw new IllegalStateException("已达到最大重试次数");
         }
 
+        // 清理旧任务，避免历史分段污染本轮生产
+        videoTaskRepository.deleteByEpisodeId(episodeId);
+
         // 重置状态并重新开始
         Episode episode = episodeRepository.selectById(episodeId);
-        executeProductionFlow(episode, production);
+        production.setStatus("ANALYZING");
+        production.setCurrentStage("SCENE_ANALYSIS");
+        production.setProgressPercent(5);
+        production.setProgressMessage("开始场景分析...");
+        production.setErrorMessage(null);
+        production.setFinalVideoUrl(null);
+        production.setSubtitleUrl(null);
+        production.setCompletedAt(null);
+        production.setStartedAt(LocalDateTime.now());
+        production.setCompletedPanels(0);
+        production.setCompletedVideoGroups(0);
+        production.setSceneGridUrl(null);
+        production.setSceneGridUrls(null);
+        production.setFusedReferenceUrl(null);
+        production.setFusedGridUrls(null);
+        productionRepository.updateById(production);
+
+        episode.setProductionStatus("IN_PROGRESS");
+        episode.setProductionProgress(5);
+        episode.setFinalVideoUrl(null);
+        episodeRepository.updateById(episode);
+
+        self().executeProductionFlow(episode, production);
+    }
+
+    /**
+     * 解析JSON数组格式的URL列表
+     */
+    private List<String> parseJsonUrlList(String json) {
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("解析URL列表JSON失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 将URL列表序列化为JSON数组
+     */
+    private String toJsonUrlList(List<String> urls) {
+        try {
+            return objectMapper.writeValueAsString(urls);
+        } catch (Exception e) {
+            log.warn("序列化URL列表失败: {}", e.getMessage());
+            return "[]";
+        }
+    }
+
+    /**
+     * 根据任务组的第一个分镜索引确定其所属的场景组索引
+     */
+    private int resolveSceneGroupIndex(VideoTaskGroupModel group, List<SceneGroupModel> sceneGroups) {
+        if (group.getPanelIndexes() == null || group.getPanelIndexes().isEmpty() || sceneGroups == null) {
+            return 0;
+        }
+        int firstPanel = group.getPanelIndexes().get(0);
+        for (int i = 0; i < sceneGroups.size(); i++) {
+            SceneGroupModel sg = sceneGroups.get(i);
+            if (sg.getStartPanelIndex() != null && sg.getEndPanelIndex() != null
+                    && firstPanel >= sg.getStartPanelIndex() && firstPanel <= sg.getEndPanelIndex()) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     /**
      * 为项目启动生产（从PipelineService调用）
+     * 先确保所有 DRAFT 状态的剧集生成分镜脚本，再启动第一个可生产的剧集
      */
     public void startProductionForProject(String projectId) {
-        // 查找项目的第一个待生产剧集
         List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+
+        // 先为所有 DRAFT 状态的剧集生成分镜脚本
         for (Episode episode : episodes) {
-            if ("DONE".equals(episode.getStatus()) && "NOT_STARTED".equals(episode.getProductionStatus())) {
+            if ("DRAFT".equals(episode.getStatus()) || "FAILED".equals(episode.getStatus())) {
+                log.info("剧集分镜未生成，先生成分镜: episodeId={}, status={}", episode.getId(), episode.getStatus());
+                try {
+                    storyboardService.generateStoryboard(episode.getId());
+                    log.info("剧集分镜生成完成: episodeId={}", episode.getId());
+                } catch (Exception e) {
+                    log.error("剧集分镜生成失败: episodeId={}, error={}", episode.getId(), e.getMessage(), e);
+                    throw new IllegalStateException("剧集分镜生成失败: " + e.getMessage(), e);
+                }
+            }
+        }
+
+        // 重新查询（上面生成分镜后状态已变更）
+        episodes = episodeRepository.findByProjectId(projectId);
+        for (Episode episode : episodes) {
+            String prodStatus = episode.getProductionStatus();
+            if ("DONE".equals(episode.getStatus())
+                    && (prodStatus == null || "NOT_STARTED".equals(prodStatus) || "FAILED".equals(prodStatus))) {
                 startProduction(episode.getId());
                 return;
             }
         }
 
+        log.warn("没有找到可生产的剧集: projectId={}, episodes={}", projectId,
+                episodes.stream().map(e -> String.format("[id=%d,status=%s,prodStatus=%s]",
+                        e.getId(), e.getStatus(), e.getProductionStatus())).collect(java.util.stream.Collectors.toList()));
         throw new IllegalStateException("没有找到可以生产的剧集");
+    }
+
+    /**
+     * 获取项目生产管线全链路状态（供 Step5 页面可视化）
+     *
+     * @param projectId 项目ID
+     * @return 管线全链路状态
+     */
+    public ProductionPipelineResponse getProductionPipeline(String projectId) {
+        ProductionPipelineResponse response = new ProductionPipelineResponse();
+
+        // 查找第一个可生产的 episode
+        List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        log.info("[Pipeline] 查询管线状态: projectId={}, episodes.size={}", projectId, episodes.size());
+        for (Episode ep : episodes) {
+            log.info("[Pipeline]   episode: id={}, num={}, status={}, prodStatus={}",
+                    ep.getId(), ep.getEpisodeNum(), ep.getStatus(), ep.getProductionStatus());
+        }
+        Episode targetEpisode = null;
+
+        // 优先找 IN_PROGRESS 的
+        for (Episode ep : episodes) {
+            if ("IN_PROGRESS".equals(ep.getProductionStatus())) {
+                targetEpisode = ep;
+                break;
+            }
+        }
+        // 其次找 NOT_STARTED 或 DONE 但未开始生产的
+        if (targetEpisode == null) {
+            for (Episode ep : episodes) {
+                if ("NOT_STARTED".equals(ep.getProductionStatus())
+                        || ("DONE".equals(ep.getStatus()) && ep.getProductionStatus() == null)) {
+                    targetEpisode = ep;
+                    break;
+                }
+            }
+        }
+        // 再找 COMPLETED 的
+        if (targetEpisode == null) {
+            for (Episode ep : episodes) {
+                if ("COMPLETED".equals(ep.getProductionStatus())) {
+                    targetEpisode = ep;
+                    break;
+                }
+            }
+        }
+        // 最后找 FAILED 的
+        if (targetEpisode == null) {
+            for (Episode ep : episodes) {
+                if ("FAILED".equals(ep.getProductionStatus())) {
+                    targetEpisode = ep;
+                    break;
+                }
+            }
+        }
+        // 兜底：取第一个 episode（status=DRAFT 且 productionStatus=null 等未覆盖的场景）
+        if (targetEpisode == null && !episodes.isEmpty()) {
+            targetEpisode = episodes.get(0);
+        }
+
+        if (targetEpisode == null) {
+            // 没有任何剧集，返回全 pending
+            response.setEpisodeId(null);
+            response.setEpisodeStatus("DRAFT");
+            response.setProductionStatus("NOT_STARTED");
+            response.setStages(buildAllPendingStages(null));
+            return response;
+        }
+
+        response.setEpisodeId(String.valueOf(targetEpisode.getId()));
+        response.setEpisodeTitle(targetEpisode.getTitle());
+        response.setEpisodeStatus(targetEpisode.getStatus());
+        response.setProductionStatus(targetEpisode.getProductionStatus());
+
+        // 读取 EpisodeProduction
+        EpisodeProduction production = productionRepository.findByEpisodeId(targetEpisode.getId());
+
+        // 组装管线阶段
+        List<PipelineStageDTO> stages = buildPipelineStages(targetEpisode, production);
+        response.setStages(stages);
+        response.setFinalVideoUrl(targetEpisode.getFinalVideoUrl());
+
+        if (production != null) {
+            List<String> gridUrls = parseJsonUrlList(production.getSceneGridUrls());
+            if (gridUrls == null || gridUrls.isEmpty()) {
+                if (production.getSceneGridUrl() != null && !production.getSceneGridUrl().isEmpty()) {
+                    gridUrls = Collections.singletonList(production.getSceneGridUrl());
+                } else {
+                    gridUrls = Collections.emptyList();
+                }
+            }
+            response.setSceneGridUrls(gridUrls);
+        } else {
+            response.setSceneGridUrls(Collections.emptyList());
+        }
+
+        if (production != null) {
+            response.setErrorMessage(production.getErrorMessage());
+        } else if ("FAILED".equals(targetEpisode.getStatus())) {
+            response.setErrorMessage(targetEpisode.getErrorMsg());
+        }
+
+        return response;
+    }
+
+    /**
+     * 组装管线阶段列表
+     */
+    private List<PipelineStageDTO> buildPipelineStages(Episode episode, EpisodeProduction production) {
+        List<PipelineStageDTO> stages = new ArrayList<>();
+
+        String episodeStatus = episode.getStatus(); // DRAFT, GENERATING, DONE, FAILED
+        String prodStatus = production != null ? production.getStatus() : null; // ANALYZING, GRID_GENERATING, etc.
+        String prodErrorMessage = production != null ? production.getErrorMessage() : null;
+        int prodProgress = production != null && production.getProgressPercent() != null ? production.getProgressPercent() : 0;
+        String prodMessage = production != null ? production.getProgressMessage() : null;
+
+        // 1. 分镜生成 — 基于 Episode.status
+        stages.add(buildStoryboardStage(episodeStatus, episode.getErrorMsg()));
+
+        if ("DRAFT".equals(episodeStatus) || "FAILED".equals(episodeStatus) && prodStatus == null) {
+            // 分镜还没完成，后续阶段全 pending
+            List<PipelineStageDTO> remaining = buildRemainingPendingStages(1);
+            stages.addAll(remaining);
+            return stages;
+        }
+
+        // 分镜已完成，查看生产状态
+        if (production == null || prodStatus == null) {
+            // 分镜完成但未开始生产
+            List<PipelineStageDTO> remaining = buildRemainingPendingStages(1);
+            stages.addAll(remaining);
+            return stages;
+        }
+
+        // 2-9: 根据 EpisodeProduction.status 映射
+        // 阶段顺序: analyzing, grid_generating, grid_fusion, prompt_building, video_generating, subtitle, composition, completed
+        String[][] stageDefinitions = {
+            {"analyzing",       "场景分析"},
+            {"grid_generating", "九宫格生成"},
+            {"grid_fusion",     "图片融合"},
+            {"prompt_building", "提示词构建"},
+            {"video_generating","视频生成"},
+            {"subtitle",        "字幕生成"},
+            {"composition",     "视频合成"},
+            {"completed",       "完成"},
+        };
+
+        // 找到当前活跃阶段
+        int activeIndex = -1;
+        boolean isFailed = "FAILED".equals(prodStatus);
+        boolean isWaitingUser = "GRID_FUSION_PENDING".equals(prodStatus);
+
+        if ("COMPLETED".equals(prodStatus)) {
+            activeIndex = stageDefinitions.length; // 全部完成
+        } else if ("FAILED".equals(prodStatus)) {
+            // 找到失败对应的阶段
+            activeIndex = mapProductionStatusToIndex(prodStatus, production.getCurrentStage());
+        } else if ("GRID_FUSION_PENDING".equals(prodStatus)) {
+            activeIndex = 2; // grid_fusion is index 2
+        } else {
+            activeIndex = mapProductionStatusToIndex(prodStatus, production.getCurrentStage());
+        }
+
+        for (int i = 0; i < stageDefinitions.length; i++) {
+            PipelineStageDTO stage = new PipelineStageDTO();
+            stage.setKey(stageDefinitions[i][0]);
+            stage.setName(stageDefinitions[i][1]);
+
+            if (i < activeIndex) {
+                // 已完成
+                stage.setDisplayStatus("completed");
+                stage.setProgress(100);
+                stage.setMessage("已完成");
+            } else if (i == activeIndex) {
+                // 当前阶段
+                if (isFailed) {
+                    stage.setDisplayStatus("failed");
+                    stage.setProgress(prodProgress);
+                    stage.setMessage(prodErrorMessage != null ? prodErrorMessage : "处理失败");
+                } else if (isWaitingUser) {
+                    stage.setDisplayStatus("waiting_user");
+                    stage.setProgress(prodProgress);
+                    stage.setMessage("等待操作");
+                } else {
+                    stage.setDisplayStatus("active");
+                    stage.setProgress(prodProgress);
+                    stage.setMessage(prodMessage != null ? prodMessage : "处理中...");
+                }
+            } else {
+                // 未开始
+                stage.setDisplayStatus("pending");
+                stage.setProgress(0);
+                stage.setMessage("等待中");
+            }
+
+            stages.add(stage);
+        }
+
+        return stages;
+    }
+
+    /**
+     * 构建分镜阶段
+     */
+    private PipelineStageDTO buildStoryboardStage(String episodeStatus, String errorMsg) {
+        PipelineStageDTO stage = new PipelineStageDTO();
+        stage.setKey("storyboard");
+        stage.setName("分镜生成");
+
+        switch (episodeStatus) {
+            case "DRAFT":
+                stage.setDisplayStatus("active");
+                stage.setProgress(0);
+                stage.setMessage("准备生成分镜...");
+                break;
+            case "GENERATING":
+                stage.setDisplayStatus("active");
+                stage.setProgress(50);
+                stage.setMessage("正在生成分镜...");
+                break;
+            case "FAILED":
+                stage.setDisplayStatus("failed");
+                stage.setProgress(0);
+                stage.setMessage(errorMsg != null ? errorMsg : "分镜生成失败");
+                break;
+            case "DONE":
+            default:
+                stage.setDisplayStatus("completed");
+                stage.setProgress(100);
+                stage.setMessage("已完成");
+                break;
+        }
+
+        return stage;
+    }
+
+    /**
+     * 构建全 pending 阶段列表（从第 startIdx 个后续阶段开始）
+     */
+    private List<PipelineStageDTO> buildRemainingPendingStages(int completedCount) {
+        List<PipelineStageDTO> stages = new ArrayList<>();
+        String[][] remaining = {
+            {"analyzing",       "场景分析"},
+            {"grid_generating", "九宫格生成"},
+            {"grid_fusion",     "图片融合"},
+            {"prompt_building", "提示词构建"},
+            {"video_generating","视频生成"},
+            {"subtitle",        "字幕生成"},
+            {"composition",     "视频合成"},
+            {"completed",       "完成"},
+        };
+
+        for (String[] def : remaining) {
+            PipelineStageDTO stage = new PipelineStageDTO();
+            stage.setKey(def[0]);
+            stage.setName(def[1]);
+            stage.setDisplayStatus("pending");
+            stage.setProgress(0);
+            stage.setMessage("等待中");
+            stages.add(stage);
+        }
+
+        return stages;
+    }
+
+    /**
+     * 将 EpisodeProduction.status 映射到阶段索引
+     */
+    private int mapProductionStatusToIndex(String status, String currentStage) {
+        switch (status) {
+            case "ANALYZING":
+                return 0;
+            case "GRID_GENERATING":
+                return 1;
+            case "GRID_FUSION_PENDING":
+                return 2;
+            case "BUILDING_PROMPTS":
+                return 3;
+            case "GENERATING":
+                return 4;
+            case "GENERATING_SUBS":
+                return 5;
+            case "COMPOSING":
+                return 6;
+            case "COMPLETED":
+                return 8; // 全部完成
+            case "FAILED":
+            default:
+                // 根据 currentStage 判断
+                if (currentStage != null) {
+                    switch (currentStage) {
+                        case "SCENE_ANALYSIS": return 0;
+                        case "GRID_GENERATION": return 1;
+                        case "GRID_FUSION": return 2;
+                        case "PROMPT_BUILDING": return 3;
+                        case "VIDEO_GENERATION": return 4;
+                        case "SUBTITLE_GENERATION": return 5;
+                        case "VIDEO_COMPOSITION": return 6;
+                        default: return 0;
+                    }
+                }
+                return 0;
+        }
+    }
+
+    /**
+     * 构建全 pending 阶段列表（无 episode 场景）
+     */
+    private List<PipelineStageDTO> buildAllPendingStages(Long episodeId) {
+        List<PipelineStageDTO> stages = new ArrayList<>();
+
+        PipelineStageDTO storyboard = new PipelineStageDTO();
+        storyboard.setKey("storyboard");
+        storyboard.setName("分镜生成");
+        storyboard.setDisplayStatus("pending");
+        storyboard.setProgress(0);
+        storyboard.setMessage("等待中");
+        stages.add(storyboard);
+
+        stages.addAll(buildRemainingPendingStages(1));
+
+        return stages;
     }
 }

@@ -137,3 +137,16 @@ export async function getProject(projectId: string): Promise<ApiResponse<Project
 export async function getProjectStatus(projectId: string): Promise<ApiResponse<ProjectStatusInfo>> {
   return get<ApiResponse<ProjectStatusInfo>>(`/api/projects/${projectId}/status`);
 }
+
+/**
+ * 推进流水线
+ * @param projectId 项目ID
+ * @param event 事件名称
+ * @returns 推进响应
+ */
+export async function advancePipeline(
+  projectId: string,
+  event: string
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/advance`, { event });
+}

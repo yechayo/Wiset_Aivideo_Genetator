@@ -56,6 +56,21 @@ public class EpisodeProduction {
     private String sceneGridUrl;
 
     /**
+     * 前端融合后的参考图OSS URL
+     */
+    private String fusedReferenceUrl;
+
+    /**
+     * 所有场景组的网格图URL列表（JSON数组格式）
+     */
+    private String sceneGridUrls;
+
+    /**
+     * 所有场景组的融合图URL列表（JSON数组格式）
+     */
+    private String fusedGridUrls;
+
+    /**
      * 总分镜数
      */
     private Integer totalPanels;

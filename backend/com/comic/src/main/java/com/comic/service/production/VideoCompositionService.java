@@ -4,6 +4,9 @@ import com.comic.dto.model.VideoSegmentModel;
 import com.comic.service.oss.OssService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -27,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 public class VideoCompositionService {
 
     private final OssService ossService;
-    private final SubtitleService subtitleService;
+    private final OkHttpClient httpClient;
 
     @Value("${comic.ffmpeg.path:ffmpeg}")
     private String ffmpegPath;
@@ -89,12 +92,8 @@ public class VideoCompositionService {
 
         for (int i = 0; i < videoSegments.size(); i++) {
             String url = videoSegments.get(i).getUrl();
-
-            // 这里简化处理，实际应该从URL下载
-            // 如果是OSS URL，使用OssService下载
-            // 暂时跳过实际下载，假设视频已经在本地
-
             Path tempPath = Files.createTempFile(Paths.get(tempDir), "segment-" + i + "-", ".mp4");
+            downloadToFile(url, tempPath);
             paths.add(tempPath);
 
             log.debug("视频片段准备: segment={}, path={}", i, tempPath);
@@ -146,7 +145,7 @@ public class VideoCompositionService {
     private void composeWithSubtitle(Path concatFile, String subtitleUrl, Path outputPath) throws Exception {
         // 下载字幕文件
         Path subtitlePath = Files.createTempFile(Paths.get(tempDir), "subtitle-", ".srt");
-        // TODO: 从subtitleUrl下载字幕文件到subtitlePath
+        downloadToFile(subtitleUrl, subtitlePath);
 
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
@@ -167,6 +166,19 @@ public class VideoCompositionService {
 
         // 清理字幕文件
         Files.deleteIfExists(subtitlePath);
+    }
+
+    /**
+     * 从公网 URL 下载文件到本地路径
+     */
+    private void downloadToFile(String url, Path targetPath) throws Exception {
+        Request request = new Request.Builder().url(url).get().build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                throw new RuntimeException("下载文件失败: " + response.code() + ", url=" + url);
+            }
+            Files.write(targetPath, response.body().bytes());
+        }
     }
 
     /**

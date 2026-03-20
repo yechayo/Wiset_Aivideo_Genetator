@@ -32,9 +32,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
 
   const getProjectId = useProjectStore((state) => state.getProjectId);
 
-  // 判断是否为单集模式
-  const isSingleEpisode = scriptData?.project?.totalEpisodes === 1;
-
   useEffect(() => {
     const fetchScript = async (attempt: number = 0) => {
       // 获取项目 ID（优先使用 store 中的，回退到 props 中的）
@@ -190,8 +187,8 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     console.log('确认项目:', project);
     console.log('当前剧本:', scriptData);
 
-    // 多集模式下检查是否所有章节都已生成
-    if (!isSingleEpisode && scriptData && scriptData.pendingChapters.length > 0) {
+    // 检查是否所有章节都已生成
+    if (scriptData && scriptData.pendingChapters.length > 0) {
       const confirmed = window.confirm(`还有 ${scriptData.pendingChapters.length} 个章节未生成剧集，确定要继续吗？`);
       if (!confirmed) return;
     }
@@ -242,10 +239,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       <div className={styles.header}>
         <h1 className={styles.title}>剧本编辑</h1>
         <p className={styles.subtitle}>
-          {isSingleEpisode
-            ? '编辑 AI 生成的剧本大纲'
-            : '编辑 AI 生成的剧本大纲，并生成各章节剧集'
-          }
+          编辑 AI 生成的剧本大纲，并生成各章节剧集
         </p>
       </div>
 
@@ -297,17 +291,15 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             onSave={handleOutlineSave}
           />
 
-          {/* 章节列表（仅多集模式显示） */}
-          {!isSingleEpisode && (
-            <ChapterList
-              chapters={scriptData.chapters}
-              generatedChapters={scriptData.generatedChapters}
-              pendingChapters={scriptData.pendingChapters}
-              episodes={scriptData.episodes}
-              onGenerateClick={handleGenerateClick}
-              onRegenerateClick={handleRegenerateClick}
-            />
-          )}
+          {/* 章节列表 */}
+          <ChapterList
+            chapters={scriptData.chapters}
+            generatedChapters={scriptData.generatedChapters}
+            pendingChapters={scriptData.pendingChapters}
+            episodes={scriptData.episodes}
+            onGenerateClick={handleGenerateClick}
+            onRegenerateClick={handleRegenerateClick}
+          />
         </div>
       )}
 

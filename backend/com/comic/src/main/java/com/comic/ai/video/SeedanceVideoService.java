@@ -74,8 +74,10 @@ public class SeedanceVideoService implements VideoGenerationService {
     public String generateVideo(String prompt, Integer duration, String aspectRatio,
                                 String firstFrameUrl, String lastFrameUrl,
                                 boolean generateAudio, boolean isDraft) {
+        boolean acquired = false;
         try {
             semaphore.acquire();
+            acquired = true;
             log.info("Seedance 视频生成: 并发槽位 {}/{}", semaphore.availablePermits(), semaphore.getQueueLength());
 
             // 构建内容列表
@@ -177,7 +179,9 @@ public class SeedanceVideoService implements VideoGenerationService {
             log.error("Seedance 视频生成异常", e);
             throw new RuntimeException("Seedance 视频生成失败: " + e.getMessage(), e);
         } finally {
-            semaphore.release();
+            if (acquired) {
+                semaphore.release();
+            }
         }
     }
 
@@ -188,8 +192,10 @@ public class SeedanceVideoService implements VideoGenerationService {
      * @return 正式视频任务 ID
      */
     public String generateFromDraft(String draftTaskId) {
+        boolean acquired = false;
         try {
             semaphore.acquire();
+            acquired = true;
 
             List<Map<String, Object>> contents = new ArrayList<>();
             Map<String, Object> draftContent = new HashMap<>();
@@ -234,7 +240,9 @@ public class SeedanceVideoService implements VideoGenerationService {
             log.error("基于样片生成视频异常", e);
             throw new RuntimeException("基于样片生成视频失败: " + e.getMessage(), e);
         } finally {
-            semaphore.release();
+            if (acquired) {
+                semaphore.release();
+            }
         }
     }
 
