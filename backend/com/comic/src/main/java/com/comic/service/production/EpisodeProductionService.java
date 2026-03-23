@@ -54,6 +54,7 @@ public class EpisodeProductionService {
     private final ProjectRepository projectRepository;
     private final CharacterRepository characterRepository;
     private final SceneAnalysisService sceneAnalysisService;
+    private final StoryboardEnhancementService storyboardEnhancementService;
     private final SceneGridGenService sceneGridGenService;
     private final VideoPromptBuilderService videoPromptBuilderService;
     private final VideoProductionQueueService videoQueueService;
@@ -141,6 +142,7 @@ public class EpisodeProductionService {
             production.setSceneAnalysisJson(objectMapper.writeValueAsString(sceneAnalysis));
             production.setTotalPanels(sceneAnalysis.getTotalPanelCount());
             productionRepository.updateById(production);
+            storyboardEnhancementService.enhanceEpisodeStoryboard(episode.getId());
 
             // 阶段2: 为每个场景组生成九宫格图
             List<SceneGroupModel> sceneGroups = sceneAnalysis.getSceneGroups();

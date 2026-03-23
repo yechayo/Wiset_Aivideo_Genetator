@@ -50,6 +50,7 @@ class EpisodeProductionServiceTest {
     @Mock private CharacterRepository characterRepository;
     @Mock private SceneAnalysisService sceneAnalysisService;
     @Mock private SceneGridGenService sceneGridGenService;
+    @Mock private StoryboardEnhancementService storyboardEnhancementService;
     @Mock private VideoPromptBuilderService videoPromptBuilderService;
     @Mock private VideoProductionQueueService videoQueueService;
     @Mock private SubtitleService subtitleService;
@@ -307,6 +308,25 @@ class EpisodeProductionServiceTest {
         EpisodeProduction lastUpdate = allUpdates.get(allUpdates.size() - 1);
         assertEquals("GRID_FUSION_PENDING", lastUpdate.getStatus());
         assertEquals("GRID_FUSION", lastUpdate.getCurrentStage());
+    }
+
+    @Test
+    @DisplayName("executeProductionFlow - 场景分析后会执行分镜增强")
+    void testExecuteProductionFlow_shouldEnhanceStoryboardBeforeGridGeneration() throws Exception {
+        EpisodeProduction production = createProduction();
+        SceneAnalysisResultModel analysis = createSceneAnalysis();
+
+        when(productionRepository.updateById(any())).thenReturn(1);
+        when(sceneAnalysisService.analyzeScenes(EPISODE_ID)).thenReturn(analysis);
+        when(sceneGridGenService.generateSceneGridPages(eq(EPISODE_ID), any(SceneGroupModel.class)))
+                .thenReturn(
+                        new ArrayList<>(Arrays.asList("https://mock/grid-0.png")),
+                        new ArrayList<>(Arrays.asList("https://mock/grid-1.png"))
+                );
+
+        productionService.executeProductionFlow(episode, production);
+
+        verify(storyboardEnhancementService, times(1)).enhanceEpisodeStoryboard(EPISODE_ID);
     }
 
     @Test
