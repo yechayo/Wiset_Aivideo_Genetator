@@ -206,3 +206,16 @@
 3. Verification:
    - `mvn -Dtest=EpisodeProductionServiceTest test` passed (18/18)
    - extended regression suite passed (39/39)
+
+### Continue Update (2026-03-23, P7 split->fusion chain regression)
+1. Added chain regression in `EpisodeProductionServiceTest`:
+   - executes `splitGridPageForFusion(pageIndex=0)` and reuses split cell image URLs
+   - submits those URLs to `submitFusionPage(pageIndex=0)` in the same test flow
+2. Assertions:
+   - split returns expected 2x3 page metadata and 6 split cells
+   - submit stage counts `totalFused=6`
+   - fused URL matrix persistence is correct
+   - resume check (`tryMarkFusionResumed`) is triggered once
+3. Verification:
+   - `mvn -Dtest=EpisodeProductionServiceTest test` passed (19/19)
+   - extended regression suite passed (40/40)
