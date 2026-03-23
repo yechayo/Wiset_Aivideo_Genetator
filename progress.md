@@ -232,3 +232,16 @@
 3. Verification:
    - `mvn -Dtest=EpisodeControllerTest test` passed (10/10)
    - extended regression suite passed (46/46)
+
+### Final Checkpoint (2026-03-23)
+1. P6 completed:
+   - backend split-page endpoint (`/split-grid-page`) is integrated with production orchestration
+   - scene-group pagination address (`pageInGroup`) and panel binding offsets are regression-covered
+2. P7 completed:
+   - mixed-layout fusion pagination regressions covered
+   - split->fusion chain regression covered
+   - submit-fusion-page API boundary regressions covered
+3. Latest verification snapshot:
+   - `mvn -Dtest=EpisodeControllerTest test` passed (10/10)
+   - `mvn -Dtest=EpisodeProductionServiceTest test` passed (19/19)
+   - extended regression suite passed (46/46)
