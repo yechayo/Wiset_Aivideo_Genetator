@@ -145,15 +145,20 @@ public class EpisodeProductionService {
             // 阶段2: 为每个场景组生成九宫格图
             List<SceneGroupModel> sceneGroups = sceneAnalysis.getSceneGroups();
             List<String> gridUrls = new ArrayList<>();
+            int totalGridPages = resolveTotalGridPages(sceneGroups);
+            int generatedGridPages = 0;
 
             if (!sceneGroups.isEmpty()) {
                 updateProductionStatus(production, "GRID_GENERATING", "GRID_GENERATION",
-                        11, String.format("正在生成场景参考图... (%d/%d)", 0, sceneGroups.size()));
+                        11, String.format("正在生成场景参考图... (%d/%d)", 0, Math.max(totalGridPages, 1)));
             }
 
             for (int i = 0; i < sceneGroups.size(); i++) {
-                String gridUrl = sceneGridGenService.generateSceneGrid(episode.getId(), sceneGroups.get(i));
-                gridUrls.add(gridUrl);
+                SceneGroupModel sceneGroup = sceneGroups.get(i);
+                List<String> sceneGroupPageUrls = sceneGridGenService.generateSceneGridPages(episode.getId(), sceneGroup);
+                for (String gridUrl : sceneGroupPageUrls) {
+                    gridUrls.add(gridUrl);
+                    generatedGridPages++;
 
                 // 每生成一张就落库，供前端轮询时实时展示
                 if (production.getSceneGridUrl() == null || production.getSceneGridUrl().isEmpty()) {
@@ -162,12 +167,13 @@ public class EpisodeProductionService {
                 production.setSceneGridUrls(toJsonUrlList(gridUrls));
                 productionRepository.updateById(production);
 
-                int progress = 11 + (int) ((i + 1) * 6.0 / sceneGroups.size());
+                int progress = 11 + (int) (generatedGridPages * 6.0 / Math.max(totalGridPages, 1));
                 updateProductionStatus(production, "GRID_GENERATING", "GRID_GENERATION",
                         progress,
-                        String.format("正在生成场景参考图... (%d/%d)", i + 1, sceneGroups.size()));
+                        String.format("正在生成场景参考图... (%d/%d)", generatedGridPages, Math.max(totalGridPages, 1)));
 
-                log.info("场景九宫格生成完成: sceneGroup={}/{}, url={}", i + 1, sceneGroups.size(), gridUrl);
+                log.info("场景网格生成完成: sceneGroup={}/{}, url={}", i + 1, sceneGroups.size(), gridUrl);
+            }
             }
 
             // 保存所有网格图URL
@@ -221,21 +227,23 @@ public class EpisodeProductionService {
                 // 按场景组分配：每个场景组对应一页，每页有9个融合图
                 for (VideoTaskGroupModel group : taskGroups) {
                     int sceneGroupIndex = resolveSceneGroupIndex(group, sceneAnalysis.getSceneGroups());
-                    if (sceneGroupIndex < allFusedUrls.size()) {
-                        List<String> pageFusedUrls = allFusedUrls.get(sceneGroupIndex);
-                        group.setFusedReferenceImageUrl(
-                                pageFusedUrls != null && !pageFusedUrls.isEmpty() ? pageFusedUrls.get(0) : null);
-                    }
+                    int sceneGroupPageOffset = resolveSceneGroupPageOffset(sceneAnalysis.getSceneGroups(), sceneGroupIndex);
+                    group.setFusedReferenceImageUrl(resolveFusedUrl(allFusedUrls, sceneGroupPageOffset, 0));
                     // 为每个 prompt 注入对应的格子融合图
                     if (group.getPrompts() != null) {
+                        SceneGroupModel targetSceneGroup = sceneGroupIndex >= 0
+                                && sceneGroupIndex < sceneAnalysis.getSceneGroups().size()
+                                ? sceneAnalysis.getSceneGroups().get(sceneGroupIndex)
+                                : null;
                         for (VideoPromptModel prompt : group.getPrompts()) {
-                            if (sceneGroupIndex < allFusedUrls.size()) {
-                                List<String> pageFusedUrls = allFusedUrls.get(sceneGroupIndex);
-                                int panelIdx = prompt.getPanelIndex() != null ? prompt.getPanelIndex() : 0;
-                                if (pageFusedUrls != null && panelIdx < pageFusedUrls.size()) {
-                                    prompt.setFusedReferenceImageUrl(pageFusedUrls.get(panelIdx));
-                                }
-                            }
+                            PageCellAddress address = resolvePromptPageCellAddress(
+                                    prompt.getPanelIndex(),
+                                    targetSceneGroup,
+                                    sceneGroupPageOffset
+                            );
+                            prompt.setFusedReferenceImageUrl(
+                                    resolveFusedUrl(allFusedUrls, address.getPageIndex(), address.getCellIndex())
+                            );
                         }
                     }
                 }
@@ -454,6 +462,12 @@ public class EpisodeProductionService {
         }
 
         // 构建多页网格信息
+        List<GridPageDescriptor> pageDescriptors = buildGridPageDescriptors(sceneGroups);
+        if (!pageDescriptors.isEmpty()) {
+            response.setGridRows(pageDescriptors.get(0).getRows());
+            response.setGridColumns(pageDescriptors.get(0).getCols());
+        }
+
         List<String> gridUrls = parseJsonUrlList(production.getSceneGridUrls());
         List<List<String>> allFusedUrls = parseFusedGridUrls(production.getFusedGridUrls());
         List<GridInfoResponse.GridPageInfo> gridPages = new ArrayList<>();
@@ -461,15 +475,24 @@ public class EpisodeProductionService {
             for (int i = 0; i < gridUrls.size(); i++) {
                 GridInfoResponse.GridPageInfo page = new GridInfoResponse.GridPageInfo();
                 page.setSceneGridUrl(gridUrls.get(i));
-                page.setSceneGroupIndex(i);
+                GridPageDescriptor descriptor = i < pageDescriptors.size() ? pageDescriptors.get(i) : null;
+                page.setSceneGroupIndex(descriptor != null ? descriptor.getSceneGroupIndex() : i);
                 // 逐格融合：每页返回该页的 fusedPanels 列表
                 List<String> pageFused = (i < allFusedUrls.size()) ? allFusedUrls.get(i) : null;
                 page.setFusedPanels(pageFused);
                 page.setFused(pageFused != null && !pageFused.isEmpty()
                         && pageFused.stream().anyMatch(u -> u != null && !u.isEmpty()));
-                if (i < sceneGroups.size()) {
-                    page.setLocation(sceneGroups.get(i).getLocation());
-                    page.setCharacters(sceneGroups.get(i).getCharacters());
+                if (descriptor != null
+                        && descriptor.getSceneGroupIndex() >= 0
+                        && descriptor.getSceneGroupIndex() < sceneGroups.size()) {
+                    SceneGroupModel sceneGroup = sceneGroups.get(descriptor.getSceneGroupIndex());
+                    page.setLocation(sceneGroup.getLocation());
+                    page.setCharacters(sceneGroup.getCharacters());
+                    page.setGridRows(descriptor.getRows());
+                    page.setGridColumns(descriptor.getCols());
+                } else if (!sceneGroups.isEmpty()) {
+                    page.setLocation(sceneGroups.get(0).getLocation());
+                    page.setCharacters(sceneGroups.get(0).getCharacters());
                 }
                 gridPages.add(page);
             }
@@ -482,6 +505,10 @@ public class EpisodeProductionService {
             if (!sceneGroups.isEmpty()) {
                 page.setLocation(sceneGroups.get(0).getLocation());
                 page.setCharacters(sceneGroups.get(0).getCharacters());
+            }
+            if (!pageDescriptors.isEmpty()) {
+                page.setGridRows(pageDescriptors.get(0).getRows());
+                page.setGridColumns(pageDescriptors.get(0).getCols());
             }
             gridPages.add(page);
         }
@@ -574,6 +601,7 @@ public class EpisodeProductionService {
         if (pageIndex < 0 || pageIndex >= totalPages) {
             throw new BusinessException("pageIndex 越界，当前总页数: " + totalPages);
         }
+        List<Integer> expectedCellsByPage = resolveExpectedGridCellCountsByPage(production, totalPages);
 
         // 解析已有融合数据（二维数组结构）
         List<List<String>> allFusedUrls = parseFusedGridUrls(production.getFusedGridUrls());
@@ -593,7 +621,6 @@ public class EpisodeProductionService {
         productionRepository.updateById(production);
 
         // 计算总已融合格子数
-        int panelsPerPage = 9;
         int totalFused = 0;
         for (int i = 0; i < totalPages; i++) {
             if (i < allFusedUrls.size() && allFusedUrls.get(i) != null) {
@@ -602,7 +629,8 @@ public class EpisodeProductionService {
                         .count();
             }
         }
-        production.setTotalFusedPanels(totalPages * panelsPerPage);
+        int totalExpectedCells = expectedCellsByPage.stream().mapToInt(Integer::intValue).sum();
+        production.setTotalFusedPanels(totalExpectedCells);
         production.setFusedPanels(totalFused);
         productionRepository.updateById(production);
 
@@ -612,12 +640,14 @@ public class EpisodeProductionService {
         // 检查是否所有页的所有格子都融合完成
         boolean allDone = true;
         for (int i = 0; i < totalPages; i++) {
+            int expectedCells = i < expectedCellsByPage.size() ? expectedCellsByPage.get(i) : 9;
             if (i >= allFusedUrls.size() || allFusedUrls.get(i) == null
-                    || allFusedUrls.get(i).size() < panelsPerPage) {
+                    || allFusedUrls.get(i).size() < expectedCells) {
                 allDone = false;
                 break;
             }
-            for (String url : allFusedUrls.get(i)) {
+            for (int j = 0; j < expectedCells; j++) {
+                String url = allFusedUrls.get(i).get(j);
                 if (url == null || url.isEmpty()) {
                     allDone = false;
                     break;
@@ -757,6 +787,175 @@ public class EpisodeProductionService {
             }
         }
         return 0;
+    }
+
+    private int resolveTotalGridPages(List<SceneGroupModel> sceneGroups) {
+        if (sceneGroups == null || sceneGroups.isEmpty()) {
+            return 0;
+        }
+        int total = 0;
+        for (SceneGroupModel group : sceneGroups) {
+            total += resolvePageCountForSceneGroup(group);
+        }
+        return total;
+    }
+
+    private int resolveCellsPerPage(SceneGroupModel sceneGroup) {
+        int panelCount = Math.max(sceneGroup != null ? sceneGroup.getPanelCount() : 0, 0);
+        return panelCount <= 6 ? 6 : 9;
+    }
+
+    private int resolveGridRows(SceneGroupModel sceneGroup) {
+        int panelCount = Math.max(sceneGroup != null ? sceneGroup.getPanelCount() : 0, 0);
+        return panelCount <= 6 ? 2 : 3;
+    }
+
+    private int resolveGridCols() {
+        return 3;
+    }
+
+    private int resolvePageCountForSceneGroup(SceneGroupModel sceneGroup) {
+        int panelCount = Math.max(sceneGroup != null ? sceneGroup.getPanelCount() : 0, 0);
+        int cellsPerPage = Math.max(resolveCellsPerPage(sceneGroup), 1);
+        return Math.max(1, (panelCount + cellsPerPage - 1) / cellsPerPage);
+    }
+
+    private int resolveSceneGroupPageOffset(List<SceneGroupModel> sceneGroups, int sceneGroupIndex) {
+        if (sceneGroups == null || sceneGroups.isEmpty() || sceneGroupIndex <= 0) {
+            return 0;
+        }
+        int offset = 0;
+        int safeIndex = Math.min(sceneGroupIndex, sceneGroups.size());
+        for (int i = 0; i < safeIndex; i++) {
+            offset += resolvePageCountForSceneGroup(sceneGroups.get(i));
+        }
+        return offset;
+    }
+
+    private PageCellAddress resolvePromptPageCellAddress(
+            Integer panelIndex,
+            SceneGroupModel sceneGroup,
+            int sceneGroupPageOffset
+    ) {
+        int safePanelIndex = panelIndex != null ? panelIndex : 0;
+        if (sceneGroup == null) {
+            return new PageCellAddress(sceneGroupPageOffset, 0);
+        }
+
+        int start = sceneGroup.getStartPanelIndex() != null ? sceneGroup.getStartPanelIndex() : safePanelIndex;
+        int relativeIndex = Math.max(0, safePanelIndex - start);
+        int cellsPerPage = Math.max(resolveCellsPerPage(sceneGroup), 1);
+        int pageInGroup = relativeIndex / cellsPerPage;
+        int cellInPage = relativeIndex % cellsPerPage;
+        return new PageCellAddress(sceneGroupPageOffset + pageInGroup, cellInPage);
+    }
+
+    private String resolveFusedUrl(List<List<String>> allFusedUrls, int pageIndex, int cellIndex) {
+        if (allFusedUrls == null || pageIndex < 0 || pageIndex >= allFusedUrls.size()) {
+            return null;
+        }
+        List<String> pageFusedUrls = allFusedUrls.get(pageIndex);
+        if (pageFusedUrls == null || cellIndex < 0 || cellIndex >= pageFusedUrls.size()) {
+            return null;
+        }
+        String url = pageFusedUrls.get(cellIndex);
+        return (url == null || url.isEmpty()) ? null : url;
+    }
+
+    private List<Integer> resolveExpectedGridCellCountsByPage(EpisodeProduction production, int totalPages) {
+        List<Integer> counts = new ArrayList<>();
+        if (production != null && production.getSceneAnalysisJson() != null && !production.getSceneAnalysisJson().isEmpty()) {
+            try {
+                SceneAnalysisResultModel analysis = objectMapper.readValue(
+                        production.getSceneAnalysisJson(), SceneAnalysisResultModel.class);
+                if (analysis.getSceneGroups() != null) {
+                    for (SceneGroupModel group : analysis.getSceneGroups()) {
+                        int pageCount = resolvePageCountForSceneGroup(group);
+                        int cellsPerPage = Math.max(resolveCellsPerPage(group), 1);
+                        for (int i = 0; i < pageCount; i++) {
+                            counts.add(cellsPerPage);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("解析场景分页配置失败，回退默认每页9格: {}", e.getMessage());
+            }
+        }
+
+        if (counts.isEmpty()) {
+            for (int i = 0; i < totalPages; i++) {
+                counts.add(9);
+            }
+            return counts;
+        }
+
+        while (counts.size() < totalPages) {
+            counts.add(9);
+        }
+        if (counts.size() > totalPages) {
+            return new ArrayList<>(counts.subList(0, totalPages));
+        }
+        return counts;
+    }
+
+    private List<GridPageDescriptor> buildGridPageDescriptors(List<SceneGroupModel> sceneGroups) {
+        List<GridPageDescriptor> descriptors = new ArrayList<>();
+        if (sceneGroups == null || sceneGroups.isEmpty()) {
+            return descriptors;
+        }
+
+        for (int sceneGroupIndex = 0; sceneGroupIndex < sceneGroups.size(); sceneGroupIndex++) {
+            SceneGroupModel sceneGroup = sceneGroups.get(sceneGroupIndex);
+            int rows = resolveGridRows(sceneGroup);
+            int cols = resolveGridCols();
+            int pageCount = resolvePageCountForSceneGroup(sceneGroup);
+            for (int pageInGroup = 0; pageInGroup < pageCount; pageInGroup++) {
+                descriptors.add(new GridPageDescriptor(sceneGroupIndex, rows, cols));
+            }
+        }
+        return descriptors;
+    }
+
+    private static final class PageCellAddress {
+        private final int pageIndex;
+        private final int cellIndex;
+
+        private PageCellAddress(int pageIndex, int cellIndex) {
+            this.pageIndex = pageIndex;
+            this.cellIndex = cellIndex;
+        }
+
+        private int getPageIndex() {
+            return pageIndex;
+        }
+
+        private int getCellIndex() {
+            return cellIndex;
+        }
+    }
+
+    private static final class GridPageDescriptor {
+        private final int sceneGroupIndex;
+        private final int rows;
+        private final int cols;
+
+        private GridPageDescriptor(int sceneGroupIndex, int rows, int cols) {
+            this.sceneGroupIndex = sceneGroupIndex;
+            this.rows = rows;
+            this.cols = cols;
+        }
+
+        private int getSceneGroupIndex() {
+            return sceneGroupIndex;
+        }
+
+        private int getRows() {
+            return rows;
+        }
+
+        private int getCols() {
+            return cols;
+        }
     }
 
     /**

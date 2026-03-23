@@ -20,7 +20,6 @@ public class Character {
     private String personality;       // 性格描述
     private String appearance;        // 外貌描述
     private String background;        // 背景故事
-    private String standardImageUrl;  // 标准形象图URL
     private Boolean confirmed;        // 是否已确认
     private Boolean locked;           // 是否已锁定资产
 
@@ -47,6 +46,7 @@ public class Character {
     // 大全图URL
     private String expressionGridUrl;    // 九宫格大全图URL
     private String threeViewGridUrl;     // 三视图大全图URL
+    private String standardImageUrl;     // 标准单图URL
     private String expressionGridPrompt; // 九宫格提示词记录
     private String threeViewGridPrompt;  // 三视图提示词记录
 
