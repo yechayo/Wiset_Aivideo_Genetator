@@ -204,3 +204,15 @@
 - Evidence:
   - `mvn -Dtest=EpisodeControllerTest test` passed (10/10)
   - extended regression suite passed (46/46)
+
+## Final Assessment (2026-03-23)
+- P6 status: completed
+  - production orchestration and backend split endpoint integration are in place and test-verified
+- P7 status: completed
+  - core regression matrix now includes:
+    - split task build correctness (including multi-page offset)
+    - mixed-layout fusion completion rules (6/9 cell expectations)
+    - split-to-fusion chain continuity
+    - submit-fusion-page API boundary guards
+- Residual note:
+  - current coverage is service/controller-level unit regression; no external-system E2E (real OSS/network image split) has been executed in this cycle.
