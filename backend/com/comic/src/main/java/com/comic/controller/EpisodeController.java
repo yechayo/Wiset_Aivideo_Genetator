@@ -126,6 +126,9 @@ public class EpisodeController {
     @Operation(summary = "提交单页融合结果", description = "提交单页融合图URL，全部完成后自动恢复管线")
     public Result<Map<String, Object>> submitFusionPage(@PathVariable Long episodeId,
                                                          @RequestBody Map<String, Object> body) {
+        if (body == null) {
+            throw new IllegalArgumentException("请求体不能为空");
+        }
         Object rawPageIndex = body.getOrDefault("pageIndex", 0);
         int pageIndex;
         if (rawPageIndex instanceof Number) {

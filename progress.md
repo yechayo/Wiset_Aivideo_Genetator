@@ -219,3 +219,16 @@
 3. Verification:
    - `mvn -Dtest=EpisodeProductionServiceTest test` passed (19/19)
    - extended regression suite passed (40/40)
+
+### Continue Update (2026-03-23, P7 submit-fusion-page API boundary coverage)
+1. Added API-level edge tests in `EpisodeControllerTest` for `submitFusionPage`:
+   - null body -> clear parameter exception (`请求体不能为空`)
+   - default `pageIndex=0` path
+   - numeric-string `pageIndex` parse path
+   - invalid/negative `pageIndex` rejection
+   - missing or empty `panelFusedUrls` rejection
+2. Production hardening:
+   - `EpisodeController.submitFusionPage` now guards `body == null` before reading fields
+3. Verification:
+   - `mvn -Dtest=EpisodeControllerTest test` passed (10/10)
+   - extended regression suite passed (46/46)
