@@ -8,6 +8,7 @@ import com.comic.dto.response.ProductionStatusResponse;
 import com.comic.dto.response.VideoSegmentInfoResponse;
 import com.comic.service.oss.OssService;
 import com.comic.service.production.EpisodeProductionService;
+import com.comic.service.production.GridSplitService;
 
 import java.util.List;
 import io.swagger.v3.oas.annotations.Operation;
@@ -148,6 +149,34 @@ public class EpisodeController {
         Map<String, Object> result = new HashMap<>();
         result.put("totalFused", totalFused);
         result.put("pageIndex", pageIndex);
+        return Result.ok(result);
+    }
+
+    /**
+     * 后端执行单页网格切图并返回行优先绑定结果（P6）。
+     * POST /api/episodes/{episodeId}/split-grid-page
+     */
+    @PostMapping("/{episodeId}/split-grid-page")
+    @Operation(summary = "后端切分单页网格", description = "按行优先顺序切分单页网格并绑定分镜元数据")
+    public Result<GridSplitService.SplitPageResult> splitGridPage(@PathVariable Long episodeId,
+                                                                  @RequestBody(required = false) Map<String, Object> body) {
+        int pageIndex = 0;
+        if (body != null && body.containsKey("pageIndex")) {
+            Object rawPageIndex = body.get("pageIndex");
+            if (rawPageIndex instanceof Number) {
+                pageIndex = ((Number) rawPageIndex).intValue();
+            } else {
+                try {
+                    pageIndex = Integer.parseInt(String.valueOf(rawPageIndex));
+                } catch (Exception e) {
+                    throw new IllegalArgumentException("pageIndex 格式不正确");
+                }
+            }
+        }
+        if (pageIndex < 0) {
+            throw new IllegalArgumentException("pageIndex 不能小于0");
+        }
+        GridSplitService.SplitPageResult result = productionService.splitGridPageForFusion(episodeId, pageIndex);
         return Result.ok(result);
     }
 

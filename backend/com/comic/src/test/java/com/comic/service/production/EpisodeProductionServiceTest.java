@@ -8,6 +8,8 @@ import com.comic.entity.Episode;
 import com.comic.entity.EpisodeProduction;
 import com.comic.entity.Project;
 import com.comic.entity.VideoProductionTask;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeProductionRepository;
 import com.comic.repository.EpisodeRepository;
@@ -50,6 +52,7 @@ class EpisodeProductionServiceTest {
     @Mock private CharacterRepository characterRepository;
     @Mock private SceneAnalysisService sceneAnalysisService;
     @Mock private SceneGridGenService sceneGridGenService;
+    @Mock private GridSplitService gridSplitService;
     @Mock private StoryboardEnhancementService storyboardEnhancementService;
     @Mock private VideoPromptBuilderService videoPromptBuilderService;
     @Mock private VideoProductionQueueService videoQueueService;
@@ -184,6 +187,42 @@ class EpisodeProductionServiceTest {
 
     private List<String> createGridUrls() {
         return new ArrayList<>(Arrays.asList("https://mock/grid-0.png", "https://mock/grid-1.png"));
+    }
+
+    private SceneAnalysisResultModel createSingleSceneAnalysis(int startIndex, int endIndex) {
+        SceneGroupModel group = new SceneGroupModel();
+        group.setSceneId("SCENE-SINGLE");
+        group.setStartPanelIndex(startIndex);
+        group.setEndPanelIndex(endIndex);
+        group.setLocation("鍗曚竴鍦烘櫙");
+        group.setCharacters(new ArrayList<>(Arrays.asList("灏忔槑")));
+
+        SceneAnalysisResultModel result = new SceneAnalysisResultModel();
+        result.setSceneGroups(new ArrayList<>(Arrays.asList(group)));
+        result.setTotalPanelCount(endIndex - startIndex + 1);
+        return result;
+    }
+
+    private String createStoryboardJsonWithPanelCount(int panelCount) throws Exception {
+        ObjectNode root = objectMapper.createObjectNode();
+        ArrayNode panels = objectMapper.createArrayNode();
+        for (int i = 0; i < panelCount; i++) {
+            ObjectNode panel = objectMapper.createObjectNode();
+            panel.put("panel_id", "ep1_p" + (i + 1));
+            panel.put("shot_type", "MEDIUM_SHOT");
+            panel.put("camera_angle", "eye_level");
+            panel.put("composition", "panel-" + i);
+
+            ObjectNode background = objectMapper.createObjectNode();
+            background.put("scene_desc", "scene-a");
+            background.put("time_of_day", "day");
+            background.put("atmosphere", "neutral");
+            panel.set("background", background);
+
+            panels.add(panel);
+        }
+        root.set("panels", panels);
+        return objectMapper.writeValueAsString(root);
     }
 
     private VideoProductionTask createCompletedTask() {
@@ -542,6 +581,117 @@ class EpisodeProductionServiceTest {
 
         // 验证 tryMarkFusionResumed 被调用
         verify(productionRepository).tryMarkFusionResumed(EPISODE_ID);
+    }
+
+    @Test
+    @DisplayName("splitGridPageForFusion - 构建切图任务并调用后端切图服务")
+    @SuppressWarnings("unchecked")
+    void testSplitGridPageForFusion_shouldBuildTaskAndCallSplitter() throws Exception {
+        EpisodeProduction production = createProduction();
+        production.setStatus("GRID_FUSION_PENDING");
+        production.setSceneGridUrls(objectMapper.writeValueAsString(createGridUrls()));
+        production.setSceneAnalysisJson(objectMapper.writeValueAsString(createSceneAnalysis()));
+
+        when(episodeRepository.selectById(EPISODE_ID)).thenReturn(episode);
+        when(productionRepository.findByEpisodeId(EPISODE_ID)).thenReturn(production);
+
+        GridSplitService.SplitPageResult pageResult = new GridSplitService.SplitPageResult();
+        pageResult.setPageIndex(1);
+        pageResult.setRows(2);
+        pageResult.setCols(3);
+        pageResult.setSkipped(false);
+        pageResult.setCells(new ArrayList<>());
+
+        GridSplitService.SplitBatchResult batchResult = new GridSplitService.SplitBatchResult();
+        batchResult.setSuccessPages(1);
+        batchResult.setSkippedPages(0);
+        batchResult.setPages(new ArrayList<>(Arrays.asList(pageResult)));
+
+        when(gridSplitService.splitAndUploadPages(anyList())).thenReturn(batchResult);
+
+        GridSplitService.SplitPageResult result = productionService.splitGridPageForFusion(EPISODE_ID, 1);
+        assertEquals(1, result.getPageIndex());
+        assertEquals(2, result.getRows());
+        assertEquals(3, result.getCols());
+
+        ArgumentCaptor<List<GridSplitService.PageSplitTask>> tasksCaptor = ArgumentCaptor.forClass(List.class);
+        verify(gridSplitService, times(1)).splitAndUploadPages(tasksCaptor.capture());
+
+        List<GridSplitService.PageSplitTask> tasks = tasksCaptor.getValue();
+        assertNotNull(tasks);
+        assertEquals(1, tasks.size());
+
+        GridSplitService.PageSplitTask task = tasks.get(0);
+        assertEquals(1, task.getPageIndex());
+        assertEquals("https://mock/grid-1.png", task.getGridImageUrl());
+        assertEquals(2, task.getRows());
+        assertEquals(3, task.getCols());
+        assertEquals(2, task.getStartPanelIndex());
+        assertEquals(1, task.getPanels().size());
+        assertTrue(task.getObjectKeyPrefix().contains("episode-" + EPISODE_ID));
+    }
+
+    @Test
+    @DisplayName("splitGridPageForFusion - pageIndex越界抛出业务异常")
+    void testSplitGridPageForFusion_outOfRange() throws Exception {
+        EpisodeProduction production = createProduction();
+        production.setStatus("GRID_FUSION_PENDING");
+        production.setSceneGridUrls(objectMapper.writeValueAsString(
+                new ArrayList<>(Arrays.asList("https://mock/grid-only.png"))
+        ));
+        production.setSceneAnalysisJson(objectMapper.writeValueAsString(createSceneAnalysis()));
+
+        when(episodeRepository.selectById(EPISODE_ID)).thenReturn(episode);
+        when(productionRepository.findByEpisodeId(EPISODE_ID)).thenReturn(production);
+
+        assertThrows(Exception.class, () -> productionService.splitGridPageForFusion(EPISODE_ID, 3));
+    }
+
+    @Test
+    @DisplayName("splitGridPageForFusion - 同场景组多页时按pageInGroup正确偏移startPanelIndex")
+    @SuppressWarnings("unchecked")
+    void testSplitGridPageForFusion_multiPageOffset() throws Exception {
+        episode.setStoryboardJson(createStoryboardJsonWithPanelCount(12));
+
+        EpisodeProduction production = createProduction();
+        production.setStatus("GRID_FUSION_PENDING");
+        production.setSceneGridUrls(objectMapper.writeValueAsString(
+                new ArrayList<>(Arrays.asList("https://mock/grid-0.png", "https://mock/grid-1.png"))
+        ));
+        production.setSceneAnalysisJson(objectMapper.writeValueAsString(createSingleSceneAnalysis(0, 11)));
+
+        when(episodeRepository.selectById(EPISODE_ID)).thenReturn(episode);
+        when(productionRepository.findByEpisodeId(EPISODE_ID)).thenReturn(production);
+
+        GridSplitService.SplitPageResult pageResult = new GridSplitService.SplitPageResult();
+        pageResult.setPageIndex(1);
+        pageResult.setRows(3);
+        pageResult.setCols(3);
+        pageResult.setSkipped(false);
+        pageResult.setCells(new ArrayList<>());
+
+        GridSplitService.SplitBatchResult batchResult = new GridSplitService.SplitBatchResult();
+        batchResult.setSuccessPages(1);
+        batchResult.setSkippedPages(0);
+        batchResult.setPages(new ArrayList<>(Arrays.asList(pageResult)));
+        when(gridSplitService.splitAndUploadPages(anyList())).thenReturn(batchResult);
+
+        GridSplitService.SplitPageResult result = productionService.splitGridPageForFusion(EPISODE_ID, 1);
+        assertEquals(1, result.getPageIndex());
+        assertEquals(3, result.getRows());
+        assertEquals(3, result.getCols());
+
+        ArgumentCaptor<List<GridSplitService.PageSplitTask>> tasksCaptor = ArgumentCaptor.forClass(List.class);
+        verify(gridSplitService, times(1)).splitAndUploadPages(tasksCaptor.capture());
+        List<GridSplitService.PageSplitTask> tasks = tasksCaptor.getValue();
+        assertNotNull(tasks);
+        assertEquals(1, tasks.size());
+
+        GridSplitService.PageSplitTask task = tasks.get(0);
+        assertEquals(1, task.getPageIndex());
+        assertEquals(9, task.getStartPanelIndex());
+        assertEquals(3, task.getPanels().size());
+        assertEquals("ep1_p10", task.getPanels().get(0).path("panel_id").asText());
     }
 
     @Test

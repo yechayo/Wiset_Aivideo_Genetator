@@ -160,3 +160,38 @@
 5. Regression verification:
    - `mvn "-Dtest=StoryboardEnhancementServiceTest,EpisodeProductionServiceTest" test` passed (17/17)
    - `mvn "-Dtest=StoryControllerTest,StoryboardServiceTest,SceneAnalysisServiceTest,EpisodeProductionServiceTest,GridSplitServiceTest,StoryboardEnhancementServiceTest" test` passed (30/30)
+
+### Continue Update (2026-03-23, P6 in progress)
+1. Integrated backend split orchestration into production service:
+   - added `EpisodeProductionService.splitGridPageForFusion(episodeId, pageIndex)`
+   - validates status (`GRID_FUSION_PENDING`), page range, and storyboard schema
+   - builds row-major `GridSplitService.PageSplitTask` with exact page metadata (`rows/cols/startPanelIndex/panels`)
+2. Added API endpoint:
+   - `POST /api/episodes/{episodeId}/split-grid-page`
+   - supports optional `pageIndex` input and delegates to production service
+3. Updated page-descriptor model:
+   - `GridPageDescriptor` now includes `pageInGroup`, enabling correct per-scene-group page offset binding
+4. Added test coverage:
+   - `EpisodeProductionServiceTest` verifies task-building details (`pageIndex`, `rows`, `cols`, `startPanelIndex`, `panels`, object-key prefix)
+   - includes out-of-range `pageIndex` exception case
+5. Regression verification:
+   - `mvn -Dtest=EpisodeProductionServiceTest test` passed (15/15)
+   - `mvn "-Dtest=StoryControllerTest,StoryboardServiceTest,SceneAnalysisServiceTest,EpisodeProductionServiceTest,GridSplitServiceTest,StoryboardEnhancementServiceTest" test` passed (32/32)
+
+### Continue Update (2026-03-23, P6 controller test coverage)
+1. Added `EpisodeControllerTest` for new backend split endpoint:
+   - `splitGridPage` with `body=null` defaults to `pageIndex=0`
+   - numeric string `pageIndex` is parsed correctly
+   - invalid `pageIndex` format throws `IllegalArgumentException`
+   - negative `pageIndex` throws `IllegalArgumentException`
+2. Verification:
+   - `mvn -Dtest=EpisodeControllerTest test` passed (4/4)
+   - extended regression suite including `EpisodeControllerTest` passed (37/37)
+
+### Continue Update (2026-03-23, P6 multi-page offset guard)
+1. Added one more production-service regression case:
+   - validates same-scene-group multi-page split (`12 panels`) computes `startPanelIndex=9` on `pageIndex=1`
+   - validates page panel binding starts from `ep1_p10`
+2. Verification:
+   - `mvn -Dtest=EpisodeProductionServiceTest test` passed (16/16)
+   - extended regression suite passed (37/37)
