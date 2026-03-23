@@ -124,3 +124,20 @@
 4. Regression verification:
    - `mvn -Dtest=EpisodeProductionServiceTest test` passed
    - `mvn "-Dtest=StoryControllerTest,StoryboardServiceTest,SceneAnalysisServiceTest,EpisodeProductionServiceTest" test` passed (22/22)
+
+### Continue Update (2026-03-23, P4 completed)
+1. Added `GridSplitService` in backend:
+   - row-major split (`index = row * cols + col`) with no image recognition dependency
+   - supports both `3x3` and `2x3` via `rows/cols` task parameters
+   - binds each split cell to panel metadata by the same index
+   - uploads each split cell via `OssService.uploadFromInputStream`
+2. Added page-level fault tolerance in batch mode:
+   - first failure retries once
+   - second failure marks only that page as skipped and continues remaining pages
+3. Added TDD coverage with `GridSplitServiceTest`:
+   - validates row-major split and metadata binding on 3x3
+   - validates 2x3 support and placeholder binding for missing panel metadata
+   - validates retry-once-then-skip behavior
+4. Regression verification:
+   - `mvn -Dtest=GridSplitServiceTest test` passed
+   - `mvn "-Dtest=StoryControllerTest,StoryboardServiceTest,SceneAnalysisServiceTest,EpisodeProductionServiceTest,GridSplitServiceTest" test` passed (25/25)

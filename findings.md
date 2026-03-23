@@ -112,3 +112,16 @@
   - Prompt fusion-image mapping upgraded from "group-index based" to "panel-index -> page/cell based"
   - `getGridInfo` now carries page-to-scene-group mapping and per-page rows/cols
 - Core regression suite (`StoryControllerTest`, `StoryboardServiceTest`, `SceneAnalysisServiceTest`, `EpisodeProductionServiceTest`) passed.
+
+## Status Update (2026-03-23, P4)
+- Backend `GridSplitService` is now implemented:
+  - splits grid images in strict row-major order
+  - supports both `3x3` and `2x3` layouts
+  - binds split cell result to panel metadata by index
+  - uploads each split cell to OSS
+- Fault tolerance for multi-page split is in place:
+  - page split failure retries once
+  - if retry still fails, that page is skipped and next page continues
+- Test evidence:
+  - new `GridSplitServiceTest` added and passed
+  - regression suite (`StoryControllerTest`, `StoryboardServiceTest`, `SceneAnalysisServiceTest`, `EpisodeProductionServiceTest`, `GridSplitServiceTest`) passed (25/25)

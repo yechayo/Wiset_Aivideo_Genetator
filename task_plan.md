@@ -31,8 +31,8 @@
 | P0 | 需求冻结与数据契约 | 冻结 `storyboardJson` 标准结构；定义向后兼容策略（旧字段到新字段映射） | JSON schema + 映射规则文档 | in_progress |
 | P1 | 5.0 分镜生成强化 | 在 API 层增加“仅当 `storyboardJson` 为空才生成”前置校验；统一 `PromptBuilder.buildStoryboardSystemPrompt` 输出契约；补齐失败重试与解析日志 | 可复用的分镜生成入口（幂等） | completed |
 | P2 | 5.1 场景分析升级 | `SceneAnalysisService` 支持新结构读取（`background.scene_desc`、角色对象数组）；输出 `SceneGroupModel` 完整字段（sceneId/description/characters/start/end） | 稳定场景分组结果 | completed |
-| P3 | 5.2 网格生成分页与布局 | `SceneGridGenService` 支持 3x3 与 2x3；单场景组超限分页；不足页补纯色占位；每页实时落库 | 分页网格 URL 列表 | pending |
-| P4 | 5.3 网格拆分服务 | 新增 `GridSplitService`：按行优先切图（非识别）；索引与分镜数组绑定；页失败可跳过继续 | 单格图片 + 绑定元数据 | pending |
+| P3 | 5.2 网格生成分页与布局 | `SceneGridGenService` 支持 3x3 与 2x3；单场景组超限分页；不足页补纯色占位；每页实时落库 | 分页网格 URL 列表 | completed |
+| P4 | 5.3 网格拆分服务 | 新增 `GridSplitService`：按行优先切图（非识别）；索引与分镜数组绑定；页失败可跳过继续 | 单格图片 + 绑定元数据 | completed |
 | P5 | 5.4 分镜增强服务 | 新增 `StoryboardEnhancementService`：规则推荐 + LLM增强；术语白名单校验；非法术语直接失败；批量0.5s节流 | 增强后的镜头参数与理由 | pending |
 | P6 | 生产流程编排集成 | 在生产流程中接入增强与拆分后的数据链路，明确阶段顺序和状态迁移 | 端到端可运行流程 | pending |
 | P7 | 测试与回归 | 单元测试（服务级）+ 集成测试（流程级）+ 兼容性测试（旧分镜数据） | 测试用例与通过报告 | pending |
@@ -132,4 +132,5 @@
 - P1: completed
 - P2: completed
 - P3: implemented in backend (grid pagination + 2x3/3x3 + dynamic fusion page cell count), test-verified
-- P4/P5/P6/P7: pending
+- P4: completed (new backend `GridSplitService` with row-major split, 2x3/3x3 support, index binding, and per-page retry-once-then-skip tolerance), test-verified
+- P5/P6/P7: pending
