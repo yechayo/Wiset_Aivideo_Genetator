@@ -125,3 +125,16 @@
 - Test evidence:
   - new `GridSplitServiceTest` added and passed
   - regression suite (`StoryControllerTest`, `StoryboardServiceTest`, `SceneAnalysisServiceTest`, `EpisodeProductionServiceTest`, `GridSplitServiceTest`) passed (25/25)
+
+## Status Update (2026-03-23, P5)
+- Backend `StoryboardEnhancementService` is now implemented:
+  - rule-based recommendation mode (no LLM cost)
+  - LLM mode with strict terminology whitelist validation
+  - invalid LLM terms now fail fast (no silent fallback), aligned with confirmed decision
+  - configurable panel throttle (`500ms` default) for batch LLM enhancement
+- Integration is in place at the required insertion point:
+  - enhancement runs after scene analysis and before grid generation
+- Test evidence:
+  - new `StoryboardEnhancementServiceTest` passed
+  - `EpisodeProductionServiceTest` includes enhancement invocation assertion and passed
+  - full regression suite passed (30/30)

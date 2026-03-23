@@ -141,3 +141,22 @@
 4. Regression verification:
    - `mvn -Dtest=GridSplitServiceTest test` passed
    - `mvn "-Dtest=StoryControllerTest,StoryboardServiceTest,SceneAnalysisServiceTest,EpisodeProductionServiceTest,GridSplitServiceTest" test` passed (25/25)
+
+### Continue Update (2026-03-23, P5 completed)
+1. Added `StoryboardEnhancementService`:
+   - supports `RULE` mode (keyword-based camera parameter recommendation)
+   - supports `LLM` mode (panel-by-panel selection from predefined terminology)
+   - validates LLM terms against strict whitelist and fails fast on invalid output
+   - adds configurable panel-to-panel throttle (`comic.storyboard.enhancement.delay-ms`, default `500ms`)
+2. Inserted enhancement step in production flow:
+   - called after scene analysis and before grid generation in `EpisodeProductionService.executeProductionFlow`
+3. Added tests:
+   - `StoryboardEnhancementServiceTest` (rule recommendation, invalid-term fail-fast, throttle, episode persistence)
+   - `EpisodeProductionServiceTest` new case to verify enhancement invocation
+4. Added config defaults:
+   - `comic.storyboard.enhancement.enabled=true`
+   - `comic.storyboard.enhancement.mode=RULE`
+   - `comic.storyboard.enhancement.delay-ms=500`
+5. Regression verification:
+   - `mvn "-Dtest=StoryboardEnhancementServiceTest,EpisodeProductionServiceTest" test` passed (17/17)
+   - `mvn "-Dtest=StoryControllerTest,StoryboardServiceTest,SceneAnalysisServiceTest,EpisodeProductionServiceTest,GridSplitServiceTest,StoryboardEnhancementServiceTest" test` passed (30/30)
