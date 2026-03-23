@@ -10,16 +10,16 @@
 }
 
 .title {
-  font-size: 32px;
-  font-weight: 700;
-  color: #ffffff;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
   margin: 0 0 12px 0;
   letter-spacing: -0.02em;
 }
 
 .subtitle {
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
   margin: 0;
   line-height: 1.5;
 }
@@ -32,15 +32,15 @@
   align-items: center;
   justify-content: center;
   gap: 20px;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 16px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
 }
 
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #ffffff;
+  border: 3px solid var(--color-border-subtle);
+  border-top-color: var(--color-text-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -59,24 +59,24 @@
   align-items: center;
   justify-content: center;
   gap: 20px;
-  color: rgba(255, 100, 100, 0.8);
-  font-size: 16px;
+  color: rgba(242, 119, 123, 0.9);
+  font-size: var(--font-size-md);
 }
 
 .retryButton {
   padding: 12px 24px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
+  background: rgba(247, 249, 252, 0.1);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: all 0.3s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(247, 249, 252, 0.15);
+    border-color: rgba(247, 249, 252, 0.3);
   }
 }
 
@@ -93,9 +93,9 @@
   display: flex;
   gap: 24px;
   padding: 20px 24px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid rgba(247, 249, 252, 0.08);
+  border-radius: var(--radius-lg);
 }
 
 .infoItem {
@@ -105,15 +105,15 @@
 }
 
 .infoLabel {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.5);
-  font-weight: 500;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
 }
 
 .infoValue {
-  font-size: 14px;
-  color: #ffffff;
-  font-weight: 600;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
 }
 
 // 剧本标题
@@ -121,9 +121,9 @@
   margin-bottom: 32px;
 
   h2 {
-    font-size: 28px;
-    font-weight: 700;
-    color: #ffffff;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
     margin: 0;
     letter-spacing: -0.02em;
   }
@@ -135,23 +135,23 @@
 }
 
 .scriptCard {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid rgba(247, 249, 252, 0.1);
+  border-radius: var(--radius-xl);
   padding: 28px;
 }
 
 .cardTitle {
   font-size: 18px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
   margin: 0 0 16px 0;
 }
 
 .cardText {
-  font-size: 16px;
+  font-size: var(--font-size-md);
   line-height: 1.8;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(247, 249, 252, 0.82);
   margin: 0;
   white-space: pre-wrap;
 }
@@ -162,23 +162,23 @@
 }
 
 .scenesTitle {
-  font-size: 20px;
-  font-weight: 600;
-  color: #ffffff;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
   margin: 0 0 20px 0;
 }
 
 .sceneCard {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid rgba(247, 249, 252, 0.1);
+  border-radius: var(--radius-lg);
   padding: 20px;
   margin-bottom: 16px;
   transition: all 0.3s ease;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(247, 249, 252, 0.2);
+    background: rgba(247, 249, 252, 0.06);
   }
 
   &:last-child {
@@ -194,25 +194,25 @@
 }
 
 .sceneNumber {
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .sceneDuration {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.05);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  background: rgba(247, 249, 252, 0.08);
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .sceneDescription {
   font-size: 15px;
   line-height: 1.7;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(247, 249, 252, 0.82);
   margin: 0;
 }
 
@@ -224,14 +224,14 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 16px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
   text-align: center;
 }
 
 .emptyHint {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.25);
+  font-size: var(--font-size-sm);
+  color: rgba(247, 249, 252, 0.28);
   margin: 0;
 }
 
@@ -241,8 +241,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 16px;
+  color: rgba(247, 249, 252, 0.3);
+  font-size: var(--font-size-md);
 }
 
 // 按钮容器
@@ -257,37 +257,37 @@
 .backButton {
   padding: 16px 32px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
   border-radius: 14px;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: all 0.3s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.3);
-    color: #ffffff;
+    background: rgba(247, 249, 252, 0.08);
+    border-color: rgba(247, 249, 252, 0.3);
+    color: var(--color-text-primary);
   }
 }
 
 // 确认按钮
 .confirmButton {
   padding: 16px 40px;
-  background: #ffffff;
-  color: #000000;
+  background: var(--color-text-primary);
+  color: var(--color-bg-canvas);
   border: none;
   border-radius: 14px;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover:not(:disabled) {
-    background: #f0f0f0;
+    background: #e8edf5;
     transform: translateY(-2px);
-    box-shadow: 0 10px 20px rgba(255, 255, 255, 0.1);
+    box-shadow: var(--shadow-soft);
   }
 
   &:disabled {
@@ -304,16 +304,16 @@
 
 .batchGenerateButton {
   padding: 10px 20px;
-  background: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  border-radius: 8px;
-  color: #60a5fa;
-  font-size: 14px;
+  background: rgba(114, 183, 255, 0.15);
+  border: 1px solid rgba(114, 183, 255, 0.35);
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover:not(:disabled) {
-    background: rgba(59, 130, 246, 0.25);
+    background: rgba(114, 183, 255, 0.24);
   }
 
   &:disabled {

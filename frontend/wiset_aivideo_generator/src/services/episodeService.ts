@@ -4,7 +4,13 @@
 
 import { get, post } from './apiClient';
 import type { ApiResponse } from './types/auth.types';
-import type { ProductionStatusResponse, ProductionPipelineResponse, GridInfoResponse, VideoSegmentInfo } from './types/episode.types';
+import type {
+  ProductionStatusResponse,
+  ProductionPipelineResponse,
+  GridInfoResponse,
+  SplitGridPageResponse,
+  VideoSegmentInfo,
+} from './types/episode.types';
 
 /** 获取项目下的剧集列表 */
 export async function getEpisodes(projectId: string): Promise<ApiResponse<any[]>> {
@@ -49,6 +55,17 @@ export async function submitFusionPage(
   return post<ApiResponse<{ totalFused: number; pageIndex: number }>>(
     `/api/episodes/${episodeId}/submit-fusion-page`,
     { pageIndex, panelFusedUrls },
+  );
+}
+
+/** 后端切分单页网格（优先用于前后端联调，失败时前端可回退本地切分） */
+export async function splitGridPage(
+  episodeId: string,
+  pageIndex: number,
+): Promise<ApiResponse<SplitGridPageResponse>> {
+  return post<ApiResponse<SplitGridPageResponse>>(
+    `/api/episodes/${episodeId}/split-grid-page`,
+    { pageIndex },
   );
 }
 

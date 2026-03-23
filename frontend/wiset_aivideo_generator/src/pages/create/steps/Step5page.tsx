@@ -15,12 +15,89 @@ import { isApiSuccess } from '../../../services/apiClient';
 
 const POLL_INTERVAL = 3000;
 
+interface RawStoryboardCharacter {
+  char_id?: string;
+  name?: string;
+  expression?: string;
+  pose?: string;
+  position?: string;
+}
+
+interface RawStoryboardDialogue {
+  speaker?: string;
+  text?: string;
+}
+
+interface RawStoryboardPanel {
+  scene?: string;
+  shot_size?: string;
+  shot_type?: string;
+  camera_angle?: string;
+  dialogue?: string | RawStoryboardDialogue[];
+  effects?: string;
+  sfx?: string[];
+  characters?: string | RawStoryboardCharacter[];
+  background?: {
+    scene_desc?: string;
+  };
+}
+
+interface RawStoryboardData {
+  panels?: RawStoryboardPanel[];
+}
+
 interface Step5pageProps extends StepContentProps {
   project: Project;
 }
 
+const formatCharacters = (characters: RawStoryboardPanel['characters']): string => {
+  if (!characters) return '';
+  if (typeof characters === 'string') return characters;
+  if (!Array.isArray(characters)) return '';
+
+  return characters
+    .map((character) => {
+      if (!character || typeof character !== 'object') return '';
+      const label = character.name || character.char_id || '';
+      const expression = character.expression ? ` ${character.expression}` : '';
+      return `${label}${expression}`.trim();
+    })
+    .filter(Boolean)
+    .join(' / ');
+};
+
+const formatDialogue = (dialogue: RawStoryboardPanel['dialogue']): string => {
+  if (!dialogue) return '';
+  if (typeof dialogue === 'string') return dialogue;
+  if (!Array.isArray(dialogue)) return '';
+
+  return dialogue
+    .map((item) => {
+      if (!item || typeof item !== 'object') return '';
+      const speaker = item.speaker?.trim();
+      const text = item.text?.trim();
+      if (!speaker && !text) return '';
+      return speaker ? `${speaker}: ${text || ''}`.trim() : (text || '');
+    })
+    .filter(Boolean)
+    .join(' / ');
+};
+
+const normalizeStoryboardData = (raw: RawStoryboardData): StoryboardData => ({
+  panels: Array.isArray(raw?.panels)
+    ? raw.panels.map((panel) => ({
+        scene: panel.scene || panel.background?.scene_desc || '',
+        characters: formatCharacters(panel.characters),
+        shot_size: panel.shot_size || panel.shot_type || '',
+        camera_angle: panel.camera_angle || '',
+        dialogue: formatDialogue(panel.dialogue),
+        effects: panel.effects || (Array.isArray(panel.sfx) ? panel.sfx.join(' / ') : ''),
+      }))
+    : [],
+});
+
 const Step5page = ({ project }: Step5pageProps) => {
-  const { statusInfo } = useCreateStore();
+  const { statusInfo, syncStatus } = useCreateStore();
   const projectId = project.projectId;
 
   const currentEpisode = statusInfo?.storyboardCurrentEpisode ?? 0;
@@ -38,45 +115,32 @@ const Step5page = ({ project }: Step5pageProps) => {
   const [storyboardData, setStoryboardData] = useState<StoryboardData | null>(null);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const loadedEpisodeRef = useRef<number | null>(null);
+  const loadedEpisodeRef = useRef<string | null>(null);
+  const syncedStoryboardEpisodeRef = useRef<string | null>(null);
 
-  // 单次拉取分镜数据
-  const fetchStoryboard = useCallback(async (epId: number) => {
+  const fetchStoryboard = useCallback(async (epId: string) => {
     try {
       const res = await getStoryboard(epId);
-      if (res.code === 200 && res.data?.storyboardJson) {
-        const parsed = JSON.parse(res.data.storyboardJson) as StoryboardData;
+      if (res.code !== 200 || !res.data) return false;
+
+      // Check episode status directly, not inferred from storyboardJson being null
+      if (res.data.status === 'STORYBOARD_GENERATING') return false;
+      if (res.data.status === 'STORYBOARD_FAILED') return false;
+
+      // STORYBOARD_DONE or STORYBOARD_CONFIRMED — parse the data
+      if (res.data.storyboardJson) {
+        const parsed = normalizeStoryboardData(JSON.parse(res.data.storyboardJson) as RawStoryboardData);
         if (parsed?.panels?.length > 0) {
           setStoryboardData(parsed);
           return true;
         }
       }
     } catch {
-      // 轮询中忽略错误，下次继续
+      // ignore polling errors and retry on next interval
     }
     return false;
   }, []);
 
-  // 启动轮询：每 3s 拉取分镜，直到数据出现
-  const startPolling = useCallback((epId: number) => {
-    stopPolling();
-    loadedEpisodeRef.current = epId;
-
-    // 立即拉一次
-    fetchStoryboard(epId).then((hasData) => {
-      if (hasData || loadedEpisodeRef.current !== epId) return;
-      pollingRef.current = setInterval(async () => {
-        if (loadedEpisodeRef.current !== epId) {
-          stopPolling();
-          return;
-        }
-        const hasData = await fetchStoryboard(epId);
-        if (hasData) stopPolling();
-      }, POLL_INTERVAL);
-    });
-  }, [fetchStoryboard]);
-
-  // 停止轮询
   const stopPolling = useCallback(() => {
     if (pollingRef.current !== null) {
       clearInterval(pollingRef.current);
@@ -84,24 +148,50 @@ const Step5page = ({ project }: Step5pageProps) => {
     }
   }, []);
 
-  // reviewEpisodeId 变化时：清空旧数据，启动轮询新集
+  const startPolling = useCallback((epId: string) => {
+    stopPolling();
+    loadedEpisodeRef.current = epId;
+
+    fetchStoryboard(epId).then((hasData) => {
+      if (hasData || loadedEpisodeRef.current !== epId) return;
+      pollingRef.current = setInterval(async () => {
+        if (loadedEpisodeRef.current !== epId) {
+          stopPolling();
+          return;
+        }
+        const done = await fetchStoryboard(epId);
+        if (done) stopPolling();
+      }, POLL_INTERVAL);
+    });
+  }, [fetchStoryboard, stopPolling]);
+
   useEffect(() => {
     setStoryboardData(null);
     setShowRevision(false);
+    syncedStoryboardEpisodeRef.current = null;
+
     if (reviewEpisodeId) {
       startPolling(reviewEpisodeId);
     } else {
       stopPolling();
     }
+
     return () => stopPolling();
   }, [reviewEpisodeId, startPolling, stopPolling]);
 
   useEffect(() => {
-    if (apiError) {
-      const timer = setTimeout(() => setApiError(null), 5000);
-      return () => clearTimeout(timer);
-    }
+    if (!apiError) return;
+    const timer = setTimeout(() => setApiError(null), 5000);
+    return () => clearTimeout(timer);
   }, [apiError]);
+
+  useEffect(() => {
+    if (!isGenerating || !storyboardData || !reviewEpisodeId || !projectId) return;
+    if (syncedStoryboardEpisodeRef.current === reviewEpisodeId) return;
+
+    syncedStoryboardEpisodeRef.current = reviewEpisodeId;
+    void syncStatus(projectId);
+  }, [isGenerating, storyboardData, reviewEpisodeId, projectId, syncStatus]);
 
   const handleStartStoryboard = useCallback(async () => {
     if (!projectId) return;
@@ -109,52 +199,92 @@ const Step5page = ({ project }: Step5pageProps) => {
     setApiError(null);
     try {
       const res = await startStoryboard(projectId);
-      if (isApiSuccess(res)) return;
-      setApiError(res.message || '启动失败');
-    } catch (e: any) {
-      setApiError(e.message || '启动分镜生成失败');
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [projectId]);
-
-  const handleConfirm = useCallback(async () => {
-    if (!reviewEpisodeId) return;
-    setIsSubmitting(true);
-    setApiError(null);
-    try {
-      const res = await confirmStoryboard(reviewEpisodeId);
-      if (isApiSuccess(res)) {
-        setStoryboardData(null);
+      if (!isApiSuccess(res)) {
+        setApiError(res.message || 'Failed to start storyboard generation');
         return;
       }
-      setApiError(res.message || '确认失败');
+      await syncStatus(projectId);
     } catch (e: any) {
-      setApiError(e.message || '确认失败');
+      setApiError(e.message || 'Failed to start storyboard generation');
     } finally {
       setIsSubmitting(false);
     }
-  }, [reviewEpisodeId]);
+  }, [projectId, syncStatus]);
 
-  const handleRetry = useCallback(async () => {
+  const handleConfirm = useCallback(async () => {
     if (!reviewEpisodeId) return;
     setIsSubmitting(true);
     setApiError(null);
     stopPolling();
     setStoryboardData(null);
     try {
-      const res = await retryStoryboard(reviewEpisodeId);
+      const res = await confirmStoryboard(reviewEpisodeId);
       if (isApiSuccess(res)) {
-        startPolling(reviewEpisodeId);
+        if (projectId) {
+          await syncStatus(projectId);
+        }
         return;
       }
-      setApiError(res.message || '重试失败');
+      setApiError(res.message || 'Confirm failed');
     } catch (e: any) {
-      setApiError(e.message || '重试失败');
+      setApiError(e.message || 'Confirm failed');
     } finally {
       setIsSubmitting(false);
     }
-  }, [reviewEpisodeId, stopPolling, startPolling]);
+  }, [reviewEpisodeId, projectId, stopPolling, syncStatus]);
+
+  const handleRetry = useCallback(async () => {
+    setIsSubmitting(true);
+    setApiError(null);
+    stopPolling();
+    setStoryboardData(null);
+    try {
+      if (!reviewEpisodeId) {
+        if (!projectId) {
+          setApiError('Missing project id. Please refresh and retry.');
+          return;
+        }
+        const fallbackRes = await startStoryboard(projectId);
+        if (!isApiSuccess(fallbackRes)) {
+          setApiError(fallbackRes.message || 'Retry failed');
+          return;
+        }
+        await syncStatus(projectId);
+        return;
+      }
+
+      const res = await retryStoryboard(reviewEpisodeId);
+      if (isApiSuccess(res)) {
+        if (projectId) {
+          await syncStatus(projectId);
+        }
+        startPolling(reviewEpisodeId);
+        return;
+      }
+      setApiError(res.message || 'Retry failed');
+    } catch (e: any) {
+      setApiError(e.message || 'Retry failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [reviewEpisodeId, projectId, stopPolling, startPolling, syncStatus]);
+
+  const handleRefreshGeneratingState = useCallback(async () => {
+    if (!projectId) return;
+
+    setIsSubmitting(true);
+    setApiError(null);
+    try {
+      if (reviewEpisodeId) {
+        await fetchStoryboard(reviewEpisodeId);
+      }
+      await syncStatus(projectId);
+    } catch (e: any) {
+      setApiError(e.message || 'Failed to refresh status');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [projectId, reviewEpisodeId, fetchStoryboard, syncStatus]);
 
   const handleRevise = useCallback(async () => {
     if (!reviewEpisodeId || !feedback.trim()) return;
@@ -167,16 +297,19 @@ const Step5page = ({ project }: Step5pageProps) => {
       if (isApiSuccess(res)) {
         setFeedback('');
         setShowRevision(false);
+        if (projectId) {
+          await syncStatus(projectId);
+        }
         startPolling(reviewEpisodeId);
         return;
       }
-      setApiError(res.message || '修改失败');
+      setApiError(res.message || 'Revision failed');
     } catch (e: any) {
-      setApiError(e.message || '修改失败');
+      setApiError(e.message || 'Revision failed');
     } finally {
       setIsSubmitting(false);
     }
-  }, [reviewEpisodeId, feedback, stopPolling, startPolling]);
+  }, [reviewEpisodeId, feedback, projectId, stopPolling, startPolling, syncStatus]);
 
   const handleStartProduction = useCallback(async () => {
     if (!projectId) return;
@@ -184,69 +317,72 @@ const Step5page = ({ project }: Step5pageProps) => {
     setApiError(null);
     try {
       const res = await startProduction(projectId);
-      if (isApiSuccess(res)) return;
-      setApiError(res.message || '启动生产失败');
+      if (!isApiSuccess(res)) {
+        setApiError(res.message || 'Failed to start production');
+      }
     } catch (e: any) {
-      setApiError(e.message || '启动生产失败');
+      setApiError(e.message || 'Failed to start production');
     } finally {
       setIsSubmitting(false);
     }
   }, [projectId]);
 
-  const progressPercent = totalEpisodes > 0 ? Math.round((allConfirmed ? 1 : (currentEpisode - 1) / totalEpisodes) * 100) : 0;
+  const progressPercent = totalEpisodes > 0
+    ? Math.round((allConfirmed ? 1 : Math.max(0, currentEpisode - 1) / totalEpisodes) * 100)
+    : 0;
 
   return (
     <div className={styles.content}>
       <div className={styles.header}>
-        <h1 className={styles.title}>分镜审核</h1>
-        <p className={styles.subtitle}>逐集审核并确认分镜脚本</p>
+        <h1 className={styles.title}>Storyboard Review</h1>
+        <p className={styles.subtitle}>Review and confirm storyboard episode by episode.</p>
       </div>
 
-      {/* 进度条 */}
       {totalEpisodes > 0 && (
         <div className={styles.progressBar}>
           <div className={styles.progressTrack}>
-            <div
-              className={styles.progressFill}
-              style={{ width: `${progressPercent}%` }}
-            />
+            <div className={styles.progressFill} style={{ width: `${progressPercent}%` }} />
           </div>
           <span className={styles.progressText}>
-            {allConfirmed ? totalEpisodes : currentEpisode} / {totalEpisodes} 集
+            {allConfirmed ? totalEpisodes : currentEpisode} / {totalEpisodes} episodes
           </span>
         </div>
       )}
 
-      {/* 生成中 */}
       {isGenerating && (
         <div className={styles.generatingState}>
           <div className={styles.spinner} />
-          <p>{statusDescription || '正在生成分镜...'}</p>
+          <p>{statusDescription || 'Generating storyboard...'}</p>
+          <button
+            className={styles.retryButton}
+            onClick={handleRefreshGeneratingState}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Refreshing...' : 'Refresh Status'}
+          </button>
         </div>
       )}
 
-      {/* 失败状态 */}
       {isFailed && (
         <div className={styles.failedState}>
           <div className={styles.failedIcon}>!</div>
-          <p className={styles.failedMessage}>{statusDescription || '分镜生成失败'}</p>
+          <p className={styles.failedMessage}>{statusDescription || 'Storyboard generation failed'}</p>
           <button
             className={styles.retryButton}
             onClick={handleRetry}
             disabled={isSubmitting}
           >
-            {isSubmitting ? '处理中...' : '重试生成'}
+            {isSubmitting ? 'Processing...' : 'Retry Generation'}
           </button>
         </div>
       )}
 
-      {/* 审核状态 */}
       {!isGenerating && !isFailed && !allConfirmed && totalEpisodes > 0 && currentEpisode <= totalEpisodes && (
         <div className={styles.reviewSection}>
           <div className={styles.reviewHeader}>
-            <h2 className={styles.episodeTitle}>第 {currentEpisode} 集分镜</h2>
+            <h2 className={styles.episodeTitle}>Episode {currentEpisode}</h2>
             <span className={styles.episodeBadge}>
-              {currentEpisode === totalEpisodes ? '最后一集' : `剩余 ${totalEpisodes - currentEpisode} 集`}
+              {currentEpisode === totalEpisodes ? 'Last Episode' : `${totalEpisodes - currentEpisode} left`}
             </span>
           </div>
 
@@ -259,33 +395,37 @@ const Step5page = ({ project }: Step5pageProps) => {
                       <span className={styles.panelIndex}>#{index + 1}</span>
                       {(panel.shot_size || panel.camera_angle) && (
                         <span className={styles.panelMeta}>
-                          {panel.shot_size && panel.shot_size}
-                          {panel.shot_size && panel.camera_angle && ' / '}
-                          {panel.camera_angle && panel.camera_angle}
+                          {panel.shot_size}
+                          {panel.shot_size && panel.camera_angle ? ' / ' : ''}
+                          {panel.camera_angle}
                         </span>
                       )}
                     </div>
+
                     {panel.scene && (
                       <div className={styles.panelField}>
-                        <span className={styles.panelLabel}>场景</span>
+                        <span className={styles.panelLabel}>Scene</span>
                         <span className={styles.panelValue}>{panel.scene}</span>
                       </div>
                     )}
+
                     {panel.characters && (
                       <div className={styles.panelField}>
-                        <span className={styles.panelLabel}>角色</span>
+                        <span className={styles.panelLabel}>Characters</span>
                         <span className={styles.panelValue}>{panel.characters}</span>
                       </div>
                     )}
+
                     {panel.dialogue && (
                       <div className={styles.panelDialogue}>
-                        <span className={styles.panelLabel}>台词</span>
+                        <span className={styles.panelLabel}>Dialogue</span>
                         <p className={styles.dialogueText}>"{panel.dialogue}"</p>
                       </div>
                     )}
+
                     {panel.effects && (
                       <div className={styles.panelField}>
-                        <span className={styles.panelLabel}>特效</span>
+                        <span className={styles.panelLabel}>Effects</span>
                         <span className={styles.panelEffects}>{panel.effects}</span>
                       </div>
                     )}
@@ -293,7 +433,7 @@ const Step5page = ({ project }: Step5pageProps) => {
                 ))}
               </div>
             ) : (
-              <p className={styles.storyboardHint}>暂无分镜数据</p>
+              <p className={styles.storyboardHint}>No storyboard data yet.</p>
             )}
           </div>
 
@@ -303,14 +443,18 @@ const Step5page = ({ project }: Step5pageProps) => {
               onClick={handleConfirm}
               disabled={isSubmitting}
             >
-              {isSubmitting ? '处理中...' : currentEpisode === totalEpisodes ? '确认并开始生产' : '确认'}
+              {isSubmitting
+                ? 'Processing...'
+                : currentEpisode === totalEpisodes
+                  ? 'Confirm and Start Production'
+                  : 'Confirm'}
             </button>
             <button
               className={styles.secondaryButton}
               onClick={() => setShowRevision(!showRevision)}
               disabled={isSubmitting}
             >
-              {showRevision ? '取消修改' : '修改'}
+              {showRevision ? 'Cancel Revision' : 'Revise'}
             </button>
           </div>
 
@@ -318,7 +462,7 @@ const Step5page = ({ project }: Step5pageProps) => {
             <div className={styles.revisionPanel}>
               <textarea
                 className={styles.revisionInput}
-                placeholder="请输入修改意见，例如：第3个分镜的景别太近，改为远景..."
+                placeholder="Enter revision feedback..."
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
                 rows={3}
@@ -330,14 +474,17 @@ const Step5page = ({ project }: Step5pageProps) => {
                   onClick={handleRevise}
                   disabled={isSubmitting || !feedback.trim()}
                 >
-                  {isSubmitting ? '提交中...' : '提交修改'}
+                  {isSubmitting ? 'Submitting...' : 'Submit Revision'}
                 </button>
                 <button
                   className={styles.secondaryButton}
-                  onClick={() => { setFeedback(''); setShowRevision(false); }}
+                  onClick={() => {
+                    setFeedback('');
+                    setShowRevision(false);
+                  }}
                   disabled={isSubmitting}
                 >
-                  取消
+                  Cancel
                 </button>
               </div>
             </div>
@@ -345,38 +492,37 @@ const Step5page = ({ project }: Step5pageProps) => {
         </div>
       )}
 
-      {/* 未启动 */}
       {!isGenerating && !isFailed && totalEpisodes === 0 && (
         <div className={styles.startSection}>
-          <p className={styles.startHint}>素材已准备就绪，点击下方按钮开始逐集生成分镜脚本。</p>
+          <p className={styles.startHint}>
+            Assets are ready. Click below to start generating storyboard episodes.
+          </p>
           <button
             className={styles.primaryButton}
             onClick={handleStartStoryboard}
             disabled={isSubmitting}
           >
-            {isSubmitting ? '处理中...' : '开始生成分镜'}
+            {isSubmitting ? 'Processing...' : 'Start Storyboard'}
           </button>
         </div>
       )}
 
-      {/* 全部完成 */}
       {!isGenerating && !isFailed && allConfirmed && (
         <div className={styles.startSection}>
           <div className={styles.allConfirmed}>
             <div className={styles.allConfirmedIcon}>&#10003;</div>
-            <p>所有 {totalEpisodes} 集分镜已审核完成</p>
+            <p>All {totalEpisodes} episodes are confirmed.</p>
           </div>
           <button
             className={styles.productionButton}
             onClick={handleStartProduction}
             disabled={isSubmitting}
           >
-            {isSubmitting ? '处理中...' : '开始视频生产'}
+            {isSubmitting ? 'Processing...' : 'Start Production'}
           </button>
         </div>
       )}
 
-      {/* 错误提示 */}
       {apiError && (
         <div className={styles.apiError}>
           <span>{apiError}</span>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import CreateLayout from './CreateLayout';
+import styles from './ProjectStepLayout.module.less';
 import { getProject } from '../../services/projectService';
 import { useProjectStore } from '../../stores';
 
@@ -40,14 +41,10 @@ const ProjectStepLayout = () => {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div className="loading-spinner" style={{
-            width: 40, height: 40, border: '3px solid #f3f3f3',
-            borderTop: '3px solid #1890ff', borderRadius: '50%',
-            animation: 'spin 1s linear infinite', margin: '0 auto'
-          }} />
-          <p style={{ marginTop: 16, color: '#666' }}>加载项目中...</p>
+      <div className={styles.loadingWrap}>
+        <div className={styles.loadingBox}>
+          <div className={styles.spinner} />
+          <p className={styles.loadingText}>加载项目中...</p>
         </div>
       </div>
     );

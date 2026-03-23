@@ -44,6 +44,8 @@ export interface GridPageInfo {
   sceneGroupIndex: number;
   location: string | null;
   characters: string[] | null;
+  gridRows: number | null;
+  gridColumns: number | null;
   fused: boolean;
   fusedPanels: string[] | null;
 }
@@ -59,6 +61,27 @@ export interface GridInfoResponse {
   panelWidth: number;
   panelHeight: number;
   separatorPixels: number;
+}
+
+/** 后端切分后的单格结果（POST /api/episodes/{id}/split-grid-page） */
+export interface SplitGridCell {
+  pageIndex: number;
+  cellIndex: number;
+  panelIndex: number;
+  panelId: string | null;
+  imageUrl: string;
+  placeholder: boolean;
+  panelData: Record<string, unknown> | null;
+}
+
+/** 后端切分后的单页结果（POST /api/episodes/{id}/split-grid-page） */
+export interface SplitGridPageResponse {
+  pageIndex: number;
+  rows: number;
+  cols: number;
+  skipped: boolean;
+  errorMessage: string | null;
+  cells: SplitGridCell[];
 }
 
 /** 视频片段信息（P1-7） */

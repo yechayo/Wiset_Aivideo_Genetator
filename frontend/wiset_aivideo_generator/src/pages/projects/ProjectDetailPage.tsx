@@ -6,9 +6,9 @@ import { getProject } from '../../services/projectService';
 import type { Project, ProjectStatus } from '../../services/types/project.types';
 
 // 项目状态中文映射
-const statusMap: Record<ProjectStatus, string> = {
+const statusMap: Partial<Record<ProjectStatus, string>> = {
   DRAFT: '草稿',
-  SCRIPT_GENERATING: '剧本生成中',
+  OUTLINE_GENERATING: '剧本生成中',
   OUTLINE_REVIEW: '大纲审核',
   SCRIPT_REVIEW: '剧本审核',
   SCRIPT_CONFIRMED: '剧本已确认',
@@ -17,9 +17,9 @@ const statusMap: Record<ProjectStatus, string> = {
 };
 
 // 状态颜色映射
-const statusColorMap: Record<ProjectStatus, string> = {
+const statusColorMap: Partial<Record<ProjectStatus, string>> = {
   DRAFT: styles.statusDraft,
-  SCRIPT_GENERATING: styles.statusGenerating,
+  OUTLINE_GENERATING: styles.statusGenerating,
   OUTLINE_REVIEW: styles.statusReview,
   SCRIPT_REVIEW: styles.statusReview,
   SCRIPT_CONFIRMED: styles.statusConfirmed,
@@ -130,10 +130,10 @@ function ProjectDetailPage() {
             <h1 className={styles.projectTitle}>项目详情</h1>
             <span
               className={`${styles.projectStatus} ${
-                project.status ? statusColorMap[project.status] : styles.statusDraft
+                project.status ? (statusColorMap[project.status] || styles.statusDraft) : styles.statusDraft
               }`}
             >
-              {project.status ? statusMap[project.status] : '草稿'}
+              {project.status ? (statusMap[project.status] || project.status) : '草稿'}
             </span>
           </div>
           <div className={styles.projectId}>ID: {project.projectId}</div>

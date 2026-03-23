@@ -1,4 +1,6 @@
 import { createRoot } from 'react-dom/client'
+import './styles/design-tokens.less'
+import './styles/global-base.less'
 import './index.css'
 import App from './App.tsx'
 

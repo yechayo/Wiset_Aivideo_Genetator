@@ -23,7 +23,6 @@ const CharacterPalette = ({ characters }: CharacterPaletteProps) => {
       <div className={styles.paletteHeader}>角色参考图</div>
       <div className={styles.characterList}>
         {characters.map((char, index) => {
-          const hasImages = char.threeViewGridUrl;
           return (
             <div
               key={char.characterName}

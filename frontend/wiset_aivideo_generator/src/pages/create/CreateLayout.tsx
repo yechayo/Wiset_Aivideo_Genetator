@@ -163,20 +163,7 @@ const CreateLayout = () => {
       {/* 测试工具：暂停/恢复轮询 */}
       <button
         onClick={togglePolling}
-        style={{
-          position: 'fixed',
-          bottom: 20,
-          right: 20,
-          zIndex: 9999,
-          padding: '8px 16px',
-          borderRadius: 8,
-          border: '1px solid rgba(255,255,255,0.3)',
-          background: pollPaused ? '#ff4444' : 'rgba(255,255,255,0.1)',
-          color: '#fff',
-          fontSize: 13,
-          cursor: 'pointer',
-          fontFamily: 'monospace',
-        }}
+        className={`${styles.pollingToggle} ${pollPaused ? styles.pollingTogglePaused : ''}`}
       >
         {pollPaused ? '▶ 恢复轮询' : '⏸ 暂停轮询'}
       </button>
