@@ -105,6 +105,21 @@ export interface PipelineStage {
   message: string;       // 阶段描述/错误信息
 }
 
+/** 面板状态响应（原子化模式） */
+export interface PanelState {
+  panelIndex: number;
+  fusionStatus: 'pending' | 'completed';
+  fusionUrl: string | null;
+  promptText: string | null;
+  videoStatus: 'pending' | 'generating' | 'completed' | 'failed';
+  videoUrl: string | null;
+  videoTaskId: string | null;
+  sceneDescription: string | null;
+  shotType: string | null;
+  dialogue: string | null;
+  panelId: string | null;
+}
+
 /** 生产管线全链路状态响应 */
 export interface ProductionPipelineResponse {
   episodeId: string | null;
@@ -115,4 +130,15 @@ export interface ProductionPipelineResponse {
   errorMessage: string | null;
   finalVideoUrl: string | null;
   sceneGridUrls: string[];
+}
+
+/** Step5 工作流阶段 */
+export type WorkflowPhase = 'review' | 'scene-generating' | 'fusion' | 'video' | 'completed';
+
+/** 场景图状态 */
+export interface SceneImageState {
+  url: string | null;
+  generating: boolean;
+  failed: boolean;
+  prompt: string | null;  // 来自分镜 JSON 的 background.scene_desc
 }

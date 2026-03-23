@@ -10,6 +10,7 @@ import type {
   GridInfoResponse,
   SplitGridPageResponse,
   VideoSegmentInfo,
+  PanelState,
 } from './types/episode.types';
 
 /** 获取项目下的剧集列表 */
@@ -77,4 +78,47 @@ export async function getVideoSegments(episodeId: string): Promise<ApiResponse<V
 /** 重试失败的生产 */
 export async function retryProduction(episodeId: string): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(`/api/episodes/${episodeId}/retry-production`);
+}
+
+/** 获取所有面板状态（原子化模式） */
+export async function getPanelStates(episodeId: string): Promise<ApiResponse<PanelState[]>> {
+  return get<ApiResponse<PanelState[]>>(`/api/episodes/${episodeId}/panel-states`);
+}
+
+/** 单格视频生成（原子化模式） */
+export async function generateSinglePanelVideo(
+  episodeId: string,
+  panelIndex: number,
+): Promise<ApiResponse<{ panelIndex: number; status: string; groupId: string }>> {
+  return post<ApiResponse<{ panelIndex: number; status: string; groupId: string }>>(
+    `/api/episodes/${episodeId}/panels/${panelIndex}/generate-video`,
+  );
+}
+
+/** 手动触发流水线继续（一键自动化） */
+export async function autoContinue(episodeId: string): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/episodes/${episodeId}/auto-continue`);
+}
+
+/** 提交单页融合结果（支持 autoContinue 参数） */
+export async function submitFusionPageWithAuto(
+  episodeId: string,
+  pageIndex: number,
+  panelFusedUrls: string[],
+  autoContinue: boolean,
+): Promise<ApiResponse<{ totalFused: number; pageIndex: number }>> {
+  return post<ApiResponse<{ totalFused: number; pageIndex: number }>>(
+    `/api/episodes/${episodeId}/submit-fusion-page`,
+    { pageIndex, panelFusedUrls, autoContinue },
+  );
+}
+
+/** 单格场景图重生成 */
+export async function regenerateSceneImage(
+  episodeId: string,
+  panelIndex: number,
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(
+    `/api/episodes/${episodeId}/panels/${panelIndex}/regenerate-scene`,
+  );
 }

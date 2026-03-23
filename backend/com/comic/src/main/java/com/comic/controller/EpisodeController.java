@@ -2,6 +2,7 @@ package com.comic.controller;
 
 import com.comic.common.Result;
 import com.comic.dto.response.GridInfoResponse;
+import com.comic.dto.response.PanelStateResponse;
 import com.comic.dto.response.ProductionPipelineResponse;
 import com.comic.dto.response.ProductionStartResponse;
 import com.comic.dto.response.ProductionStatusResponse;
@@ -148,7 +149,11 @@ public class EpisodeController {
         if (panelFusedUrls == null || panelFusedUrls.isEmpty()) {
             throw new IllegalArgumentException("panelFusedUrls 不能为空");
         }
-        int totalFused = productionService.submitFusionPage(episodeId, pageIndex, panelFusedUrls);
+        // 解析 autoContinue 参数（默认 true，保持向后兼容）
+        boolean autoContinue = body.get("autoContinue") != null
+                ? Boolean.parseBoolean(String.valueOf(body.get("autoContinue")))
+                : true;
+        int totalFused = productionService.submitFusionPage(episodeId, pageIndex, panelFusedUrls, autoContinue);
         Map<String, Object> result = new HashMap<>();
         result.put("totalFused", totalFused);
         result.put("pageIndex", pageIndex);
@@ -192,5 +197,53 @@ public class EpisodeController {
     public Result<List<VideoSegmentInfoResponse>> getVideoSegments(@PathVariable Long episodeId) {
         List<VideoSegmentInfoResponse> segments = productionService.getVideoSegmentInfos(episodeId);
         return Result.ok(segments);
+    }
+
+    /**
+     * 获取所有面板状态（原子化模式用）
+     * GET /api/episodes/{episodeId}/panel-states
+     */
+    @GetMapping("/{episodeId}/panel-states")
+    @Operation(summary = "获取面板状态", description = "获取所有分镜格子的融合和视频生成状态")
+    public Result<List<PanelStateResponse>> getPanelStates(@PathVariable Long episodeId) {
+        List<PanelStateResponse> states = productionService.getPanelStates(episodeId);
+        return Result.ok(states);
+    }
+
+    /**
+     * 单格视频生成（原子化模式用）
+     * POST /api/episodes/{episodeId}/panels/{panelIndex}/generate-video
+     */
+    @PostMapping("/{episodeId}/panels/{panelIndex}/generate-video")
+    @Operation(summary = "单格视频生成", description = "为指定分镜格子独立生成视频")
+    public Result<Map<String, Object>> generateSinglePanelVideo(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex) {
+        Map<String, Object> result = productionService.generateSinglePanelVideo(episodeId, panelIndex);
+        return Result.ok(result);
+    }
+
+    /**
+     * 手动触发流水线继续（原子化模式"一键自动化"用）
+     * POST /api/episodes/{episodeId}/auto-continue
+     */
+    @PostMapping("/{episodeId}/auto-continue")
+    @Operation(summary = "手动触发流水线继续", description = "融合完成后手动触发后续视频生成流水线")
+    public Result<Void> autoContinue(@PathVariable Long episodeId) {
+        productionService.manualContinueProduction(episodeId);
+        return Result.ok();
+    }
+
+    /**
+     * 单格场景图重生成
+     * POST /api/episodes/{episodeId}/panels/{panelIndex}/regenerate-scene
+     */
+    @PostMapping("/{episodeId}/panels/{panelIndex}/regenerate-scene")
+    @Operation(summary = "单格场景图重生成", description = "按分镜的scene_description重新生成单格场景图")
+    public Result<Void> regeneratePanelScene(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex) {
+        productionService.regeneratePanelScene(episodeId, panelIndex);
+        return Result.ok();
     }
 }
