@@ -5,53 +5,53 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * 前端拆分/融合所需信息响应DTO
+ * Response DTO for grid split/fusion UI.
  */
 @Data
 public class GridInfoResponse {
 
     /**
-     * 九宫格URL（第一张，兼容旧字段）
+     * First grid page URL for backward compatibility.
      */
     private String sceneGridUrl;
 
     /**
-     * 角色参考图列表
+     * Character reference images.
      */
     private List<CharacterReferenceInfo> characterReferences;
 
     /**
-     * 多页网格信息列表
+     * Multi-page grid information.
      */
     private List<GridPageInfo> gridPages;
 
     /**
-     * 总页数
+     * Total grid pages.
      */
     private Integer totalPages = 0;
 
     /**
-     * 网格列数
+     * Global/default grid columns.
      */
     private Integer gridColumns = 3;
 
     /**
-     * 网格行数
+     * Global/default grid rows.
      */
     private Integer gridRows = 3;
 
     /**
-     * 单格宽度
+     * Single cell width.
      */
     private Integer panelWidth = 1024;
 
     /**
-     * 单格高度
+     * Single cell height.
      */
     private Integer panelHeight = 576;
 
     /**
-     * 分隔线宽度
+     * Separator line width in pixels.
      */
     private Integer separatorPixels = 4;
 
@@ -63,38 +63,45 @@ public class GridInfoResponse {
         private String standardImageUrl;
     }
 
-    /**
-     * 单页网格信息
-     */
     @Data
     public static class GridPageInfo {
         /**
-         * 网格图URL
+         * Grid page URL.
          */
         private String sceneGridUrl;
 
         /**
-         * 场景组索引
+         * Current page columns.
+         */
+        private Integer gridColumns = 3;
+
+        /**
+         * Current page rows.
+         */
+        private Integer gridRows = 3;
+
+        /**
+         * Scene-group index that this page belongs to.
          */
         private Integer sceneGroupIndex;
 
         /**
-         * 场景位置描述
+         * Scene location.
          */
         private String location;
 
         /**
-         * 出场角色列表
+         * Related characters.
          */
         private List<String> characters;
 
         /**
-         * 是否已融合提交（整页）
+         * Whether this page is fused.
          */
         private boolean fused;
 
         /**
-         * 每格的融合图URL列表（按格子顺序，最多9个）
+         * Fused panel URLs in row-major order.
          */
         private List<String> fusedPanels;
     }

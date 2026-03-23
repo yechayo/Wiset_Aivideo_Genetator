@@ -216,8 +216,11 @@ class EpisodeProductionServiceTest {
         when(episodeRepository.updateById(any())).thenReturn(1);
         // startProduction 内部调用 self().executeProductionFlow（同步执行）
         when(sceneAnalysisService.analyzeScenes(EPISODE_ID)).thenReturn(createSceneAnalysis());
-        when(sceneGridGenService.generateSceneGrid(eq(EPISODE_ID), any(SceneGroupModel.class)))
-                .thenReturn("https://mock/grid-0.png", "https://mock/grid-1.png");
+        when(sceneGridGenService.generateSceneGridPages(eq(EPISODE_ID), any(SceneGroupModel.class)))
+                .thenReturn(
+                        new ArrayList<>(Arrays.asList("https://mock/grid-0.png")),
+                        new ArrayList<>(Arrays.asList("https://mock/grid-1.png"))
+                );
 
         String productionId = productionService.startProduction(EPISODE_ID);
 
@@ -229,7 +232,7 @@ class EpisodeProductionServiceTest {
 
         // 验证 executeProductionFlow 被触发（场景分析 + 九宫格生成）
         verify(sceneAnalysisService).analyzeScenes(EPISODE_ID);
-        verify(sceneGridGenService, atLeastOnce()).generateSceneGrid(eq(EPISODE_ID), any(SceneGroupModel.class));
+        verify(sceneGridGenService, atLeastOnce()).generateSceneGridPages(eq(EPISODE_ID), any(SceneGroupModel.class));
 
         // 验证最终状态到达 GRID_FUSION_PENDING（阶段1-2完成后暂停）
         ArgumentCaptor<EpisodeProduction> captor = ArgumentCaptor.forClass(EpisodeProduction.class);
@@ -280,8 +283,11 @@ class EpisodeProductionServiceTest {
 
         when(productionRepository.updateById(any())).thenReturn(1);
         when(sceneAnalysisService.analyzeScenes(EPISODE_ID)).thenReturn(analysis);
-        when(sceneGridGenService.generateSceneGrid(eq(EPISODE_ID), any(SceneGroupModel.class)))
-                .thenReturn("https://mock/grid-0.png", "https://mock/grid-1.png");
+        when(sceneGridGenService.generateSceneGridPages(eq(EPISODE_ID), any(SceneGroupModel.class)))
+                .thenReturn(
+                        new ArrayList<>(Arrays.asList("https://mock/grid-0.png")),
+                        new ArrayList<>(Arrays.asList("https://mock/grid-1.png"))
+                );
 
         // 同步执行（测试中 @Async 不生效）
         productionService.executeProductionFlow(episode, production);
@@ -290,7 +296,7 @@ class EpisodeProductionServiceTest {
         verify(sceneAnalysisService).analyzeScenes(EPISODE_ID);
 
         // 验证生成了 2 张九宫格
-        verify(sceneGridGenService, times(2)).generateSceneGrid(eq(EPISODE_ID), any(SceneGroupModel.class));
+        verify(sceneGridGenService, times(2)).generateSceneGridPages(eq(EPISODE_ID), any(SceneGroupModel.class));
 
         // 验证最终状态为 GRID_FUSION_PENDING
         ArgumentCaptor<EpisodeProduction> captor = ArgumentCaptor.forClass(EpisodeProduction.class);
@@ -311,8 +317,11 @@ class EpisodeProductionServiceTest {
 
         when(productionRepository.updateById(any())).thenReturn(1);
         when(sceneAnalysisService.analyzeScenes(EPISODE_ID)).thenReturn(analysis);
-        when(sceneGridGenService.generateSceneGrid(eq(EPISODE_ID), any(SceneGroupModel.class)))
-                .thenReturn("https://mock/grid-0.png", "https://mock/grid-1.png");
+        when(sceneGridGenService.generateSceneGridPages(eq(EPISODE_ID), any(SceneGroupModel.class)))
+                .thenReturn(
+                        new ArrayList<>(Arrays.asList("https://mock/grid-0.png")),
+                        new ArrayList<>(Arrays.asList("https://mock/grid-1.png"))
+                );
 
         productionService.executeProductionFlow(episode, production);
 
@@ -536,8 +545,11 @@ class EpisodeProductionServiceTest {
 
         // retryProduction 通过 self().executeProductionFlow() 同步执行流程
         when(sceneAnalysisService.analyzeScenes(EPISODE_ID)).thenReturn(createSceneAnalysis());
-        when(sceneGridGenService.generateSceneGrid(eq(EPISODE_ID), any(SceneGroupModel.class)))
-                .thenReturn("https://mock/grid-new.png");
+        when(sceneGridGenService.generateSceneGridPages(eq(EPISODE_ID), any(SceneGroupModel.class)))
+                .thenReturn(
+                        new ArrayList<>(Arrays.asList("https://mock/grid-new-0.png")),
+                        new ArrayList<>(Arrays.asList("https://mock/grid-new-1.png"))
+                );
 
         productionService.retryProduction(EPISODE_ID);
 
@@ -546,7 +558,7 @@ class EpisodeProductionServiceTest {
 
         // 验证流程被重新触发（场景分析和九宫格生成被调用）
         verify(sceneAnalysisService).analyzeScenes(EPISODE_ID);
-        verify(sceneGridGenService, atLeastOnce()).generateSceneGrid(eq(EPISODE_ID), any(SceneGroupModel.class));
+        verify(sceneGridGenService, atLeastOnce()).generateSceneGridPages(eq(EPISODE_ID), any(SceneGroupModel.class));
 
         // 验证最终状态到达 GRID_FUSION_PENDING（retryProduction 重置后走完阶段1-2）
         ArgumentCaptor<EpisodeProduction> captor = ArgumentCaptor.forClass(EpisodeProduction.class);
