@@ -114,6 +114,12 @@ public class VideoProductionQueueService {
                 return;
             }
 
+            // 防重复：如果任务组内所有任务已经是 COMPLETED，跳过
+            if (tasks.stream().allMatch(t -> "COMPLETED".equals(t.getStatus()))) {
+                log.info("任务组已完成，跳过: groupId={}", group.getGroupId());
+                return;
+            }
+
             // 恢复路径可能只有 groupId，需要从任务记录中补齐提示词/时长/参考图
             hydrateTaskGroupIfMissing(productionId, group, tasks);
 
@@ -357,15 +363,15 @@ public class VideoProductionQueueService {
             return;
         }
 
-        int currentCompleted = production.getCompletedPanels() != null ? production.getCompletedPanels() : 0;
-        int newCompleted = currentCompleted + completedCount;
-        production.setCompletedPanels(newCompleted);
+        // 基于数据库中已完成视频任务数重算，而非累加，避免重复处理同一任务组导致进度回退
+        int actualCompleted = taskRepository.countCompletedByEpisodeId(production.getEpisodeId());
+        production.setCompletedPanels(actualCompleted);
 
         // 计算进度百分比
         if (production.getTotalPanels() > 0) {
-            int progress = (int) ((newCompleted * 80) / production.getTotalPanels()) + 10; // 10-90%用于视频生成
+            int progress = (int) ((actualCompleted * 80) / production.getTotalPanels()) + 10; // 10-90%用于视频生成
             production.setProgressPercent(Math.min(progress, 90));
-            production.setProgressMessage(String.format("视频生成中... %d/%d", newCompleted, production.getTotalPanels()));
+            production.setProgressMessage(String.format("视频生成中... %d/%d", actualCompleted, production.getTotalPanels()));
         }
 
         production.setUpdatedAt(LocalDateTime.now());

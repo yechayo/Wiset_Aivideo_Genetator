@@ -3,7 +3,8 @@ import styles from './OutlineEditor.module.less';
 
 interface OutlineEditorProps {
   outline: string;
-  onSave?: (content: string, revisionNote: string) => void;
+  onSaveDirect?: (content: string) => void;
+  onSaveWithAI?: (content: string, revisionNote: string) => void;
   readOnly?: boolean;
 }
 
@@ -11,23 +12,20 @@ interface OutlineEditorProps {
  * 大纲编辑器组件
  * 支持编辑和预览 Markdown 格式的剧本大纲
  */
-const OutlineEditor = ({ outline, onSave, readOnly = false }: OutlineEditorProps) => {
+const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }: OutlineEditorProps) => {
   const [content, setContent] = useState(outline);
   const [isEditing, setIsEditing] = useState(false);
   const [isPreview, setIsPreview] = useState(true);
 
-  const handleSave = () => {
-    // 弹出对话框让用户输入修改意见
-    const revisionNote = window.prompt('请输入修改意见（必填）：');
-    if (revisionNote === null) {
-      // 用户点击取消
-      return;
-    }
-    if (!revisionNote.trim()) {
-      alert('修改意见不能为空');
-      return;
-    }
-    onSave?.(content, revisionNote.trim());
+  const handleDirectSave = () => {
+    onSaveDirect?.(content);
+    setIsEditing(false);
+  };
+
+  const handleAIRegenerate = () => {
+    const revisionNote = window.prompt('请输入修改意见（可选，留空则基于当前内容重新生成）：');
+    if (revisionNote === null) return;
+    onSaveWithAI?.(content, revisionNote.trim());
     setIsEditing(false);
   };
 
@@ -60,8 +58,14 @@ const OutlineEditor = ({ outline, onSave, readOnly = false }: OutlineEditorProps
                     取消
                   </button>
                   <button
+                    className={styles.aiButton}
+                    onClick={handleAIRegenerate}
+                  >
+                    AI 重新生成
+                  </button>
+                  <button
                     className={styles.saveButton}
-                    onClick={handleSave}
+                    onClick={handleDirectSave}
                   >
                     保存修改
                   </button>

@@ -20,6 +20,7 @@ public class Episode {
     private String characters;           // 涉及角色列表
     private String keyItems;             // 关键物品列表
     private String continuityNote;       // 连贯性说明
+    private String visualStyleNote;     // 视觉风格备注
     private String chapterTitle;         // 所属章节标题
 
     private String status;

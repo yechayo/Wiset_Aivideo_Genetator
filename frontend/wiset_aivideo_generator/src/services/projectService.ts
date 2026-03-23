@@ -2,9 +2,10 @@
  * 项目相关API服务
  */
 
-import { get, post } from './apiClient';
+import { get, post, patch } from './apiClient';
 import type {
   CreateProjectRequest,
+  Episode,
   GenerateEpisodesRequest,
   GenerateScriptResponse,
   Project,
@@ -113,6 +114,28 @@ export async function confirmScript(projectId: string): Promise<ApiResponse<void
 }
 
 /**
+ * 直接保存用户编辑的大纲
+ * @param projectId 项目ID
+ * @param outline 大纲内容
+ */
+export async function updateScriptOutline(
+  projectId: string,
+  outline: string
+): Promise<ApiResponse<void>> {
+  return patch<ApiResponse<void>>(`/api/projects/${projectId}/script-outline`, { outline });
+}
+
+/**
+ * 批量生成所有剩余章节的剧集
+ * @param projectId 项目ID
+ */
+export async function generateAllEpisodes(
+  projectId: string
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/generate-all-episodes`);
+}
+
+/**
  * 获取项目列表
  * @returns 项目列表
  */
@@ -149,4 +172,51 @@ export async function advancePipeline(
   event: string
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(`/api/projects/${projectId}/advance`, { event });
+}
+
+// ================= 分镜流程 API =================
+
+/**
+ * 获取单集分镜数据
+ */
+export async function getStoryboard(episodeId: number): Promise<ApiResponse<Episode>> {
+  return get<ApiResponse<Episode>>(`/api/story/storyboard/${episodeId}`);
+}
+
+/**
+ * 启动分镜生成流程
+ */
+export async function startStoryboard(projectId: string): Promise<ApiResponse<string>> {
+  return post<ApiResponse<string>>('/api/story/start-storyboard', { projectId });
+}
+
+/**
+ * 确认当前集分镜
+ */
+export async function confirmStoryboard(episodeId: number): Promise<ApiResponse<string>> {
+  return post<ApiResponse<string>>('/api/story/confirm-storyboard', { episodeId });
+}
+
+/**
+ * 修改当前集分镜
+ */
+export async function reviseStoryboard(
+  episodeId: number,
+  feedback: string
+): Promise<ApiResponse<string>> {
+  return post<ApiResponse<string>>('/api/story/revise-storyboard', { episodeId, feedback });
+}
+
+/**
+ * 重试失败的分镜生成
+ */
+export async function retryStoryboard(episodeId: number): Promise<ApiResponse<string>> {
+  return post<ApiResponse<string>>('/api/story/retry-storyboard', { episodeId });
+}
+
+/**
+ * 从分镜审核进入生产
+ */
+export async function startProduction(projectId: string): Promise<ApiResponse<string>> {
+  return post<ApiResponse<string>>('/api/story/start-production', { projectId });
 }

@@ -10,6 +10,7 @@ import Step2page from './steps/Step2page';
 import Step3page from './steps/Step3page';
 import Step4page from './steps/Step4page';
 import Step5page from './steps/Step5page';
+import Step6page from './steps/Step6page';
 
 /**
  * 创建流程布局组件
@@ -134,6 +135,10 @@ const CreateLayout = () => {
       case 5:
         return currentProject ? (
           <Step5page project={currentProject} />
+        ) : <Navigate to={getStepUrl(1)} replace />;
+      case 6:
+        return currentProject ? (
+          <Step6page project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       default:
         return <Navigate to={getStepUrl(1)} replace />;

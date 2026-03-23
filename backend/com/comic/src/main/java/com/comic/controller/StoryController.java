@@ -4,6 +4,7 @@ import com.comic.common.Result;
 import com.comic.entity.Episode;
 import com.comic.repository.EpisodeRepository;
 import com.comic.service.job.JobQueueService;
+import com.comic.service.story.StoryboardService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -26,6 +27,7 @@ public class StoryController {
 
     private final JobQueueService jobQueueService;
     private final EpisodeRepository episodeRepository;
+    private final StoryboardService storyboardService;
 
     /**
      * 提交分镜生成任务
@@ -39,6 +41,15 @@ public class StoryController {
         if (episodeId == null) {
             return Result.fail("episodeId 不能为空");
         }
+
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) {
+            return Result.fail(404, "找不到该集数");
+        }
+        if (episode.getStoryboardJson() != null && !episode.getStoryboardJson().trim().isEmpty()) {
+            return Result.fail("当前剧集已有分镜，请使用修改分镜接口");
+        }
+
         String jobId = jobQueueService.submitStoryboardJob(episodeId);
         Map<String, String> result = new HashMap<>();
         result.put("jobId", jobId);
@@ -69,5 +80,114 @@ public class StoryController {
     public Result<?> getEpisodes(
             @Parameter(description = "项目ID", required = true) @RequestParam String projectId) {
         return Result.ok(episodeRepository.findByProjectId(projectId));
+    }
+
+    // ================= 分镜流程编排接口 =================
+
+    /**
+     * 启动分镜生成流程
+     * POST /api/story/start-storyboard
+     */
+    @PostMapping("/start-storyboard")
+    @Operation(summary = "启动分镜生成", description = "从素材锁定状态启动逐集分镜生成流程")
+    public Result<String> startStoryboard(@RequestBody Map<String, String> body) {
+        String projectId = body.get("projectId");
+        if (projectId == null) {
+            return Result.fail("projectId 不能为空");
+        }
+        try {
+            storyboardService.startStoryboardGeneration(projectId);
+            return Result.ok("分镜生成已启动");
+        } catch (Exception e) {
+            return Result.fail("启动分镜生成失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 确认当前集分镜
+     * POST /api/story/confirm-storyboard
+     */
+    @PostMapping("/confirm-storyboard")
+    @Operation(summary = "确认分镜", description = "确认当前集的分镜，自动继续下一集")
+    public Result<String> confirmStoryboard(@RequestBody Map<String, Long> body) {
+        Long episodeId = body.get("episodeId");
+        if (episodeId == null) {
+            return Result.fail("episodeId 不能为空");
+        }
+        try {
+            storyboardService.confirmEpisodeStoryboard(episodeId);
+            return Result.ok("分镜已确认");
+        } catch (Exception e) {
+            return Result.fail("确认分镜失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 基于反馈修改当前集分镜
+     * POST /api/story/revise-storyboard
+     */
+    @PostMapping("/revise-storyboard")
+    @Operation(summary = "修改分镜", description = "基于用户反馈增量修改当前集分镜")
+    public Result<String> reviseStoryboard(@RequestBody Map<String, Object> body) {
+        Long episodeId = body.get("episodeId") != null ? Long.valueOf(body.get("episodeId").toString()) : null;
+        String feedback = body.get("feedback") != null ? body.get("feedback").toString() : null;
+
+        if (episodeId == null) {
+            return Result.fail("episodeId 不能为空");
+        }
+        if (feedback == null || feedback.trim().isEmpty()) {
+            return Result.fail("反馈意见不能为空");
+        }
+        try {
+            storyboardService.reviseEpisodeStoryboard(episodeId, feedback);
+            return Result.ok("分镜修改已提交");
+        } catch (Exception e) {
+            return Result.fail("修改分镜失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 重试失败的分镜生成
+     * POST /api/story/retry-storyboard
+     */
+    @PostMapping("/retry-storyboard")
+    @Operation(summary = "重试分镜生成", description = "重试当前失败集的分镜生成")
+    public Result<String> retryStoryboard(@RequestBody Map<String, Long> body) {
+        Long episodeId = body.get("episodeId");
+        if (episodeId == null) {
+            return Result.fail("episodeId 不能为空");
+        }
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) {
+            return Result.fail(404, "找不到该集数");
+        }
+        if (episode.getStoryboardJson() != null && !episode.getStoryboardJson().trim().isEmpty()) {
+            return Result.fail("当前剧集已有分镜，请使用修改分镜接口");
+        }
+        try {
+            storyboardService.retryFailedStoryboard(episodeId);
+            return Result.ok("重试已提交");
+        } catch (Exception e) {
+            return Result.fail("重试分镜失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 从分镜审核进入生产
+     * POST /api/story/start-production
+     */
+    @PostMapping("/start-production")
+    @Operation(summary = "开始生产", description = "所有集分镜确认后，开始视频生产")
+    public Result<String> startProduction(@RequestBody Map<String, String> body) {
+        String projectId = body.get("projectId");
+        if (projectId == null) {
+            return Result.fail("projectId 不能为空");
+        }
+        try {
+            storyboardService.startProductionFromStoryboard(projectId);
+            return Result.ok("生产已启动");
+        } catch (Exception e) {
+            return Result.fail("启动生产失败: " + e.getMessage());
+        }
     }
 }

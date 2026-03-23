@@ -64,4 +64,24 @@ public class ProjectStatusResponse {
      * 剧集生产子阶段描述（仅 PRODUCING 阶段有意义，如"正在分析场景..."）
      */
     private String productionSubStage;
+
+    /**
+     * 分镜当前集数（仅 STORYBOARD_* 阶段有意义）
+     */
+    private Integer storyboardCurrentEpisode;
+
+    /**
+     * 分镜总集数（仅 STORYBOARD_* 阶段有意义）
+     */
+    private Integer storyboardTotalEpisodes;
+
+    /**
+     * 分镜当前审核的剧集ID（仅 STORYBOARD_REVIEW 阶段有意义）
+     */
+    private Long storyboardReviewEpisodeId;
+
+    /**
+     * 所有集分镜是否已全部审核确认
+     */
+    private boolean storyboardAllConfirmed;
 }

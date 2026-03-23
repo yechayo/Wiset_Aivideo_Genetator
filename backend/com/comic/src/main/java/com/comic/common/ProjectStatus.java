@@ -37,9 +37,14 @@ public enum ProjectStatus {
     ASSET_LOCKED("ASSET_LOCKED", "素材已锁定", 4),
     IMAGE_GENERATING_FAILED("IMAGE_GENERATING_FAILED", "图像生成失败", 4),
 
+    // 分镜阶段（逐集生成+逐集审核）
+    STORYBOARD_GENERATING("STORYBOARD_GENERATING", "分镜生成中", 5),
+    STORYBOARD_REVIEW("STORYBOARD_REVIEW", "分镜审核", 5),
+    STORYBOARD_GENERATING_FAILED("STORYBOARD_GENERATING_FAILED", "分镜生成失败", 5),
+
     // 生产阶段
-    PRODUCING("PRODUCING", "生产中", 5),
-    COMPLETED("COMPLETED", "已完成", 5);
+    PRODUCING("PRODUCING", "生产中", 6),
+    COMPLETED("COMPLETED", "已完成", 6);
 
     /** 状态码 */
     private final String code;
@@ -47,7 +52,7 @@ public enum ProjectStatus {
     /** 状态描述 */
     private final String description;
 
-    /** 对应前端步骤 (1-5) */
+    /** 对应前端步骤 (1-6) */
     private final int frontendStep;
 
     ProjectStatus(String code, String description, int frontendStep) {
@@ -111,7 +116,8 @@ public enum ProjectStatus {
             steps.add(i);
         }
         // 当前步骤处于确认态时，当前步骤也算完成
-        if (this == SCRIPT_CONFIRMED || this == CHARACTER_CONFIRMED || this == ASSET_LOCKED || this == COMPLETED) {
+        if (this == SCRIPT_CONFIRMED || this == CHARACTER_CONFIRMED || this == ASSET_LOCKED
+                || this == COMPLETED || this == STORYBOARD_REVIEW) {
             steps.add(current);
         }
         return steps;
@@ -145,7 +151,11 @@ public enum ProjectStatus {
             case IMAGE_REVIEW:
                 return Arrays.asList("confirm_images");
             case ASSET_LOCKED:
-                return Arrays.asList("start_production");
+                return Arrays.asList("start_storyboard");
+            case STORYBOARD_GENERATING:
+                return Arrays.asList();
+            case STORYBOARD_REVIEW:
+                return Arrays.asList("confirm_storyboard", "revise_storyboard", "start_production");
             case PRODUCING:
                 return Arrays.asList();
             case COMPLETED:

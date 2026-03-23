@@ -24,8 +24,41 @@
   line-height: 1.5;
 }
 
-// 加载状态
-.loadingState {
+// 进度条
+.progressBar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+  padding: 0 4px;
+}
+
+.progressTrack {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #818cf8);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.progressText {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  min-width: 60px;
+  text-align: right;
+}
+
+// 生成中状态
+.generatingState {
   min-height: 400px;
   display: flex;
   flex-direction: column;
@@ -40,7 +73,7 @@
   width: 40px;
   height: 40px;
   border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #ffffff;
+  border-top-color: #818cf8;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -51,252 +84,27 @@
   }
 }
 
-// 空状态
-.emptyState {
-  min-height: 400px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 16px;
-  text-align: center;
-}
-
-.emptyHint {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.25);
-  margin: 0;
-}
-
-// 错误状态
-.errorState {
-  min-height: 400px;
+// 失败状态
+.failedState {
+  min-height: 300px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 20px;
-  color: rgba(255, 100, 100, 0.8);
-  font-size: 16px;
 }
 
-// 场景图增量展示
-.sceneGridSection {
-  width: 100%;
-  max-width: 980px;
-  margin: 20px auto 0;
-}
-
-.sceneGridTitle {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.65);
-  margin-bottom: 12px;
-}
-
-.sceneGridList {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.sceneGridItem {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  overflow: hidden;
-
-  img {
-    width: 100%;
-    height: 130px;
-    object-fit: cover;
-    display: block;
-    background: #000;
-  }
-}
-
-.sceneGridLabel {
-  display: block;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-  padding: 8px 10px;
-}
-
-// 视频片段列表 (P1-7)
-.segmentsSection {
-  width: 100%;
-  max-width: 720px;
-  margin-top: 32px;
-}
-
-.segmentsToggle {
-  padding: 10px 20px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.8);
-  }
-}
-
-.segmentsList {
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.segmentItem {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
-}
-
-.segmentVideo {
-  width: 160px;
-  height: 90px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #000;
-  flex-shrink: 0;
-
-  video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-}
-
-.segmentInfo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-}
-
-.segmentIndex {
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
-  min-width: 36px;
-}
-
-.segmentDuration {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.4);
-  min-width: 32px;
-}
-
-.segmentDownload {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
-  text-decoration: none;
-  padding: 4px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  transition: all 0.2s;
-
-  &:hover {
-    color: #ffffff;
-    border-color: rgba(255, 255, 255, 0.3);
-    background: rgba(255, 255, 255, 0.06);
-  }
-}
-
-.segmentsLoading {
-  margin-top: 16px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.4);
-  text-align: center;
-}
-
-// Completed view
-.completedView {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 32px;
-  min-height: 500px;
-  justify-content: center;
-}
-
-.completedIcon {
-  width: 64px;
-  height: 64px;
+.failedIcon {
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(239, 68, 68, 0.15);
+  border: 2px solid rgba(239, 68, 68, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
-}
-
-.completedMessage {
   font-size: 24px;
-  color: #ffffff;
-  font-weight: 700;
-}
-
-.completedSub {
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.videoContainer {
-  width: 100%;
-  max-width: 720px;
-  border-radius: 16px;
-  overflow: hidden;
-  background: #000;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-
-  video {
-    width: 100%;
-    display: block;
-  }
-}
-
-.downloadButton {
-  padding: 16px 40px;
-  background: #ffffff;
-  color: #000000;
-  border: none;
-  border-radius: 14px;
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-
-  &:hover {
-    background: #f0f0f0;
-    transform: translateY(-2px);
-  }
-}
-
-// Failed view
-.failedView {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  min-height: 500px;
-  justify-content: center;
+  color: #ef4444;
 }
 
 .failedMessage {
@@ -309,18 +117,379 @@
 }
 
 .retryButton {
-  padding: 14px 32px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
+  padding: 12px 28px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// 审核区域
+.reviewSection {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+}
+
+.reviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.episodeTitle {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.episodeBadge {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+.storyboardContent {
+  min-height: 200px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.storyboardHint {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 0;
+  text-align: center;
+  line-height: 1.8;
+}
+
+.loadingHint {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+  text-align: center;
+  line-height: 1.8;
+}
+
+// 分镜卡片列表
+.panelList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panelCard {
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  transition: border-color 0.2s;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.panelIndex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.panelMeta {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 500;
+}
+
+.panelField {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.panelLabel {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.3);
+  min-width: 36px;
+
+  &::after {
+    content: '：';
+  }
+}
+
+.panelValue {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.panelDialogue {
+  margin-bottom: 8px;
+}
+
+.dialogueText {
+  margin: 4px 0 0 44px;
+  font-size: 13px;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.6;
+}
+
+.panelEffects {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: 4px;
+  font-size: 12px;
+  color: rgba(129, 140, 248, 0.8);
+}
+
+// 操作按钮栏
+.actionBar {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.primaryButton {
+  padding: 12px 28px;
+  background: #6366f1;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #818cf8;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.secondaryButton {
+  padding: 12px 28px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// 修改面板
+.revisionPanel {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-radius: 12px;
+}
+
+.revisionInput {
+  width: 100%;
+  min-height: 80px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.2s;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.25);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: rgba(99, 102, 241, 0.5);
+  }
+}
+
+.revisionActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+// 启动区域
+.startSection {
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 40px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  margin: 0 auto;
+  max-width: 600px;
+}
+
+.startHint {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+  text-align: center;
+  line-height: 1.6;
+}
+
+// 全部确认
+.allConfirmed {
+  text-align: center;
+}
+
+.allConfirmedIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.15);
+  border: 2px solid rgba(34, 197, 94, 0.3);
+  font-size: 24px;
+  color: #22c55e;
+  margin-bottom: 12px;
+}
+
+.allConfirmed p {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+}
+
+.productionButton {
+  padding: 14px 36px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s;
+  letter-spacing: 0.02em;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+// API 错误提示
+.apiError {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-top: 20px;
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 10px;
+  font-size: 14px;
+  color: rgba(255, 200, 200, 0.9);
+  animation: slideIn 0.3s ease;
+}
+
+.errorDismiss {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  font-size: 12px;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

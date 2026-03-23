@@ -158,7 +158,6 @@ public class CharacterController {
         dto.setThreeViewError(character.getThreeViewError());
         dto.setIsGeneratingExpression(character.getIsGeneratingExpression());
         dto.setIsGeneratingThreeView(character.getIsGeneratingThreeView());
-        dto.setStandardImageUrl(character.getStandardImageUrl());
         dto.setVisualStyle(character.getVisualStyle());
         dto.setExpressionGridUrl(character.getExpressionGridUrl());
         dto.setThreeViewGridUrl(character.getThreeViewGridUrl());

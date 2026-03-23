@@ -16,8 +16,11 @@ import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
 import com.comic.service.production.EpisodeProductionService;
 import com.comic.service.script.ScriptService;
+import com.comic.service.story.StoryboardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +44,10 @@ public class PipelineService {
     private final CharacterExtractService characterExtractService;
     private final CharacterImageGenerationService characterImageGenerationService;
     private final EpisodeProductionService episodeProductionService;
+
+    @Lazy
+    @Autowired
+    private StoryboardService storyboardService;
 
     /**
      * 创建新项目
@@ -140,6 +147,10 @@ public class PipelineService {
         // PRODUCING 阶段：查询剧集子阶段，提供细粒度状态
         if (status == ProjectStatus.PRODUCING) {
             enrichProducingStatus(dto, projectId);
+        } else if (status == ProjectStatus.STORYBOARD_GENERATING
+                || status == ProjectStatus.STORYBOARD_REVIEW
+                || status == ProjectStatus.STORYBOARD_GENERATING_FAILED) {
+            enrichStoryboardStatus(dto, projectId);
         } else {
             dto.setStatusCode(status.getCode());
             dto.setStatusDescription(status.getDescription());
@@ -248,6 +259,94 @@ public class PipelineService {
     }
 
     /**
+     * 查询分镜子阶段，填充细粒度状态到项目级响应
+     */
+    private void enrichStoryboardStatus(ProjectStatusResponse dto, String projectId) {
+        try {
+            Project project = projectRepository.findByProjectId(projectId);
+            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+            int totalEpisodes = episodes.size();
+
+            // 找到当前正在生成分镜的集，或下一个待审核的集
+            Episode currentEpisode = null;
+            for (Episode ep : episodes) {
+                if ("STORYBOARD_GENERATING".equals(ep.getStatus())) {
+                    currentEpisode = ep;
+                    break;
+                }
+            }
+            // 如果没有正在生成的，找第一个已生成分镜待审核的
+            if (currentEpisode == null) {
+                for (Episode ep : episodes) {
+                    if ("STORYBOARD_DONE".equals(ep.getStatus())) {
+                        currentEpisode = ep;
+                        break;
+                    }
+                }
+            }
+            // 如果还没有已生成的，找第一个待生成的
+            if (currentEpisode == null) {
+                for (Episode ep : episodes) {
+                    if (ep.getStatus() == null || "DRAFT".equals(ep.getStatus())) {
+                        currentEpisode = ep;
+                        break;
+                    }
+                }
+            }
+
+            // 统计已确认分镜的集数
+            int completedCount = 0;
+            for (Episode ep : episodes) {
+                if ("STORYBOARD_CONFIRMED".equals(ep.getStatus())) {
+                    completedCount++;
+                }
+            }
+
+            dto.setStoryboardTotalEpisodes(totalEpisodes);
+            if (currentEpisode != null) {
+                dto.setStoryboardCurrentEpisode(currentEpisode.getEpisodeNum());
+                dto.setStoryboardReviewEpisodeId(currentEpisode.getId());
+            }
+
+            // 根据当前 Project 状态设置描述
+            ProjectStatus projectStatus = ProjectStatus.fromCode(project.getStatus());
+
+            // 所有集均已确认
+            boolean allConfirmed = completedCount == totalEpisodes && projectStatus == ProjectStatus.STORYBOARD_REVIEW;
+            dto.setStoryboardAllConfirmed(allConfirmed);
+            if (allConfirmed) {
+                dto.setStoryboardReviewEpisodeId(null);
+                dto.setStatusDescription("所有 " + totalEpisodes + " 集分镜已审核完成");
+            }
+
+            dto.setStatusCode(projectStatus.getCode());
+            dto.setGenerating(projectStatus.isGenerating());
+
+            if (currentEpisode != null && !allConfirmed) {
+                String desc;
+                switch (projectStatus) {
+                    case STORYBOARD_GENERATING:
+                        desc = "正在生成第 " + currentEpisode.getEpisodeNum() + " 集分镜...";
+                        break;
+                    case STORYBOARD_REVIEW:
+                        desc = "请审核第 " + currentEpisode.getEpisodeNum() + " 集分镜（" + completedCount + "/" + totalEpisodes + "）";
+                        break;
+                    case STORYBOARD_GENERATING_FAILED:
+                        desc = "第 " + currentEpisode.getEpisodeNum() + " 集分镜生成失败";
+                        break;
+                    default:
+                        desc = projectStatus.getDescription();
+                        break;
+                }
+                dto.setStatusDescription(desc);
+            }
+
+        } catch (Exception e) {
+            log.warn("查询分镜子阶段失败: projectId={}, error={}", projectId, e.getMessage());
+        }
+    }
+
+    /**
      * 判断剧集子阶段是否为生成中
      */
     private boolean isEpisodeGenerating(String episodeStatus) {
@@ -328,6 +427,14 @@ public class PipelineService {
                 return ProjectStatus.IMAGE_REVIEW.getCode();
             case "image_confirmed":
                 return ProjectStatus.ASSET_LOCKED.getCode();
+            case "start_storyboard":
+                return ProjectStatus.STORYBOARD_GENERATING.getCode();
+            case "storyboard_generated":
+                return ProjectStatus.STORYBOARD_REVIEW.getCode();
+            case "storyboard_revision":
+                return ProjectStatus.STORYBOARD_GENERATING.getCode();
+            case "storyboard_retry":
+                return ProjectStatus.STORYBOARD_GENERATING.getCode();
             case "start_production":
                 return ProjectStatus.PRODUCING.getCode();
             case "production_completed":
@@ -353,6 +460,17 @@ public class PipelineService {
             case IMAGE_GENERATING:
                 // 异步触发所有角色图片生成
                 generateAllCharacterImagesAsync(projectId);
+                break;
+
+            case STORYBOARD_GENERATING:
+                // 异步触发逐集分镜生成
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        storyboardService.startStoryboardGeneration(projectId);
+                    } catch (Exception e) {
+                        log.error("分镜生成异常: projectId={}, error={}", projectId, e.getMessage(), e);
+                    }
+                });
                 break;
 
             case PRODUCING:
