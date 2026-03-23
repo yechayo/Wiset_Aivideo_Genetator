@@ -195,3 +195,14 @@
 2. Verification:
    - `mvn -Dtest=EpisodeProductionServiceTest test` passed (16/16)
    - extended regression suite passed (37/37)
+
+### Continue Update (2026-03-23, P7 regression hardening)
+1. Added mixed-layout pagination fusion tests in `EpisodeProductionServiceTest`:
+   - scene-group A (`5 panels`) expects `2x3` page (`6` cells)
+   - scene-group B (`10 panels`) expects two `3x3` pages (`9 + 9` cells)
+2. Added verification scenarios:
+   - partial completion must not trigger fusion resume
+   - all pages complete (`6 + 9 + 9 = 24`) triggers resume check exactly once
+3. Verification:
+   - `mvn -Dtest=EpisodeProductionServiceTest test` passed (18/18)
+   - extended regression suite passed (39/39)
