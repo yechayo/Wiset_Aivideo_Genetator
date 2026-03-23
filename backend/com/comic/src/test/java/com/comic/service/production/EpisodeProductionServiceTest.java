@@ -203,6 +203,27 @@ class EpisodeProductionServiceTest {
         return result;
     }
 
+    private SceneAnalysisResultModel createMixedLayoutSceneAnalysis() {
+        SceneGroupModel group1 = new SceneGroupModel();
+        group1.setSceneId("SCENE-6CELL");
+        group1.setStartPanelIndex(0);
+        group1.setEndPanelIndex(4); // 5 panels -> 2x3 -> 6 cells, 1 page
+        group1.setLocation("scene-6");
+        group1.setCharacters(new ArrayList<>(Arrays.asList("char-a")));
+
+        SceneGroupModel group2 = new SceneGroupModel();
+        group2.setSceneId("SCENE-9CELL");
+        group2.setStartPanelIndex(5);
+        group2.setEndPanelIndex(14); // 10 panels -> 3x3 -> 9 cells, 2 pages
+        group2.setLocation("scene-9");
+        group2.setCharacters(new ArrayList<>(Arrays.asList("char-b")));
+
+        SceneAnalysisResultModel result = new SceneAnalysisResultModel();
+        result.setSceneGroups(new ArrayList<>(Arrays.asList(group1, group2)));
+        result.setTotalPanelCount(15);
+        return result;
+    }
+
     private String createStoryboardJsonWithPanelCount(int panelCount) throws Exception {
         ObjectNode root = objectMapper.createObjectNode();
         ArrayNode panels = objectMapper.createArrayNode();
@@ -692,6 +713,81 @@ class EpisodeProductionServiceTest {
         assertEquals(9, task.getStartPanelIndex());
         assertEquals(3, task.getPanels().size());
         assertEquals("ep1_p10", task.getPanels().get(0).path("panel_id").asText());
+    }
+
+    @Test
+    @DisplayName("submitFusionPage - 混合布局分页时未全部完成不触发恢复")
+    @SuppressWarnings("unchecked")
+    void testSubmitFusionPage_mixedLayoutNotAllDone() throws Exception {
+        EpisodeProduction production = createProduction();
+        production.setStatus("GRID_FUSION_PENDING");
+        production.setSceneGridUrls(objectMapper.writeValueAsString(
+                new ArrayList<>(Arrays.asList(
+                        "https://mock/grid-0.png",
+                        "https://mock/grid-1.png",
+                        "https://mock/grid-2.png"
+                ))
+        ));
+        production.setSceneAnalysisJson(objectMapper.writeValueAsString(createMixedLayoutSceneAnalysis()));
+        production.setFusedGridUrls(null);
+
+        when(productionRepository.findByEpisodeId(EPISODE_ID)).thenReturn(production);
+        when(productionRepository.updateById(any())).thenReturn(1);
+
+        List<String> page0Urls = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            page0Urls.add("https://mock/fused-p0-" + i + ".png");
+        }
+
+        int fused = productionService.submitFusionPage(EPISODE_ID, 0, page0Urls);
+        assertEquals(6, fused);
+
+        verify(productionRepository, never()).tryMarkFusionResumed(EPISODE_ID);
+
+        ArgumentCaptor<EpisodeProduction> captor = ArgumentCaptor.forClass(EpisodeProduction.class);
+        verify(productionRepository, atLeastOnce()).updateById(captor.capture());
+        EpisodeProduction latest = captor.getValue();
+        List<List<String>> saved = objectMapper.readValue(latest.getFusedGridUrls(), List.class);
+        assertEquals(1, saved.size());
+        assertEquals(6, saved.get(0).size());
+    }
+
+    @Test
+    @DisplayName("submitFusionPage - 混合布局分页全部完成后触发恢复")
+    void testSubmitFusionPage_mixedLayoutAllDone() throws Exception {
+        EpisodeProduction production = createProduction();
+        production.setStatus("GRID_FUSION_PENDING");
+        production.setSceneGridUrls(objectMapper.writeValueAsString(
+                new ArrayList<>(Arrays.asList(
+                        "https://mock/grid-0.png",
+                        "https://mock/grid-1.png",
+                        "https://mock/grid-2.png"
+                ))
+        ));
+        production.setSceneAnalysisJson(objectMapper.writeValueAsString(createMixedLayoutSceneAnalysis()));
+        production.setFusedGridUrls(null);
+
+        when(productionRepository.findByEpisodeId(EPISODE_ID)).thenReturn(production);
+        when(productionRepository.updateById(any())).thenReturn(1);
+        when(productionRepository.tryMarkFusionResumed(EPISODE_ID)).thenReturn(false);
+
+        List<String> page0Urls = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            page0Urls.add("https://mock/fused-p0-" + i + ".png");
+        }
+        List<String> page1Urls = new ArrayList<>();
+        List<String> page2Urls = new ArrayList<>();
+        for (int i = 0; i < 9; i++) {
+            page1Urls.add("https://mock/fused-p1-" + i + ".png");
+            page2Urls.add("https://mock/fused-p2-" + i + ".png");
+        }
+
+        productionService.submitFusionPage(EPISODE_ID, 0, page0Urls);
+        productionService.submitFusionPage(EPISODE_ID, 1, page1Urls);
+        int totalFused = productionService.submitFusionPage(EPISODE_ID, 2, page2Urls);
+
+        assertEquals(24, totalFused);
+        verify(productionRepository, times(1)).tryMarkFusionResumed(EPISODE_ID);
     }
 
     @Test

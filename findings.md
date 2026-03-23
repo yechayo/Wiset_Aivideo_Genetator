@@ -168,3 +168,14 @@
   - page-2 task is verified with `startPanelIndex=9` and first bound panel `ep1_p10`
 - Evidence:
   - `mvn -Dtest=EpisodeProductionServiceTest test` passed (16/16)
+
+## Status Update (2026-03-23, P7 mixed-layout fusion regression)
+- Added regression coverage for mixed page-cell expectations in `submitFusionPage`:
+  - page-0 expects `6` fused cells (2x3)
+  - page-1 and page-2 each expect `9` fused cells (3x3)
+- Behavioral assertions:
+  - not-all-done state does not trigger resume
+  - all-done state (`24` total fused cells) triggers `tryMarkFusionResumed` once
+- Evidence:
+  - `mvn -Dtest=EpisodeProductionServiceTest test` passed (18/18)
+  - extended regression suite passed (39/39)
