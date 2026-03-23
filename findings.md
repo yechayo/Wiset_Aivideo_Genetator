@@ -179,3 +179,15 @@
 - Evidence:
   - `mvn -Dtest=EpisodeProductionServiceTest test` passed (18/18)
   - extended regression suite passed (39/39)
+
+## Status Update (2026-03-23, P7 split-to-fusion chain regression)
+- Added one chain-level regression in `EpisodeProductionServiceTest`:
+  - first calls `splitGridPageForFusion` to get split cell image URLs
+  - then directly calls `submitFusionPage` with those URLs
+- Verifies:
+  - 2x3 split metadata consistency
+  - fused matrix persistence (1 page x 6 urls)
+  - fusion total count and resume-check behavior
+- Evidence:
+  - `mvn -Dtest=EpisodeProductionServiceTest test` passed (19/19)
+  - extended regression suite passed (40/40)

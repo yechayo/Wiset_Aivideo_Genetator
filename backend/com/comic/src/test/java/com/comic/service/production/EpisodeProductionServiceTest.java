@@ -791,6 +791,72 @@ class EpisodeProductionServiceTest {
     }
 
     @Test
+    @DisplayName("splitGridPageForFusion -> submitFusionPage 串联时可完成单页融合计数与恢复检测")
+    @SuppressWarnings("unchecked")
+    void testSplitThenSubmitFusionPage_chain() throws Exception {
+        episode.setStoryboardJson(createStoryboardJsonWithPanelCount(5));
+
+        EpisodeProduction production = createProduction();
+        production.setStatus("GRID_FUSION_PENDING");
+        production.setSceneGridUrls(objectMapper.writeValueAsString(
+                new ArrayList<>(Arrays.asList("https://mock/grid-chain-0.png"))
+        ));
+        production.setSceneAnalysisJson(objectMapper.writeValueAsString(createSingleSceneAnalysis(0, 4)));
+        production.setFusedGridUrls(null);
+
+        when(episodeRepository.selectById(EPISODE_ID)).thenReturn(episode);
+        when(productionRepository.findByEpisodeId(EPISODE_ID)).thenReturn(production);
+        when(productionRepository.updateById(any())).thenReturn(1);
+        when(productionRepository.tryMarkFusionResumed(EPISODE_ID)).thenReturn(false);
+
+        GridSplitService.SplitPageResult pageResult = new GridSplitService.SplitPageResult();
+        pageResult.setPageIndex(0);
+        pageResult.setRows(2);
+        pageResult.setCols(3);
+        pageResult.setSkipped(false);
+
+        List<GridSplitService.SplitCellResult> cells = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            GridSplitService.SplitCellResult cell = new GridSplitService.SplitCellResult();
+            cell.setPageIndex(0);
+            cell.setCellIndex(i);
+            cell.setPanelIndex(i);
+            cell.setImageUrl("https://mock/split-chain-" + i + ".png");
+            cells.add(cell);
+        }
+        pageResult.setCells(cells);
+
+        GridSplitService.SplitBatchResult batchResult = new GridSplitService.SplitBatchResult();
+        batchResult.setSuccessPages(1);
+        batchResult.setSkippedPages(0);
+        batchResult.setPages(new ArrayList<>(Arrays.asList(pageResult)));
+        when(gridSplitService.splitAndUploadPages(anyList())).thenReturn(batchResult);
+
+        GridSplitService.SplitPageResult splitResult = productionService.splitGridPageForFusion(EPISODE_ID, 0);
+        assertEquals(2, splitResult.getRows());
+        assertEquals(3, splitResult.getCols());
+        assertEquals(6, splitResult.getCells().size());
+
+        List<String> panelFusedUrls = new ArrayList<>();
+        for (GridSplitService.SplitCellResult cell : splitResult.getCells()) {
+            panelFusedUrls.add(cell.getImageUrl());
+        }
+
+        int totalFused = productionService.submitFusionPage(EPISODE_ID, 0, panelFusedUrls);
+        assertEquals(6, totalFused);
+        verify(gridSplitService, times(1)).splitAndUploadPages(anyList());
+        verify(productionRepository, times(1)).tryMarkFusionResumed(EPISODE_ID);
+
+        ArgumentCaptor<EpisodeProduction> captor = ArgumentCaptor.forClass(EpisodeProduction.class);
+        verify(productionRepository, atLeastOnce()).updateById(captor.capture());
+        EpisodeProduction latest = captor.getValue();
+        List<List<String>> saved = objectMapper.readValue(latest.getFusedGridUrls(), List.class);
+        assertEquals(1, saved.size());
+        assertEquals(6, saved.get(0).size());
+        assertEquals("https://mock/split-chain-0.png", saved.get(0).get(0));
+    }
+
+    @Test
     @DisplayName("retryProduction - 失败后重试正确重置状态并重新执行")
     void testRetryProduction() {
         EpisodeProduction production = createProduction();
