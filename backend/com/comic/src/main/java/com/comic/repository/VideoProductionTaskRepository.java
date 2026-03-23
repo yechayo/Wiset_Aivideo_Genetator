@@ -91,4 +91,13 @@ public interface VideoProductionTaskRepository extends BaseMapper<VideoProductio
                 .eq(VideoProductionTask::getTaskGroup, taskGroup)
                 .eq(VideoProductionTask::getStatus, "COMPLETED")));
     }
+
+    /**
+     * 根据剧集ID和格子索引查找任务列表
+     */
+    default List<VideoProductionTask> findByEpisodeIdAndPanelIndex(Long episodeId, Integer panelIndex) {
+        return selectList(new LambdaQueryWrapper<VideoProductionTask>()
+                .eq(VideoProductionTask::getEpisodeId, episodeId)
+                .eq(VideoProductionTask::getPanelIndex, panelIndex));
+    }
 }

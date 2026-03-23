@@ -3,6 +3,7 @@ package com.comic.service.production;
 import com.comic.common.BusinessException;
 import com.comic.dto.response.GridInfoResponse;
 import com.comic.dto.response.PipelineStageDTO;
+import com.comic.dto.response.PanelStateResponse;
 import com.comic.dto.response.ProductionPipelineResponse;
 import com.comic.dto.response.ProductionStatusResponse;
 import com.comic.dto.response.VideoSegmentInfoResponse;
@@ -15,6 +16,7 @@ import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.EpisodeProduction;
 import com.comic.entity.Project;
+import com.comic.entity.VideoProductionTask;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeProductionRepository;
 import com.comic.repository.EpisodeRepository;
@@ -33,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -710,9 +713,11 @@ public class EpisodeProductionService {
 
     /**
      * 提交单页融合结果（逐格融合：每页9个URL）
-     * 当所有页的所有格子都融合完成后自动恢复管线
+     * 当所有页的所有格子都融合完成后，根据 autoContinue 参数决定是否自动恢复管线
+     *
+     * @param autoContinue 为 false 时，即使所有页都融合完成也不触发 continueProductionFlow
      */
-    public int submitFusionPage(Long episodeId, int pageIndex, List<String> panelFusedUrls) {
+    public int submitFusionPage(Long episodeId, int pageIndex, List<String> panelFusedUrls, boolean autoContinue) {
         EpisodeProduction production;
         try {
             production = productionRepository.findByEpisodeId(episodeId);
@@ -790,7 +795,9 @@ public class EpisodeProductionService {
         }
 
         if (allDone) {
-            if (productionRepository.tryMarkFusionResumed(episodeId)) {
+            if (!autoContinue) {
+                log.info("所有融合页已完成，autoContinue=false，等待手动触发管线: episodeId={}", episodeId);
+            } else if (productionRepository.tryMarkFusionResumed(episodeId)) {
                 log.info("所有融合页已完成，自动恢复管线: episodeId={}", episodeId);
                 Episode episode = episodeRepository.selectById(episodeId);
                 self().continueProductionFlow(episode, production);
@@ -1456,5 +1463,408 @@ public class EpisodeProductionService {
         stages.addAll(buildRemainingPendingStages(1));
 
         return stages;
+    }
+
+    // ==================== 原子化视频生成相关方法 ====================
+
+    /**
+     * 获取所有面板状态（原子化模式用）
+     * 读取 storyboardJson 获取 panels 数组，读取 fusedGridUrls 获取融合图URL，
+     * 读取 VideoProductionTask 获取视频生成状态，合并返回 List<PanelStateResponse>
+     *
+     * @param episodeId 剧集ID
+     * @return 所有面板的状态列表
+     */
+    public List<PanelStateResponse> getPanelStates(Long episodeId) {
+        log.info("[原子化] 获取面板状态: episodeId={}", episodeId);
+
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) {
+            throw new IllegalArgumentException("剧集不存在: " + episodeId);
+        }
+
+        // 解析 storyboardJson 中的 panels 数组
+        List<JsonNode> panels = parseStoryboardPanels(episode);
+
+        // 解析融合图URL（二维数组展平为一维）
+        List<String> flatFusedUrls = new ArrayList<>();
+        EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
+        if (production != null && production.getFusedGridUrls() != null && !production.getFusedGridUrls().isEmpty()) {
+            List<List<String>> allFusedUrls = parseFusedGridUrls(production.getFusedGridUrls());
+            for (List<String> pageUrls : allFusedUrls) {
+                if (pageUrls != null) {
+                    flatFusedUrls.addAll(pageUrls);
+                }
+            }
+        }
+
+        // 查询视频任务，按 panelIndex 建立索引
+        List<VideoProductionTask> videoTasks = videoTaskRepository.findByEpisodeId(episodeId);
+        Map<Integer, VideoProductionTask> videoTaskMap = new HashMap<>();
+        for (VideoProductionTask task : videoTasks) {
+            if (task.getPanelIndex() != null) {
+                videoTaskMap.put(task.getPanelIndex(), task);
+            }
+        }
+
+        // 构建面板状态列表
+        List<PanelStateResponse> states = new ArrayList<>();
+        for (int i = 0; i < panels.size(); i++) {
+            JsonNode panelNode = panels.get(i);
+            PanelStateResponse state = new PanelStateResponse();
+            state.setPanelIndex(i);
+
+            // 格子标识
+            state.setPanelId("ep" + (episode.getEpisodeNum() != null ? episode.getEpisodeNum() : 1) + "_p" + (i + 1));
+
+            // 分镜描述信息
+            state.setSceneDescription(safeGetText(panelNode, "sceneDescription"));
+            state.setShotType(safeGetText(panelNode, "shotType"));
+            state.setDialogue(safeGetText(panelNode, "dialogue"));
+
+            // 融合状态
+            String fusedUrl = (i < flatFusedUrls.size()) ? flatFusedUrls.get(i) : null;
+            if (fusedUrl != null && !fusedUrl.isEmpty()) {
+                state.setFusionStatus("completed");
+                state.setFusionUrl(fusedUrl);
+            } else {
+                state.setFusionStatus("pending");
+            }
+
+            // 视频状态
+            VideoProductionTask videoTask = videoTaskMap.get(i);
+            if (videoTask != null) {
+                String taskStatus = videoTask.getStatus();
+                switch (taskStatus != null ? taskStatus : "") {
+                    case "PENDING":
+                        state.setVideoStatus("pending");
+                        break;
+                    case "PROCESSING":
+                        state.setVideoStatus("generating");
+                        break;
+                    case "COMPLETED":
+                        state.setVideoStatus("completed");
+                        state.setVideoUrl(videoTask.getVideoUrl());
+                        break;
+                    case "FAILED":
+                        state.setVideoStatus("failed");
+                        break;
+                    default:
+                        state.setVideoStatus("pending");
+                }
+                state.setVideoTaskId(videoTask.getVideoTaskId());
+                state.setPromptText(videoTask.getVideoPrompt());
+            } else {
+                state.setVideoStatus("pending");
+            }
+
+            states.add(state);
+        }
+
+        log.info("[原子化] 面板状态查询完成: episodeId={}, totalPanels={}, fused={}, videoTasks={}",
+                episodeId, panels.size(), flatFusedUrls.size(), videoTaskMap.size());
+        return states;
+    }
+
+    /**
+     * 单格视频生成（原子化模式用）
+     * 为指定分镜格子独立生成视频，复用 VideoProductionQueueService 的逻辑
+     *
+     * @param episodeId 剧集ID
+     * @param panelIndex 分镜索引
+     * @return Map 包含 taskId 和 status
+     */
+    public Map<String, Object> generateSinglePanelVideo(Long episodeId, int panelIndex) {
+        log.info("[原子化] 单格视频生成: episodeId={}, panelIndex={}", episodeId, panelIndex);
+
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) {
+            throw new IllegalArgumentException("剧集不存在: " + episodeId);
+        }
+
+        EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
+        if (production == null) {
+            throw new IllegalArgumentException("生产任务不存在");
+        }
+
+        // 校验 panelIndex 是否在有效范围内
+        List<JsonNode> panels = parseStoryboardPanels(episode);
+        if (panelIndex < 0 || panelIndex >= panels.size()) {
+            throw new IllegalArgumentException("panelIndex 越界，当前总面板数: " + panels.size());
+        }
+
+        // 校验该 panel 是否已有融合图
+        List<List<String>> allFusedUrls = parseFusedGridUrls(production.getFusedGridUrls());
+        List<String> flatFusedUrls = new ArrayList<>();
+        for (List<String> pageUrls : allFusedUrls) {
+            if (pageUrls != null) {
+                flatFusedUrls.addAll(pageUrls);
+            }
+        }
+        String fusedUrl = (panelIndex < flatFusedUrls.size()) ? flatFusedUrls.get(panelIndex) : null;
+        if (fusedUrl == null || fusedUrl.isEmpty()) {
+            throw new BusinessException("该面板尚未融合完成，无法生成视频: panelIndex=" + panelIndex);
+        }
+
+        // 检查是否已有正在生成或已完成的视频任务
+        List<VideoProductionTask> existingTasks = videoTaskRepository.findByEpisodeId(episodeId);
+        for (VideoProductionTask task : existingTasks) {
+            if (panelIndex == (task.getPanelIndex() != null ? task.getPanelIndex() : -1)) {
+                if ("PROCESSING".equals(task.getStatus())) {
+                    throw new BusinessException("该面板正在生成视频，请勿重复提交: panelIndex=" + panelIndex);
+                }
+                if ("COMPLETED".equals(task.getStatus())) {
+                    throw new BusinessException("该面板视频已生成完成: panelIndex=" + panelIndex);
+                }
+            }
+        }
+
+        // 构建该 panel 的提示词
+        JsonNode panelNode = panels.get(panelIndex);
+        String promptText = safeGetText(panelNode, "videoPrompt");
+        if (promptText == null || promptText.isEmpty()) {
+            // 如果 storyboardJson 中没有 videoPrompt，尝试使用 sceneDescription
+            promptText = safeGetText(panelNode, "sceneDescription");
+        }
+        if (promptText == null || promptText.isEmpty()) {
+            throw new BusinessException("该面板缺少提示词信息: panelIndex=" + panelIndex);
+        }
+
+        // 构建单个任务组并提交
+        VideoPromptModel prompt = new VideoPromptModel();
+        prompt.setPromptText(promptText);
+        prompt.setPanelIndex(panelIndex);
+        prompt.setDuration(2); // 默认2秒
+        prompt.setFusedReferenceImageUrl(fusedUrl);
+
+        VideoTaskGroupModel taskGroup = new VideoTaskGroupModel();
+        taskGroup.setPanelIndexes(Collections.singletonList(panelIndex));
+        taskGroup.setTotalDuration(2);
+        taskGroup.setPrompts(Collections.singletonList(prompt));
+        taskGroup.setFusedReferenceImageUrl(fusedUrl);
+
+        List<VideoTaskGroupModel> taskGroups = Collections.singletonList(taskGroup);
+
+        // 复用 VideoProductionQueueService 提交任务
+        videoQueueService.submitVideoTasks(production.getProductionId(), episodeId, taskGroups);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("panelIndex", panelIndex);
+        result.put("status", "submitted");
+        result.put("groupId", taskGroup.getGroupId());
+
+        log.info("[原子化] 单格视频生成已提交: episodeId={}, panelIndex={}, groupId={}", episodeId, panelIndex, taskGroup.getGroupId());
+        return result;
+    }
+
+    /**
+     * 手动触发流水线继续（原子化模式"一键自动化"用）
+     * 融合完成后手动触发后续视频生成流水线
+     *
+     * @param episodeId 剧集ID
+     */
+    public void manualContinueProduction(Long episodeId) {
+        log.info("[原子化] 手动触发流水线继续: episodeId={}", episodeId);
+
+        EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
+        if (production == null) {
+            throw new IllegalArgumentException("生产任务不存在");
+        }
+
+        if (!"GRID_FUSION_PENDING".equals(production.getStatus())) {
+            throw new BusinessException("当前状态不允许手动触发流水线（当前状态: " + production.getStatus() + "），仅在 GRID_FUSION_PENDING 状态下可操作");
+        }
+
+        if (productionRepository.tryMarkFusionResumed(episodeId)) {
+            log.info("[原子化] 手动触发流水线继续成功: episodeId={}", episodeId);
+            Episode episode = episodeRepository.selectById(episodeId);
+            self().continueProductionFlow(episode, production);
+        } else {
+            throw new BusinessException("流水线恢复已被其他请求触发，请勿重复操作: episodeId=" + episodeId);
+        }
+    }
+
+    /**
+     * 安全获取 JsonNode 中的文本字段
+     */
+    private String safeGetText(JsonNode node, String fieldName) {
+        if (node == null || fieldName == null) {
+            return null;
+        }
+        JsonNode fieldNode = node.get(fieldName);
+        if (fieldNode == null || fieldNode.isNull()) {
+            return null;
+        }
+        return fieldNode.asText();
+    }
+
+    /**
+     * 单格场景图重生成
+     * 根据分镜JSON中的 scene_desc 重新生成该格子所属页的场景网格图，
+     * 并更新 EpisodeProduction.sceneGridUrls 中对应页的 URL。
+     *
+     * @param episodeId  剧集ID
+     * @param panelIndex 分镜格子索引（全局，从0开始）
+     */
+    @Transactional
+    public void regeneratePanelScene(Long episodeId, Integer panelIndex) {
+        // 1. 获取生产记录
+        EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
+        if (production == null) {
+            throw new BusinessException("生产任务不存在");
+        }
+
+        // 2. 解析 sceneAnalysisJson 找到该 panel 所属的场景组
+        if (production.getSceneAnalysisJson() == null || production.getSceneAnalysisJson().isEmpty()) {
+            throw new BusinessException("场景分析数据为空，无法重生成");
+        }
+
+        SceneAnalysisResultModel sceneAnalysis;
+        try {
+            sceneAnalysis = objectMapper.readValue(production.getSceneAnalysisJson(), SceneAnalysisResultModel.class);
+        } catch (Exception e) {
+            throw new BusinessException("场景分析数据解析失败: " + e.getMessage());
+        }
+
+        List<SceneGroupModel> sceneGroups = sceneAnalysis.getSceneGroups();
+        if (sceneGroups == null || sceneGroups.isEmpty()) {
+            throw new BusinessException("场景组数据为空");
+        }
+
+        // 3. 找到 panelIndex 所属的场景组
+        SceneGroupModel targetGroup = null;
+        int panelOffsetInGroup = 0;
+        for (SceneGroupModel group : sceneGroups) {
+            if (group.getStartPanelIndex() != null && group.getEndPanelIndex() != null
+                    && panelIndex >= group.getStartPanelIndex() && panelIndex <= group.getEndPanelIndex()) {
+                targetGroup = group;
+                panelOffsetInGroup = panelIndex - group.getStartPanelIndex();
+                break;
+            }
+        }
+
+        if (targetGroup == null) {
+            throw new BusinessException("未找到分镜 " + panelIndex + " 所属的场景组");
+        }
+
+        // 4. 计算该格子在场景组内的页索引（从0开始）
+        int cellsPerPage = sceneGridGenService.resolveCellsPerPage(targetGroup);
+        int pageIndexInGroup = panelOffsetInGroup / cellsPerPage;
+
+        // 5. 计算全局页索引
+        int globalPageIndex = 0;
+        for (SceneGroupModel group : sceneGroups) {
+            if (group == targetGroup) {
+                globalPageIndex += pageIndexInGroup;
+                break;
+            }
+            globalPageIndex += resolvePageCountForSceneGroup(group);
+        }
+
+        // 6. 从 episode.storyboardJson 提取该 panel 的 scene_desc
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null || episode.getStoryboardJson() == null || episode.getStoryboardJson().isEmpty()) {
+            throw new BusinessException("分镜数据为空");
+        }
+
+        String sceneDesc;
+        try {
+            JsonNode rootNode = objectMapper.readTree(episode.getStoryboardJson());
+            JsonNode panelsNode = rootNode.get("panels");
+            if (panelsNode == null || !panelsNode.isArray()) {
+                throw new BusinessException("分镜JSON格式错误：panels 节点不存在");
+            }
+            if (panelIndex < 0 || panelIndex >= panelsNode.size()) {
+                throw new BusinessException("panelIndex 越界: " + panelIndex);
+            }
+            JsonNode panelNode = panelsNode.get(panelIndex);
+            // 优先取 background.scene_desc，兼容没有 background 层的情况
+            JsonNode backgroundNode = panelNode.get("background");
+            if (backgroundNode != null && !backgroundNode.isNull()) {
+                JsonNode descNode = backgroundNode.get("scene_desc");
+                sceneDesc = (descNode != null && !descNode.isNull()) ? descNode.asText() : null;
+            } else {
+                JsonNode descNode = panelNode.get("scene_desc");
+                sceneDesc = (descNode != null && !descNode.isNull()) ? descNode.asText() : null;
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("解析分镜JSON失败: " + e.getMessage());
+        }
+
+        if (sceneDesc == null || sceneDesc.isEmpty()) {
+            throw new BusinessException("分镜 " + panelIndex + " 的场景描述为空");
+        }
+
+        // 7. 构造仅含该场景描述的 SceneGroupModel，用于重生成
+        SceneGroupModel regenerationGroup = new SceneGroupModel();
+        regenerationGroup.setSceneId(targetGroup.getSceneId());
+        regenerationGroup.setLocation(targetGroup.getLocation());
+        regenerationGroup.setTimeOfDay(targetGroup.getTimeOfDay());
+        regenerationGroup.setMood(targetGroup.getMood());
+        regenerationGroup.setDescription(sceneDesc); // 仅重生成该 panel 的场景描述
+        // 保持起止索引不变，使布局计算一致
+        regenerationGroup.setStartPanelIndex(targetGroup.getStartPanelIndex());
+        regenerationGroup.setEndPanelIndex(targetGroup.getEndPanelIndex());
+        regenerationGroup.setCharacters(targetGroup.getCharacters());
+
+        // 8. 调用 service 重生成该场景组的所有页
+        List<String> newPageUrls = sceneGridGenService.generateSceneGridPages(episodeId, regenerationGroup);
+
+        // 9. 更新 sceneGridUrls 中全局页索引对应的 URL
+        List<String> gridUrls = parseJsonUrlList(production.getSceneGridUrls());
+        if (gridUrls == null) {
+            gridUrls = new ArrayList<>();
+        }
+
+        if (globalPageIndex < newPageUrls.size()) {
+            // 取重生成后的对应页 URL
+            String newUrl = newPageUrls.get(globalPageIndex);
+            // 确保列表足够长
+            while (gridUrls.size() <= globalPageIndex) {
+                gridUrls.add(null);
+            }
+            gridUrls.set(globalPageIndex, newUrl);
+            production.setSceneGridUrls(toJsonUrlList(gridUrls));
+            productionRepository.updateById(production);
+        }
+
+        // 10. 清除该格子的融合状态（让用户重新融合）
+        // fusedGridUrls 是 2D 数组: fusedGridUrls[pageIndex][cellIndex]
+        // 计算 targetGroup 的全局页偏移
+        int fusionPageOffset = 0;
+        for (SceneGroupModel group : sceneGroups) {
+            if (group == targetGroup) {
+                break;
+            }
+            fusionPageOffset += resolvePageCountForSceneGroup(group);
+        }
+        int panelRelOffset = panelIndex - targetGroup.getStartPanelIndex();
+        int cellsPerPageForFusion = Math.max(sceneGridGenService.resolveCellsPerPage(targetGroup), 1);
+        int pageInGroupForFusion = panelRelOffset / cellsPerPageForFusion;
+        int cellInPageForFusion = panelRelOffset % cellsPerPageForFusion;
+        int targetPageIdx = fusionPageOffset + pageInGroupForFusion;
+        int targetCellIdx = cellInPageForFusion;
+
+        List<List<String>> allFusedUrls = parseFusedGridUrls(production.getFusedGridUrls());
+        // 确保外层列表足够长
+        while (allFusedUrls.size() <= targetPageIdx) {
+            allFusedUrls.add(new ArrayList<>());
+        }
+        List<String> targetPageUrls = allFusedUrls.get(targetPageIdx);
+        // 确保内层列表足够长
+        while (targetPageUrls.size() <= targetCellIdx) {
+            targetPageUrls.add(null);
+        }
+        // 清除该格的融合图URL（设为null，表示未融合）
+        targetPageUrls.set(targetCellIdx, null);
+        production.setFusedGridUrls(toJsonFusedUrls(allFusedUrls));
+        // 同时更新融合进度
+        production.setFusedPanels(Math.max(0, (production.getFusedPanels() != null ? production.getFusedPanels() : 1) - 1));
+        productionRepository.updateById(production);
+
+        log.info("场景图重生成完成: episodeId={}, panelIndex={}, newGridUrl={}",
+                episodeId, panelIndex, globalPageIndex < newPageUrls.size() ? newPageUrls.get(globalPageIndex) : "N/A");
     }
 }

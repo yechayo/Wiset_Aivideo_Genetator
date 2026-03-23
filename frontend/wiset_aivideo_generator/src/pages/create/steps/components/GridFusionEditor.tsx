@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import styles from './GridFusionEditor.module.less';
 import { useFusionStore, autoAssignCharacters } from '../../../../stores/fusionStore';
-import { getGridInfo, splitGridPage, uploadFusionImage, submitFusionPage } from '../../../../services/episodeService';
+import { getGridInfo, splitGridPage, uploadFusionImage, submitFusionPageWithAuto } from '../../../../services/episodeService';
 import type { SplitGridPageResponse } from '../../../../services/types/episode.types';
 import { loadImage, loadImages } from '../utils/imageLoader';
 import { splitGridToPanels, canvasToFile } from '../utils/canvasSplitter';
@@ -12,6 +12,8 @@ import PanelToolbar from './PanelToolbar';
 interface GridFusionEditorProps {
   episodeId: string;
   onFusionSubmitted: () => void;
+  mode?: 'full' | 'modal';  // 新增
+  onClose?: () => void;      // 新增：模态关闭回调，不触发任何 API
 }
 
 async function buildPanelsFromSplitResult(
@@ -46,7 +48,13 @@ async function buildPanelsFromSplitResult(
   return panels;
 }
 
-const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProps) => {
+const GridFusionEditor = ({ episodeId, onFusionSubmitted, mode, onClose }: GridFusionEditorProps) => {
+  const isModal = mode === 'modal';
+
+  const handleOverlayClick = useCallback(() => {
+    // 模态取消：不触发任何后端调用，融合状态保持不变
+    onClose?.(); // 只关闭模态，不调用 onFusionSubmitted
+  }, [onClose]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fusedPages, setFusedPages] = useState<Set<number>>(new Set());
@@ -238,7 +246,7 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
       // Submit this page's fusion (9个URL)
       setSubmitting(true);
       setUploading(false);
-      await submitFusionPage(episodeId, currentPageIndex, panelFusedUrls);
+      await submitFusionPageWithAuto(episodeId, currentPageIndex, panelFusedUrls, false);
 
       setSubmitting(false);
       setFusedPages((prev) => new Set(prev).add(currentPageIndex));
@@ -269,19 +277,7 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
     activeGridRows,
   ]);
 
-  if (loading) {
-    return <div className={styles.loadingState}>正在加载网格信息...</div>;
-  }
-
-  if (error) {
-    return <div className={styles.errorState}>加载失败: {error}</div>;
-  }
-
-  if (!gridInfo || !sceneGridImage) {
-    return <div className={styles.loadingState}>无网格数据</div>;
-  }
-
-  return (
+  const renderContent = () => (
     <div className={styles.fusionLayout}>
       <div className={styles.canvasSection}>
         {/* Page navigation */}
@@ -314,9 +310,9 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
             characterImages={characterImagesRef.current}
             gridColumns={activeGridColumns}
             gridRows={activeGridRows}
-            panelWidth={gridInfo.panelWidth}
-            panelHeight={gridInfo.panelHeight}
-            separatorPixels={gridInfo.separatorPixels}
+            panelWidth={gridInfo!.panelWidth}
+            panelHeight={gridInfo!.panelHeight}
+            separatorPixels={gridInfo!.separatorPixels}
           />
         </div>
 
@@ -366,9 +362,33 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
         </p>
       </div>
 
-      <CharacterPalette characters={gridInfo.characterReferences} />
+      <CharacterPalette characters={gridInfo!.characterReferences} />
     </div>
   );
+
+  if (loading) {
+    return <div className={styles.loadingState}>正在加载网格信息...</div>;
+  }
+
+  if (error) {
+    return <div className={styles.errorState}>加载失败: {error}</div>;
+  }
+
+  if (!gridInfo || !sceneGridImage) {
+    return <div className={styles.loadingState}>无网格数据</div>;
+  }
+
+  if (isModal) {
+    return (
+      <div className={styles.modalOverlay} onClick={handleOverlayClick}>
+        <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
+          {renderContent()}
+        </div>
+      </div>
+    );
+  }
+
+  return renderContent();
 };
 
 export default GridFusionEditor;

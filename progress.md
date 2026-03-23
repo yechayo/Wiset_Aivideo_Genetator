@@ -371,3 +371,58 @@
    - only existing chunk-size warning remains
 4. Plan sync:
    - P12 remains in_progress (batch-1 complete)
+
+### Continue Update (2026-03-23, 新任务：原子化视频生成界面)
+1. 用户需求澄清：
+   - 流水线 + 原子化并存（一键执行 和 逐格手动）
+   - 每个格子独立展示：左边场景图+角色融合图，右边视频
+   - 两种模式可混合使用
+2. 完成了项目深度探索，理解现有实现
+3. 写出了 PROJECT_UNDERSTANDING.md 理解文档
+4. 在 task_plan.md 中新增 N1~N9 阶段计划
+
+### Continue Update (2026-03-23, 原子化视频生成实现完成)
+1. **N1 数据模型**：无需新增 - 现有 `VideoProductionTask` 已按 `panelIndex` 存储视频URL
+2. **N2 后端API**：新增3个原子化端点 + 修改 `submitFusionPage` 支持 `autoContinue` 参数
+   - `GET /api/episodes/{episodeId}/panel-states` — 获取所有格子状态
+   - `POST /api/episodes/{episodeId}/panels/{panelIndex}/generate-video` — 单格视频生成
+   - `POST /api/episodes/{episodeId}/auto-continue` — 手动触发流水线继续
+   - `submitFusionPage` 新增 `autoContinue` 参数（默认 true 向后兼容）
+3. **N3 单格融合**：复用现有 GridFusionEditor，无需新增API
+4. **N4 前端状态管理**：
+   - 新增 `PanelState` 类型定义（`episode.types.ts`）
+   - 新增4个API函数（`episodeService.ts`）
+5. **N5 PanelVideoCard 组件**：
+   - 新建 `PanelVideoCard.tsx` + `PanelVideoCard.module.less`
+   - 左右布局：左侧融合图/占位，右侧视频/生成按钮/重试
+   - 底部展示 panelId、shotType、场景描述、对话
+6. **N6 Step6 布局改造**：
+   - 新增 `'atomic'` ViewMode
+   - 5秒轮询 panelStates
+   - 融合完成后自动切换到原子化视图
+   - 统计栏 + PanelVideoCard 网格 + 操作按钮区
+7. **N7 一键自动化**：`handleAutoContinue` 调用 `autoContinue` API
+8. **N8 统一合并**：`composeButton` 目前复用 `autoContinue`（后续可独立端点）
+9. **GridFusionEditor 更新**：改为使用 `submitFusionPageWithAuto(episodeId, pageIndex, urls, false)` 防止融合后自动触发流水线
+10. 验证：`npm run build` 通过（前端构建成功）
+11. 备注：后端 Maven 未在 PATH 中，无法执行 `mvn compile` 验证
+
+### Continue Update (2026-03-23, Step5 原子化卡片设计完成)
+1. **设计阶段完成**：
+   - 完成了 Step5 原子化卡片工作坊的完整设计
+   - 设计文档：`docs/superpowers/specs/2026-03-23-atomic-storyboard-design.md`
+2. **设计要点**：
+   - Step5 从"分镜审查"升级为"原子化卡片工作台"
+   - 4阶段流转：分镜审查 → 场景生成 → 图片融合 → 视频生成 → 完成
+   - 每张卡片根据阶段展示不同内容（分镜信息/场景图+Prompt/融合图/视频）
+   - 双融合模式：自动融合（按 characters[] 顺序叠加）+ 手动融合（九宫格模态框）
+   - 场景图可独立重生成（需后端新增接口）
+   - 融合须等场景图生成完成
+3. **Spec 审核**：发现6个问题，全部修复：
+   - 阶段编号错误（2.4 卡片应为阶段4）
+   - 缺少场景图失败状态处理
+   - API 存在性验证（splitGridPage、getPanelStates 均已存在）
+   - 多角色叠加顺序明确（characters[] 数组顺序，alpha 混合）
+   - 模态取消行为明确（无后端调用，状态不变）
+4. **用户补充需求**：
+   - 每个格子显示生成用的 Prompt（来自分镜 JSON 的 `background.scene_desc`）

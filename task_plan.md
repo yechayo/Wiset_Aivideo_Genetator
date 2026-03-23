@@ -202,3 +202,176 @@
 ## Frontend Refactor Status (ASCII Safe, 2026-03-23 Update-2)
 - P11: complete (all planned key pages tokenized)
 - P12: in_progress (batch-1 done: GridFusionEditor + CharacterPalette modules)
+
+---
+
+## 新增任务：原子化视频生成界面（2026-03-23）
+
+### 新目标
+将视频生成从"流水线批量执行"改为"流水线+原子化双模式"，每个分镜格子可独立操作。
+
+### 核心需求
+1. **流水线模式（保留）**：一键自动执行全部流程
+2. **原子化模式（新增）**：每个格子可独立点击生成
+3. **每个格子独立展示**：左边=场景图+角色融合图，右边=生成的视频
+4. **微调能力**：每个格子可重新融合、调整提示词、重新生成视频
+
+### 界面布局设计
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  角色面板  │  分镜格子1              │  视频1                    │
+│            │  场景图+角色融合图       │  [播放] [重新生成]        │
+│  - 角色1  ├────────────────────────┼─────────────────────────┤  │
+│  - 角色2  │  分镜格子2              │  视频2                    │
+│  - 角色3  │  场景图+角色融合图       │  [播放] [重新生成]        │
+│            ├────────────────────────┼─────────────────────────┤  │
+│            │  分镜格子3...           │  视频3...                │
+│            └────────────────────────┴─────────────────────────┘  │
+│                                                                    │
+│  [一键自动化执行]                               [统一合并生成最终视频] │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 技术方案
+
+#### 前端改动
+
+| 改动点 | 说明 |
+|--------|------|
+| 新增 `PanelVideoCard` 组件 | 每个格子的独立展示卡片（场景+角色+视频+操作按钮） |
+| 新增格子级别状态管理 | 格子独立的 fusion/prompt/video 状态 |
+| 改造 Step6 布局 | 从 PipelineView 改为 PanelVideoCard 网格布局 |
+| 逐格生成按钮 | 每个格子独立的生成/重新生成按钮 |
+| 视频预览播放器 | 格子内嵌入视频播放 |
+
+#### 后端改动
+
+| 改动点 | 说明 |
+|--------|------|
+| 单格视频生成 API | `POST /api/episodes/{episodeId}/panels/{panelIndex}/generate-video` |
+| 单格融合状态更新 | `POST /api/episodes/{episodeId}/panels/{panelIndex}/fusion` |
+| 单格提示词获取/更新 | `GET/PUT /api/episodes/{episodeId}/panels/{panelIndex}/prompt` |
+| 视频 URL 存储结构扩展 | 每个格子独立存储视频 URL |
+
+#### 数据模型改动
+
+```typescript
+// 每个格子的状态
+interface PanelProductionState {
+  panelIndex: number;
+  fusionStatus: 'pending' | 'completed';
+  fusionUrl?: string;
+  promptStatus: 'pending' | 'completed';
+  promptText?: string;
+  videoStatus: 'pending' | 'generating' | 'completed' | 'failed';
+  videoUrl?: string;
+  videoDuration?: number;  // 时长(秒)
+}
+```
+
+### 阶段计划
+
+| Phase | 任务 | 关键改动 | 产出 | 状态 |
+|-------|------|---------|------|------|
+| N1 | 数据模型扩展 | 后端新增格子级别视频URL存储字段；EpisodeProduction 新增 panelVideoUrls | 扩展的数据模型 | completed (无需改动，现有模型已支持) |
+| N2 | 单格生成 API | 后端新增单格视频生成 endpoint；支持单个格子独立触发 | REST API | completed |
+| N3 | 单格融合 API | 后端支持单格融合状态独立更新 | REST API | completed (复用现有融合流程) |
+| N4 | 前端状态管理 | 新增格子级别状态管理（PanelState类型 + API函数） | 类型+API | completed |
+| N5 | PanelVideoCard 组件 | 独立格子展示组件：场景图+角色+视频+操作按钮 | React 组件 | completed |
+| N6 | Step6 布局改造 | 新增 atomic ViewMode + PanelVideoCard 网格布局 + 5秒轮询 | 页面重构 | completed |
+| N7 | 一键自动化按钮 | autoContinue API + handleAutoContinue | 按钮+逻辑 | completed |
+| N8 | 统一合并按钮 | composeButton（复用 autoContinue，后续可独立端点） | 按钮+API | completed |
+| N9 | 集成测试 | 前端构建通过；后端需 mvn compile 验证（Maven 不在 PATH） | 部分完成 | completed |
+
+### 原子化流程详细设计
+
+#### 格子级别操作流程
+```
+用户点击格子"生成视频"
+        ↓
+前端调用 POST /api/episodes/{id}/panels/{index}/generate-video
+        ↓
+后端：
+  1. 获取该格子的融合图URL（已融合）
+  2. 构建该格子的视频提示词
+  3. 提交视频生成任务
+  4. 轮询等待完成
+  5. 保存视频URL到 panelVideoUrls[panelIndex]
+        ↓
+前端更新格子状态为"completed"，显示视频
+```
+
+#### 一键自动化流程（保留）
+```
+用户点击"一键自动化执行"
+        ↓
+后端批量执行：
+  1. 场景分析
+  2. 九宫格生成
+  3. 全部融合
+  4. 批量生成提示词
+  5. 批量生成视频
+  6. 合并最终视频
+```
+
+### 验收标准
+- 原子化模式下，每个格子可独立生成视频并展示
+- 流水线模式下，一键执行完整流程
+- 两种模式可以混合使用（部分格子手动，部分自动）
+- 格子状态清晰可见（pending/in_progress/completed/failed）
+- 视频生成后可在格子内预览播放
+
+### 风险与缓解
+- 风险：并发生成多个视频可能触发平台限流
+  - 缓解：后端加信号量控制并发数，前端可配置节流
+- 风险：单格失败不影响其他格子
+  - 缓解：每个格子独立 try-catch，失败后格子标记 failed 可重试
+
+---
+
+## 新增任务：Step5 原子化卡片工作台（2026-03-23）
+
+### 新目标
+将 Step5 从"分镜审查页"升级为"原子化卡片工作台"，每个分镜格子从确认分镜到生成视频的全流程都在卡片上完成。
+
+### 设计文档
+- `docs/superpowers/specs/2026-03-23-atomic-storyboard-design.md`
+
+### 核心需求
+1. **4阶段流转**：分镜审查 → 场景生成 → 图片融合 → 视频生成 → 完成
+2. **卡片状态机**：每张卡片根据阶段和自身数据状态，显示不同内容
+3. **双融合模式**：自动融合（按 characters[] 顺序）+ 手动融合（九宫格模态框）
+4. **Prompt 显示**：场景图下方显示生成用的 Prompt（来自 `background.scene_desc`）
+5. **场景图重生成**：每格可独立重生成场景图（需新增后端接口）
+6. **流水线+原子化并存**：一键自动执行 和 逐格手动操作可混合使用
+
+### 阶段计划
+
+| Phase | 任务 | 关键改动 | 产出 | 状态 |
+|-------|------|---------|------|------|
+| S1 | Step5 阶段状态机 | 新增 `workflowPhase` 状态：review/scene-generating/fusion/video/completed | 阶段状态机 | pending |
+| S2 | 阶段1卡片 — 分镜审查态 | 展示分镜 JSON 的 scene/characters/dialogue/shot_type + 确认/修订按钮 | 卡片渲染 | pending |
+| S3 | 阶段2卡片 — 场景生成态 | 生成中显示 spinner + 等待文案；已生成显示场景图 + Prompt + 融合按钮 | 卡片渲染 | pending |
+| S4 | 阶段3卡片 — 融合态 | 场景图+融合图双图展示；自动/手动融合按钮；融合状态显示 | 卡片渲染 | pending |
+| S5 | 阶段4卡片 — 视频生成态 | 场景图+融合图+视频三图展示；重新生成/融合按钮；Prompt 显示 | 卡片渲染 | pending |
+| S6 | 底部操作栏 | 一键自动化执行 + 统一合并生成最终视频按钮 | 操作栏 | pending |
+| S7 | 场景图重生成 API | 后端新增 `POST /api/episodes/{episodeId}/panels/{panelIndex}/regenerate-scene` | REST API | pending |
+| S8 | 自动融合逻辑 | splitGridPage → Canvas 坐标叠加 → 上传 → submitFusionPageWithAuto(..., false) | 融合逻辑 | pending |
+| S9 | Step6 简化 | 简化为最终视频展示页（完成阶段全部 completed 时跳转） | 页面简化 | pending |
+| S10 | 集成测试 | 前端构建通过；验收标准逐项检查 | 测试验收 | pending |
+
+### 验收标准
+- [ ] 分镜确认后自动进入卡片视图，不再有独立的生产管线页
+- [ ] 每张卡片能独立展示分镜信息、场景图、融合图、视频
+- [ ] 场景图下方显示生成 Prompt（来自分镜 JSON 的 scene_desc），方便对照验证
+- [ ] 场景图生成中：融合按钮禁用，显示等待文案
+- [ ] 场景图生成失败：显示错误标记，引导重新生成
+- [ ] 自动融合：按分镜 JSON 角色绑定关系自动叠加，多角色按数组顺序叠加
+- [ ] 手动融合：打开九宫格模态框精细调整，取消不改变状态
+- [ ] 每个格子可独立重新生成场景图（需后端接口）
+- [ ] 重新生成场景图后自动触发重新融合
+- [ ] 每个格子可独立重新融合
+- [ ] 每个格子可独立生成/重新生成视频
+- [ ] 一键自动化：自动完成所有格子的融合+视频生成
+- [ ] 全部完成后跳转 Step6 展示最终视频
+- [ ] 前端构建通过

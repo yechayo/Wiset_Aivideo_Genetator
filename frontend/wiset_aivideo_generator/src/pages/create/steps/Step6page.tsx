@@ -3,16 +3,24 @@ import styles from './Step6page.module.less';
 import type { Project } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useFusionStore } from '../../../stores/fusionStore';
-import { getProductionPipeline, getVideoSegments, retryProduction } from '../../../services/episodeService';
-import type { ProductionPipelineResponse, VideoSegmentInfo } from '../../../services/types/episode.types';
+import {
+  getProductionPipeline,
+  getVideoSegments,
+  getPanelStates,
+  generateSinglePanelVideo,
+  autoContinue,
+  retryProduction,
+} from '../../../services/episodeService';
+import type { ProductionPipelineResponse, VideoSegmentInfo, PanelState } from '../../../services/types/episode.types';
 import PipelineView from './components/PipelineView';
 import GridFusionEditor from './components/GridFusionEditor';
+import PanelVideoCard from './components/PanelVideoCard';
 
 interface Step6pageProps extends StepContentProps {
   project: Project;
 }
 
-type ViewMode = 'loading' | 'pipeline' | 'fusion' | 'completed' | 'failed' | 'no-episode';
+type ViewMode = 'loading' | 'pipeline' | 'fusion' | 'atomic' | 'completed' | 'failed' | 'no-episode';
 
 const Step6page = ({ project }: Step6pageProps) => {
   const { reset: resetFusion } = useFusionStore();
@@ -23,9 +31,49 @@ const Step6page = ({ project }: Step6pageProps) => {
   const [videoSegments, setVideoSegments] = useState<VideoSegmentInfo[]>([]);
   const [segmentsExpanded, setSegmentsExpanded] = useState(false);
   const [segmentsLoading, setSegmentsLoading] = useState(false);
+
+  // 原子化面板状态
+  const [panelStates, setPanelStates] = useState<PanelState[]>([]);
+  const [panelsLoading, setPanelsLoading] = useState(false);
+  const [autoContinuing, setAutoContinuing] = useState(false);
+
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const panelPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const projectId = project.projectId;
+
+  // 加载面板状态
+  const loadPanelStates = useCallback(async (targetEpisodeId: string) => {
+    try {
+      setPanelsLoading(true);
+      const res = await getPanelStates(targetEpisodeId);
+      if (res.code === 200 && res.data) {
+        setPanelStates(res.data);
+      }
+    } catch (e: any) {
+      console.error('获取面板状态失败:', e);
+    } finally {
+      setPanelsLoading(false);
+    }
+  }, []);
+
+  // 轮询面板状态（原子化模式下每5秒刷新）
+  useEffect(() => {
+    if (viewMode !== 'atomic' || !episodeId) return;
+
+    loadPanelStates(episodeId);
+
+    panelPollTimerRef.current = setInterval(() => {
+      loadPanelStates(episodeId!);
+    }, 5000);
+
+    return () => {
+      if (panelPollTimerRef.current) {
+        clearInterval(panelPollTimerRef.current);
+        panelPollTimerRef.current = null;
+      }
+    };
+  }, [viewMode, episodeId, loadPanelStates]);
 
   const loadSegments = useCallback(async (targetEpisodeId: string, showLoading = true) => {
     try {
@@ -45,7 +93,7 @@ const Step6page = ({ project }: Step6pageProps) => {
     }
   }, []);
 
-  // Poll production pipeline
+  // 轮询生产管线
   useEffect(() => {
     if (!projectId) return;
 
@@ -56,12 +104,10 @@ const Step6page = ({ project }: Step6pageProps) => {
           setPipeline(res.data);
           setPollError(null);
 
-          // Update episodeId
           const currentEpisodeId = res.data.episodeId;
           if (currentEpisodeId) {
             setEpisodeId(currentEpisodeId);
 
-            // 生产阶段实时拉取已完成片段，支持边生成边展示
             const hasVideoStageStarted = res.data.stages.some((s) =>
               ['video_generating', 'subtitle', 'composition', 'completed'].includes(s.key)
               && (s.displayStatus === 'active' || s.displayStatus === 'completed')
@@ -74,8 +120,8 @@ const Step6page = ({ project }: Step6pageProps) => {
             setVideoSegments([]);
           }
 
-          // 融合编辑中不覆盖视图，仅在完成/失败时自动切换
-          if (viewMode === 'fusion') {
+          // 融合编辑中或原子化视图中不自动切换
+          if (viewMode === 'fusion' || viewMode === 'atomic') {
             const hasFailed = res.data.stages.some(
               (s) => s.displayStatus === 'failed'
             );
@@ -92,7 +138,7 @@ const Step6page = ({ project }: Step6pageProps) => {
             return;
           }
 
-          // Determine view mode
+          // 判断视图模式
           const stages = res.data.stages;
           const hasWaitingUser = stages.some(
             (s) => s.displayStatus === 'waiting_user'
@@ -104,15 +150,19 @@ const Step6page = ({ project }: Step6pageProps) => {
             (s) => s.displayStatus === 'completed'
           );
 
+          // 检查融合阶段是否已完成（grid_fusion 阶段 index=2）
+          const fusionStage = stages.find((s) => s.key === 'grid_fusion');
+          const fusionCompleted = fusionStage?.displayStatus === 'completed';
+
           if (!res.data.episodeId) {
             setViewMode('no-episode');
-          } else if (hasWaitingUser) {
-            // Don't auto-switch to fusion, show pipeline with action button
-            setViewMode('pipeline');
           } else if (allCompleted && res.data.finalVideoUrl) {
             setViewMode('completed');
           } else if (hasFailed) {
             setViewMode('failed');
+          } else if (fusionCompleted && !hasWaitingUser) {
+            // 融合已完成但整体未完成 → 自动进入原子化视图
+            setViewMode('atomic');
           } else {
             setViewMode('pipeline');
           }
@@ -146,9 +196,10 @@ const Step6page = ({ project }: Step6pageProps) => {
     }
   }, [episodeId]);
 
+  // 融合完成后进入原子化视图
   const handleFusionSubmitted = useCallback(() => {
     resetFusion();
-    setViewMode('pipeline');
+    setViewMode('atomic');
   }, [resetFusion]);
 
   const handleRetry = useCallback(async () => {
@@ -161,8 +212,36 @@ const Step6page = ({ project }: Step6pageProps) => {
     }
   }, [episodeId]);
 
+  // 单格生成视频
+  const handleGeneratePanelVideo = useCallback(async (panelIndex: number) => {
+    if (!episodeId) return;
+    try {
+      await generateSinglePanelVideo(episodeId, panelIndex);
+      await loadPanelStates(episodeId);
+    } catch (e: any) {
+      console.error('生成视频失败:', e);
+    }
+  }, [episodeId, loadPanelStates]);
+
+  // 一键自动化
+  const handleAutoContinue = useCallback(async () => {
+    if (!episodeId) return;
+    try {
+      setAutoContinuing(true);
+      await autoContinue(episodeId);
+      setViewMode('pipeline');
+    } catch (e: any) {
+      console.error('一键自动化失败:', e);
+    } finally {
+      setAutoContinuing(false);
+    }
+  }, [episodeId]);
+
   const generatedSceneGrids = (pipeline?.sceneGridUrls ?? []).filter((url) => !!url);
   const generatedVideos = videoSegments.filter((seg) => !!seg.videoUrl);
+  const completedPanels = panelStates.filter((p) => p.videoStatus === 'completed').length;
+  const totalPanels = panelStates.length;
+  const allPanelsCompleted = totalPanels > 0 && completedPanels === totalPanels;
 
   if (viewMode === 'loading') {
     return (
@@ -271,6 +350,72 @@ const Step6page = ({ project }: Step6pageProps) => {
         />
       )}
 
+      {/* 原子化视图：每个分镜格子独立展示和控制 */}
+      {viewMode === 'atomic' && episodeId && (
+        <div className={styles.atomicView}>
+          {/* 顶部统计栏 */}
+          <div className={styles.atomicStats}>
+            <div className={styles.statsItem}>
+              <span className={styles.statsLabel}>进度</span>
+              <span className={styles.statsValue}>
+                {completedPanels} / {totalPanels || '-'}
+              </span>
+            </div>
+            <div className={styles.statsItem}>
+              <span className={styles.statsLabel}>已完成</span>
+              <span className={styles.statsValue}>{completedPanels}</span>
+            </div>
+            <div className={styles.statsItem}>
+              <span className={styles.statsLabel}>等待生成</span>
+              <span className={styles.statsValue}>
+                {totalPanels - completedPanels}
+              </span>
+            </div>
+          </div>
+
+          {/* 面板网格 */}
+          <div className={styles.atomicGrid}>
+            {panelsLoading ? (
+              <div className={styles.atomicLoading}>
+                <div className={styles.spinner}></div>
+                <p>正在加载面板状态...</p>
+              </div>
+            ) : panelStates.length > 0 ? (
+              panelStates.map((panel) => (
+                <PanelVideoCard
+                  key={panel.panelIndex}
+                  panel={panel}
+                  onGenerateVideo={handleGeneratePanelVideo}
+                />
+              ))
+            ) : (
+              <div className={styles.atomicEmpty}>
+                <p>暂无面板数据，请先完成融合</p>
+              </div>
+            )}
+          </div>
+
+          {/* 底部操作栏 */}
+          <div className={styles.atomicActions}>
+            <button
+              className={styles.autoButton}
+              onClick={handleAutoContinue}
+              disabled={autoContinuing}
+            >
+              {autoContinuing ? '执行中...' : '一键自动化执行'}
+            </button>
+            {allPanelsCompleted && (
+              <button
+                className={styles.composeButton}
+                onClick={handleAutoContinue}
+              >
+                统一合并生成最终视频
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {viewMode === 'completed' && pipeline && (
         <div className={styles.completedView}>
           <div className={styles.completedIcon}>&#10003;</div>
@@ -295,7 +440,6 @@ const Step6page = ({ project }: Step6pageProps) => {
             </>
           )}
 
-          {/* Video segments list */}
           {videoSegments.length > 0 && (
             <div className={styles.segmentsSection}>
               <button
@@ -347,7 +491,7 @@ const Step6page = ({ project }: Step6pageProps) => {
         </div>
       )}
 
-      {pollError && viewMode !== 'fusion' && (
+      {pollError && viewMode !== 'fusion' && viewMode !== 'atomic' && (
         <div className={styles.errorState}>
           <p>状态轮询出错: {pollError}</p>
         </div>

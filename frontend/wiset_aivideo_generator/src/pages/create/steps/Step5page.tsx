@@ -11,7 +11,17 @@ import {
   retryStoryboard,
   startProduction,
 } from '../../../services/projectService';
+import {
+  getProductionPipeline,
+  getPanelStates,
+  autoContinue,
+  regenerateSceneImage,
+  generateSinglePanelVideo,
+} from '../../../services/episodeService';
 import { isApiSuccess } from '../../../services/apiClient';
+import type { WorkflowPhase, SceneImageState, ProductionPipelineResponse, PanelState } from '../../../services/types/episode.types';
+import Step5Card from './components/Step5Card';
+import GridFusionEditor from './components/GridFusionEditor';
 
 const POLL_INTERVAL = 3000;
 
@@ -114,7 +124,18 @@ const Step5page = ({ project }: Step5pageProps) => {
   const [apiError, setApiError] = useState<string | null>(null);
   const [storyboardData, setStoryboardData] = useState<StoryboardData | null>(null);
 
+  // 工作流阶段状态
+  const [workflowPhase, setWorkflowPhase] = useState<WorkflowPhase>('review');
+  const [pipeline, setPipeline] = useState<ProductionPipelineResponse | null>(null);
+  const [panelStates, setPanelStates] = useState<PanelState[]>([]);
+  const [sceneImageStates, setSceneImageStates] = useState<Map<number, SceneImageState>>(new Map());
+  const [autoContinuing, setAutoContinuing] = useState(false);
+
+  // 手动融合模态框
+  const [manualFusionPanelIndex, setManualFusionPanelIndex] = useState<number | null>(null);
+
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pipelinePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadedEpisodeRef = useRef<string | null>(null);
   const syncedStoryboardEpisodeRef = useRef<string | null>(null);
 
@@ -123,11 +144,9 @@ const Step5page = ({ project }: Step5pageProps) => {
       const res = await getStoryboard(epId);
       if (res.code !== 200 || !res.data) return false;
 
-      // Check episode status directly, not inferred from storyboardJson being null
       if (res.data.status === 'STORYBOARD_GENERATING') return false;
       if (res.data.status === 'STORYBOARD_FAILED') return false;
 
-      // STORYBOARD_DONE or STORYBOARD_CONFIRMED — parse the data
       if (res.data.storyboardJson) {
         const parsed = normalizeStoryboardData(JSON.parse(res.data.storyboardJson) as RawStoryboardData);
         if (parsed?.panels?.length > 0) {
@@ -148,6 +167,13 @@ const Step5page = ({ project }: Step5pageProps) => {
     }
   }, []);
 
+  const stopPipelinePolling = useCallback(() => {
+    if (pipelinePollingRef.current !== null) {
+      clearInterval(pipelinePollingRef.current);
+      pipelinePollingRef.current = null;
+    }
+  }, []);
+
   const startPolling = useCallback((epId: string) => {
     stopPolling();
     loadedEpisodeRef.current = epId;
@@ -165,10 +191,63 @@ const Step5page = ({ project }: Step5pageProps) => {
     });
   }, [fetchStoryboard, stopPolling]);
 
+  // 加载面板状态
+  const loadPanelStates = useCallback(async (epId: string) => {
+    try {
+      const res = await getPanelStates(epId);
+      if (res.code === 200 && res.data) {
+        setPanelStates(res.data);
+
+        // 更新场景图状态
+        const newSceneStates = new Map<number, SceneImageState>();
+        const sceneGridUrls = pipeline?.sceneGridUrls ?? [];
+
+        res.data.forEach((panel) => {
+          const sceneUrl = sceneGridUrls[panel.panelIndex] || null;
+          newSceneStates.set(panel.panelIndex, {
+            url: sceneUrl,
+            generating: !sceneUrl && panel.fusionStatus === 'pending',
+            failed: false,
+            prompt: panel.sceneDescription || null,
+          });
+        });
+
+        setSceneImageStates(newSceneStates);
+      }
+    } catch (e) {
+      console.error('获取面板状态失败:', e);
+    }
+  }, [pipeline]);
+
+  // 加载管线状态
+  const loadPipeline = useCallback(async (projId: string) => {
+    try {
+      const res = await getProductionPipeline(projId);
+      if (res.code === 200 && res.data) {
+        setPipeline(res.data);
+        if (res.data.episodeId) {
+          await loadPanelStates(res.data.episodeId);
+        }
+      }
+    } catch (e) {
+      console.error('获取管线状态失败:', e);
+    }
+  }, [loadPanelStates]);
+
+  // 启动管线轮询
+  const startPipelinePolling = useCallback((projId: string) => {
+    stopPipelinePolling();
+    loadPipeline(projId);
+    pipelinePollingRef.current = setInterval(() => {
+      loadPipeline(projId);
+    }, POLL_INTERVAL);
+  }, [loadPipeline, stopPipelinePolling]);
+
   useEffect(() => {
     setStoryboardData(null);
     setShowRevision(false);
     syncedStoryboardEpisodeRef.current = null;
+    stopPipelinePolling();
 
     if (reviewEpisodeId) {
       startPolling(reviewEpisodeId);
@@ -177,7 +256,19 @@ const Step5page = ({ project }: Step5pageProps) => {
     }
 
     return () => stopPolling();
-  }, [reviewEpisodeId, startPolling, stopPolling]);
+  }, [reviewEpisodeId, startPolling, stopPolling, stopPipelinePolling]);
+
+  // 当所有分镜确认后，开始管线轮询
+  useEffect(() => {
+    if (!allConfirmed || !projectId) {
+      stopPipelinePolling();
+      return;
+    }
+
+    startPipelinePolling(projectId);
+
+    return () => stopPipelinePolling();
+  }, [allConfirmed, projectId, startPipelinePolling, stopPipelinePolling]);
 
   useEffect(() => {
     if (!apiError) return;
@@ -193,23 +284,63 @@ const Step5page = ({ project }: Step5pageProps) => {
     void syncStatus(projectId);
   }, [isGenerating, storyboardData, reviewEpisodeId, projectId, syncStatus]);
 
-  const handleStartStoryboard = useCallback(async () => {
-    if (!projectId) return;
-    setIsSubmitting(true);
-    setApiError(null);
-    try {
-      const res = await startStoryboard(projectId);
-      if (!isApiSuccess(res)) {
-        setApiError(res.message || 'Failed to start storyboard generation');
-        return;
-      }
-      await syncStatus(projectId);
-    } catch (e: any) {
-      setApiError(e.message || 'Failed to start storyboard generation');
-    } finally {
-      setIsSubmitting(false);
+  // 判断工作流阶段
+  useEffect(() => {
+    if (!allConfirmed) {
+      setWorkflowPhase('review');
+      return;
     }
-  }, [projectId, syncStatus]);
+
+    const stages = pipeline?.stages ?? [];
+    const sceneGridUrls = pipeline?.sceneGridUrls ?? [];
+
+    // 检查场景图是否全部生成
+    const allSceneGenerated = sceneGridUrls.length > 0 && sceneGridUrls.every(url => !!url);
+
+    if (!allSceneGenerated) {
+      setWorkflowPhase('scene-generating');
+      return;
+    }
+
+    // 检查融合状态
+    const fusionStage = stages.find(s => s.key === 'grid_fusion');
+    if (fusionStage?.displayStatus !== 'completed') {
+      setWorkflowPhase('fusion');
+      return;
+    }
+
+    // 检查视频状态
+    const allPanelsCompleted = panelStates.every(p => p.videoStatus === 'completed');
+    if (allPanelsCompleted && panelStates.length > 0) {
+      setWorkflowPhase('completed');
+    } else {
+      setWorkflowPhase('video');
+    }
+  }, [allConfirmed, pipeline, panelStates]);
+
+  // Helper: 从 panelStates 获取指定格子的融合状态
+  const getFusionStatus = useCallback((panelIndex: number): 'pending' | 'completed' | 'failed' => {
+    const panel = panelStates.find(p => p.panelIndex === panelIndex);
+    return panel?.fusionStatus ?? 'pending';
+  }, [panelStates]);
+
+  // Helper: 从 panelStates 获取指定格子的视频状态
+  const getVideoStatus = useCallback((panelIndex: number): 'pending' | 'generating' | 'completed' | 'failed' => {
+    const panel = panelStates.find(p => p.panelIndex === panelIndex);
+    return panel?.videoStatus ?? 'pending';
+  }, [panelStates]);
+
+  // Helper: 从 panelStates 获取指定格子的融合 URL
+  const getFusionUrl = useCallback((panelIndex: number): string | null => {
+    const panel = panelStates.find(p => p.panelIndex === panelIndex);
+    return panel?.fusionUrl ?? null;
+  }, [panelStates]);
+
+  // Helper: 从 panelStates 获取指定格子的视频 URL
+  const getVideoUrl = useCallback((panelIndex: number): string | null => {
+    const panel = panelStates.find(p => p.panelIndex === panelIndex);
+    return panel?.videoUrl ?? null;
+  }, [panelStates]);
 
   const handleConfirm = useCallback(async () => {
     if (!reviewEpisodeId) return;
@@ -327,9 +458,102 @@ const Step5page = ({ project }: Step5pageProps) => {
     }
   }, [projectId]);
 
+  // 重新生成场景图
+  const handleRegenerateScene = useCallback(async (panelIndex: number) => {
+    if (!reviewEpisodeId) return;
+    try {
+      await regenerateSceneImage(reviewEpisodeId, panelIndex);
+      // 重新加载面板状态
+      await loadPanelStates(reviewEpisodeId);
+    } catch (e: any) {
+      console.error('重新生成场景图失败:', e);
+      setApiError(e.message || '重新生成场景图失败');
+    }
+  }, [reviewEpisodeId, loadPanelStates]);
+
+  // 自动融合（单格）
+  const handleAutoFusion = useCallback(async (_panelIndex: number) => {
+    if (!reviewEpisodeId) return;
+    try {
+      await autoContinue(reviewEpisodeId);
+      await loadPanelStates(reviewEpisodeId);
+    } catch (e: any) {
+      console.error('自动融合失败:', e);
+      setApiError(e.message || '自动融合失败');
+    }
+  }, [reviewEpisodeId, loadPanelStates]);
+
+  // 手动融合（打开模态框）
+  const handleOpenManualFusion = useCallback((panelIndex: number) => {
+    setManualFusionPanelIndex(panelIndex);
+  }, []);
+
+  // 关闭手动融合模态框
+  const handleCloseManualFusion = useCallback(() => {
+    setManualFusionPanelIndex(null);
+  }, []);
+
+  // 融合提交完成
+  const handleFusionSubmitted = useCallback(async () => {
+    setManualFusionPanelIndex(null);
+    if (projectId) {
+      await loadPipeline(projectId);
+    }
+  }, [projectId, loadPipeline]);
+
+  // 生成视频（单格）
+  const handleGenerateVideo = useCallback(async (panelIndex: number) => {
+    if (!reviewEpisodeId) return;
+    try {
+      await generateSinglePanelVideo(reviewEpisodeId, panelIndex);
+      await loadPanelStates(reviewEpisodeId);
+    } catch (e: any) {
+      console.error('生成视频失败:', e);
+      setApiError(e.message || '生成视频失败');
+    }
+  }, [reviewEpisodeId, loadPanelStates]);
+
+  // 一键自动化执行
+  const handleAutoContinueAll = useCallback(async () => {
+    if (!reviewEpisodeId) return;
+    try {
+      setAutoContinuing(true);
+      await autoContinue(reviewEpisodeId);
+    } catch (e: any) {
+      console.error('一键自动化失败:', e);
+      setApiError(e.message || '一键自动化失败');
+    } finally {
+      setAutoContinuing(false);
+    }
+  }, [reviewEpisodeId]);
+
+  // 统一合并生成最终视频
+  const handleCompose = useCallback(async () => {
+    if (!reviewEpisodeId) return;
+    try {
+      await autoContinue(reviewEpisodeId);
+    } catch (e: any) {
+      console.error('合并失败:', e);
+      setApiError(e.message || '合并失败');
+    }
+  }, [reviewEpisodeId]);
+
   const progressPercent = totalEpisodes > 0
     ? Math.round((allConfirmed ? 1 : Math.max(0, currentEpisode - 1) / totalEpisodes) * 100)
     : 0;
+
+  // 底部操作栏可见性（阶段2-4始终可见）
+  const showBottomBar = ['scene-generating', 'fusion', 'video'].includes(workflowPhase);
+
+  // 阶段进度
+  const phases = ['分镜审查', '场景生成', '图片融合', '视频生成', '完成'];
+  const phaseIndex = {
+    'review': 0,
+    'scene-generating': 1,
+    'fusion': 2,
+    'video': 3,
+    'completed': 4,
+  }[workflowPhase] ?? 0;
 
   return (
     <div className={styles.content}>
@@ -346,6 +570,21 @@ const Step5page = ({ project }: Step5pageProps) => {
           <span className={styles.progressText}>
             {allConfirmed ? totalEpisodes : currentEpisode} / {totalEpisodes} episodes
           </span>
+        </div>
+      )}
+
+      {/* 阶段进度条（仅在非 review 阶段显示） */}
+      {workflowPhase !== 'review' && (
+        <div className={styles.phaseProgressBar}>
+          {phases.map((label, idx) => (
+            <div
+              key={label}
+              className={`${styles.phaseStep} ${idx <= phaseIndex ? styles.phaseActive : ''} ${idx < phaseIndex ? styles.phaseDone : ''}`}
+            >
+              <div className={styles.phaseDot}>{idx < phaseIndex ? '✓' : idx + 1}</div>
+              <span className={styles.phaseLabel}>{label}</span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -377,6 +616,7 @@ const Step5page = ({ project }: Step5pageProps) => {
         </div>
       )}
 
+      {/* 阶段1：分镜审查（保持原有逻辑） */}
       {!isGenerating && !isFailed && !allConfirmed && totalEpisodes > 0 && currentEpisode <= totalEpisodes && (
         <div className={styles.reviewSection}>
           <div className={styles.reviewHeader}>
@@ -492,6 +732,55 @@ const Step5page = ({ project }: Step5pageProps) => {
         </div>
       )}
 
+      {/* 阶段2-4：卡片网格视图 */}
+      {workflowPhase !== 'review' && workflowPhase !== 'completed' && (
+        <div className={styles.cardGrid}>
+          {storyboardData?.panels.map((panel, idx) => (
+            <Step5Card
+              key={idx}
+              panel={panel}
+              panelIndex={idx}
+              workflowPhase={workflowPhase}
+              sceneImageState={sceneImageStates.get(idx)}
+              fusionStatus={getFusionStatus(idx)}
+              fusionUrl={getFusionUrl(idx)}
+              videoStatus={getVideoStatus(idx)}
+              videoUrl={getVideoUrl(idx)}
+              onConfirm={handleConfirm}
+              onRegenerateScene={() => handleRegenerateScene(idx)}
+              onAutoFusion={() => handleAutoFusion(idx)}
+              onManualFusion={() => handleOpenManualFusion(idx)}
+              onGenerateVideo={() => handleGenerateVideo(idx)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* 阶段5：完成态（跳转到 Step6） */}
+      {workflowPhase === 'completed' && (
+        <div className={styles.completedView}>
+          <div className={styles.completedIcon}>✓</div>
+          <h2>所有分镜处理完成</h2>
+          <p>正在跳转到视频预览页面...</p>
+        </div>
+      )}
+
+      {/* 底部操作栏 */}
+      {showBottomBar && (
+        <div className={styles.bottomActionBar}>
+          <button
+            className={styles.autoButton}
+            onClick={handleAutoContinueAll}
+            disabled={autoContinuing}
+          >
+            {autoContinuing ? '执行中...' : '一键自动化执行'}
+          </button>
+          <button className={styles.composeButton} onClick={handleCompose}>
+            统一合并生成最终视频
+          </button>
+        </div>
+      )}
+
       {!isGenerating && !isFailed && totalEpisodes === 0 && (
         <div className={styles.startSection}>
           <p className={styles.startHint}>
@@ -499,7 +788,7 @@ const Step5page = ({ project }: Step5pageProps) => {
           </p>
           <button
             className={styles.primaryButton}
-            onClick={handleStartStoryboard}
+            onClick={handleStartProduction}
             disabled={isSubmitting}
           >
             {isSubmitting ? 'Processing...' : 'Start Storyboard'}
@@ -507,7 +796,7 @@ const Step5page = ({ project }: Step5pageProps) => {
         </div>
       )}
 
-      {!isGenerating && !isFailed && allConfirmed && (
+      {!isGenerating && !isFailed && allConfirmed && workflowPhase === 'review' && (
         <div className={styles.startSection}>
           <div className={styles.allConfirmed}>
             <div className={styles.allConfirmedIcon}>&#10003;</div>
@@ -520,6 +809,18 @@ const Step5page = ({ project }: Step5pageProps) => {
           >
             {isSubmitting ? 'Processing...' : 'Start Production'}
           </button>
+        </div>
+      )}
+
+      {/* 手动融合模态框 */}
+      {manualFusionPanelIndex !== null && reviewEpisodeId && (
+        <div className={styles.modalOverlay}>
+          <GridFusionEditor
+            episodeId={reviewEpisodeId}
+            onFusionSubmitted={handleFusionSubmitted}
+            mode="modal"
+            onClose={handleCloseManualFusion}
+          />
         </div>
       )}
 
