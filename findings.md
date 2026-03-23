@@ -138,3 +138,33 @@
   - new `StoryboardEnhancementServiceTest` passed
   - `EpisodeProductionServiceTest` includes enhancement invocation assertion and passed
   - full regression suite passed (30/30)
+
+## Status Update (2026-03-23, P6 in progress)
+- Backend split integration in orchestration is now in place:
+  - `EpisodeProductionService` adds `splitGridPageForFusion(episodeId, pageIndex)`
+  - service builds page-level split task with row-major metadata binding (`rows/cols/startPanelIndex/panels`)
+  - supports scene-group pagination via `GridPageDescriptor.pageInGroup`
+- API surface added:
+  - `POST /api/episodes/{episodeId}/split-grid-page`
+  - optional `pageIndex` parsing and validation at controller level
+- Test evidence:
+  - `EpisodeProductionServiceTest` adds task-build assertion and out-of-range guard case
+  - `mvn -Dtest=EpisodeProductionServiceTest test` passed (15/15)
+  - full regression suite passed (32/32)
+
+## Status Update (2026-03-23, P6 endpoint test coverage)
+- Added new `EpisodeControllerTest` for `/split-grid-page`:
+  - default pageIndex behavior (`body` absent)
+  - numeric-string parse path
+  - invalid format rejection
+  - negative value rejection
+- Evidence:
+  - `mvn -Dtest=EpisodeControllerTest test` passed (4/4)
+  - extended regression suite passed (37/37)
+
+## Status Update (2026-03-23, P6 pagination offset regression)
+- Added service-level regression for `splitGridPageForFusion`:
+  - same scene group with `12` panels and two grid pages
+  - page-2 task is verified with `startPanelIndex=9` and first bound panel `ep1_p10`
+- Evidence:
+  - `mvn -Dtest=EpisodeProductionServiceTest test` passed (16/16)
