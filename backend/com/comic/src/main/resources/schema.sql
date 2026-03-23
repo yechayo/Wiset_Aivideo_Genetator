@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS episode (
     characters TEXT,
     key_items TEXT,
     continuity_note TEXT,
+    visual_style_note TEXT,
     chapter_title TEXT,
     status TEXT,
     error_msg TEXT,
@@ -77,7 +78,6 @@ CREATE TABLE IF NOT EXISTS t_character (
     personality TEXT,
     appearance TEXT,
     background TEXT,
-    standard_image_url TEXT,
     confirmed INTEGER DEFAULT 0,
     locked INTEGER DEFAULT 0,
     -- 角色图片生成相关字段

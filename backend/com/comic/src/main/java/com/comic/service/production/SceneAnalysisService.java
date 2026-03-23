@@ -1,6 +1,5 @@
 package com.comic.service.production;
 
-import com.comic.ai.text.TextGenerationService;
 import com.comic.dto.model.SceneAnalysisResultModel;
 import com.comic.dto.model.SceneGroupModel;
 import com.comic.entity.Episode;
@@ -11,7 +10,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * 场景分析服务
@@ -22,7 +24,6 @@ import java.util.*;
 @Slf4j
 public class SceneAnalysisService {
 
-    private final TextGenerationService textGenerationService;
     private final EpisodeRepository episodeRepository;
     private final ObjectMapper objectMapper;
 
@@ -79,27 +80,43 @@ public class SceneAnalysisService {
             PanelData panel = new PanelData();
             panel.setIndex(index++);
 
-            // 提取场景信息
-            JsonNode sceneNode = panelNode.get("scene");
-            panel.setScene(sceneNode != null ? sceneNode.asText() : "");
+            JsonNode backgroundNode = panelNode.get("background");
+            if (backgroundNode == null || !backgroundNode.isObject()) {
+                throw new IllegalArgumentException("分镜格式错误：background 必须是对象");
+            }
 
-            // 提取角色列表
+            JsonNode sceneDescNode = backgroundNode.get("scene_desc");
+            if (sceneDescNode == null || !sceneDescNode.isTextual()
+                    || sceneDescNode.asText().trim().isEmpty()) {
+                throw new IllegalArgumentException("分镜格式错误：background.scene_desc 不能为空");
+            }
+            panel.setScene(sceneDescNode.asText().trim());
+
+            JsonNode timeOfDayNode = backgroundNode.get("time_of_day");
+            panel.setTimeOfDay(timeOfDayNode != null && timeOfDayNode.isTextual()
+                    ? timeOfDayNode.asText().trim() : "");
+
+            JsonNode atmosphereNode = backgroundNode.get("atmosphere");
+            panel.setAtmosphere(atmosphereNode != null && atmosphereNode.isTextual()
+                    ? atmosphereNode.asText().trim() : "");
+
             JsonNode charactersNode = panelNode.get("characters");
             if (charactersNode != null && charactersNode.isArray()) {
                 List<String> characters = new ArrayList<>();
                 for (JsonNode charNode : charactersNode) {
-                    characters.add(charNode.asText());
+                    if (charNode != null && charNode.isObject()) {
+                        JsonNode charIdNode = charNode.get("char_id");
+                        if (charIdNode != null && charIdNode.isTextual()
+                                && !charIdNode.asText().trim().isEmpty()) {
+                            characters.add(charIdNode.asText().trim());
+                        }
+                    }
                 }
                 panel.setCharacters(characters);
             }
 
-            // 提取画面描述
-            JsonNode descriptionNode = panelNode.get("description");
+            JsonNode descriptionNode = panelNode.get("composition");
             panel.setDescription(descriptionNode != null ? descriptionNode.asText() : "");
-
-            // 提取对白
-            JsonNode dialogueNode = panelNode.get("dialogue");
-            panel.setDialogue(dialogueNode != null ? dialogueNode.asText() : "");
 
             panels.add(panel);
         }
@@ -136,6 +153,9 @@ public class SceneAnalysisService {
                 currentGroup.setStartPanelIndex(panel.getIndex());
                 currentGroup.setLocation(panel.getScene());
                 currentGroup.setCharacters(panel.getCharacters());
+                currentGroup.setDescription(panel.getDescription());
+                currentGroup.setTimeOfDay(panel.getTimeOfDay());
+                currentGroup.setMood(panel.getAtmosphere());
                 currentScene = panel.getScene();
             }
 
@@ -194,18 +214,12 @@ public class SceneAnalysisService {
             }
             group.setCharacters(new ArrayList<>(uniqueCharacters));
 
-            // 简单的时间判断（可根据实际需求扩展）
-            String location = group.getLocation();
-            if (location != null) {
-                if (location.contains("夜") || location.contains("晚")) {
-                    group.setTimeOfDay("夜晚");
-                } else if (location.contains("黄昏") || location.contains("夕阳")) {
-                    group.setTimeOfDay("黄昏");
-                } else if (location.contains("晨") || location.contains("早")) {
-                    group.setTimeOfDay("早晨");
-                } else {
-                    group.setTimeOfDay("白天");
-                }
+            if (group.getDescription() == null || group.getDescription().trim().isEmpty()) {
+                group.setDescription(group.getLocation());
+            }
+
+            if (group.getTimeOfDay() == null || group.getTimeOfDay().trim().isEmpty()) {
+                group.setTimeOfDay("白天");
             }
         }
     }
@@ -218,7 +232,8 @@ public class SceneAnalysisService {
         private String scene;
         private List<String> characters;
         private String description;
-        private String dialogue;
+        private String timeOfDay;
+        private String atmosphere;
 
         public Integer getIndex() { return index; }
         public void setIndex(Integer index) { this.index = index; }
@@ -232,7 +247,10 @@ public class SceneAnalysisService {
         public String getDescription() { return description; }
         public void setDescription(String description) { this.description = description; }
 
-        public String getDialogue() { return dialogue; }
-        public void setDialogue(String dialogue) { this.dialogue = dialogue; }
+        public String getTimeOfDay() { return timeOfDay; }
+        public void setTimeOfDay(String timeOfDay) { this.timeOfDay = timeOfDay; }
+
+        public String getAtmosphere() { return atmosphere; }
+        public void setAtmosphere(String atmosphere) { this.atmosphere = atmosphere; }
     }
 }

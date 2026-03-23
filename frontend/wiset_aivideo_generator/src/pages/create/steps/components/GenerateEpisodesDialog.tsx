@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import styles from './GenerateEpisodesDialog.module.less';
 
 interface GenerateEpisodesDialogProps {
@@ -24,6 +24,13 @@ const GenerateEpisodesDialog = ({
   const [episodeCount, setEpisodeCount] = useState(defaultEpisodeCount);
   const [modificationSuggestion, setModificationSuggestion] = useState('');
 
+  useEffect(() => {
+    if (open) {
+      setEpisodeCount(defaultEpisodeCount);
+      setModificationSuggestion('');
+    }
+  }, [open, chapter, defaultEpisodeCount]);
+
   if (!open) return null;
 
   const handleConfirm = () => {
@@ -36,9 +43,8 @@ const GenerateEpisodesDialog = ({
     }
   };
 
-  // 提取章节中的集数范围（如 "第1-2集"）
   const extractEpisodeRange = (chapterTitle: string) => {
-    const match = chapterTitle.match(/第(\d+)[-~](\d+)集/);
+    const match = chapterTitle.match(/(?:第\s*)?(\d+)\s*[-~～—–]\s*(\d+)\s*集/);
     if (match) {
       const start = parseInt(match[1], 10);
       const end = parseInt(match[2], 10);
@@ -52,7 +58,6 @@ const GenerateEpisodesDialog = ({
   return (
     <div className={styles.overlay} onClick={handleClose}>
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        {/* 标题 */}
         <div className={styles.header}>
           <h3 className={styles.title}>生成剧集</h3>
           <button className={styles.closeButton} onClick={handleClose} disabled={loading}>
@@ -62,7 +67,6 @@ const GenerateEpisodesDialog = ({
           </button>
         </div>
 
-        {/* 内容 */}
         <div className={styles.content}>
           <div className={styles.chapterInfo}>
             <span className={styles.label}>章节：</span>
@@ -83,7 +87,7 @@ const GenerateEpisodesDialog = ({
               type="number"
               className={styles.input}
               value={episodeCount}
-              onChange={(e) => setEpisodeCount(Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) => setEpisodeCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
               min="1"
               max="10"
               disabled={loading}
@@ -105,7 +109,6 @@ const GenerateEpisodesDialog = ({
           </div>
         </div>
 
-        {/* 底部按钮 */}
         <div className={styles.footer}>
           <button
             className={styles.cancelButton}

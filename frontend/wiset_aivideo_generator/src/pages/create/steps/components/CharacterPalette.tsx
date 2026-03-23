@@ -23,7 +23,7 @@ const CharacterPalette = ({ characters }: CharacterPaletteProps) => {
       <div className={styles.paletteHeader}>角色参考图</div>
       <div className={styles.characterList}>
         {characters.map((char, index) => {
-          const hasImages = char.standardImageUrl || char.threeViewGridUrl || char.expressionGridUrl;
+          const hasImages = char.threeViewGridUrl;
           return (
             <div
               key={char.characterName}
@@ -31,26 +31,12 @@ const CharacterPalette = ({ characters }: CharacterPaletteProps) => {
               onClick={() => selectCharacter(selectedCharacterIndex === index ? null : index)}
             >
               <div className={styles.characterName}>{char.characterName}</div>
-              {hasImages ? (
+              {char.threeViewGridUrl ? (
                 <div className={styles.characterImages}>
-                  {char.standardImageUrl && (
-                    <div className={styles.characterImageItem}>
-                      <img src={char.standardImageUrl} alt="标准" />
-                      <span className={styles.imageLabel}>标准</span>
-                    </div>
-                  )}
-                  {char.threeViewGridUrl && (
-                    <div className={styles.characterImageItem}>
-                      <img src={char.threeViewGridUrl} alt="三视图" />
-                      <span className={styles.imageLabel}>三视图</span>
-                    </div>
-                  )}
-                  {char.expressionGridUrl && (
-                    <div className={styles.characterImageItem}>
-                      <img src={char.expressionGridUrl} alt="表情" />
-                      <span className={styles.imageLabel}>表情</span>
-                    </div>
-                  )}
+                  <div className={styles.characterImageItem}>
+                    <img src={char.threeViewGridUrl} alt="三视图" />
+                    <span className={styles.imageLabel}>三视图</span>
+                  </div>
                 </div>
               ) : (
                 <p className={styles.emptyHint}>无参考图</p>

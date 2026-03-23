@@ -154,17 +154,17 @@ const Step4page = ({ project }: Step4pageProps) => {
 
   const handleStartProduction = async () => {
     if (!projectId) return;
-    const confirmed = window.confirm('确认后将开始视频生产，流程无法中断。是否继续？');
+    const confirmed = window.confirm('确认后将开始生成分镜脚本，完成后进入分镜审核。是否继续？');
     if (!confirmed) return;
     setActionLoading(true);
     try {
-      await advancePipeline(projectId, 'start_production');
+      await advancePipeline(projectId, 'start_storyboard');
       // 立即同步后端状态，触发路由跳转到 step 5
       if (projectId) {
         await syncStatus(projectId);
       }
     } catch (err: any) {
-      alert(err.message || '启动生产失败');
+      alert(err.message || '启动分镜生成失败');
     } finally {
       setActionLoading(false);
     }
@@ -388,7 +388,7 @@ const Step4page = ({ project }: Step4pageProps) => {
       >
         <div className={styles.cardHeader} onClick={() => handleExpand(char.draft.charId)}>
           <div className={styles.cardAvatar}>
-            {st?.standardImageUrl ? <img src={st.standardImageUrl} alt={char.draft.name} /> : <span>{char.draft.name.charAt(0)}</span>}
+            {st?.threeViewGridUrl ? <img src={st.threeViewGridUrl} alt={char.draft.name} /> : <span>{char.draft.name.charAt(0)}</span>}
           </div>
           <div className={styles.cardInfo}>
             <h3 className={styles.cardName}>{char.draft.name}</h3>
@@ -485,13 +485,13 @@ const Step4page = ({ project }: Step4pageProps) => {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
               </svg>
-              所有素材已锁定，可以开始视频生产
+              所有素材已锁定，可以开始分镜审核
             </div>
           </div>
           <div className={styles.characterGrid}>{characters.map(c => renderCard(c, 'locked'))}</div>
           <div className={styles.bottomActions}>
             <button className={styles.productionButton} onClick={handleStartProduction} disabled={actionLoading}>
-              {actionLoading ? '启动中...' : '开始生产'}
+              {actionLoading ? '启动中...' : '进入分镜审核'}
             </button>
           </div>
         </>

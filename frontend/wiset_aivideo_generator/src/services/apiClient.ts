@@ -212,6 +212,13 @@ export function del<T>(endpoint: string, config = {}): Promise<T> {
   return apiClient.delete<T>(endpoint, config).then(res => res as unknown as T);
 }
 
+/**
+ * PATCH 请求
+ */
+export function patch<T>(endpoint: string, data?: any, config = {}): Promise<T> {
+  return apiClient.patch<T>(endpoint, data, config).then(res => res as unknown as T);
+}
+
 export { API_BASE_URL };
 export { authClient };
 export default apiClient;

@@ -190,6 +190,12 @@ const EpisodeCard = ({ episode }: { episode: Episode }) => {
               <span className={styles.metaValue}>{episode.keyItems}</span>
             </div>
           )}
+          {episode.visualStyleNote && (
+            <div className={styles.metaItem}>
+              <span className={styles.metaLabel}>视觉风格：</span>
+              <span className={styles.metaValue}>{episode.visualStyleNote}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

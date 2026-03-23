@@ -1,6 +1,5 @@
 import styles from './PanelToolbar.module.less';
 import { useFusionStore } from '../../../../stores/fusionStore';
-import type { OverlaySourceType } from '../../../../stores/fusionStore';
 
 interface PanelToolbarProps {
   onAssignToPanel: () => void;
@@ -12,8 +11,6 @@ const PanelToolbar = ({ onAssignToPanel, canAssign }: PanelToolbarProps) => {
     selectedPanelIndex,
     selectedCharacterIndex,
     panelOverlays,
-    overlaySourceType,
-    setOverlaySourceType,
     updateOverlayProperty,
     removeOverlayFromPanel,
   } = useFusionStore();
@@ -39,39 +36,6 @@ const PanelToolbar = ({ onAssignToPanel, canAssign }: PanelToolbarProps) => {
           <> - <span style={{ color: 'rgba(255,255,255,0.3)' }}>无覆盖</span></>
         )}
       </div>
-
-      {/* Image source selector */}
-      {overlay && (
-        <div className={styles.sourceSelector}>
-          {(['standard', 'threeView', 'expression'] as OverlaySourceType[]).map((type) => (
-            <button
-              key={type}
-              className={`${styles.sourceButton} ${overlaySourceType === type ? styles.active : ''}`}
-              onClick={() => {
-                setOverlaySourceType(type);
-                // Update overlay image URL based on new source type
-                const { gridInfo } = useFusionStore.getState();
-                if (!gridInfo) return;
-                const char = gridInfo.characterReferences.find(
-                  (c) => c.characterName === overlay.characterName
-                );
-                if (!char) return;
-                const url =
-                  type === 'standard'
-                    ? char.standardImageUrl
-                    : type === 'threeView'
-                      ? char.threeViewGridUrl
-                      : char.expressionGridUrl;
-                if (url) {
-                  updateOverlayProperty(selectedPanelIndex, { sourceType: type, imageUrl: url });
-                }
-              }}
-            >
-              {type === 'standard' ? '标准' : type === 'threeView' ? '三视图' : '表情'}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Opacity slider */}
       {overlay && (

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "planning-with-files": {
+      "source": "OthmanAdi/planning-with-files",
+      "sourceType": "github",
+      "computedHash": "0296890c225ab1e21435352b6ebc684c4b9ebed3a1e8f9c9aec6bf6f6fd2b050"
+    }
+  }
+}

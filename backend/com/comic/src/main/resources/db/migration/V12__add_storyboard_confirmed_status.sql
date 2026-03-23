@@ -1,0 +1,10 @@
+-- STORYBOARD_DONE: 分镜生成完毕待审核
+-- STORYBOARD_CONFIRMED: 用户审核通过
+-- 将已通过审核的 STORYBOARD_DONE 迁移为 STORYBOARD_CONFIRMED
+-- 已进入生产阶段或已完成的项目，其 STORYBOARD_DONE 剧集一定是已确认的
+UPDATE episode SET status = 'STORYBOARD_CONFIRMED'
+WHERE status = 'STORYBOARD_DONE'
+  AND project_id IN (
+      SELECT project_id FROM project
+      WHERE status NOT IN ('STORYBOARD_GENERATING', 'STORYBOARD_REVIEW', 'STORYBOARD_GENERATING_FAILED', 'DRAFT')
+  );

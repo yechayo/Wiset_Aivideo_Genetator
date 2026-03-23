@@ -39,11 +39,23 @@ export interface CreateProjectRequest {
  */
 export type ProjectStatus =
   | 'DRAFT'
-  | 'SCRIPT_GENERATING'
+  | 'OUTLINE_GENERATING'
   | 'OUTLINE_REVIEW'
   | 'SCRIPT_REVIEW'
   | 'SCRIPT_CONFIRMED'
   | 'EPISODE_GENERATING'
+  | 'CHARACTER_EXTRACTING'
+  | 'CHARACTER_REVIEW'
+  | 'CHARACTER_CONFIRMED'
+  | 'CHARACTER_EXTRACTING_FAILED'
+  | 'IMAGE_GENERATING'
+  | 'IMAGE_REVIEW'
+  | 'IMAGE_GENERATING_FAILED'
+  | 'ASSET_LOCKED'
+  | 'STORYBOARD_GENERATING'
+  | 'STORYBOARD_REVIEW'
+  | 'STORYBOARD_GENERATING_FAILED'
+  | 'PRODUCING'
   | 'COMPLETED';
 
 /**
@@ -95,13 +107,38 @@ export interface GenerateScriptResponse {
  */
 export interface Episode {
   id?: number;
+  projectId?: string;
   title: string;
   content: string;
   characters: string;
   keyItems: string;
   continuityNote?: string;
+  visualStyleNote?: string;
   chapterTitle?: string;
   episodeNum?: number;
+  outlineNode?: string;
+  storyboardJson?: string;
+  status?: string;
+  errorMsg?: string;
+}
+
+/**
+ * 分镜面板
+ */
+export interface StoryboardPanel {
+  scene: string;
+  characters: string;
+  shot_size: string;
+  camera_angle: string;
+  dialogue: string;
+  effects: string;
+}
+
+/**
+ * 分镜数据
+ */
+export interface StoryboardData {
+  panels: StoryboardPanel[];
 }
 
 /**
@@ -143,6 +180,10 @@ export interface ProjectStatusInfo {
   availableActions: string[];
   productionProgress?: number;
   productionSubStage?: string;
+  storyboardCurrentEpisode?: number;
+  storyboardTotalEpisodes?: number;
+  storyboardReviewEpisodeId?: number;
+  storyboardAllConfirmed?: boolean;
 }
 
 /**
@@ -195,7 +236,6 @@ export interface CharacterStatus {
   threeViewError: string;
   isGeneratingExpression: boolean;
   isGeneratingThreeView: boolean;
-  standardImageUrl: string;
   visualStyle: string;         // 3D/REAL/ANIME
   expressionGridUrl: string;
   threeViewGridUrl: string;

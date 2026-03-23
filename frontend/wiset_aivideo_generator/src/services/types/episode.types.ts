@@ -36,7 +36,6 @@ export interface CharacterReferenceInfo {
   characterName: string;
   threeViewGridUrl: string | null;
   expressionGridUrl: string | null;
-  standardImageUrl: string | null;
 }
 
 /** 单页网格信息（P1-1 多页网格） */

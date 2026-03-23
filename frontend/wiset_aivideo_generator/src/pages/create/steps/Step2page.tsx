@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import styles from './Step2page.module.less';
 import type { Project, ScriptContentResponse } from '../../../services';
-import { getScript, generateEpisodes, confirmScript, reviseScript, isApiSuccess } from '../../../services';
+import { getScript, generateEpisodes, confirmScript, reviseScript, updateScriptOutline, generateAllEpisodes, isApiSuccess } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useProjectStore } from '../../../stores';
 import OutlineEditor from './components/OutlineEditor';
@@ -29,6 +29,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRegenerateMode, setIsRegenerateMode] = useState(false); // 是否为重新生成模式
+  const [isBatchGenerating, setIsBatchGenerating] = useState(false);
 
   const getProjectId = useProjectStore((state) => state.getProjectId);
 
@@ -102,19 +103,16 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     };
   }, [project, getProjectId]);
 
-  // 处理大纲保存（修改大纲会删除所有已生成的剧集）
-  const handleOutlineSave = async (_content: string, revisionNote: string) => {
+  // 直接保存用户编辑的大纲
+  const handleOutlineSaveDirect = async (content: string) => {
     const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
     if (!projectId) {
       setError('无法获取项目 ID');
       return;
     }
-
     setIsLoading(true);
     try {
-      // 调用修改大纲接口（不传 chapter 参数即为修改大纲）
-      await reviseScript(projectId, { revisionNote });
-      // 重新获取剧本数据
+      await updateScriptOutline(projectId, content);
       const result = await getScript(projectId);
       if (isApiSuccess(result) && result.data) {
         setScriptData(result.data);
@@ -123,6 +121,60 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       console.error('保存大纲失败:', err);
       setError('保存大纲失败，请稍后重试');
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // AI 重新生成大纲
+  const handleOutlineSaveWithAI = async (content: string, revisionNote: string) => {
+    const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
+    if (!projectId) {
+      setError('无法获取项目 ID');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await reviseScript(projectId, {
+        revisionNote,
+        currentOutline: content
+      });
+      const result = await getScript(projectId);
+      if (isApiSuccess(result) && result.data) {
+        setScriptData(result.data);
+      }
+    } catch (err) {
+      console.error('AI 重新生成失败:', err);
+      setError('AI 重新生成失败，请稍后重试');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGenerateAll = async () => {
+    if (!scriptData || scriptData.pendingChapters.length === 0) return;
+    const confirmed = window.confirm(
+      `即将生成全部 ${scriptData.pendingChapters.length} 个剩余章节，这可能需要几分钟时间。是否继续？`
+    );
+    if (!confirmed) return;
+
+    const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
+    if (!projectId) {
+      setError('无法获取项目 ID');
+      return;
+    }
+    setIsBatchGenerating(true);
+    setIsLoading(true);
+    try {
+      await generateAllEpisodes(projectId);
+      const result = await getScript(projectId);
+      if (isApiSuccess(result) && result.data) {
+        setScriptData(result.data);
+      }
+    } catch (err) {
+      console.error('批量生成失败:', err);
+      setError('批量生成失败，请稍后重试或尝试逐章生成。');
+    } finally {
+      setIsBatchGenerating(false);
       setIsLoading(false);
     }
   };
@@ -187,12 +239,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     console.log('确认项目:', project);
     console.log('当前剧本:', scriptData);
 
-    // 检查是否所有章节都已生成
-    if (scriptData && scriptData.pendingChapters.length > 0) {
-      const confirmed = window.confirm(`还有 ${scriptData.pendingChapters.length} 个章节未生成剧集，确定要继续吗？`);
-      if (!confirmed) return;
-    }
-
     const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
     if (!projectId) {
       setError('无法获取项目 ID');
@@ -229,6 +275,42 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     const episodes = p.totalEpisodes || scriptData.chapters.length || 0;
 
     return { title, genre, episodes };
+  };
+
+  const extractEpisodeCountFromChapter = (chapterTitle: string): number | null => {
+    const rangeMatch = chapterTitle.match(/(?:第\s*)?(\d+)\s*[-~～—–]\s*(\d+)\s*集/);
+    if (rangeMatch) {
+      const start = parseInt(rangeMatch[1], 10);
+      const end = parseInt(rangeMatch[2], 10);
+      if (end >= start) {
+        return end - start + 1;
+      }
+    }
+
+    const singleMatch = chapterTitle.match(/(?:第\s*)?(\d+)\s*集/);
+    if (singleMatch) {
+      return 1;
+    }
+
+    return null;
+  };
+
+  const getDefaultEpisodeCount = (chapterTitle: string): number => {
+    if (scriptData?.isSingleEpisode || scriptData?.project?.totalEpisodes === 1) {
+      return 1;
+    }
+
+    const fromChapter = extractEpisodeCountFromChapter(chapterTitle);
+    if (fromChapter && fromChapter > 0) {
+      return fromChapter;
+    }
+
+    const fallback = scriptData?.project?.episodesPerChapter;
+    if (fallback && fallback > 0) {
+      return fallback;
+    }
+
+    return 4;
   };
 
   const projectInfo = scriptData ? getProjectInfo() : null;
@@ -288,8 +370,22 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
           {/* 大纲编辑器 */}
           <OutlineEditor
             outline={scriptData.outline}
-            onSave={handleOutlineSave}
+            onSaveDirect={handleOutlineSaveDirect}
+            onSaveWithAI={handleOutlineSaveWithAI}
           />
+
+          {/* 批量生成按钮 */}
+          {scriptData.pendingChapters.length > 0 && (
+            <div className={styles.batchAction}>
+              <button
+                className={styles.batchGenerateButton}
+                onClick={handleGenerateAll}
+                disabled={isBatchGenerating}
+              >
+                {isBatchGenerating ? '批量生成中...' : `一键生成全部剩余章节 (${scriptData.pendingChapters.length} 章)`}
+              </button>
+            </div>
+          )}
 
           {/* 章节列表 */}
           <ChapterList
@@ -315,6 +411,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       <GenerateEpisodesDialog
         open={dialogOpen}
         chapter={selectedChapter || ''}
+        defaultEpisodeCount={getDefaultEpisodeCount(selectedChapter || '')}
         onClose={() => setDialogOpen(false)}
         onConfirm={handleGenerateConfirm}
         loading={isGenerating}
@@ -325,9 +422,11 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
         <button
           className={styles.confirmButton}
           onClick={handleConfirm}
-          disabled={isLoading}
+          disabled={isLoading || !scriptData || scriptData.pendingChapters.length > 0}
         >
-          下一步
+          {!scriptData || scriptData.pendingChapters.length > 0
+            ? `全部章节已生成后可确认 (剩余 ${scriptData?.pendingChapters.length || 0} 章)`
+            : '确认剧本，进入下一步'}
         </button>
       </div>
     </div>

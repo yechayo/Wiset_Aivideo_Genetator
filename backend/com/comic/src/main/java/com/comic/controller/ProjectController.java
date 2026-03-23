@@ -115,7 +115,7 @@ public class ProjectController {
     public Result<Void> generateEpisodes(@PathVariable String projectId,
                                           @RequestBody Map<String, Object> body) {
         String chapter = (String) body.get("chapter");
-        Integer episodeCount = body.get("episodeCount") != null ? Integer.parseInt(String.valueOf(body.get("episodeCount"))) : 4;
+        Integer episodeCount = parseOptionalPositiveInt(body.get("episodeCount"));
         String modificationSuggestion = (String) body.get("modificationSuggestion");
 
         if (chapter == null || chapter.isEmpty()) {
@@ -154,14 +154,42 @@ public class ProjectController {
     public Result<Void> reviseScript(@PathVariable String projectId,
                                      @RequestBody Map<String, Object> body) {
         String revisionNote = (String) body.get("revisionNote");
+        String currentOutline = (String) body.get("currentOutline");
         String chapter = (String) body.get("chapter");
-        Integer episodeCount = body.get("episodeCount") != null ? Integer.parseInt(String.valueOf(body.get("episodeCount"))) : 4;
+        Integer episodeCount = parseOptionalPositiveInt(body.get("episodeCount"));
 
         if (chapter != null && !chapter.isEmpty()) {
             scriptService.reviseEpisodes(projectId, chapter, episodeCount, revisionNote);
         } else {
-            scriptService.reviseOutline(projectId, revisionNote);
+            scriptService.reviseOutline(projectId, revisionNote, currentOutline);
         }
+        return Result.ok();
+    }
+
+    /**
+     * 直接保存用户编辑的大纲
+     * PATCH /api/projects/{projectId}/script-outline
+     */
+    @PatchMapping("/{projectId}/script-outline")
+    @Operation(summary = "保存大纲", description = "直接保存用户编辑的大纲内容，不触发 AI 重新生成。保存后会删除已生成的剧集。")
+    public Result<Void> updateScriptOutline(@PathVariable String projectId,
+                                            @RequestBody Map<String, String> body) {
+        String outline = body.get("outline");
+        if (outline == null || outline.trim().isEmpty()) {
+            return Result.fail("大纲内容不能为空");
+        }
+        scriptService.updateScriptOutline(projectId, outline.trim());
+        return Result.ok();
+    }
+
+    /**
+     * 批量生成所有剩余章节的剧集
+     * POST /api/projects/{projectId}/generate-all-episodes
+     */
+    @PostMapping("/{projectId}/generate-all-episodes")
+    @Operation(summary = "批量生成全部章节", description = "按顺序生成所有剩余章节的剧集。如果某章生成失败则停止。")
+    public Result<Void> generateAllEpisodes(@PathVariable String projectId) {
+        scriptService.generateAllEpisodes(projectId);
         return Result.ok();
     }
 
@@ -175,5 +203,18 @@ public class ProjectController {
         String event = body.get("event");
         pipelineService.advancePipeline(projectId, event);
         return Result.ok();
+    }
+
+    private Integer parseOptionalPositiveInt(Object rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+
+        try {
+            int value = Integer.parseInt(String.valueOf(rawValue));
+            return value > 0 ? value : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

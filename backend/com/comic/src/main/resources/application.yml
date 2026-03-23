@@ -58,7 +58,7 @@ spring:
 # ---------- MyBatis-Plus ----------
 mybatis-plus:
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl   # 开发期打印 SQL，上线可去掉
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl   # 开发期打印 SQL，上线可去掉
     map-underscore-to-camel-case: true
     jdbc-type-for-null: NULL
   global-config:
@@ -72,7 +72,7 @@ mybatis-plus:
 comic:
   jwt:
     # 密钥至少 32 位；生产环境务必改成环境变量：${JWT_SECRET}
-    secret: ${JWT_SECRET:comic-secret-key-please-change-in-production}
+    secret: comic-secret-key-please-change-in-production!!
     access-token-expiration: 7200000      # AccessToken  2 小时（毫秒）
     refresh-token-expiration: 604800000   # RefreshToken 7 天（毫秒）
   blacklist:
@@ -105,16 +105,17 @@ comic:
 
   # ========== 火山引擎 Ark SDK 配置（用于 Seedream/Seedance） ==========
   ark:
-    api-key: ${ARK_API_KEY}
+    api-key: 167746d0-87be-4d4a-ab21-2022c6822ad7
     base-url: https://ark.cn-beijing.volces.com/api/v3
     seedream-model: doubao-seedream-4-0-250828  # Seedream 图片模型
     seedance-model: doubao-seedance-1-5-pro-251215  # Seedance 视频模型
 
   # ========== DeepSeek API 配置（思考模式） ==========
   deepseek:
-    api-key: ${DEEPSEEK_API_KEY}
+    api-key: sk-47f1529041ca4926b21b8ee5820d75d0
     base-url: https://api.deepseek.com
     model: deepseek-reasoner
+    max-tokens: 4096
 
 
   # ========== 阿里云 OSS 配置 ==========

@@ -1,11 +1,9 @@
 import { create } from 'zustand';
 import type { GridInfoResponse } from '../services/types/episode.types';
 
-export type OverlaySourceType = 'standard' | 'threeView' | 'expression';
-
 export interface PanelOverlay {
   characterName: string;
-  sourceType: OverlaySourceType;
+  sourceType: string;
   imageUrl: string;
   x: number;
   y: number;
@@ -23,7 +21,6 @@ interface FusionState {
   selectedPanelIndex: number | null;
   selectedCharacterIndex: number | null;
   panelOverlays: Map<number, PanelOverlay>;
-  overlaySourceType: OverlaySourceType;
   isSubmitting: boolean;
   isUploading: boolean;
 
@@ -36,7 +33,6 @@ interface FusionState {
   assignCharacterToPanel: (panelIndex: number, charIndex: number) => void;
   removeOverlayFromPanel: (panelIndex: number) => void;
   updateOverlayProperty: (panelIndex: number, props: Partial<PanelOverlay>) => void;
-  setOverlaySourceType: (type: OverlaySourceType) => void;
   setSubmitting: (v: boolean) => void;
   setUploading: (v: boolean) => void;
   reset: () => void;
@@ -50,7 +46,6 @@ export const useFusionStore = create<FusionState>()((set, get) => ({
   selectedPanelIndex: null,
   selectedCharacterIndex: null,
   panelOverlays: new Map(),
-  overlaySourceType: 'standard',
   isSubmitting: false,
   isUploading: false,
 
@@ -73,29 +68,21 @@ export const useFusionStore = create<FusionState>()((set, get) => ({
   },
   selectPanel: (index) => set({ selectedPanelIndex: index }),
   selectCharacter: (index) => set({ selectedCharacterIndex: index }),
-  setOverlaySourceType: (type) => set({ overlaySourceType: type }),
   setSubmitting: (v) => set({ isSubmitting: v }),
   setUploading: (v) => set({ isUploading: v }),
 
   assignCharacterToPanel: (panelIndex, charIndex) => {
-    const { gridInfo, overlaySourceType } = get();
+    const { gridInfo } = get();
     if (!gridInfo) return;
     const char = gridInfo.characterReferences[charIndex];
     if (!char) return;
 
-    let url = '';
-    if (overlaySourceType === 'threeView') {
-      url = char.threeViewGridUrl || char.standardImageUrl || char.expressionGridUrl || '';
-    } else if (overlaySourceType === 'expression') {
-      url = char.expressionGridUrl || char.standardImageUrl || char.threeViewGridUrl || '';
-    } else {
-      url = char.standardImageUrl || char.threeViewGridUrl || char.expressionGridUrl || '';
-    }
+    const url = char.threeViewGridUrl || char.expressionGridUrl || '';
     if (!url) return;
 
     const overlay: PanelOverlay = {
       characterName: char.characterName,
-      sourceType: overlaySourceType,
+      sourceType: 'threeView',
       imageUrl: url,
       x: 0,
       y: 0,
@@ -139,7 +126,6 @@ export const useFusionStore = create<FusionState>()((set, get) => ({
     selectedPanelIndex: null,
     selectedCharacterIndex: null,
     panelOverlays: new Map(),
-    overlaySourceType: 'standard',
     isSubmitting: false,
     isUploading: false,
   }),
@@ -163,12 +149,12 @@ export function autoAssignCharacters(gridInfo: GridInfoResponse): Map<number, Pa
 
   characterReferences.forEach((char, charIndex) => {
     const panelIndex = sortedPanels[charIndex] ?? charIndex;
-    const url = char.standardImageUrl || char.threeViewGridUrl || '';
+    const url = char.threeViewGridUrl || char.expressionGridUrl || '';
     if (!url) return;
 
     overlays.set(panelIndex, {
       characterName: char.characterName,
-      sourceType: 'standard',
+      sourceType: 'threeView',
       imageUrl: url,
       x: 0,
       y: 0,

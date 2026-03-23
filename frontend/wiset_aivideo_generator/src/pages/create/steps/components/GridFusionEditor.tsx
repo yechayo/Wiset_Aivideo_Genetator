@@ -70,7 +70,6 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
         // Pre-load all character reference images
         const allUrls: string[] = [];
         info.characterReferences.forEach((char) => {
-          if (char.standardImageUrl) allUrls.push(char.standardImageUrl);
           if (char.threeViewGridUrl) allUrls.push(char.threeViewGridUrl);
           if (char.expressionGridUrl) allUrls.push(char.expressionGridUrl);
         });
