@@ -38,9 +38,9 @@ class StoryControllerTest {
     private StoryController storyController;
 
     @Test
-    @DisplayName("generateStoryboard - 已有分镜时应拒绝提交生成任务")
+    @DisplayName("generateStoryboard rejects when storyboard already exists")
     void generateStoryboard_shouldRejectWhenStoryboardAlreadyExists() {
-        Map<String, Long> body = new HashMap<>();
+        Map<String, Object> body = new HashMap<>();
         body.put("episodeId", 1L);
 
         Episode episode = new Episode();
@@ -57,9 +57,9 @@ class StoryControllerTest {
     }
 
     @Test
-    @DisplayName("generateStoryboard - 分镜为空时应提交生成任务")
+    @DisplayName("generateStoryboard submits job when storyboard is empty")
     void generateStoryboard_shouldSubmitWhenStoryboardIsEmpty() {
-        Map<String, Long> body = new HashMap<>();
+        Map<String, Object> body = new HashMap<>();
         body.put("episodeId", 2L);
 
         Episode episode = new Episode();
@@ -78,9 +78,9 @@ class StoryControllerTest {
     }
 
     @Test
-    @DisplayName("retryStoryboard - 已有分镜时应拒绝重试生成")
+    @DisplayName("retryStoryboard rejects when storyboard already exists")
     void retryStoryboard_shouldRejectWhenStoryboardAlreadyExists() {
-        Map<String, Long> body = new HashMap<>();
+        Map<String, Object> body = new HashMap<>();
         body.put("episodeId", 3L);
 
         Episode episode = new Episode();
@@ -93,5 +93,37 @@ class StoryControllerTest {
         assertEquals(400, result.getCode());
         assertEquals("当前剧集已有分镜，请使用修改分镜接口", result.getMessage());
         verify(storyboardService, never()).retryFailedStoryboard(3L);
+    }
+
+    @Test
+    @DisplayName("generateStoryboard accepts episodeId as string")
+    void generateStoryboard_shouldAcceptStringEpisodeId() {
+        Map<String, Object> body = new HashMap<>();
+        body.put("episodeId", "4");
+
+        Episode episode = new Episode();
+        episode.setId(4L);
+        episode.setStoryboardJson("");
+        when(episodeRepository.selectById(4L)).thenReturn(episode);
+        when(jobQueueService.submitStoryboardJob(4L)).thenReturn("job-4");
+
+        Result<Map<String, String>> result = storyController.generateStoryboard(body);
+
+        assertEquals(200, result.getCode());
+        assertNotNull(result.getData());
+        assertEquals("job-4", result.getData().get("jobId"));
+        verify(jobQueueService).submitStoryboardJob(4L);
+    }
+
+    @Test
+    @DisplayName("confirmStoryboard rejects invalid episodeId string")
+    void confirmStoryboard_shouldRejectInvalidStringEpisodeId() {
+        Map<String, Object> body = new HashMap<>();
+        body.put("episodeId", "not-a-number");
+
+        Result<String> result = storyController.confirmStoryboard(body);
+
+        assertEquals(400, result.getCode());
+        verify(storyboardService, never()).confirmEpisodeStoryboard(4L);
     }
 }

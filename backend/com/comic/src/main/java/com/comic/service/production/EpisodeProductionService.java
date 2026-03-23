@@ -542,7 +542,6 @@ public class EpisodeProductionService {
                     info.setCharacterName(name);
                     info.setThreeViewGridUrl(c.getThreeViewGridUrl());
                     info.setExpressionGridUrl(c.getExpressionGridUrl());
-                    info.setStandardImageUrl(c.getStandardImageUrl());
                     return info;
                 })
                 .collect(Collectors.toList());

@@ -60,7 +60,6 @@ public class GridInfoResponse {
         private String characterName;
         private String threeViewGridUrl;
         private String expressionGridUrl;
-        private String standardImageUrl;
     }
 
     @Data

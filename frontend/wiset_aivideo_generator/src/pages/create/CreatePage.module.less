@@ -1,7 +1,7 @@
 // 页面容器 - 抵消父容器padding
 .createContainer {
-  background: #0a0a0a;
-  color: #ffffff;
+  background: var(--color-bg-canvas);
+  color: var(--color-text-primary);
   display: flex;
   flex-direction: column;
 }
@@ -11,10 +11,10 @@
   position: sticky;
   top: -32px;
   z-index: 100;
-  background: rgba(10, 10, 10, 0.85);
+  background: var(--color-bg-overlay);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--color-border-subtle);
   margin: -32px -40px 32px -40px;
   padding: 16px 40px;
   box-sizing: border-box;
@@ -39,15 +39,15 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-text-muted);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   transition: all 0.3s ease;
 }
 
 .stepItem.active {
-  color: #ffffff;
-  font-weight: 600;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
 }
 
 .stepNumber {
@@ -58,20 +58,20 @@
   align-items: center;
   justify-content: center;
   font-size: 13px;
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  border: 1.5px solid var(--color-border-strong);
   background: transparent;
   transition: all 0.3s ease;
 }
 
 .stepItem.active .stepNumber {
-  background: #ffffff;
-  color: #000000;
-  border-color: #ffffff;
-  box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+  background: var(--color-text-primary);
+  color: var(--color-bg-canvas);
+  border-color: var(--color-text-primary);
+  box-shadow: var(--shadow-glow);
 }
 
 .stepArrow {
-  color: rgba(255, 255, 255, 0.15);
+  color: rgba(247, 249, 252, 0.15);
   margin: 0 12px;
   font-weight: 300;
 }
@@ -89,30 +89,30 @@
 
 .title {
   font-size: 32px;
-  font-weight: 700;
-  color: #ffffff;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
   margin: 0 0 12px 0;
   letter-spacing: -0.02em;
 }
 
 .subtitle {
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-text-secondary);
   margin: 0;
   line-height: 1.5;
 }
 
 // 卡片
 .card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
   padding: 28px;
   margin-bottom: 24px;
   transition: border-color 0.3s ease;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(247, 249, 252, 0.15);
   }
 }
 
@@ -122,14 +122,14 @@
 
 .cardTitle {
   font-size: 20px;
-  font-weight: 600;
-  color: #ffffff;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
   margin: 0 0 6px 0;
 }
 
 .cardSubtitle {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-text-muted);
   font-style: normal;
   margin: 0;
 }
@@ -139,25 +139,25 @@
   width: 100%;
   min-height: 180px;
   padding: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid rgba(247, 249, 252, 0.1);
   border-radius: 14px;
   font-size: 16px;
   line-height: 1.6;
-  color: #ffffff;
+  color: var(--color-text-primary);
   resize: vertical;
   transition: all 0.3s ease;
   font-family: inherit;
   box-sizing: border-box;
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.2);
+    color: rgba(247, 249, 252, 0.2);
   }
 
   &:focus {
     outline: none;
-    border-color: rgba(255, 255, 255, 0.3);
-    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(247, 249, 252, 0.3);
+    background: rgba(247, 249, 252, 0.05);
   }
 }
 
@@ -172,8 +172,8 @@
 
 .configLabel {
   font-size: 15px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  font-weight: var(--font-weight-semibold);
+  color: rgba(247, 249, 252, 0.9);
   margin-bottom: 16px;
   display: block;
 }
@@ -190,11 +190,11 @@
   gap: 12px;
   cursor: pointer;
   font-size: 15px;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(247, 249, 252, 0.7);
   transition: all 0.3s ease;
 
   &:hover {
-    color: #ffffff;
+    color: var(--color-text-primary);
 
     .radioButton {
       border-color: rgba(255, 255, 255, 0.4);
@@ -341,23 +341,23 @@
 // 生成按钮
 .generateButton {
   padding: 16px 40px;
-  background: #ffffff;
-  color: #000000;
+  background: var(--color-text-primary);
+  color: var(--color-bg-canvas);
   border: none;
   border-radius: 14px;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   gap: 10px;
-  box-shadow: 0 10px 20px rgba(255, 255, 255, 0.1);
+  box-shadow: var(--shadow-soft);
 
   &:hover:not(:disabled) {
-    background: #f0f0f0;
+    background: #e8edf5;
     transform: translateY(-2px);
-    box-shadow: 0 12px 24px rgba(255, 255, 255, 0.15);
+    box-shadow: var(--shadow-medium);
   }
 
   &:active:not(:disabled) {
@@ -375,6 +375,30 @@
   height: 20px;
 }
 
+.pollingToggle {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 9999;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+  background: rgba(247, 249, 252, 0.08);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  transition: background var(--duration-fast) var(--easing-standard);
+
+  &:hover {
+    background: rgba(247, 249, 252, 0.16);
+  }
+}
+
+.pollingTogglePaused {
+  background: rgba(242, 119, 123, 0.86);
+  border-color: rgba(242, 119, 123, 0.72);
+}
+
 // 全局 loading 遮罩
 .loadingOverlay {
   position: fixed;
@@ -382,7 +406,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(7, 10, 16, 0.72);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
@@ -399,7 +423,7 @@
 
   p {
     font-size: 16px;
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(247, 249, 252, 0.8);
     margin: 0;
   }
 }
@@ -407,8 +431,8 @@
 .loadingSpinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.15);
-  border-top-color: #ffffff;
+  border: 3px solid rgba(247, 249, 252, 0.15);
+  border-top-color: var(--color-text-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -416,5 +440,48 @@
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1280px) {
+  .stepIndicator {
+    margin: -32px -24px 24px -24px;
+    padding: 14px 24px;
+  }
+
+  .title {
+    font-size: 28px;
+  }
+}
+
+@media (max-width: 960px) {
+  .stepIndicator {
+    margin: -24px -16px 20px -16px;
+    padding: 12px 16px;
+    top: -24px;
+  }
+
+  .stepList {
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scrollbar-width: none;
+  }
+
+  .stepList::-webkit-scrollbar {
+    display: none;
+  }
+
+  .card {
+    padding: 20px;
+  }
+
+  .buttonContainer {
+    margin-top: 28px;
+    padding-bottom: 24px;
+  }
+
+  .generateButton {
+    width: 100%;
+    justify-content: center;
   }
 }

@@ -179,7 +179,7 @@ export async function advancePipeline(
 /**
  * 获取单集分镜数据
  */
-export async function getStoryboard(episodeId: number): Promise<ApiResponse<Episode>> {
+export async function getStoryboard(episodeId: string): Promise<ApiResponse<Episode>> {
   return get<ApiResponse<Episode>>(`/api/story/storyboard/${episodeId}`);
 }
 
@@ -193,7 +193,7 @@ export async function startStoryboard(projectId: string): Promise<ApiResponse<st
 /**
  * 确认当前集分镜
  */
-export async function confirmStoryboard(episodeId: number): Promise<ApiResponse<string>> {
+export async function confirmStoryboard(episodeId: string): Promise<ApiResponse<string>> {
   return post<ApiResponse<string>>('/api/story/confirm-storyboard', { episodeId });
 }
 
@@ -201,7 +201,7 @@ export async function confirmStoryboard(episodeId: number): Promise<ApiResponse<
  * 修改当前集分镜
  */
 export async function reviseStoryboard(
-  episodeId: number,
+  episodeId: string,
   feedback: string
 ): Promise<ApiResponse<string>> {
   return post<ApiResponse<string>>('/api/story/revise-storyboard', { episodeId, feedback });
@@ -210,7 +210,7 @@ export async function reviseStoryboard(
 /**
  * 重试失败的分镜生成
  */
-export async function retryStoryboard(episodeId: number): Promise<ApiResponse<string>> {
+export async function retryStoryboard(episodeId: string): Promise<ApiResponse<string>> {
   return post<ApiResponse<string>>('/api/story/retry-storyboard', { episodeId });
 }
 

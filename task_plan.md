@@ -136,3 +136,69 @@
 - P5: completed (new backend `StoryboardEnhancementService` with rule/LLM modes, whitelist validation, configurable 0.5s throttle, and flow insertion before grid generation), test-verified
 - P6: completed (backend split-page endpoint + production orchestration integrated and regression-verified)
 - P7: completed (mixed-layout, split->fusion chain, and submit-fusion-page API boundary regressions all covered and suite-verified)
+
+---
+
+## 新增任务：前端视觉重构（2026-03-23）
+
+### 新目标
+在不改变核心业务流程的前提下，重构前端视觉系统与关键页面样式，提升一致性、可维护性、响应式表现和交互质感。
+
+### 新范围
+- `frontend/wiset_aivideo_generator/src/pages` 视觉层改造（layout/dashboard/projects/create steps）。
+- 统一样式变量与通用组件样式规范（色彩、间距、圆角、阴影、字体、状态色）。
+- 消除高频硬编码样式与关键页面内联样式。
+
+### 新增不在范围
+- 后端接口/业务流程改造。
+- 视觉重构期间引入新的状态管理方案。
+- 大规模路由/页面信息架构调整。
+
+### 前端视觉重构阶段计划
+
+| Phase | 任务 | 关键改动 | 产出 | 状态 |
+|---|---|---|---|---|
+| P8 | 视觉基线审计 | 盘点页面结构、样式文件体量、硬编码颜色与内联样式分布 | 视觉审计清单 + 风险清单 | completed |
+| P9 | 设计令牌与全局基座 | 建立 CSS Variables / LESS 变量层（颜色、排版、间距、状态、阴影、动效） | `design-tokens` 与全局样式基线 | completed |
+| P10 | 布局骨架重构 | 重构 `Layout/Create` 外层容器样式与滚动/留白体系 | 统一壳层布局与导航视觉 | completed |
+| P11 | 关键页面分批重绘 | 分批改造 `Step2~Step6`、`ProjectsPage`、`ProjectDetailPage`、`Dashboard` | 页面级视觉一致化 | in_progress |
+| P12 | 组件规范化 | 提取通用卡片/按钮/状态标签/表单控件视觉模式，减少重复 LESS | 可复用样式模式与文档 | pending |
+| P13 | 可用性与验收 | 响应式检查（桌面+移动）、可访问性基线、构建回归 | 验收报告 + 变更清单 | pending |
+
+### P11 当前批次进度
+- Batch-1 已完成：`ProjectsPage`、`ProjectDetailPage`。
+- Batch-2 已完成：`Step2page`、`Step5page`、`Step6page`。
+- 剩余：`Step3page`、`Step4page`、`Dashboard` 及组件级一致性收口。
+
+### 前端验收标准
+- 高优先页面视觉语言统一（颜色、间距、层级、状态表达一致）。
+- 样式硬编码显著下降，核心颜色与字号集中在令牌层管理。
+- 关键流程页面在常见桌面分辨率与移动宽度下无布局断裂。
+- 前端 `npm run build` 通过，视觉改造不引入明显功能回归。
+
+### 前端风险与缓解
+- 风险：大文件（Step3/Step4）改动面过大导致回归风险高。  
+  缓解：按页面分批、每批可回滚、每批都做构建验证。
+- 风险：旧样式与新令牌混用，过渡期不一致。  
+  缓解：先建立令牌层，再按“壳层->组件->页面”顺序迁移。
+- 风险：内联样式与模块样式并存，后续维护成本高。  
+  缓解：为内联样式建立迁移清单，优先清理固定视觉内联块。
+
+### 新错误记录
+| 时间 | 问题 | 处理 |
+|---|---|---|
+| 2026-03-23 | `planning-with-files` session-catchup 初次执行失败（命中 WindowsApps 别名 python） | 已定位真实解释器 `C:\\Users\\hwh20\\AppData\\Local\\Programs\\Python\\Python314\\python.exe`，可正常执行 catchup 脚本 |
+
+---
+
+## Frontend Refactor Status (ASCII Safe, 2026-03-23)
+- P8: completed
+- P9: completed
+- P10: completed
+- P11: page-level token migration completed for `Projects`, `ProjectDetail`, `Step2`, `Step3`, `Step4`, `Step5`, `Step6`, and `Dashboard`
+- P12: in_progress (component-level style pattern extraction and consistency cleanup)
+- P13: pending
+
+## Frontend Refactor Status (ASCII Safe, 2026-03-23 Update-2)
+- P11: complete (all planned key pages tokenized)
+- P12: in_progress (batch-1 done: GridFusionEditor + CharacterPalette modules)

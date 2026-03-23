@@ -8,42 +8,42 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 32px;
-  gap: 20px;
+  margin-bottom: var(--space-8);
+  gap: var(--space-5);
 }
 
 .headerContent h1 {
-  font-size: 28px;
-  font-weight: 700;
-  margin: 0 0 8px 0;
-  color: #ffffff;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 var(--space-2) 0;
+  color: var(--color-text-primary);
   letter-spacing: -0.5px;
 }
 
 .subtitle {
-  font-size: 15px;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
   margin: 0;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .createButton {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: #ffffff;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-text-primary);
   border: none;
-  border-radius: 12px;
-  color: #171717;
-  font-size: 14px;
-  font-weight: 600;
+  border-radius: var(--radius-md);
+  color: var(--color-bg-canvas);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   text-decoration: none;
 
   &:hover {
-    background: #f3f4f6;
+    background: #e9eef7;
   }
 }
 
@@ -58,17 +58,17 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 100px 20px;
-  gap: 16px;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 14px;
+  padding: 100px var(--space-5);
+  gap: var(--space-4);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .loadingSpinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #ffffff;
+  border: 3px solid var(--color-border-subtle);
+  border-top-color: var(--color-text-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -83,30 +83,30 @@
 .projectGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 // 项目卡片
 .projectCard {
   display: flex;
   flex-direction: column;
-  padding: 24px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
+  padding: var(--space-6);
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid rgba(247, 249, 252, 0.12);
+  border-radius: var(--radius-lg);
   text-decoration: none;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
   min-height: 200px;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.05);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    border-color: rgba(247, 249, 252, 0.2);
+    background: rgba(247, 249, 252, 0.05);
+    box-shadow: var(--shadow-medium);
 
     .projectArrow {
       transform: translateX(4px);
-      color: #ffffff;
+      color: var(--color-text-primary);
     }
   }
 }
@@ -120,9 +120,9 @@
 }
 
 .projectTitle {
-  font-size: 16px;
-  font-weight: 600;
-  color: #ffffff;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
   margin: 0;
   flex: 1;
   line-height: 1.5;
@@ -131,9 +131,9 @@
 .projectStatus {
   flex-shrink: 0;
   padding: 4px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .statusDraft {
@@ -180,14 +180,14 @@
 }
 
 .metaLabel {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
 }
 
 .metaValue {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.8);
-  font-weight: 500;
+  font-size: var(--font-size-sm);
+  color: rgba(247, 249, 252, 0.85);
+  font-weight: var(--font-weight-medium);
 }
 
 .projectInfo {
@@ -197,7 +197,7 @@
 
 .targetAudience {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-text-secondary);
 }
 
 .projectFooter {
@@ -205,18 +205,18 @@
   justify-content: space-between;
   align-items: center;
   padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 .projectDate {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
 }
 
 .projectArrow {
   width: 18px;
   height: 18px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--color-text-muted);
   transition: color 0.2s ease, transform 0.2s ease;
 
   svg {
@@ -231,11 +231,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 100px 20px;
+  padding: 100px var(--space-5);
   text-align: center;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
+  background: rgba(247, 249, 252, 0.02);
+  border: 1px solid rgba(247, 249, 252, 0.12);
+  border-radius: var(--radius-xl);
 }
 
 .emptyIcon {
@@ -244,10 +244,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 20px;
+  background: rgba(247, 249, 252, 0.03);
+  border-radius: var(--radius-xl);
   margin-bottom: 24px;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(247, 249, 252, 0.2);
 
   svg {
     width: 36px;
@@ -256,15 +256,15 @@
 }
 
 .emptyTitle {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
   margin: 0 0 8px 0;
-  color: #ffffff;
+  color: var(--color-text-primary);
 }
 
 .emptyDescription {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
   margin: 0 0 32px 0;
   max-width: 300px;
 }
@@ -272,14 +272,14 @@
 .emptyButton {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 14px 28px;
-  background: #ffffff;
+  background: var(--color-text-primary);
   border: none;
-  border-radius: 12px;
-  color: #171717;
+  border-radius: var(--radius-md);
+  color: var(--color-bg-canvas);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   text-decoration: none;
@@ -290,7 +290,7 @@
   }
 
   &:hover {
-    background: #f3f4f6;
+    background: #e9eef7;
   }
 }
 
@@ -298,10 +298,14 @@
 @media (max-width: 768px) {
   .header {
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .projectGrid {
     grid-template-columns: 1fr;
+  }
+
+  .projectCard {
+    padding: var(--space-5);
   }
 }

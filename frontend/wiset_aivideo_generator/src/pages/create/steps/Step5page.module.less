@@ -10,16 +10,16 @@
 }
 
 .title {
-  font-size: 32px;
-  font-weight: 700;
-  color: #ffffff;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
   margin: 0 0 12px 0;
   letter-spacing: -0.02em;
 }
 
 .subtitle {
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
   margin: 0;
   line-height: 1.5;
 }
@@ -36,22 +36,22 @@
 .progressTrack {
   flex: 1;
   height: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(247, 249, 252, 0.08);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .progressFill {
   height: 100%;
-  background: linear-gradient(90deg, #6366f1, #818cf8);
+  background: linear-gradient(90deg, var(--color-accent-strong), var(--color-accent));
   border-radius: 3px;
   transition: width 0.5s ease;
 }
 
 .progressText {
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   min-width: 60px;
   text-align: right;
@@ -65,15 +65,15 @@
   align-items: center;
   justify-content: center;
   gap: 20px;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 16px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
 }
 
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #818cf8;
+  border: 3px solid var(--color-border-subtle);
+  border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -104,13 +104,13 @@
   align-items: center;
   justify-content: center;
   font-size: 24px;
-  color: #ef4444;
+  color: var(--color-danger);
 }
 
 .failedMessage {
   font-size: 18px;
-  color: rgba(255, 100, 100, 0.9);
-  font-weight: 600;
+  color: rgba(242, 119, 123, 0.95);
+  font-weight: var(--font-weight-semibold);
   text-align: center;
   max-width: 500px;
   line-height: 1.6;
@@ -119,11 +119,11 @@
 .retryButton {
   padding: 12px 28px;
   background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  color: var(--color-danger);
   border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: all 0.2s;
 
@@ -144,9 +144,9 @@
   max-width: 720px;
   margin: 0 auto;
   padding: 24px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid rgba(247, 249, 252, 0.08);
+  border-radius: var(--radius-lg);
 }
 
 .reviewHeader {
@@ -158,30 +158,30 @@
 
 .episodeTitle {
   font-size: 20px;
-  font-weight: 700;
-  color: #ffffff;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .episodeBadge {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-text-muted);
   padding: 4px 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 6px;
+  background: rgba(247, 249, 252, 0.08);
+  border-radius: var(--radius-sm);
 }
 
 .storyboardContent {
   min-height: 200px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px dashed rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  background: rgba(8, 12, 18, 0.35);
+  border: 1px dashed rgba(247, 249, 252, 0.12);
+  border-radius: var(--radius-sm);
   padding: 20px;
 }
 
 .storyboardHint {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(247, 249, 252, 0.4);
   margin: 0;
   text-align: center;
   line-height: 1.8;
@@ -189,7 +189,7 @@
 
 .loadingHint {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--color-text-muted);
   margin: 0;
   text-align: center;
   line-height: 1.8;
@@ -204,13 +204,13 @@
 
 .panelCard {
   padding: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid rgba(247, 249, 252, 0.08);
+  border-radius: var(--radius-sm);
   transition: border-color 0.2s;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.12);
+    border-color: rgba(247, 249, 252, 0.16);
   }
 }
 
@@ -228,16 +228,16 @@
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
+  background: rgba(114, 183, 255, 0.16);
+  color: var(--color-accent);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
 }
 
 .panelMeta {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
-  font-weight: 500;
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
 }
 
 .panelField {
@@ -254,7 +254,7 @@
 
 .panelLabel {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--color-text-muted);
   min-width: 36px;
 
   &::after {
@@ -263,7 +263,7 @@
 }
 
 .panelValue {
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(247, 249, 252, 0.8);
 }
 
 .panelDialogue {
@@ -274,17 +274,17 @@
   margin: 4px 0 0 44px;
   font-size: 13px;
   font-style: italic;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-secondary);
   line-height: 1.6;
 }
 
 .panelEffects {
   display: inline-block;
   padding: 2px 8px;
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(114, 183, 255, 0.1);
   border-radius: 4px;
   font-size: 12px;
-  color: rgba(129, 140, 248, 0.8);
+  color: rgba(114, 183, 255, 0.9);
 }
 
 // 操作按钮栏
@@ -296,17 +296,17 @@
 
 .primaryButton {
   padding: 12px 28px;
-  background: #6366f1;
-  color: #ffffff;
+  background: var(--color-accent-strong);
+  color: var(--color-text-primary);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover {
-    background: #818cf8;
+    background: var(--color-accent);
   }
 
   &:disabled {
@@ -317,18 +317,18 @@
 
 .secondaryButton {
   padding: 12px 28px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  background: rgba(247, 249, 252, 0.06);
+  color: var(--color-text-secondary);
+  border: 1px solid rgba(247, 249, 252, 0.14);
+  border-radius: var(--radius-sm);
   font-size: 15px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(247, 249, 252, 0.1);
+    border-color: rgba(247, 249, 252, 0.25);
   }
 
   &:disabled {
@@ -341,9 +341,9 @@
 .revisionPanel {
   margin-top: 16px;
   padding: 16px;
-  background: rgba(99, 102, 241, 0.06);
-  border: 1px solid rgba(99, 102, 241, 0.15);
-  border-radius: 12px;
+  background: rgba(114, 183, 255, 0.07);
+  border: 1px solid rgba(114, 183, 255, 0.22);
+  border-radius: var(--radius-md);
 }
 
 .revisionInput {
@@ -351,9 +351,9 @@
   min-height: 80px;
   padding: 12px;
   background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #ffffff;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
   font-size: 14px;
   line-height: 1.6;
   resize: vertical;
@@ -361,12 +361,12 @@
   transition: border-color 0.2s;
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.25);
+    color: rgba(247, 249, 252, 0.28);
   }
 
   &:focus {
     outline: none;
-    border-color: rgba(99, 102, 241, 0.5);
+    border-color: rgba(114, 183, 255, 0.5);
   }
 }
 
@@ -385,16 +385,16 @@
   justify-content: center;
   gap: 24px;
   padding: 40px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px dashed rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
+  background: rgba(247, 249, 252, 0.02);
+  border: 1px dashed rgba(247, 249, 252, 0.12);
+  border-radius: var(--radius-lg);
   margin: 0 auto;
   max-width: 600px;
 }
 
 .startHint {
   font-size: 15px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-text-muted);
   margin: 0;
   text-align: center;
   line-height: 1.6;
@@ -420,26 +420,26 @@
 }
 
 .allConfirmed p {
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
 .productionButton {
   padding: 14px 36px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--color-accent-strong), var(--color-accent));
+  color: var(--color-text-primary);
   border: none;
-  border-radius: 12px;
-  font-size: 16px;
-  font-weight: 700;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
   cursor: pointer;
   transition: all 0.3s;
   letter-spacing: 0.02em;
 
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+    box-shadow: var(--shadow-soft);
   }
 
   &:disabled {
@@ -462,8 +462,8 @@
   margin-right: auto;
   background: rgba(239, 68, 68, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.15);
-  border-radius: 10px;
-  font-size: 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
   color: rgba(255, 200, 200, 0.9);
   animation: slideIn 0.3s ease;
 }
@@ -471,15 +471,15 @@
 .errorDismiss {
   flex-shrink: 0;
   padding: 2px 8px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(247, 249, 252, 0.06);
+  border: 1px solid rgba(247, 249, 252, 0.12);
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-text-secondary);
   cursor: pointer;
   font-size: 12px;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(247, 249, 252, 0.14);
   }
 }
 

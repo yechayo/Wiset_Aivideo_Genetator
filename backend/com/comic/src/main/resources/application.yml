@@ -114,8 +114,8 @@ comic:
   deepseek:
     api-key: sk-47f1529041ca4926b21b8ee5820d75d0
     base-url: https://api.deepseek.com
-    model: deepseek-reasoner
-    max-tokens: 4096
+    model: deepseek-chat
+    max-tokens: 8192
 
 
   # ========== 阿里云 OSS 配置 ==========

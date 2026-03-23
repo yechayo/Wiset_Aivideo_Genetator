@@ -14,9 +14,6 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 角色状态服务（Java 8 版）
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -30,14 +27,14 @@ public class CharacterService {
         List<Character> characters = characterRepository.findByProjectId(projectId);
         List<CharacterStateModel> dtos = new ArrayList<>();
 
-        for (Character c : characters) {
+        for (Character character : characters) {
             try {
-                CharacterStateModel dto = objectMapper.readValue(c.getCurrentStateJson(), CharacterStateModel.class);
-                dto.setCharId(c.getCharId());
-                dto.setName(c.getName());
+                CharacterStateModel dto = parseOrDefault(character);
+                dto.setCharId(character.getCharId());
+                dto.setName(character.getName());
                 dtos.add(dto);
             } catch (Exception e) {
-                log.warn("解析角色状态失败: charId={}", c.getCharId(), e);
+                log.warn("Failed to parse character state: charId={}", character.getCharId(), e);
             }
         }
         return dtos;
@@ -46,22 +43,29 @@ public class CharacterService {
     @CacheEvict(value = "characterStates", key = "#projectId")
     public void updateStatesFromStoryboard(String projectId, JsonNode storyboardJson) {
         JsonNode panels = storyboardJson.get("panels");
-        if (panels == null || !panels.isArray() || panels.size() == 0) return;
+        if (panels == null || !panels.isArray() || panels.size() == 0) {
+            return;
+        }
 
         JsonNode lastPanel = panels.get(panels.size() - 1);
         JsonNode characters = lastPanel.get("characters");
-        if (characters == null || !characters.isArray()) return;
+        if (characters == null || !characters.isArray()) {
+            return;
+        }
 
         for (JsonNode charNode : characters) {
             String charId = charNode.path("char_id").asText();
-            if (charId == null || charId.isEmpty()) continue;
+            if (charId == null || charId.isEmpty()) {
+                continue;
+            }
 
             Character character = characterRepository.findByProjectIdAndCharId(projectId, charId);
-            if (character == null) continue;
+            if (character == null) {
+                continue;
+            }
 
             try {
-                CharacterStateModel newState = objectMapper.readValue(
-                        character.getCurrentStateJson(), CharacterStateModel.class);
+                CharacterStateModel newState = parseOrDefault(character);
 
                 String expression = charNode.path("expression").asText();
                 if (expression != null && !expression.isEmpty()) {
@@ -75,10 +79,23 @@ public class CharacterService {
 
                 character.setCurrentStateJson(objectMapper.writeValueAsString(newState));
                 characterRepository.updateById(character);
-
             } catch (Exception e) {
-                log.warn("更新角色状态失败: charId={}", charId, e);
+                log.warn("Failed to update character state: charId={}", charId, e);
             }
         }
+    }
+
+    private CharacterStateModel parseOrDefault(Character character) throws Exception {
+        String stateJson = character.getCurrentStateJson();
+        if (stateJson == null || stateJson.trim().isEmpty()) {
+            CharacterStateModel state = new CharacterStateModel();
+            state.setCharId(character.getCharId());
+            state.setName(character.getName());
+            state.setLocation("unknown");
+            state.setEmotion("neutral");
+            state.setCostumeState("normal");
+            return state;
+        }
+        return objectMapper.readValue(stateJson, CharacterStateModel.class);
     }
 }

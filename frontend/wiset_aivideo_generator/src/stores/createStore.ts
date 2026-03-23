@@ -3,32 +3,43 @@ import { getProjectStatus } from '../services/projectService';
 import type { ProjectStatusInfo } from '../services/types/project.types';
 
 interface CreateState {
-  // 后端状态信息（唯一真理源）
   statusInfo: ProjectStatusInfo | null;
-
-  // 是否正在加载状态
   isLoadingStatus: boolean;
-
-  // 是否正在轮询
   isPolling: boolean;
-
-  // 启动轮询
   startPolling: (projectId: string) => void;
-
-  // 停止轮询
   stopPolling: () => void;
-
-  // 从后端同步状态（单次）
   syncStatus: (projectId: string) => Promise<void>;
-
-  // 检查是否可执行操作
   canPerformAction: (action: string) => boolean;
-
-  // 重置创建流程
   resetCreateFlow: () => void;
 }
 
 let pollingTimerId: ReturnType<typeof setTimeout> | null = null;
+
+function normalizeStatusInfo(raw: ProjectStatusInfo | Record<string, any>): ProjectStatusInfo {
+  const data = raw as Record<string, any>;
+  const statusCode = typeof data.statusCode === 'string' ? data.statusCode : '';
+
+  const generating = data.isGenerating ?? data.generating;
+  const failed = data.isFailed ?? data.failed;
+  const review = data.isReview ?? data.review;
+
+  const fallbackIsGenerating = statusCode.endsWith('_GENERATING') || statusCode === 'PRODUCING';
+  const fallbackIsFailed = statusCode.endsWith('_FAILED');
+  const fallbackIsReview = statusCode.endsWith('_REVIEW');
+
+  const reviewEpisodeId =
+    data.storyboardReviewEpisodeId === null || data.storyboardReviewEpisodeId === undefined
+      ? undefined
+      : String(data.storyboardReviewEpisodeId);
+
+  return {
+    ...(data as ProjectStatusInfo),
+    isGenerating: typeof generating === 'boolean' ? generating : fallbackIsGenerating,
+    isFailed: typeof failed === 'boolean' ? failed : fallbackIsFailed,
+    isReview: typeof review === 'boolean' ? review : fallbackIsReview,
+    storyboardReviewEpisodeId: reviewEpisodeId,
+  };
+}
 
 export const useCreateStore = create<CreateState>()((set, get) => ({
   statusInfo: null,
@@ -36,7 +47,6 @@ export const useCreateStore = create<CreateState>()((set, get) => ({
   isPolling: false,
 
   startPolling: (projectId: string) => {
-    // 如果已在轮询同一个项目，不重复启动
     if (get().isPolling && get().statusInfo?.projectId === projectId) return;
 
     set({ isPolling: true });
@@ -47,19 +57,17 @@ export const useCreateStore = create<CreateState>()((set, get) => ({
       try {
         const response = await getProjectStatus(projectId);
         if (response.code === 200 && response.data) {
-          set({ statusInfo: response.data });
+          set({ statusInfo: normalizeStatusInfo(response.data) });
         }
       } catch (error) {
-        console.error('轮询项目状态失败:', error);
+        console.error('Failed to poll project status', error);
       }
 
-      // 根据是否在生成中决定下次轮询间隔
       if (!get().isPolling) return;
       const interval = get().statusInfo?.isGenerating ? 3000 : 5000;
       pollingTimerId = setTimeout(poll, interval);
     };
 
-    // 立即同步一次，然后开始轮询
     poll();
   },
 
@@ -76,10 +84,10 @@ export const useCreateStore = create<CreateState>()((set, get) => ({
     try {
       const response = await getProjectStatus(projectId);
       if (response.code === 200 && response.data) {
-        set({ statusInfo: response.data });
+        set({ statusInfo: normalizeStatusInfo(response.data) });
       }
     } catch (error) {
-      console.error('同步项目状态失败:', error);
+      console.error('Failed to sync project status', error);
     } finally {
       set({ isLoadingStatus: false });
     }

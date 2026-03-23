@@ -20,6 +20,15 @@ logs/
 .env.local
 .env.*.local
 
+# Maven
+.m2/
+
+# Build
+target/
+build/
+dist/
+node_modules/
+
 # OS
 .DS_Store
 Thumbs.db

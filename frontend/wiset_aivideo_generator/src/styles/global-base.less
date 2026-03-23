@@ -1,0 +1,47 @@
+html,
+body {
+  background:
+    radial-gradient(1200px 600px at 92% -6%, rgba(114, 183, 255, 0.14), transparent 60%),
+    radial-gradient(1000px 520px at -5% 102%, rgba(82, 209, 159, 0.1), transparent 62%),
+    var(--color-bg-canvas);
+  color: var(--color-text-primary);
+}
+
+body {
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(114, 183, 255, 0.28);
+  color: var(--color-text-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Shared scrollbars for full-page containers */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(247, 249, 252, 0.25) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(247, 249, 252, 0.2);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(247, 249, 252, 0.34);
+}

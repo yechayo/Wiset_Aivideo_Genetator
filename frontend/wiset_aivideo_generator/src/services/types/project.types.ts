@@ -182,7 +182,7 @@ export interface ProjectStatusInfo {
   productionSubStage?: string;
   storyboardCurrentEpisode?: number;
   storyboardTotalEpisodes?: number;
-  storyboardReviewEpisodeId?: number;
+  storyboardReviewEpisodeId?: string;
   storyboardAllConfirmed?: boolean;
 }
 

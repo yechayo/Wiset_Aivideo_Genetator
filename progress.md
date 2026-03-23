@@ -245,3 +245,129 @@
    - `mvn -Dtest=EpisodeControllerTest test` passed (10/10)
    - `mvn -Dtest=EpisodeProductionServiceTest test` passed (19/19)
    - extended regression suite passed (46/46)
+
+### Continue Update (2026-03-23, 前后端联调)
+1. Frontend fusion flow now integrates backend split endpoint:
+   - added `splitGridPage(episodeId, pageIndex)` in `episodeService.ts`
+   - added `SplitGridPageResponse` / `SplitGridCell` API types
+   - `GridFusionEditor` now calls backend `split-grid-page` first, then applies overlay and uploads per-cell fused images
+2. Added resilient fallback:
+   - if backend split fails or returns skipped/empty result, frontend falls back to local `splitGridToPanels` path
+3. Aligned mixed-layout page behavior:
+   - frontend now reads per-page `gridRows/gridColumns` from `gridPages[currentPageIndex]`
+   - render/split/upload all use page-level rows/cols to avoid 2x3/3x3 mixed-page misalignment
+4. Verification:
+   - first frontend build attempt surfaced existing TS issues in unrelated files
+   - applied minimal compile fixes:
+     - removed unused variable in `CharacterPalette.tsx`
+     - adjusted `ProjectDetailPage` status maps to current `ProjectStatus` set with safe fallback
+   - rerun `npm run build` passed (Vite production build success)
+
+### Continue Update (2026-03-23, planning-with-files：前端视觉重构)
+1. Applied `planning-with-files` workflow for a new track: frontend visual refactor.
+2. Context recovery:
+   - re-read `task_plan.md`, `findings.md`, `progress.md`
+   - attempted session catchup script, but local python runtime was unavailable
+3. Frontend visual audit completed:
+   - collected page/style inventory and hotspot files by LOC
+   - quantified color hardcoding density in LESS/CSS
+   - identified inline-style hotspots and typography inconsistency
+4. Planning files updated:
+   - `task_plan.md`: added new frontend phases `P8~P13`
+   - `findings.md`: added frontend visual audit findings and priority recommendations
+5. Current focus:
+   - `P8 视觉基线审计` marked `in_progress`
+   - next phase is `P9 设计令牌与全局基座`
+
+### Continue Update (2026-03-23, Python 环境恢复)
+1. User confirmed python installed; re-checked runtime resolution.
+2. Root cause of previous failure:
+   - `python` command resolved to WindowsApps alias, not real interpreter.
+3. Resolved interpreter path:
+   - `C:\\Users\\hwh20\\AppData\\Local\\Programs\\Python\\Python314\\python.exe`
+4. Re-ran planning catchup:
+   - command: `...python.exe .agents/skills/planning-with-files/scripts/session-catchup.py <workspace>`
+   - result: script executed successfully (no unsynced context output).
+
+### Continue Update (2026-03-23, P9 设计令牌与全局基座)
+1. Added visual token foundation:
+   - `src/styles/design-tokens.less`
+   - tokens for palette, typography, spacing, radius, shadow, and motion
+2. Added global visual base:
+   - `src/styles/global-base.less`
+   - shared background layers, `focus-visible`, selection style, and scrollbar baseline
+3. Wired into app entry:
+   - updated `src/main.tsx` to import token/base styles
+   - updated `src/index.css` to use tokenized font and keep keyboard-accessible focus behavior
+4. Verification:
+   - `npm run build` passed (frontend)
+5. Plan sync:
+   - `P8` marked completed
+   - `P9` marked completed
+   - `P10` switched to in-progress
+
+### Continue Update (2026-03-23, P10 布局骨架重构)
+1. Refactored app shell styles:
+   - updated `src/pages/layout/Layout.module.less` with token-based color/spacing/border
+   - added responsive shell padding and sidebar width breakpoints
+2. Refactored create-flow shell styles:
+   - updated `src/pages/create/CreatePage.module.less` for tokenized container/step/card/button/loading skeleton
+   - added responsive behavior for step indicator and primary action area
+3. Reduced inline visual styles in shell components:
+   - `CreateLayout.tsx` polling button moved from inline style to module class
+   - added `ProjectStepLayout.module.less`; `ProjectStepLayout.tsx` loading screen switched to class styles
+4. Verification:
+   - `npm run build` passed (frontend)
+5. Plan sync:
+   - `P10` marked completed
+   - `P11` switched to in-progress
+
+### Continue Update (2026-03-23, P11 第一批页面视觉重绘)
+1. Refactored `ProjectsPage.module.less`:
+   - migrated key text/background/border/button/loading/empty-state styles to design tokens
+2. Refactored `ProjectDetailPage.module.less`:
+   - migrated header/actions/project-card/section/info/loading/empty-state styles to design tokens
+3. Scope control:
+   - no business logic changes; only visual and style maintainability improvements
+4. Verification:
+   - `npm run build` passed (frontend)
+5. Phase status:
+   - `P11` remains in-progress for next batch pages (`Step2/Step5/Step6`)
+
+### Continue Update (2026-03-23, P11 第二批页面视觉重绘)
+1. Refactored `Step2page.module.less`:
+   - tokenized title/subtitle/loading/error/script-card/scene-card/button styles
+2. Refactored `Step5page.module.less`:
+   - tokenized progress/review/panel/revision/start/error presentation styles
+3. Refactored `Step6page.module.less`:
+   - tokenized pipeline/segment/completed/failed presentation styles
+4. Verification:
+   - `npm run build` passed (frontend)
+5. Phase status:
+   - `P11` still in-progress (remaining large pages: `Step3/Step4`)
+
+### Continue Update (2026-03-23, P11 batch-3 page cleanup)
+1. Updated `Step3page.module.less`, `Step4page.module.less`, `Dashboard.module.less`:
+   - replaced remaining hardcoded white text/border/background values with design-token based values
+   - normalized near-white alpha backgrounds to `rgba(247, 249, 252, x)` where token indirection was not practical
+2. Encoding hygiene:
+   - removed UTF-8 BOM from the three files to avoid hidden leading characters/mojibake issues
+3. Verification:
+   - `npm run build` passed (frontend)
+   - only existing chunk-size warning remains
+4. Plan sync:
+   - P11 page-level scope is complete
+   - moved active focus to P12 component-level style normalization
+
+### Continue Update (2026-03-23, P12 component style normalization batch-1)
+1. Refactored component style modules:
+   - `src/pages/create/steps/components/GridFusionEditor.module.less`
+   - `src/pages/create/steps/components/CharacterPalette.module.less`
+2. Changes:
+   - migrated hardcoded white colors and borders to token-based values (`--color-text-*`) or normalized near-white rgba palette
+   - added `:focus-visible` styles for interactive buttons in grid-fusion component
+3. Verification:
+   - `npm run build` passed (frontend)
+   - only existing chunk-size warning remains
+4. Plan sync:
+   - P12 remains in_progress (batch-1 complete)

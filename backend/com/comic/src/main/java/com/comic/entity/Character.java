@@ -15,43 +15,43 @@ public class Character {
     private String profileJson;
     private String currentStateJson;
 
-    // 新增字段（用于角色提取和形象管理）
-    private String projectId;         // 项目ID
-    private String personality;       // 性格描述
-    private String appearance;        // 外貌描述
-    private String background;        // 背景故事
-    private Boolean confirmed;        // 是否已确认
-    private Boolean locked;           // 是否已锁定资产
+    // 鏂板瀛楁锛堢敤浜庤鑹叉彁鍙栧拰褰㈣薄绠＄悊锛?
+    private String projectId;         // 椤圭洰ID
+    private String personality;       // 鎬ф牸鎻忚堪
+    private String appearance;        // 澶栬矊鎻忚堪
+    private String background;        // 鑳屾櫙鏁呬簨
+    private Boolean confirmed;        // 鏄惁宸茬‘璁?
+    private Boolean locked;           // 鏄惁宸查攣瀹氳祫浜?
 
-    // 角色图片生成相关字段
-    // 生成状态字段
-    private String expressionStatus;    // 表情生成状态: pending/generating/completed/failed
-    private String threeViewStatus;     // 三视图生成状态: pending/generating/completed/failed
+    // 瑙掕壊鍥剧墖鐢熸垚鐩稿叧瀛楁
+    // 鐢熸垚鐘舵€佸瓧娈?
+    private String expressionStatus;    // 琛ㄦ儏鐢熸垚鐘舵€? pending/generating/completed/failed
+    private String threeViewStatus;     // 涓夎鍥剧敓鎴愮姸鎬? pending/generating/completed/failed
 
-    // 生成内容存储（JSON格式）
-    private String expressionPrompt;    // 表情生成提示词
-    private String threeViewPrompt;     // 三视图生成提示词
+    // 鐢熸垚鍐呭瀛樺偍锛圝SON鏍煎紡锛?
+    private String expressionPrompt;    // 琛ㄦ儏鐢熸垚鎻愮ず璇?
+    private String threeViewPrompt;     // 涓夎鍥剧敓鎴愭彁绀鸿瘝
 
-    // 错误信息
-    private String expressionError;     // 表情生成错误信息
-    private String threeViewError;      // 三视图生成错误信息
+    // 閿欒淇℃伅
+    private String expressionError;     // 琛ㄦ儏鐢熸垚閿欒淇℃伅
+    private String threeViewError;      // 涓夎鍥剧敓鎴愰敊璇俊鎭?
 
-    // 生成标志
-    private Boolean isGeneratingExpression;   // 正在生成表情
-    private Boolean isGeneratingThreeView;    // 正在生成三视图
+    // 鐢熸垚鏍囧織
+    private Boolean isGeneratingExpression;   // 姝ｅ湪鐢熸垚琛ㄦ儏
+    private Boolean isGeneratingThreeView;    // 姝ｅ湪鐢熸垚涓夎鍥?
 
-    // 视觉风格
-    private String visualStyle;          // 3D/REAL/ANIME，默认3D
+    // 瑙嗚椋庢牸
+    private String visualStyle;          // 3D/REAL/ANIME锛岄粯璁?D
 
-    // 大全图URL
-    private String expressionGridUrl;    // 九宫格大全图URL
-    private String threeViewGridUrl;     // 三视图大全图URL
-    private String standardImageUrl;     // 标准单图URL
-    private String expressionGridPrompt; // 九宫格提示词记录
-    private String threeViewGridPrompt;  // 三视图提示词记录
+    // 澶у叏鍥綰RL
+    private String expressionGridUrl;    // 涔濆鏍煎ぇ鍏ㄥ浘URL
+    private String threeViewGridUrl;     // 涓夎鍥惧ぇ鍏ㄥ浘URL
+    private String expressionGridPrompt; // 涔濆鏍兼彁绀鸿瘝璁板綍
+    private String threeViewGridPrompt;  // 涓夎鍥炬彁绀鸿瘝璁板綍
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 }
+

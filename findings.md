@@ -216,3 +216,127 @@
     - submit-fusion-page API boundary guards
 - Residual note:
   - current coverage is service/controller-level unit regression; no external-system E2E (real OSS/network image split) has been executed in this cycle.
+
+---
+
+## 状态更新（2026-03-23，前端视觉重构审计）
+
+### 调研范围（前端）
+- `frontend/wiset_aivideo_generator/src/index.css`
+- `frontend/wiset_aivideo_generator/src/pages/layout/Layout.module.less`
+- `frontend/wiset_aivideo_generator/src/pages/create/CreatePage.module.less`
+- `frontend/wiset_aivideo_generator/src/pages/create/CreateLayout.tsx`
+- `frontend/wiset_aivideo_generator/src/pages/create/ProjectStepLayout.tsx`
+- `frontend/wiset_aivideo_generator/src/pages/create/steps/*.tsx`
+- `frontend/wiset_aivideo_generator/src/pages/create/steps/*.module.less`
+- `frontend/wiset_aivideo_generator/src/pages/projects/*.tsx`
+- `frontend/wiset_aivideo_generator/src/pages/projects/*.module.less`
+- `frontend/wiset_aivideo_generator/src/pages/dashboard/*.tsx`
+- `frontend/wiset_aivideo_generator/src/pages/dashboard/*.module.less`
+
+### 关键发现（量化）
+1. 视觉变量未集中管理，硬编码颜色密度高：
+   - `#ffffff` 出现约 `148` 次
+   - `rgba(255, 255, 255, 0.1)` 出现约 `74` 次
+   - `rgba(255, 255, 255, 0.5)` 出现约 `63` 次
+2. 样式文件体量偏大，重构风险集中在少数大文件：
+   - `Step3page.module.less` 约 `829` 行
+   - `Step4page.module.less` 约 `795` 行
+   - `Step5page.module.less` 约 `495` 行
+3. 逻辑与视觉耦合仍存在：
+   - `CreateLayout.tsx`、`ProjectStepLayout.tsx` 存在固定视觉内联样式
+   - 多处组件使用 `style={{ width: ... }}` 直接驱动 UI 进度条/状态条
+4. 字体策略不统一：
+   - 全局使用系统字体栈，局部又出现独立字体栈/`monospace`
+5. 全局可访问性基线薄弱：
+   - 全局 reset 中 `:focus { outline: none; }`，需要补可见焦点方案
+
+### 结构性结论
+- 当前 UI 风格已形成“深色玻璃态”方向，但主要依赖重复硬编码而非设计令牌，维护成本高。
+- 建议先做“令牌层 + 壳层统一”，再分批处理 Step 页面，避免在 800 行级样式文件中一次性大改。
+- `Create` 流程是视觉重构主战场（文件数量、复杂度和用户路径权重均最高），应优先排期。
+
+### 优先级建议（视觉重构）
+1. 先建立统一令牌层与焦点可访问性基线。
+2. 其次重构 `Layout/Create` 外层容器（导航、留白、滚动、背景层）。
+3. 再按 `Step2 -> Step6` 顺序分批改造重页面样式，最后处理 dashboard/projects 视觉收敛。
+
+## 状态更新（2026-03-23，P9 已落地）
+
+### 已实施
+1. 新增全局设计令牌文件：
+   - `frontend/wiset_aivideo_generator/src/styles/design-tokens.less`
+   - 覆盖颜色、排版、间距、圆角、阴影、动效变量
+2. 新增全局主题基线文件：
+   - `frontend/wiset_aivideo_generator/src/styles/global-base.less`
+   - 补充背景层、`focus-visible`、选区样式、滚动条统一规则
+3. 入口接线：
+   - `frontend/wiset_aivideo_generator/src/main.tsx` 引入令牌与全局基线
+   - `frontend/wiset_aivideo_generator/src/index.css` 调整为可访问焦点策略（保留 `focus-visible`）
+
+### 验证
+- `npm run build`（frontend）通过。
+- 无新增 TypeScript/打包阻断问题（仅保留既有 chunk size warning）。
+
+## 状态更新（2026-03-23，P10 壳层重构完成）
+
+### 已实施
+1. 布局壳层变量化与响应式基线：
+   - `src/pages/layout/Layout.module.less`
+   - 顶层背景、文字、边框、间距切换为设计令牌变量，补充 `1280px/960px` 断点
+2. 创建流程容器视觉统一：
+   - `src/pages/create/CreatePage.module.less`
+   - `createContainer/stepIndicator/card/button/loading` 等核心骨架切换为令牌
+   - 增加移动端步骤条与按钮布局收敛规则
+3. 清理壳层关键内联样式：
+   - `src/pages/create/CreateLayout.tsx` 的轮询按钮改为样式类
+   - 新增 `src/pages/create/ProjectStepLayout.module.less`
+   - `src/pages/create/ProjectStepLayout.tsx` 加载态改为模块样式
+
+### 验证
+- `npm run build`（frontend）通过。
+- 当前进入 `P11`：按页面分批重绘（先从 `Step2/Projects` 开始）。
+
+## 状态更新（2026-03-23，P11 第一批页面重绘）
+
+### 已实施（Batch-1）
+1. `ProjectsPage` 视觉变量化：
+   - `src/pages/projects/ProjectsPage.module.less`
+   - 标题、按钮、卡片、元信息、空态、加载态均接入令牌体系
+2. `ProjectDetailPage` 视觉变量化：
+   - `src/pages/projects/ProjectDetailPage.module.less`
+   - 头部操作区、详情卡、分区标题、信息块、加载/空态接入令牌体系
+3. 保持页面结构与业务交互不变，仅调整视觉表达与样式可维护性
+
+### 验证
+- `npm run build`（frontend）通过。
+- `P11` 仍在进行中，下一批建议覆盖 `Step2page` 与 `Step5/Step6` 的高频操作界面。
+
+## 状态更新（2026-03-23，P11 第二批页面重绘）
+
+### 已实施（Batch-2）
+1. `Step2page.module.less` 视觉变量化：
+   - 标题区、加载/错误态、剧本卡片、场景卡片、操作按钮统一接入令牌
+2. `Step5page.module.less` 视觉变量化：
+   - 进度条、审核卡片、分镜列表、修订面板、失败/启动态、错误提示统一接入令牌
+3. `Step6page.module.less` 视觉变量化：
+   - 管线页加载/空态/失败态、场景图区域、视频片段区域、完成态按钮统一接入令牌
+
+### 验证
+- `npm run build`（frontend）通过。
+- `P11` 继续 in-progress，剩余重点为 `Step3/Step4` 大体量页面和组件细化一致性。
+
+## Status Update (2026-03-23, P11 batch-3 complete)
+- Completed token-focused cleanup for:
+  - `src/pages/create/steps/Step3page.module.less`
+  - `src/pages/create/steps/Step4page.module.less`
+  - `src/pages/dashboard/Dashboard.module.less`
+- Removed accidental UTF-8 BOM from all three files to prevent mojibake side effects.
+- Remaining hardcoded `rgba(255,255,255,0.5)` in Step3 is only inside embedded SVG data URI.
+- Verification: `npm run build` passed.
+
+## Status Update (2026-03-23, P12 batch-1)
+- Component-level style normalization started.
+- `GridFusionEditor.module.less` and `CharacterPalette.module.less` now use tokenized text/action colors and normalized translucent surfaces.
+- Accessibility baseline improved with explicit `:focus-visible` treatment on navigation/submit actions.
+- Build verification succeeded after each patch.

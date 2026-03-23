@@ -4,14 +4,14 @@ import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
 import com.comic.dto.response.ProjectListItemResponse;
 import com.comic.dto.response.ProjectStatusResponse;
+import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.EpisodeProduction;
 import com.comic.entity.Project;
+import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeProductionRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.entity.Character;
-import com.comic.repository.CharacterRepository;
 import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
 import com.comic.service.production.EpisodeProductionService;
@@ -24,12 +24,16 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 流水线编排服务
- * 驱动整个创作流程的状态流转
+ * Pipeline orchestration service.
+ * Drives project status transitions and triggers the next stage when needed.
  */
 @Service
 @RequiredArgsConstructor
@@ -49,13 +53,10 @@ public class PipelineService {
     @Autowired
     private StoryboardService storyboardService;
 
-    /**
-     * 创建新项目
-     */
     @Transactional
     public String createProject(String userId, String storyPrompt, String genre,
-                               String targetAudience, Integer totalEpisodes,
-                               Integer episodeDuration, String visualStyle) {
+                                String targetAudience, Integer totalEpisodes,
+                                Integer episodeDuration, String visualStyle) {
         Project project = new Project();
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
@@ -69,69 +70,56 @@ public class PipelineService {
 
         projectRepository.insert(project);
 
-        log.info("项目已创建: projectId={}, userId={}", project.getProjectId(), userId);
+        log.info("Project created: projectId={}, userId={}", project.getProjectId(), userId);
         return project.getProjectId();
     }
 
-    /**
-     * 推进流水线
-     * 根据当前状态和事件，自动流转到下一状态并触发相应任务
-     */
     @Transactional
     public void advancePipeline(String projectId, String event) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
-            throw new BusinessException("项目不存在");
+            throw new BusinessException("Project not found");
         }
 
         String currentStatus = project.getStatus();
         String nextStatus = calculateNextStatus(currentStatus, event);
-
         if (nextStatus == null) {
-            throw new BusinessException("无法从状态 " + currentStatus + " 通过事件 " + event + " 转换");
+            throw new BusinessException("Cannot transition from status " + currentStatus + " via event " + event);
         }
 
-        // 更新状态
         project.setStatus(nextStatus);
         projectRepository.updateById(project);
 
-        log.info("流水线状态流转: projectId={}, {} -> {}", projectId, currentStatus, nextStatus);
-
-        // 触发下一阶段的任务（异步，不阻塞状态更新）
+        log.info("Pipeline advanced: projectId={}, {} -> {}", projectId, currentStatus, nextStatus);
         triggerNextStageAsync(projectId, nextStatus);
     }
 
-    /**
-     * 异步触发下一阶段任务，避免任务触发失败回滚状态更新
-     */
     private void triggerNextStageAsync(String projectId, String status) {
         try {
             triggerNextStage(projectId, status);
         } catch (Exception e) {
-            log.error("触发下一阶段任务失败（状态已更新）: projectId={}, status={}, error={}",
-                    projectId, status, e.getMessage(), e);
+            log.error(
+                    "Failed to trigger next stage after status update: projectId={}, status={}, error={}",
+                    projectId,
+                    status,
+                    e.getMessage(),
+                    e
+            );
         }
     }
 
-    /**
-     * 获取项目状态
-     */
     public Project getProjectStatus(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
-            throw new BusinessException("项目不存在");
+            throw new BusinessException("Project not found");
         }
         return project;
     }
 
-    /**
-     * 获取项目状态详情（包含前端步骤映射和可用操作）
-     * PRODUCING 阶段会自动查询剧集子阶段进度
-     */
     public ProjectStatusResponse getProjectStatusDetail(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
-            throw new BusinessException("项目不存在");
+            throw new BusinessException("Project not found");
         }
 
         ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
@@ -144,7 +132,6 @@ public class PipelineService {
         dto.setCompletedSteps(status.getCompletedSteps());
         dto.setAvailableActions(status.getAvailableActions());
 
-        // PRODUCING 阶段：查询剧集子阶段，提供细粒度状态
         if (status == ProjectStatus.PRODUCING) {
             enrichProducingStatus(dto, projectId);
         } else if (status == ProjectStatus.STORYBOARD_GENERATING
@@ -160,30 +147,24 @@ public class PipelineService {
         return dto;
     }
 
-    /**
-     * 查询剧集生产子阶段，填充细粒度状态到项目级响应
-     */
     private void enrichProducingStatus(ProjectStatusResponse dto, String projectId) {
         try {
             List<Episode> episodes = episodeRepository.findByProjectId(projectId);
-            // 找到正在生产的剧集
             Episode producingEpisode = null;
             for (Episode ep : episodes) {
-                String prodStatus = ep.getProductionStatus();
-                if ("IN_PROGRESS".equals(prodStatus)) {
+                if ("IN_PROGRESS".equals(ep.getProductionStatus())) {
                     producingEpisode = ep;
                     break;
                 }
             }
 
             if (producingEpisode == null) {
-                // 没有正在生产的剧集，仅返回可生产提示（查询接口不触发副作用）
                 boolean hasProducible = false;
                 for (Episode ep : episodes) {
                     if ("DONE".equals(ep.getStatus())
                             && (ep.getProductionStatus() == null
-                                || "NOT_STARTED".equals(ep.getProductionStatus())
-                                || "FAILED".equals(ep.getProductionStatus()))) {
+                            || "NOT_STARTED".equals(ep.getProductionStatus())
+                            || "FAILED".equals(ep.getProductionStatus()))) {
                         hasProducible = true;
                         break;
                     }
@@ -194,7 +175,7 @@ public class PipelineService {
                 }
 
                 dto.setStatusCode("PRODUCING");
-                dto.setStatusDescription(hasProducible ? "待启动生产" : "生产中");
+                dto.setStatusDescription(hasProducible ? "Ready to start production" : "Producing");
                 dto.setGenerating(false);
                 return;
             }
@@ -202,99 +183,95 @@ public class PipelineService {
             EpisodeProduction production = episodeProductionRepository.findByEpisodeId(producingEpisode.getId());
             if (production == null) {
                 dto.setStatusCode("PRODUCING");
-                dto.setStatusDescription("生产中");
+                dto.setStatusDescription("Producing");
                 dto.setGenerating(true);
                 return;
             }
 
-            // 用剧集子阶段作为项目状态描述
             String episodeStatus = production.getStatus();
             String progressMsg = production.getProgressMessage();
             int progress = production.getProgressPercent() != null ? production.getProgressPercent() : 0;
 
-            // 映射剧集状态到项目级statusCode
             dto.setStatusCode(mapEpisodeToProjectStatus(episodeStatus));
-            dto.setStatusDescription(progressMsg != null ? progressMsg : "生产中");
+            dto.setStatusDescription(progressMsg != null ? progressMsg : "Producing");
             dto.setGenerating(isEpisodeGenerating(episodeStatus));
-
-            // 附加生产进度百分比和子阶段
             dto.setProductionProgress(progress);
             dto.setProductionSubStage(episodeStatus);
 
-            // 如果完成，更新项目状态
             if ("COMPLETED".equals(episodeStatus)) {
                 Project project = projectRepository.findByProjectId(projectId);
                 project.setStatus(ProjectStatus.COMPLETED.getCode());
                 projectRepository.updateById(project);
                 dto.setStatusCode(ProjectStatus.COMPLETED.getCode());
-                dto.setStatusDescription("已完成");
+                dto.setStatusDescription("Completed");
                 dto.setGenerating(false);
             }
-
         } catch (Exception e) {
-            log.warn("查询剧集生产子阶段失败: projectId={}, error={}", projectId, e.getMessage());
+            log.warn("Failed to enrich producing status: projectId={}, error={}", projectId, e.getMessage());
             dto.setStatusCode("PRODUCING");
-            dto.setStatusDescription("生产中");
+            dto.setStatusDescription("Producing");
             dto.setGenerating(true);
         }
     }
 
-    /**
-     * 将剧集子阶段映射到项目级状态码
-     */
     private String mapEpisodeToProjectStatus(String episodeStatus) {
-        if (episodeStatus == null) return "PRODUCING";
+        if (episodeStatus == null) {
+            return "PRODUCING";
+        }
         switch (episodeStatus) {
-            case "ANALYZING": return "PRODUCING";
-            case "GRID_GENERATING": return "PRODUCING";
-            case "GRID_FUSION_PENDING": return "PRODUCING";
-            case "BUILDING_PROMPTS": return "PRODUCING";
-            case "GENERATING": return "PRODUCING";
-            case "GENERATING_SUBS": return "PRODUCING";
-            case "COMPOSING": return "PRODUCING";
-            case "COMPLETED": return "COMPLETED";
-            case "FAILED": return "PRODUCING";
-            default: return "PRODUCING";
+            case "ANALYZING":
+            case "GRID_GENERATING":
+            case "GRID_FUSION_PENDING":
+            case "BUILDING_PROMPTS":
+            case "GENERATING":
+            case "GENERATING_SUBS":
+            case "COMPOSING":
+                return "PRODUCING";
+            case "COMPLETED":
+                return "COMPLETED";
+            case "FAILED":
+            default:
+                return "PRODUCING";
         }
     }
 
-    /**
-     * 查询分镜子阶段，填充细粒度状态到项目级响应
-     */
     private void enrichStoryboardStatus(ProjectStatusResponse dto, String projectId) {
         try {
             Project project = projectRepository.findByProjectId(projectId);
             List<Episode> episodes = episodeRepository.findByProjectId(projectId);
             int totalEpisodes = episodes.size();
 
-            // 找到当前正在生成分镜的集，或下一个待审核的集
-            Episode currentEpisode = null;
+            Episode failedEpisode = null;
+            Episode generatingEpisode = null;
+            Episode reviewEpisode = null;
+            Episode draftEpisode = null;
+
             for (Episode ep : episodes) {
-                if ("STORYBOARD_GENERATING".equals(ep.getStatus())) {
-                    currentEpisode = ep;
-                    break;
+                if (failedEpisode == null
+                        && ("STORYBOARD_FAILED".equals(ep.getStatus())
+                            || isStoryboardGeneratingWithError(ep)
+                            || isStaleGenerating(ep))) {
+                    failedEpisode = ep;
                 }
-            }
-            // 如果没有正在生成的，找第一个已生成分镜待审核的
-            if (currentEpisode == null) {
-                for (Episode ep : episodes) {
-                    if ("STORYBOARD_DONE".equals(ep.getStatus())) {
-                        currentEpisode = ep;
-                        break;
-                    }
+                if (generatingEpisode == null
+                        && "STORYBOARD_GENERATING".equals(ep.getStatus())
+                        && !isStoryboardGeneratingWithError(ep)
+                        && !isStaleGenerating(ep)) {
+                    generatingEpisode = ep;
                 }
-            }
-            // 如果还没有已生成的，找第一个待生成的
-            if (currentEpisode == null) {
-                for (Episode ep : episodes) {
-                    if (ep.getStatus() == null || "DRAFT".equals(ep.getStatus())) {
-                        currentEpisode = ep;
-                        break;
-                    }
+                if (reviewEpisode == null && "STORYBOARD_DONE".equals(ep.getStatus())) {
+                    reviewEpisode = ep;
+                }
+                if (draftEpisode == null && (ep.getStatus() == null || "DRAFT".equals(ep.getStatus()))) {
+                    draftEpisode = ep;
                 }
             }
 
-            // 统计已确认分镜的集数
+            Episode currentEpisode = failedEpisode != null ? failedEpisode
+                    : generatingEpisode != null ? generatingEpisode
+                    : reviewEpisode != null ? reviewEpisode
+                    : draftEpisode;
+
             int completedCount = 0;
             for (Episode ep : episodes) {
                 if ("STORYBOARD_CONFIRMED".equals(ep.getStatus())) {
@@ -305,52 +282,93 @@ public class PipelineService {
             dto.setStoryboardTotalEpisodes(totalEpisodes);
             if (currentEpisode != null) {
                 dto.setStoryboardCurrentEpisode(currentEpisode.getEpisodeNum());
-                dto.setStoryboardReviewEpisodeId(currentEpisode.getId());
+                dto.setStoryboardReviewEpisodeId(String.valueOf(currentEpisode.getId()));
             }
 
-            // 根据当前 Project 状态设置描述
             ProjectStatus projectStatus = ProjectStatus.fromCode(project.getStatus());
+            if (failedEpisode != null && projectStatus == ProjectStatus.STORYBOARD_GENERATING) {
+                projectStatus = ProjectStatus.STORYBOARD_GENERATING_FAILED;
 
-            // 所有集均已确认
+                // Auto-recover stale generating episodes so the user can retry
+                if (isStaleGenerating(failedEpisode)) {
+                    failedEpisode.setStatus("STORYBOARD_FAILED");
+                    failedEpisode.setErrorMsg("Generation timed out (server may have restarted)");
+                    episodeRepository.updateById(failedEpisode);
+                    log.warn("Recovered stale generating episode: episodeId={}, episodeNum={}",
+                            failedEpisode.getId(), failedEpisode.getEpisodeNum());
+                }
+            }
+
+            dto.setStatusCode(projectStatus.getCode());
+            dto.setStatusDescription(projectStatus.getDescription());
+            dto.setGenerating(projectStatus.isGenerating());
+            dto.setFailed(projectStatus.isFailed());
+            dto.setReview(projectStatus.isReview());
+
             boolean allConfirmed = completedCount == totalEpisodes && projectStatus == ProjectStatus.STORYBOARD_REVIEW;
             dto.setStoryboardAllConfirmed(allConfirmed);
             if (allConfirmed) {
                 dto.setStoryboardReviewEpisodeId(null);
-                dto.setStatusDescription("所有 " + totalEpisodes + " 集分镜已审核完成");
+                dto.setStatusDescription("All " + totalEpisodes + " storyboard episodes are confirmed");
+                return;
             }
 
-            dto.setStatusCode(projectStatus.getCode());
-            dto.setGenerating(projectStatus.isGenerating());
-
-            if (currentEpisode != null && !allConfirmed) {
-                String desc;
+            if (currentEpisode != null) {
                 switch (projectStatus) {
                     case STORYBOARD_GENERATING:
-                        desc = "正在生成第 " + currentEpisode.getEpisodeNum() + " 集分镜...";
+                        dto.setStatusDescription("Generating storyboard for episode " + currentEpisode.getEpisodeNum() + "...");
                         break;
                     case STORYBOARD_REVIEW:
-                        desc = "请审核第 " + currentEpisode.getEpisodeNum() + " 集分镜（" + completedCount + "/" + totalEpisodes + "）";
+                        dto.setStatusDescription(
+                                "Review episode " + currentEpisode.getEpisodeNum()
+                                        + " storyboard (" + completedCount + "/" + totalEpisodes + ")"
+                        );
                         break;
                     case STORYBOARD_GENERATING_FAILED:
-                        desc = "第 " + currentEpisode.getEpisodeNum() + " 集分镜生成失败";
+                        dto.setStatusDescription(
+                                "Episode " + currentEpisode.getEpisodeNum() + " storyboard generation failed"
+                        );
                         break;
                     default:
-                        desc = projectStatus.getDescription();
                         break;
                 }
-                dto.setStatusDescription(desc);
             }
-
         } catch (Exception e) {
-            log.warn("查询分镜子阶段失败: projectId={}, error={}", projectId, e.getMessage());
+            log.warn("Failed to enrich storyboard status: projectId={}, error={}", projectId, e.getMessage());
         }
     }
 
-    /**
-     * 判断剧集子阶段是否为生成中
-     */
+    private boolean isStoryboardGeneratingWithError(Episode episode) {
+        if (episode == null) {
+            return false;
+        }
+        if (!"STORYBOARD_GENERATING".equals(episode.getStatus())) {
+            return false;
+        }
+        boolean hasError = episode.getErrorMsg() != null && !episode.getErrorMsg().trim().isEmpty();
+        boolean hasStoryboard = episode.getStoryboardJson() != null && !episode.getStoryboardJson().trim().isEmpty();
+        return hasError && !hasStoryboard;
+    }
+
+    /** Detect episodes stuck in GENERATING for too long (e.g. server restarted). */
+    private boolean isStaleGenerating(Episode episode) {
+        if (episode == null || !"STORYBOARD_GENERATING".equals(episode.getStatus())) {
+            return false;
+        }
+        if (isStoryboardGeneratingWithError(episode)) {
+            return false;
+        }
+        LocalDateTime updatedAt = episode.getUpdatedAt();
+        if (updatedAt == null) {
+            return false;
+        }
+        return Duration.between(updatedAt, LocalDateTime.now()).toMinutes() >= 10;
+    }
+
     private boolean isEpisodeGenerating(String episodeStatus) {
-        if (episodeStatus == null) return false;
+        if (episodeStatus == null) {
+            return false;
+        }
         switch (episodeStatus) {
             case "ANALYZING":
             case "GRID_GENERATING":
@@ -364,9 +382,6 @@ public class PipelineService {
         }
     }
 
-    /**
-     * 获取用户的所有项目列表（带状态映射）
-     */
     public List<ProjectListItemResponse> getProjectsByUserId(String userId) {
         List<Project> projects = projectRepository.findAllByUserId(userId);
         List<ProjectListItemResponse> result = new ArrayList<>();
@@ -376,9 +391,6 @@ public class PipelineService {
         return result;
     }
 
-    /**
-     * Project → ProjectListItemResponse 转换
-     */
     private ProjectListItemResponse toListItemDTO(Project project) {
         ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
 
@@ -402,8 +414,6 @@ public class PipelineService {
 
         return dto;
     }
-
-    // ================= 私有方法 =================
 
     private String calculateNextStatus(String currentStatus, String event) {
         switch (event) {
@@ -448,56 +458,47 @@ public class PipelineService {
         ProjectStatus projectStatus = ProjectStatus.fromCode(status);
         switch (projectStatus) {
             case OUTLINE_GENERATING:
-                // 触发剧本大纲生成（两级生成：第一步）
                 scriptService.generateScriptOutline(projectId);
                 break;
 
             case CHARACTER_EXTRACTING:
-                // 触发角色提取
                 characterExtractService.extractCharacters(projectId);
                 break;
 
             case IMAGE_GENERATING:
-                // 异步触发所有角色图片生成
                 generateAllCharacterImagesAsync(projectId);
                 break;
 
             case STORYBOARD_GENERATING:
-                // 异步触发逐集分镜生成
                 CompletableFuture.runAsync(() -> {
                     try {
                         storyboardService.startStoryboardGeneration(projectId);
                     } catch (Exception e) {
-                        log.error("分镜生成异常: projectId={}, error={}", projectId, e.getMessage(), e);
+                        log.error("Storyboard generation failed: projectId={}, error={}", projectId, e.getMessage(), e);
                     }
                 });
                 break;
 
             case PRODUCING:
-                // 异步触发视频生产，避免阻塞 HTTP 响应
                 CompletableFuture.runAsync(() -> {
                     try {
                         episodeProductionService.startProductionForProject(projectId);
                     } catch (Exception e) {
-                        log.error("视频生产异常: projectId={}, error={}", projectId, e.getMessage(), e);
+                        log.error("Production failed: projectId={}, error={}", projectId, e.getMessage(), e);
                     }
                 });
                 break;
 
             default:
-                // 其他状态不需要触发任务
                 break;
         }
     }
 
-    /**
-     * 异步生成所有角色的图片，完成后更新项目状态到 IMAGE_REVIEW
-     */
     private void generateAllCharacterImagesAsync(String projectId) {
         CompletableFuture.runAsync(() -> {
             try {
                 List<Character> characters = characterRepository.findByProjectId(projectId);
-                log.info("开始批量生成角色图片: projectId={}, characterCount={}", projectId, characters.size());
+                log.info("Generating character images: projectId={}, characterCount={}", projectId, characters.size());
 
                 int successCount = 0;
                 int failCount = 0;
@@ -506,28 +507,35 @@ public class PipelineService {
                         characterImageGenerationService.generateAll(character.getCharId());
                         successCount++;
                     } catch (Exception e) {
-                        log.warn("角色图片生成失败（继续处理下一个）: charId={}, error={}", character.getCharId(), e.getMessage());
+                        log.warn(
+                                "Character image generation failed and will continue: charId={}, error={}",
+                                character.getCharId(),
+                                e.getMessage()
+                        );
                         failCount++;
                     }
                 }
 
-                log.info("角色图片批量生成完成: projectId={}, success={}, fail={}", projectId, successCount, failCount);
+                log.info(
+                        "Character image generation finished: projectId={}, success={}, fail={}",
+                        projectId,
+                        successCount,
+                        failCount
+                );
 
-                // 无论是否有部分失败，都进入 IMAGE_REVIEW 让用户在前端检查
                 Project project = projectRepository.findByProjectId(projectId);
                 if (project != null && ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
                     project.setStatus(ProjectStatus.IMAGE_REVIEW.getCode());
                     projectRepository.updateById(project);
-                    log.info("项目状态更新为 IMAGE_REVIEW: projectId={}", projectId);
+                    log.info("Project moved to IMAGE_REVIEW: projectId={}", projectId);
                 }
             } catch (Exception e) {
-                log.error("批量生成角色图片异常: projectId={}", projectId, e);
-                // 更新为失败状态
+                log.error("Character image batch generation failed: projectId={}", projectId, e);
                 Project project = projectRepository.findByProjectId(projectId);
                 if (project != null && ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
                     project.setStatus(ProjectStatus.IMAGE_GENERATING_FAILED.getCode());
                     projectRepository.updateById(project);
-                    log.info("项目状态更新为 IMAGE_GENERATING_FAILED: projectId={}", projectId);
+                    log.info("Project moved to IMAGE_GENERATING_FAILED: projectId={}", projectId);
                 }
             }
         });

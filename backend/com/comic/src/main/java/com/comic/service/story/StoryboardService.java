@@ -16,6 +16,8 @@ import com.comic.service.world.CharacterService;
 import com.comic.service.world.WorldRuleService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,8 +26,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -56,6 +60,10 @@ public class StoryboardService {
     private static final Set<String> ALLOWED_COSTUME_STATE = new HashSet<String>(Arrays.asList(
             "normal", "battle_worn"
     ));
+    private static final String DEFAULT_CHARACTER_POSITION = "center";
+    private static final String DEFAULT_CHARACTER_POSE = "standing";
+    private static final String DEFAULT_CHARACTER_EXPRESSION = "neutral";
+    private static final String DEFAULT_COSTUME_STATE = "normal";
 
     @Lazy
     @Autowired
@@ -69,6 +77,7 @@ public class StoryboardService {
 
         episode.setStatus("STORYBOARD_GENERATING");
         episode.setRetryCount(0);
+        episode.setErrorMsg(null);
         episodeRepository.updateById(episode);
 
         try {
@@ -97,6 +106,7 @@ public class StoryboardService {
 
         episode.setStatus("STORYBOARD_GENERATING");
         episode.setRetryCount(0);
+        episode.setErrorMsg(null);
         episodeRepository.updateById(episode);
 
         try {
@@ -124,14 +134,19 @@ public class StoryboardService {
             throw new BusinessException("Project not found");
         }
 
-        project.setStatus(ProjectStatus.STORYBOARD_GENERATING.getCode());
-        projectRepository.updateById(project);
-
         Episode nextEpisode = findNextPendingEpisode(projectId);
         if (nextEpisode == null) {
             log.warn("No pending episodes for storyboard generation: projectId={}", projectId);
+            if (ProjectStatus.STORYBOARD_GENERATING.getCode().equals(project.getStatus())) {
+                project.setStatus(ProjectStatus.STORYBOARD_REVIEW.getCode());
+                projectRepository.updateById(project);
+            }
             return;
         }
+
+        project.setStatus(ProjectStatus.STORYBOARD_GENERATING.getCode());
+        projectRepository.updateById(project);
+        markEpisodeGenerating(nextEpisode);
 
         generateSingleEpisodeAsync(projectId, nextEpisode);
     }
@@ -166,18 +181,22 @@ public class StoryboardService {
         }
 
         String projectId = episode.getProjectId();
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project != null) {
+            project.setStatus(ProjectStatus.STORYBOARD_GENERATING.getCode());
+            projectRepository.updateById(project);
+        }
+        markEpisodeGenerating(episode);
+
         final Long epId = episodeId;
         final String fb = feedback;
         new Thread(() -> {
             try {
-                Project project = projectRepository.findByProjectId(projectId);
-                project.setStatus(ProjectStatus.STORYBOARD_GENERATING.getCode());
-                projectRepository.updateById(project);
-
                 generateStoryboardWithFeedback(epId, fb);
                 pipelineService.advancePipeline(projectId, "storyboard_generated");
             } catch (Exception e) {
                 log.error("Storyboard revision failed: episodeId={}", epId, e);
+                updateEpisodeToFailedIfNeeded(epId, e.getMessage());
                 updateProjectToFailed(projectId);
             }
         }).start();
@@ -189,19 +208,26 @@ public class StoryboardService {
         if (episode == null) {
             throw new BusinessException("Episode not found");
         }
+        if (!canRetryEpisode(episode)) {
+            throw new BusinessException("Storyboard generation is still in progress for this episode");
+        }
 
         String projectId = episode.getProjectId();
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project != null) {
+            project.setStatus(ProjectStatus.STORYBOARD_GENERATING.getCode());
+            projectRepository.updateById(project);
+        }
+        markEpisodeGenerating(episode);
+
         final Long epId = episodeId;
         new Thread(() -> {
             try {
-                Project project = projectRepository.findByProjectId(projectId);
-                project.setStatus(ProjectStatus.STORYBOARD_GENERATING.getCode());
-                projectRepository.updateById(project);
-
                 generateStoryboard(epId);
                 pipelineService.advancePipeline(projectId, "storyboard_generated");
             } catch (Exception e) {
                 log.error("Storyboard retry failed: episodeId={}", epId, e);
+                updateEpisodeToFailedIfNeeded(epId, e.getMessage());
                 updateProjectToFailed(projectId);
             }
         }).start();
@@ -232,6 +258,7 @@ public class StoryboardService {
                 pipelineService.advancePipeline(projectId, "storyboard_generated");
             } catch (Exception e) {
                 log.error("Storyboard generation failed: episodeId={}, episodeNum={}", epId, episode.getEpisodeNum(), e);
+                updateEpisodeToFailedIfNeeded(epId, e.getMessage());
                 updateProjectToFailed(projectId);
             }
         }).start();
@@ -249,6 +276,13 @@ public class StoryboardService {
                 return ep;
             }
         }
+        for (Episode ep : episodes) {
+            // Recover stale generating episodes (e.g. app restarted while generating).
+            if ("STORYBOARD_GENERATING".equals(ep.getStatus())
+                    && (ep.getStoryboardJson() == null || ep.getStoryboardJson().trim().isEmpty())) {
+                return ep;
+            }
+        }
         return null;
     }
 
@@ -258,6 +292,50 @@ public class StoryboardService {
             project.setStatus(ProjectStatus.STORYBOARD_GENERATING_FAILED.getCode());
             projectRepository.updateById(project);
         }
+    }
+
+    private boolean canRetryEpisode(Episode episode) {
+        if (episode == null) {
+            return false;
+        }
+        if ("STORYBOARD_FAILED".equals(episode.getStatus())) {
+            return true;
+        }
+        return "STORYBOARD_GENERATING".equals(episode.getStatus())
+                && episode.getErrorMsg() != null
+                && !episode.getErrorMsg().trim().isEmpty()
+                && (episode.getStoryboardJson() == null || episode.getStoryboardJson().trim().isEmpty());
+    }
+
+    private void markEpisodeGenerating(Episode episode) {
+        if (episode == null) {
+            return;
+        }
+        episode.setStatus("STORYBOARD_GENERATING");
+        episode.setRetryCount(0);
+        episode.setErrorMsg(null);
+        episodeRepository.updateById(episode);
+    }
+
+    private void updateEpisodeToFailedIfNeeded(Long episodeId, String errorMsg) {
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) {
+            return;
+        }
+
+        boolean hasStoryboard = episode.getStoryboardJson() != null
+                && !episode.getStoryboardJson().trim().isEmpty();
+        boolean alreadyFinalized = "STORYBOARD_DONE".equals(episode.getStatus())
+                || "STORYBOARD_CONFIRMED".equals(episode.getStatus());
+        if (hasStoryboard && alreadyFinalized) {
+            return;
+        }
+
+        episode.setStatus("STORYBOARD_FAILED");
+        if (errorMsg != null && !errorMsg.trim().isEmpty()) {
+            episode.setErrorMsg(errorMsg);
+        }
+        episodeRepository.updateById(episode);
     }
 
     private String generateWithRetry(Episode episode) {
@@ -270,19 +348,20 @@ public class StoryboardService {
         Exception lastError = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
             try {
-                String currentSystemPrompt = attempt > 1
-                        ? promptBuilder.addStricterConstraints(systemPrompt, attempt)
-                        : systemPrompt;
+                String currentSystemPrompt = buildRetrySystemPrompt(systemPrompt, attempt, lastError);
 
                 String rawResult = textGenerationService.generate(currentSystemPrompt, userPrompt);
                 String cleanResult = cleanJsonOutput(rawResult);
 
                 JsonNode jsonNode = objectMapper.readTree(cleanResult);
-                validateStoryboardJson(jsonNode);
-                characterService.updateStatesFromStoryboard(episode.getProjectId(), jsonNode);
+                JsonNode normalizedNode = normalizeStoryboardJson(jsonNode, episode, charStates);
+                String normalizedJson = objectMapper.writeValueAsString(normalizedNode);
+
+                validateStoryboardJson(normalizedNode);
+                characterService.updateStatesFromStoryboard(episode.getProjectId(), normalizedNode);
 
                 episode.setRetryCount(attempt - 1);
-                return cleanResult;
+                return normalizedJson;
             } catch (AiCallException e) {
                 throw e;
             } catch (Exception e) {
@@ -302,6 +381,160 @@ public class StoryboardService {
                 + (lastError != null ? lastError.getMessage() : "unknown"));
     }
 
+    private JsonNode normalizeStoryboardJson(JsonNode jsonNode, Episode episode, List<CharacterStateModel> charStates) {
+        if (jsonNode == null || !jsonNode.isObject()) {
+            return jsonNode;
+        }
+        JsonNode panelsNode = jsonNode.get("panels");
+        if (!panelsNode.isArray()) {
+            return jsonNode;
+        }
+
+        Map<String, String> characterLookup = buildCharacterLookup(charStates);
+        ArrayNode panels = (ArrayNode) panelsNode;
+        for (int i = 0; i < panels.size(); i++) {
+            JsonNode panelNode = panels.get(i);
+            if (panelNode == null || !panelNode.isObject()) {
+                continue;
+            }
+            ObjectNode panel = (ObjectNode) panelNode;
+            normalizePanelId(panel, episode, i);
+            normalizeCharacterIds(panel, characterLookup);
+        }
+        return jsonNode;
+    }
+
+    private void normalizePanelId(ObjectNode panel, Episode episode, int panelIndex) {
+        if (!hasNonBlankText(panel, "panel_id")) {
+            panel.put("panel_id", buildPanelId(episode.getEpisodeNum(), panelIndex));
+            return;
+        }
+
+        JsonNode panelId = panel.get("panel_id");
+        if (panelId != null && !panelId.isTextual()) {
+            panel.put("panel_id", buildPanelId(episode.getEpisodeNum(), panelIndex));
+        }
+    }
+
+    private Map<String, String> buildCharacterLookup(List<CharacterStateModel> charStates) {
+        Map<String, String> lookup = new HashMap<String, String>();
+        if (charStates == null) {
+            return lookup;
+        }
+
+        for (CharacterStateModel charState : charStates) {
+            if (charState == null) {
+                continue;
+            }
+            String charId = trimToNull(charState.getCharId());
+            if (charId == null) {
+                continue;
+            }
+
+            String name = trimToNull(charState.getName());
+            if (name != null) {
+                lookup.put(name, charId);
+            }
+        }
+        return lookup;
+    }
+
+    private void normalizeCharacterIds(ObjectNode panel, Map<String, String> characterLookup) {
+        JsonNode charactersNode = panel.get("characters");
+        if (charactersNode == null || !charactersNode.isArray()) {
+            return;
+        }
+
+        ArrayNode characters = (ArrayNode) charactersNode;
+        for (int i = 0; i < characters.size(); i++) {
+            JsonNode characterNode = characters.get(i);
+            if (characterNode == null || !characterNode.isObject()) {
+                continue;
+            }
+
+            ObjectNode character = (ObjectNode) characterNode;
+            if (!hasNonBlankText(character, "char_id")) {
+                String alias = firstNonBlankValue(character, "id", "character_id", "characterId", "charId");
+                if (alias != null) {
+                    character.put("char_id", alias);
+                } else {
+                    String characterName = firstNonBlankValue(character, "name", "character_name", "characterName");
+                    String mappedCharId = characterName != null ? characterLookup.get(characterName) : null;
+                    if (mappedCharId != null) {
+                        character.put("char_id", mappedCharId);
+                    }
+                }
+            }
+
+            normalizeCharacterField(character, "position", DEFAULT_CHARACTER_POSITION,
+                    "placement", "location", "screen_position");
+            normalizeCharacterField(character, "pose", DEFAULT_CHARACTER_POSE,
+                    "action", "gesture", "body_pose");
+            normalizeCharacterField(character, "expression", DEFAULT_CHARACTER_EXPRESSION,
+                    "emotion", "facial_expression", "mood");
+            normalizeEnumField(character, "costume_state", DEFAULT_COSTUME_STATE, ALLOWED_COSTUME_STATE,
+                    "costume", "outfit_state", "outfit");
+        }
+    }
+
+    private void normalizeCharacterField(ObjectNode node, String targetField, String defaultValue, String... aliasFields) {
+        if (hasNonBlankText(node, targetField)) {
+            return;
+        }
+
+        String alias = firstNonBlankValue(node, aliasFields);
+        node.put(targetField, alias != null ? alias : defaultValue);
+    }
+
+    private void normalizeEnumField(ObjectNode node, String targetField, String defaultValue,
+                                    Set<String> allowedValues, String... aliasFields) {
+        String value = firstNonBlankValue(node, targetField);
+        if (value == null) {
+            value = firstNonBlankValue(node, aliasFields);
+        }
+
+        if (value == null || !allowedValues.contains(value)) {
+            node.put(targetField, defaultValue);
+            return;
+        }
+
+        node.put(targetField, value);
+    }
+
+    private String buildPanelId(Integer episodeNum, int panelIndex) {
+        int safeEpisodeNum = episodeNum != null ? episodeNum : 0;
+        return "ep" + safeEpisodeNum + "_p" + (panelIndex + 1);
+    }
+
+    private boolean hasNonBlankText(ObjectNode node, String fieldName) {
+        JsonNode value = node.get(fieldName);
+        return value != null && value.isTextual() && !value.asText().trim().isEmpty();
+    }
+
+    private String firstNonBlankValue(ObjectNode node, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.get(fieldName);
+            if (value == null || value.isNull()) {
+                continue;
+            }
+
+            String text = value.asText();
+            if (text != null && !text.trim().isEmpty()) {
+                return text.trim();
+            }
+        }
+        return null;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     private String generateWithRetryAndFeedback(Episode episode, String feedback) {
         WorldConfigModel world = worldRuleService.getWorldConfig(episode.getProjectId());
         List<CharacterStateModel> charStates = characterService.getCurrentStates(episode.getProjectId());
@@ -312,19 +545,20 @@ public class StoryboardService {
         Exception lastError = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
             try {
-                String currentSystemPrompt = attempt > 1
-                        ? promptBuilder.addStricterConstraints(systemPrompt, attempt)
-                        : systemPrompt;
+                String currentSystemPrompt = buildRetrySystemPrompt(systemPrompt, attempt, lastError);
 
                 String rawResult = textGenerationService.generate(currentSystemPrompt, userPrompt);
                 String cleanResult = cleanJsonOutput(rawResult);
 
                 JsonNode jsonNode = objectMapper.readTree(cleanResult);
-                validateStoryboardJson(jsonNode);
-                characterService.updateStatesFromStoryboard(episode.getProjectId(), jsonNode);
+                JsonNode normalizedNode = normalizeStoryboardJson(jsonNode, episode, charStates);
+                String normalizedJson = objectMapper.writeValueAsString(normalizedNode);
+
+                validateStoryboardJson(normalizedNode);
+                characterService.updateStatesFromStoryboard(episode.getProjectId(), normalizedNode);
 
                 episode.setRetryCount(attempt - 1);
-                return cleanResult;
+                return normalizedJson;
             } catch (AiCallException e) {
                 throw e;
             } catch (Exception e) {
@@ -342,6 +576,41 @@ public class StoryboardService {
 
         throw new RuntimeException("Storyboard revision failed after retries: "
                 + (lastError != null ? lastError.getMessage() : "unknown"));
+    }
+
+    private String buildRetrySystemPrompt(String systemPrompt, int attempt, Exception lastError) {
+        String currentSystemPrompt = attempt > 1
+                ? promptBuilder.addStricterConstraints(systemPrompt, attempt)
+                : systemPrompt;
+
+        if (attempt > 1 && isLikelyTruncatedJson(lastError)) {
+            currentSystemPrompt += "\n\nTRUNCATION RECOVERY:\n"
+                    + "Previous attempt output was truncated.\n"
+                    + "Keep every non-dialogue string concise.\n"
+                    + "Keep title, composition, background fields, and image_prompt_hint short.\n"
+                    + "Avoid long quoted UI text unless it is essential to the scene.\n";
+        }
+        return currentSystemPrompt;
+    }
+
+    private boolean isLikelyTruncatedJson(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                String lowerMessage = message.toLowerCase();
+                if (lowerMessage.contains("unexpected end-of-input")
+                        || lowerMessage.contains("unexpected end of input")
+                        || lowerMessage.contains("was expecting closing quote")
+                        || lowerMessage.contains("finish_reason=length")
+                        || lowerMessage.contains("output truncated")
+                        || lowerMessage.contains("truncated")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private String cleanJsonOutput(String raw) {
@@ -392,7 +661,7 @@ public class StoryboardService {
             requireTextField(background, "time_of_day", panelPath + ".background");
             requireTextField(background, "atmosphere", panelPath + ".background");
 
-            JsonNode characters = requireArrayField(panel, "characters", panelPath, false);
+            JsonNode characters = requireArrayField(panel, "characters", panelPath, true);
             for (int j = 0; j < characters.size(); j++) {
                 JsonNode character = characters.get(j);
                 if (character == null || !character.isObject()) {
@@ -517,4 +786,3 @@ public class StoryboardService {
         return episode.getOutlineNode() != null ? episode.getOutlineNode() : "";
     }
 }
-

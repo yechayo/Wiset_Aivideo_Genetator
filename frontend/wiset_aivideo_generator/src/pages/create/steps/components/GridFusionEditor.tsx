@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import styles from './GridFusionEditor.module.less';
 import { useFusionStore, autoAssignCharacters } from '../../../../stores/fusionStore';
-import { getGridInfo, uploadFusionImage, submitFusionPage } from '../../../../services/episodeService';
+import { getGridInfo, splitGridPage, uploadFusionImage, submitFusionPage } from '../../../../services/episodeService';
+import type { SplitGridPageResponse } from '../../../../services/types/episode.types';
 import { loadImage, loadImages } from '../utils/imageLoader';
 import { splitGridToPanels, canvasToFile } from '../utils/canvasSplitter';
 import GridCanvas from './GridCanvas';
@@ -11,6 +12,38 @@ import PanelToolbar from './PanelToolbar';
 interface GridFusionEditorProps {
   episodeId: string;
   onFusionSubmitted: () => void;
+}
+
+async function buildPanelsFromSplitResult(
+  splitResult: SplitGridPageResponse,
+  panelWidth: number,
+  panelHeight: number,
+): Promise<Map<number, HTMLCanvasElement>> {
+  const entries = await Promise.all(
+    splitResult.cells.map(async (cell) => {
+      if (!cell || typeof cell.cellIndex !== 'number' || !cell.imageUrl) {
+        return null;
+      }
+      const panelImage = await loadImage(cell.imageUrl);
+      const panelCanvas = document.createElement('canvas');
+      panelCanvas.width = panelWidth;
+      panelCanvas.height = panelHeight;
+      const panelCtx = panelCanvas.getContext('2d');
+      if (!panelCtx) {
+        return null;
+      }
+      panelCtx.drawImage(panelImage, 0, 0, panelWidth, panelHeight);
+      return [cell.cellIndex, panelCanvas] as const;
+    }),
+  );
+
+  const panels = new Map<number, HTMLCanvasElement>();
+  entries.forEach((entry) => {
+    if (entry) {
+      panels.set(entry[0], entry[1]);
+    }
+  });
+  return panels;
 }
 
 const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProps) => {
@@ -103,6 +136,8 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
 
   const totalPages = gridInfo?.totalPages ?? (gridInfo?.sceneGridUrl ? 1 : 0);
   const currentPageInfo = gridInfo?.gridPages?.[currentPageIndex];
+  const activeGridRows = currentPageInfo?.gridRows ?? gridInfo?.gridRows ?? 3;
+  const activeGridColumns = currentPageInfo?.gridColumns ?? gridInfo?.gridColumns ?? 3;
   const isLastPage = currentPageIndex >= totalPages - 1;
 
   const handlePrevPage = useCallback(() => {
@@ -125,10 +160,33 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
     try {
       setUploading(true);
 
-      const { gridColumns, gridRows, panelWidth, panelHeight, separatorPixels } = gridInfo;
-      const basePanels = splitGridToPanels(
-        sceneGridImage, gridColumns, gridRows, panelWidth, panelHeight, separatorPixels
-      );
+      const { panelWidth, panelHeight, separatorPixels } = gridInfo;
+      const defaultTotalPanels = activeGridColumns * activeGridRows;
+      let totalPanels = defaultTotalPanels;
+      let basePanels: Map<number, HTMLCanvasElement>;
+
+      try {
+        const splitRes = await splitGridPage(episodeId, currentPageIndex);
+        const splitData = splitRes.data;
+        if (splitRes.code !== 200 || !splitData) {
+          throw new Error('后端切图接口返回异常');
+        }
+        if (splitData.skipped) {
+          throw new Error(splitData.errorMessage || '后端切图已跳过');
+        }
+        basePanels = await buildPanelsFromSplitResult(splitData, panelWidth, panelHeight);
+        if (basePanels.size === 0) {
+          throw new Error('后端切图结果为空');
+        }
+        const backendTotalPanels = (splitData.rows || 0) * (splitData.cols || 0);
+        totalPanels = backendTotalPanels > 0 ? backendTotalPanels : defaultTotalPanels;
+      } catch (splitError) {
+        console.warn('后端切图失败，回退前端本地切图', splitError);
+        basePanels = splitGridToPanels(
+          sceneGridImage, activeGridColumns, activeGridRows, panelWidth, panelHeight, separatorPixels
+        );
+        totalPanels = defaultTotalPanels;
+      }
 
       const fusedPanels = new Map<number, HTMLCanvasElement>();
       const state = useFusionStore.getState();
@@ -162,7 +220,6 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
 
       // 逐格上传：每个格子独立上传到OSS，收集所有URL
       const panelFusedUrls: string[] = [];
-      const totalPanels = gridColumns * gridRows;
 
       for (let i = 0; i < totalPanels; i++) {
         const panelCanvas = fusedPanels.get(i);
@@ -198,7 +255,19 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
       setSubmitting(false);
       setError(e.message || '提交失败');
     }
-  }, [sceneGridImage, gridInfo, episodeId, currentPageIndex, isLastPage, onFusionSubmitted, setUploading, setSubmitting, setCurrentPageIndex]);
+  }, [
+    sceneGridImage,
+    gridInfo,
+    episodeId,
+    currentPageIndex,
+    isLastPage,
+    onFusionSubmitted,
+    setUploading,
+    setSubmitting,
+    setCurrentPageIndex,
+    activeGridColumns,
+    activeGridRows,
+  ]);
 
   if (loading) {
     return <div className={styles.loadingState}>正在加载网格信息...</div>;
@@ -243,8 +312,8 @@ const GridFusionEditor = ({ episodeId, onFusionSubmitted }: GridFusionEditorProp
           <GridCanvas
             sceneGridImage={sceneGridImage}
             characterImages={characterImagesRef.current}
-            gridColumns={gridInfo.gridColumns}
-            gridRows={gridInfo.gridRows}
+            gridColumns={activeGridColumns}
+            gridRows={activeGridRows}
             panelWidth={gridInfo.panelWidth}
             panelHeight={gridInfo.panelHeight}
             separatorPixels={gridInfo.separatorPixels}

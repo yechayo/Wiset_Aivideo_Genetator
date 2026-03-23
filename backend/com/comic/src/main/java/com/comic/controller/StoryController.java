@@ -36,8 +36,8 @@ public class StoryController {
      */
     @PostMapping("/generate")
     @Operation(summary = "生成分镜", description = "提交分镜生成任务。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<Map<String, String>> generateStoryboard(@RequestBody Map<String, Long> body) {
-        Long episodeId = body.get("episodeId");
+    public Result<Map<String, String>> generateStoryboard(@RequestBody Map<String, Object> body) {
+        Long episodeId = parseLongValue(body.get("episodeId"));
         if (episodeId == null) {
             return Result.fail("episodeId 不能为空");
         }
@@ -109,8 +109,8 @@ public class StoryController {
      */
     @PostMapping("/confirm-storyboard")
     @Operation(summary = "确认分镜", description = "确认当前集的分镜，自动继续下一集")
-    public Result<String> confirmStoryboard(@RequestBody Map<String, Long> body) {
-        Long episodeId = body.get("episodeId");
+    public Result<String> confirmStoryboard(@RequestBody Map<String, Object> body) {
+        Long episodeId = parseLongValue(body.get("episodeId"));
         if (episodeId == null) {
             return Result.fail("episodeId 不能为空");
         }
@@ -129,7 +129,7 @@ public class StoryController {
     @PostMapping("/revise-storyboard")
     @Operation(summary = "修改分镜", description = "基于用户反馈增量修改当前集分镜")
     public Result<String> reviseStoryboard(@RequestBody Map<String, Object> body) {
-        Long episodeId = body.get("episodeId") != null ? Long.valueOf(body.get("episodeId").toString()) : null;
+        Long episodeId = parseLongValue(body.get("episodeId"));
         String feedback = body.get("feedback") != null ? body.get("feedback").toString() : null;
 
         if (episodeId == null) {
@@ -152,8 +152,8 @@ public class StoryController {
      */
     @PostMapping("/retry-storyboard")
     @Operation(summary = "重试分镜生成", description = "重试当前失败集的分镜生成")
-    public Result<String> retryStoryboard(@RequestBody Map<String, Long> body) {
-        Long episodeId = body.get("episodeId");
+    public Result<String> retryStoryboard(@RequestBody Map<String, Object> body) {
+        Long episodeId = parseLongValue(body.get("episodeId"));
         if (episodeId == null) {
             return Result.fail("episodeId 不能为空");
         }
@@ -188,6 +188,17 @@ public class StoryController {
             return Result.ok("生产已启动");
         } catch (Exception e) {
             return Result.fail("启动生产失败: " + e.getMessage());
+        }
+    }
+
+    private Long parseLongValue(Object rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(String.valueOf(rawValue));
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 }

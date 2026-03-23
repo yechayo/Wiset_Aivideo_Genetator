@@ -33,6 +33,9 @@ public class PromptBuilder {
         sb.append("Top-level required fields: episode(number), title(string), panels(array).\n");
         sb.append("Each panel must include required fields: panel_id, shot_type, camera_angle, composition, ");
         sb.append("background(scene_desc,time_of_day,atmosphere), characters[], dialogue[], sfx[], pacing, image_prompt_hint.\n");
+        sb.append("Each character object must include: char_id, position, pose, expression, costume_state.\n");
+        sb.append("Use characters=[] when no character is visible in that panel.\n");
+        sb.append("Each dialogue object must include: speaker, text, bubble_type.\n");
         sb.append("Allowed enums: shot_type={WIDE_SHOT,MID_SHOT,CLOSE_UP,OVER_SHOULDER}, ");
         sb.append("camera_angle={eye_level,low_angle,high_angle,bird_eye}, pacing={slow,normal,fast}, ");
         sb.append("bubble_type={speech,thought,narration_box}, costume_state={normal,battle_worn}.\n");
@@ -110,12 +113,16 @@ public class PromptBuilder {
                     + "\n\nIMPORTANT RETRY RULES (attempt 2):\n"
                     + "1. Return JSON only.\n"
                     + "2. Include all required top-level and panel fields.\n"
-                    + "3. Keep enum values within the allowed set.";
+                    + "3. Every character object must include char_id, position, pose, expression, costume_state.\n"
+                    + "4. If a panel has no visible character, set characters to an empty array.\n"
+                    + "5. Every dialogue object must include speaker, text, bubble_type.\n"
+                    + "6. Keep enum values within the allowed set.";
         } else if (attempt >= 3) {
             return systemPrompt
                     + "\n\nFINAL WARNING (attempt 3):\n"
                     + "Output must be a single valid JSON object starting with '{' and ending with '}'.\n"
-                    + "No extra text is allowed.";
+                    + "No extra text is allowed.\n"
+                    + "Do not omit required nested fields for characters or dialogue.";
         }
         return systemPrompt;
     }
