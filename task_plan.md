@@ -135,4 +135,4 @@
 - P4: completed (new backend `GridSplitService` with row-major split, 2x3/3x3 support, index binding, and per-page retry-once-then-skip tolerance), test-verified
 - P5: completed (new backend `StoryboardEnhancementService` with rule/LLM modes, whitelist validation, configurable 0.5s throttle, and flow insertion before grid generation), test-verified
 - P6: in_progress (added backend split-page endpoint and production-service task orchestration for fusion, test-verified)
-- P7: in_progress (added mixed-layout pagination fusion regression and extended suite verification)
+- P7: in_progress (added mixed-layout + split->fusion chain + submit-fusion-page API boundary regressions, suite-verified)

@@ -191,3 +191,16 @@
 - Evidence:
   - `mvn -Dtest=EpisodeProductionServiceTest test` passed (19/19)
   - extended regression suite passed (40/40)
+
+## Status Update (2026-03-23, P7 submit-fusion-page API boundaries)
+- Added `EpisodeControllerTest` coverage for `submitFusionPage`:
+  - `body == null` guard path
+  - default page index path
+  - numeric-string page index parse path
+  - invalid / negative page index rejection
+  - missing / empty fused URL list rejection
+- Applied a small controller hardening:
+  - explicit `body == null` check in `EpisodeController.submitFusionPage`
+- Evidence:
+  - `mvn -Dtest=EpisodeControllerTest test` passed (10/10)
+  - extended regression suite passed (46/46)
