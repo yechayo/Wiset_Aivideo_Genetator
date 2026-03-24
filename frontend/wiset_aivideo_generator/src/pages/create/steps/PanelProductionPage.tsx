@@ -1,16 +1,16 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './PanelProductionPage.module.less';
-import { usePanelProductionStore } from '../../stores/panelProductionStore';
+import { usePanelProductionStore } from '../../../stores/panelProductionStore';
 import {
   generateBackground,
   generateFusion,
   generateTransition,
   produceSinglePanel,
-} from '../../services/panelProductionService';
-import { getStoryboard } from '../../services/projectService';
-import { isApiSuccess } from '../../services/apiClient';
-import type { ProductionStage, PanelStageStatus } from '../../services/types/episode.types';
+} from '../../../services/panelProductionService';
+import { getStoryboard } from '../../../services/projectService';
+import { isApiSuccess } from '../../../services/apiClient';
+import type { ProductionStage, PanelStageStatus } from '../../../services/types/episode.types';
 import PanelInfoCard from './components/PanelInfoCard';
 import ProductionPipeline from './components/ProductionPipeline';
 import BackgroundPanel from './components/BackgroundPanel';
