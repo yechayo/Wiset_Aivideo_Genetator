@@ -38,33 +38,34 @@ const PanelCell = ({ panel, onGenerateVideo, isGenerating = false }: PanelCellPr
 
       {/* Content */}
       <div className={styles.content}>
-        {showVideo && (
+        {showVideo ? (
           <div className={styles.videoWrapper}>
-            <video src={panel.videoUrl} controls preload="metadata" />
+            <video src={panel.videoUrl || undefined} controls preload="metadata" />
           </div>
-        ) else if (showFusion && !showVideo && (
+        ) : showFusion ? (
           <div className={styles.fusionWrapper}>
-            <img src={panel.fusionUrl} alt={`Panel ${panel.panelIndex}`} />
+            <img src={panel.fusionUrl || undefined} alt={`Panel ${panel.panelIndex}`} />
             {panel.promptText && (
               <div className={styles.promptTooltip}>
                 {panel.promptText}
               </div>
             )}
           </div>
-        )} else if (panel.videoStatus === 'generating' && (
+        ) : panel.videoStatus === 'generating' ? (
           <div className={styles.generatingState}>
             <div className={styles.spinner} />
             <p>视频生成中...</p>
           </div>
-        )} else if (panel.videoStatus === 'pending' && (
+        ) : panel.videoStatus === 'pending' ? (
           <div className={styles.pendingState}>
             <p>等待生成</p>
           </div>
-        )} else if (panel.videoStatus === 'failed' && (
+        ) : panel.videoStatus === 'failed' ? (
           <div className={styles.failedState}>
             <span className={styles.errorIcon}>⚠</span>
             <p>生成失败</p>
-          </div        )}
+          </div>
+        ) : null}
       </div>
 
       {/* Footer Info */}

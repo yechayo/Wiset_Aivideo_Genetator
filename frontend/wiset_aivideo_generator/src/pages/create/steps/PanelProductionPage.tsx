@@ -219,25 +219,25 @@ export default function PanelProductionPage() {
       <div className={styles.stageContent}>
         <BackgroundPanel
           status={panel?.backgroundStatus || 'pending'}
-          imageUrl={panel?.backgroundUrl}
+          imageUrl={panel?.backgroundUrl ?? null}
           prompt={null}
           onGenerate={handleGenerateBackground}
         />
         <FusionPanel
           status={panel?.fusionStatus || 'pending'}
-          imageUrl={panel?.fusionUrl}
+          imageUrl={panel?.fusionUrl ?? null}
           onGenerate={handleGenerateFusion}
           onConfirm={handleConfirmFusion}
         />
         <TransitionPanel
           status={panel?.transitionStatus || 'pending'}
-          imageUrl={panel?.transitionUrl}
+          imageUrl={panel?.transitionUrl ?? null}
           hasTailFrame={panelIdx > 0}
         />
         <VideoPanel
           status={panel?.videoStatus || 'pending'}
-          videoUrl={panel?.videoUrl}
-          duration={panel?.videoDuration}
+          videoUrl={panel?.videoUrl ?? null}
+          duration={panel?.videoDuration ?? null}
           onGenerate={handleGenerateVideo}
         />
       </div>

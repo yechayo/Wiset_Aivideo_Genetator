@@ -5,61 +5,28 @@ import type { Project } from '../../../services';
 import { useCreateStore } from '../../../stores/createStore';
 import {
   getEpisodes,
+  getPanelStates,
+  getProductionPipeline,
+} from '../../../services/episodeService';
+import {
   getStoryboard,
   startStoryboard,
   confirmStoryboard,
   reviseStoryboard,
   retryStoryboard,
-  getPanelStates,
-  getProductionPipeline,
-  autoContinue,
-  generateSinglePanelVideo,
-} from '../../../services/episodeService';
+} from '../../../services/projectService';
+import {
+  autoProduceAll,
+  produceSinglePanel,
+} from '../../../services/panelProductionService';
 import { isApiSuccess } from '../../../services/apiClient';
 import type { EpisodeCardData } from '../../../services/types/episode.types';
 import EpisodeCard from './components/EpisodeCard';
 
-const POLL_INTERVAL = 5000;
 const PANEL_POLL_INTERVAL = 5000;
 
 interface Step5pageProps extends StepContentProps {
   project: Project;
-}
-
-interface RawStoryboardPanel {
-  scene?: string;
-  shot_size?: string;
-  shot_type?: string;
-  camera_angle?: string;
-  dialogue?: string | { speaker?: string; text?: string }[];
-  effects?: string;
-  characters?: string | { name?: string; expression?: string }[];
-  background?: { scene_desc?: string };
-}
-
-interface NormalizedPanel {
-  scene: string;
-  characters: string;
-  shot_size: string;
-  camera_angle: string;
-  dialogue: string;
-  effects: string;
-}
-
-function normalizePanels(raw: RawStoryboardPanel[]): NormalizedPanel[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((p) => ({
-    scene: p.scene || p.background?.scene_desc || '',
-    characters: typeof p.characters === 'string' ? p.characters
-      : Array.isArray(p.characters) ? p.characters.map(c => c.name || '').filter(Boolean).join(' / ')
-      : '',
-    shot_size: p.shot_size || p.shot_type || '',
-    camera_angle: p.camera_angle || '',
-    dialogue: typeof p.dialogue === 'string' ? p.dialogue
-      : Array.isArray(p.dialogue) ? p.dialogue.map(d => d.speaker ? `${d.speaker}: ${d.text || ''}` : (d.text || '')).filter(Boolean).join(' / ')
-      : '',
-    effects: p.effects || '',
-  }));
 }
 
 const Step5page = ({ project }: Step5pageProps) => {
@@ -284,7 +251,7 @@ const Step5page = ({ project }: Step5pageProps) => {
   // 单格生成视频
   const handleGenerateVideo = useCallback(async (episodeId: string, panelIndex: number) => {
     try {
-      await generateSinglePanelVideo(episodeId, panelIndex);
+      await produceSinglePanel(episodeId, panelIndex);
       await pollPanelStates();
     } catch (e: any) {
       setApiError(e.message || '生成视频失败');
@@ -294,7 +261,7 @@ const Step5page = ({ project }: Step5pageProps) => {
   // 一键自动化
   const handleAutoContinue = useCallback(async (episodeId: string) => {
     try {
-      await autoContinue(episodeId);
+      await autoProduceAll(episodeId);
       await pollPanelStates();
     } catch (e: any) {
       setApiError(e.message || '自动化执行失败');
@@ -306,9 +273,10 @@ const Step5page = ({ project }: Step5pageProps) => {
     try {
       const res = await getStoryboard(episodeId);
       if (res.code === 200 && res.data) {
+        const { storyboardJson, status } = res.data;
         setEpisodes(prev => prev.map(ep =>
           String(ep.id) === episodeId
-            ? { ...ep, storyboardJson: res.data.storyboardJson || null, storyboardStatus: res.data.status }
+            ? { ...ep, storyboardJson: storyboardJson || null, storyboardStatus: status || null }
             : ep
         ));
       }
