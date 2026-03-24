@@ -87,12 +87,3 @@ export async function submitFusionPageWithAuto(
   );
 }
 
-/** 单格场景图重生成 */
-export async function regenerateSceneImage(
-  episodeId: string,
-  panelIndex: number,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/episodes/${episodeId}/panels/${panelIndex}/regenerate-scene`,
-  );
-}

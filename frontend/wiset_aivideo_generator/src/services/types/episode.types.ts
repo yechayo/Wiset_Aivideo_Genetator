@@ -132,16 +132,6 @@ export interface ProductionPipelineResponse {
   sceneGridUrls: string[];
 }
 
-/** Step5 工作流阶段 */
-export type WorkflowPhase = 'review' | 'scene-generating' | 'fusion' | 'video' | 'completed';
-
-/** 场景图状态 */
-export interface SceneImageState {
-  url: string | null;
-  generating: boolean;
-  failed: boolean;
-  prompt: string | null;  // 来自分镜 JSON 的 background.scene_desc
-}
 
 // ===== 单分镜视频生产相关类型 =====
 
