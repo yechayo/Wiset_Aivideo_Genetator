@@ -142,3 +142,105 @@ export interface SceneImageState {
   failed: boolean;
   prompt: string | null;  // 来自分镜 JSON 的 background.scene_desc
 }
+
+// ===== 单分镜视频生产相关类型 =====
+
+/** 单分镜生产阶段状态 */
+export type PanelStageStatus = 'pending' | 'generating' | 'completed' | 'failed';
+
+/** 生产流水线阶段 */
+export type ProductionStage = 'background' | 'fusion' | 'transition' | 'video';
+
+/** 分镜整体状态 */
+export type PanelOverallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+/** 背景图状态响应 */
+export interface PanelBackgroundResponse {
+  panelIndex: number;
+  backgroundUrl: string | null;
+  status: PanelStageStatus;
+  prompt: string | null;
+}
+
+/** 融合图状态响应 */
+export interface PanelFusionResponse {
+  panelIndex: number;
+  fusionUrl: string | null;
+  status: PanelStageStatus;
+  referenceBackground: string | null;
+  characterRefs: string[];
+}
+
+/** 过渡融合图状态响应 */
+export interface PanelTransitionResponse {
+  panelIndex: number;
+  transitionUrl: string | null;
+  status: PanelStageStatus;
+  sourceFusionUrl: string | null;
+  sourceTailFrameUrl: string | null;
+}
+
+/** 视频任务状态响应 */
+export interface PanelVideoTaskResponse {
+  panelIndex: number;
+  videoUrl: string | null;
+  status: PanelStageStatus;
+  taskId: string | null;
+  duration: number | null;
+  errorMessage: string | null;
+}
+
+/** 尾帧响应 */
+export interface PanelTailFrameResponse {
+  panelIndex: number;
+  tailFrameUrl: string | null;
+  sourceVideoUrl: string | null;
+  status: string;
+}
+
+/** 单分镜完整生产状态 */
+export interface PanelProductionStatusResponse {
+  panelIndex: number;
+  overallStatus: PanelOverallStatus;
+  backgroundUrl: string | null;
+  backgroundStatus: PanelStageStatus;
+  fusionUrl: string | null;
+  fusionStatus: PanelStageStatus;
+  transitionUrl: string | null;
+  transitionStatus: PanelStageStatus;
+  videoUrl: string | null;
+  videoStatus: PanelStageStatus;
+  videoDuration: number | null;
+  tailFrameUrl: string | null;
+  currentStage: ProductionStage;
+}
+
+/** 合成结果响应 */
+export interface CompositionResultResponse {
+  finalVideoUrl: string;
+  duration: number;
+  totalSegments: number;
+  status: string;
+}
+
+/** 一键生产请求 */
+export interface AutoProduceRequest {
+  startFrom?: number;
+}
+
+/** 融合图生成请求 */
+export interface FusionRequest {
+  backgroundUrl: string;
+  characterRefs: string[];
+}
+
+/** 过渡融合图生成请求 */
+export interface TransitionRequest {
+  fusionUrl: string;
+}
+
+/** 单分镜生产请求 */
+export interface ProduceRequest {
+  backgroundUrl?: string;
+  characterRefs?: string[];
+}
