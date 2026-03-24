@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styles from './Step5page.module.less';
 import type { StepContentProps } from '../types';
 import type { Project, StoryboardData } from '../../../services';
@@ -18,6 +19,7 @@ import {
   regenerateSceneImage,
   generateSinglePanelVideo,
 } from '../../../services/episodeService';
+import { autoProduceAll } from '../../../services/panelProductionService';
 import { isApiSuccess } from '../../../services/apiClient';
 import type { WorkflowPhase, SceneImageState, ProductionPipelineResponse, PanelState } from '../../../services/types/episode.types';
 import Step5Card from './components/Step5Card';
@@ -108,6 +110,7 @@ const normalizeStoryboardData = (raw: RawStoryboardData): StoryboardData => ({
 
 const Step5page = ({ project }: Step5pageProps) => {
   const { statusInfo, syncStatus } = useCreateStore();
+  const navigate = useNavigate();
   const projectId = project.projectId;
 
   const currentEpisode = statusInfo?.storyboardCurrentEpisode ?? 0;
@@ -514,14 +517,14 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [reviewEpisodeId, loadPanelStates]);
 
   // 一键自动化执行
-  const handleAutoContinueAll = useCallback(async () => {
+  const handleAutoProduceAll = useCallback(async () => {
     if (!reviewEpisodeId) return;
     try {
       setAutoContinuing(true);
-      await autoContinue(reviewEpisodeId);
+      await autoProduceAll(reviewEpisodeId);
     } catch (e: any) {
-      console.error('一键自动化失败:', e);
-      setApiError(e.message || '一键自动化失败');
+      console.error('一键生成所有视频失败:', e);
+      setApiError(e.message || '一键生成所有视频失败');
     } finally {
       setAutoContinuing(false);
     }
@@ -537,6 +540,12 @@ const Step5page = ({ project }: Step5pageProps) => {
       setApiError(e.message || '合并失败');
     }
   }, [reviewEpisodeId]);
+
+  // 导航到面板生产页面
+  const handleNavigateToPanel = useCallback((panelIndex: number) => {
+    if (!projectId || !reviewEpisodeId) return;
+    navigate(`/project/${projectId}/episode/${reviewEpisodeId}/panel/${panelIndex}`);
+  }, [projectId, reviewEpisodeId, navigate]);
 
   const progressPercent = totalEpisodes > 0
     ? Math.round((allConfirmed ? 1 : Math.max(0, currentEpisode - 1) / totalEpisodes) * 100)
@@ -735,24 +744,34 @@ const Step5page = ({ project }: Step5pageProps) => {
       {/* 阶段2-4：卡片网格视图 */}
       {workflowPhase !== 'review' && workflowPhase !== 'completed' && (
         <div className={styles.cardGrid}>
-          {storyboardData?.panels.map((panel, idx) => (
-            <Step5Card
-              key={idx}
-              panel={panel}
-              panelIndex={idx}
-              workflowPhase={workflowPhase}
-              sceneImageState={sceneImageStates.get(idx)}
-              fusionStatus={getFusionStatus(idx)}
-              fusionUrl={getFusionUrl(idx)}
-              videoStatus={getVideoStatus(idx)}
-              videoUrl={getVideoUrl(idx)}
-              onConfirm={handleConfirm}
-              onRegenerateScene={() => handleRegenerateScene(idx)}
-              onAutoFusion={() => handleAutoFusion(idx)}
-              onManualFusion={() => handleOpenManualFusion(idx)}
-              onGenerateVideo={() => handleGenerateVideo(idx)}
-            />
-          ))}
+          {storyboardData?.panels.map((panel, idx) => {
+            const videoStatus = getVideoStatus(idx);
+            return (
+              <div key={idx} className={styles.clickableCard} onClick={() => handleNavigateToPanel(idx)}>
+                <Step5Card
+                  panel={panel}
+                  panelIndex={idx}
+                  workflowPhase={workflowPhase}
+                  sceneImageState={sceneImageStates.get(idx)}
+                  fusionStatus={getFusionStatus(idx)}
+                  fusionUrl={getFusionUrl(idx)}
+                  videoStatus={videoStatus}
+                  videoUrl={getVideoUrl(idx)}
+                  onConfirm={handleConfirm}
+                  onRegenerateScene={() => handleRegenerateScene(idx)}
+                  onAutoFusion={() => handleAutoFusion(idx)}
+                  onManualFusion={() => handleOpenManualFusion(idx)}
+                  onGenerateVideo={() => handleGenerateVideo(idx)}
+                />
+                <div className={`${styles.statusBadge} ${styles[videoStatus]}`}>
+                  {videoStatus === 'pending' && '待生成'}
+                  {videoStatus === 'generating' && '生成中'}
+                  {videoStatus === 'completed' && '已完成'}
+                  {videoStatus === 'failed' && '失败'}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -770,10 +789,10 @@ const Step5page = ({ project }: Step5pageProps) => {
         <div className={styles.bottomActionBar}>
           <button
             className={styles.autoButton}
-            onClick={handleAutoContinueAll}
+            onClick={handleAutoProduceAll}
             disabled={autoContinuing}
           >
-            {autoContinuing ? '执行中...' : '一键自动化执行'}
+            {autoContinuing ? '执行中...' : '一键生成所有视频'}
           </button>
           <button className={styles.composeButton} onClick={handleCompose}>
             统一合并生成最终视频

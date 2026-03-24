@@ -8,6 +8,7 @@ import { useAuthStore } from './stores/authStore';
 import { ToastProvider, ToastContainer } from './components/toast';
 import CreateNewLayout from './pages/create/CreateNewLayout';
 import ProjectStepLayout from './pages/create/ProjectStepLayout';
+import PanelProductionPage from './pages/create/steps/PanelProductionPage';
 
 // 受保护的路由组件
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -38,6 +39,7 @@ function App() {
             {/* 创建流程路由 */}
             <Route path="create" element={<CreateNewLayout />} />
             <Route path="project/:projectId/step/:step?" element={<ProjectStepLayout />} />
+            <Route path="project/:projectId/episode/:episodeId/panel/:panelIndex" element={<PanelProductionPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
