@@ -71,6 +71,26 @@ public class EpisodeProduction {
     private String fusedGridUrls;
 
     /**
+     * 各分镜背景图URL列表（JSON数组格式，单分镜生产用）
+     */
+    private String backgroundUrls;
+
+    /**
+     * 各分镜融合图URL列表（JSON数组格式，单分镜生产用）
+     */
+    private String fusionUrls;
+
+    /**
+     * 各分镜过渡融合图URL列表（JSON数组格式，单分镜生产用）
+     */
+    private String transitionUrls;
+
+    /**
+     * 各分镜尾帧图URL列表（JSON数组格式，单分镜生产用）
+     */
+    private String tailFrameUrls;
+
+    /**
      * 总分镜数
      */
     private Integer totalPanels;
