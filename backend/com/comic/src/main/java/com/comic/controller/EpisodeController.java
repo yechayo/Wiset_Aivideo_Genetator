@@ -1,8 +1,18 @@
 package com.comic.controller;
 
 import com.comic.common.Result;
+import com.comic.dto.request.AutoProduceRequest;
+import com.comic.dto.request.FusionRequest;
+import com.comic.dto.request.ProduceRequest;
+import com.comic.dto.request.TransitionRequest;
+import com.comic.dto.response.CompositionResultResponse;
 import com.comic.dto.response.GridInfoResponse;
+import com.comic.dto.response.PanelBackgroundResponse;
+import com.comic.dto.response.PanelFusionResponse;
+import com.comic.dto.response.PanelProductionStatusResponse;
 import com.comic.dto.response.PanelStateResponse;
+import com.comic.dto.response.PanelTailFrameResponse;
+import com.comic.dto.response.PanelTransitionResponse;
 import com.comic.dto.response.ProductionPipelineResponse;
 import com.comic.dto.response.ProductionStartResponse;
 import com.comic.dto.response.ProductionStatusResponse;
@@ -10,6 +20,7 @@ import com.comic.dto.response.VideoSegmentInfoResponse;
 import com.comic.service.oss.OssService;
 import com.comic.service.production.EpisodeProductionService;
 import com.comic.service.production.GridSplitService;
+import com.comic.service.production.PanelProductionService;
 
 import java.util.List;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,6 +43,7 @@ public class EpisodeController {
 
     private final EpisodeProductionService productionService;
     private final OssService ossService;
+    private final PanelProductionService panelProductionService;
 
     /**
      * 启动视频生产
@@ -245,5 +257,163 @@ public class EpisodeController {
             @PathVariable Integer panelIndex) {
         productionService.regeneratePanelScene(episodeId, panelIndex);
         return Result.ok();
+    }
+
+    /**
+     * 获取背景生成状态
+     * GET /api/episodes/{episodeId}/panels/{panelIndex}/background
+     */
+    @GetMapping("/{episodeId}/panels/{panelIndex}/background")
+    @Operation(summary = "获取背景生成状态", description = "获取指定分镜的背景生成状态")
+    public Result<PanelBackgroundResponse> getBackgroundStatus(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex) {
+        PanelBackgroundResponse status = panelProductionService.getBackgroundStatus(episodeId, panelIndex);
+        return Result.ok(status);
+    }
+
+    /**
+     * 生成背景
+     * POST /api/episodes/{episodeId}/panels/{panelIndex}/background
+     */
+    @PostMapping("/{episodeId}/panels/{panelIndex}/background")
+    @Operation(summary = "生成背景", description = "为指定分镜生成背景")
+    public Result<Void> generateBackground(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex) {
+        panelProductionService.generateBackground(episodeId, panelIndex);
+        return Result.ok();
+    }
+
+    /**
+     * 获取融合状态
+     * GET /api/episodes/{episodeId}/panels/{panelIndex}/fusion
+     */
+    @GetMapping("/{episodeId}/panels/{panelIndex}/fusion")
+    @Operation(summary = "获取融合状态", description = "获取指定分镜的融合生成状态")
+    public Result<PanelFusionResponse> getFusionStatus(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex) {
+        PanelFusionResponse status = panelProductionService.getFusionStatus(episodeId, panelIndex);
+        return Result.ok(status);
+    }
+
+    /**
+     * 生成融合
+     * POST /api/episodes/{episodeId}/panels/{panelIndex}/fusion
+     */
+    @PostMapping("/{episodeId}/panels/{panelIndex}/fusion")
+    @Operation(summary = "生成融合", description = "为指定分镜生成融合")
+    public Result<Void> generateFusion(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex,
+            @RequestBody FusionRequest request) {
+        panelProductionService.generateFusion(episodeId, panelIndex, request);
+        return Result.ok();
+    }
+
+    /**
+     * 获取转场状态
+     * GET /api/episodes/{episodeId}/panels/{panelIndex}/transition
+     */
+    @GetMapping("/{episodeId}/panels/{panelIndex}/transition")
+    @Operation(summary = "获取转场状态", description = "获取指定分镜的转场生成状态")
+    public Result<PanelTransitionResponse> getTransitionStatus(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex) {
+        PanelTransitionResponse status = panelProductionService.getTransitionStatus(episodeId, panelIndex);
+        return Result.ok(status);
+    }
+
+    /**
+     * 生成转场
+     * POST /api/episodes/{episodeId}/panels/{panelIndex}/transition
+     */
+    @PostMapping("/{episodeId}/panels/{panelIndex}/transition")
+    @Operation(summary = "生成转场", description = "为指定分镜生成转场")
+    public Result<Void> generateTransition(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex,
+            @RequestBody TransitionRequest request) {
+        panelProductionService.generateTransition(episodeId, panelIndex, request);
+        return Result.ok();
+    }
+
+    /**
+     * 获取尾帧
+     * GET /api/episodes/{episodeId}/panels/{panelIndex}/tail-frame
+     */
+    @GetMapping("/{episodeId}/panels/{panelIndex}/tail-frame")
+    @Operation(summary = "获取尾帧", description = "获取指定分镜的尾帧信息")
+    public Result<PanelTailFrameResponse> getTailFrame(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex) {
+        PanelTailFrameResponse tailFrame = panelProductionService.getTailFrame(episodeId, panelIndex);
+        return Result.ok(tailFrame);
+    }
+
+    /**
+     * 获取视频任务状态
+     * GET /api/episodes/{episodeId}/panels/{panelIndex}/video-task
+     */
+    @GetMapping("/{episodeId}/panels/{panelIndex}/video-task")
+    @Operation(summary = "获取视频任务状态", description = "获取指定分镜的视频生成任务状态")
+    public Result<PanelVideoTaskResponse> getVideoTaskStatus(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex) {
+        PanelVideoTaskResponse videoTask = panelProductionService.getVideoTaskStatus(episodeId, panelIndex);
+        return Result.ok(videoTask);
+    }
+
+    /**
+     * 单格一键生产
+     * POST /api/episodes/{episodeId}/panels/{panelIndex}/produce
+     */
+    @PostMapping("/{episodeId}/panels/{panelIndex}/produce")
+    @Operation(summary = "单格一键生产", description = "为指定分镜执行一键生成视频")
+    public Result<Void> produceSinglePanel(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex,
+            @RequestBody ProduceRequest request) {
+        panelProductionService.produceSinglePanel(episodeId, panelIndex, request);
+        return Result.ok();
+    }
+
+    /**
+     * 自动生产所有分镜
+     * POST /api/episodes/{episodeId}/auto-produce-all
+     */
+    @PostMapping("/{episodeId}/auto-produce-all")
+    @Operation(summary = "自动生产所有分镜", description = "从指定分镜开始自动生产所有后续分镜")
+    public Result<Void> produceAllPanels(
+            @PathVariable Long episodeId,
+            @RequestBody AutoProduceRequest request) {
+        panelProductionService.produceAllPanels(episodeId, request.getStartFrom());
+        return Result.ok();
+    }
+
+    /**
+     * 合成最终视频
+     * POST /api/episodes/{episodeId}/synthesize
+     */
+    @PostMapping("/{episodeId}/synthesize")
+    @Operation(summary = "合成最终视频", description = "合成所有生成的分镜视频为最终成品视频")
+    public Result<CompositionResultResponse> synthesizeEpisode(
+            @PathVariable Long episodeId) {
+        CompositionResultResponse result = panelProductionService.synthesizeEpisode(episodeId);
+        return Result.ok(result);
+    }
+
+    /**
+     * 获取分镜完整生产状态
+     * GET /api/episodes/{episodeId}/panels/{panelIndex}/production-status
+     */
+    @GetMapping("/{episodeId}/panels/{panelIndex}/production-status")
+    @Operation(summary = "获取分镜完整生产状态", description = "获取指定分镜的完整生产状态信息")
+    public Result<PanelProductionStatusResponse> getPanelProductionStatus(
+            @PathVariable Long episodeId,
+            @PathVariable Integer panelIndex) {
+        PanelProductionStatusResponse status = panelProductionService.getPanelProductionStatus(episodeId, panelIndex);
+        return Result.ok(status);
     }
 }
