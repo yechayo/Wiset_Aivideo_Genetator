@@ -5,18 +5,7 @@ import com.comic.dto.request.AutoProduceRequest;
 import com.comic.dto.request.FusionRequest;
 import com.comic.dto.request.ProduceRequest;
 import com.comic.dto.request.TransitionRequest;
-import com.comic.dto.response.CompositionResultResponse;
-import com.comic.dto.response.GridInfoResponse;
-import com.comic.dto.response.PanelBackgroundResponse;
-import com.comic.dto.response.PanelFusionResponse;
-import com.comic.dto.response.PanelProductionStatusResponse;
-import com.comic.dto.response.PanelStateResponse;
-import com.comic.dto.response.PanelTailFrameResponse;
-import com.comic.dto.response.PanelTransitionResponse;
-import com.comic.dto.response.ProductionPipelineResponse;
-import com.comic.dto.response.ProductionStartResponse;
-import com.comic.dto.response.ProductionStatusResponse;
-import com.comic.dto.response.VideoSegmentInfoResponse;
+import com.comic.dto.response.*;
 import com.comic.service.oss.OssService;
 import com.comic.service.production.EpisodeProductionService;
 import com.comic.service.production.GridSplitService;
@@ -116,22 +105,6 @@ public class EpisodeController {
     }
 
     /**
-     * 提交融合结果并恢复管线
-     * POST /api/episodes/{episodeId}/submit-fusion
-     */
-    @PostMapping("/{episodeId}/submit-fusion")
-    @Operation(summary = "提交融合结果", description = "提交融合图URL并恢复视频生产管线")
-    public Result<Void> submitFusion(@PathVariable Long episodeId,
-                                     @RequestBody Map<String, String> body) {
-        String fusedReferenceImageUrl = body.get("fusedReferenceImageUrl");
-        if (fusedReferenceImageUrl == null || fusedReferenceImageUrl.isEmpty()) {
-            throw new IllegalArgumentException("fusedReferenceImageUrl 不能为空");
-        }
-        productionService.resumeAfterFusion(episodeId, fusedReferenceImageUrl);
-        return Result.ok();
-    }
-
-    /**
      * 提交单页融合结果（P1-1多页融合）
      * POST /api/episodes/{episodeId}/submit-fusion-page
      */
@@ -220,30 +193,6 @@ public class EpisodeController {
     public Result<List<PanelStateResponse>> getPanelStates(@PathVariable Long episodeId) {
         List<PanelStateResponse> states = productionService.getPanelStates(episodeId);
         return Result.ok(states);
-    }
-
-    /**
-     * 单格视频生成（原子化模式用）
-     * POST /api/episodes/{episodeId}/panels/{panelIndex}/generate-video
-     */
-    @PostMapping("/{episodeId}/panels/{panelIndex}/generate-video")
-    @Operation(summary = "单格视频生成", description = "为指定分镜格子独立生成视频")
-    public Result<Map<String, Object>> generateSinglePanelVideo(
-            @PathVariable Long episodeId,
-            @PathVariable Integer panelIndex) {
-        Map<String, Object> result = productionService.generateSinglePanelVideo(episodeId, panelIndex);
-        return Result.ok(result);
-    }
-
-    /**
-     * 手动触发流水线继续（原子化模式"一键自动化"用）
-     * POST /api/episodes/{episodeId}/auto-continue
-     */
-    @PostMapping("/{episodeId}/auto-continue")
-    @Operation(summary = "手动触发流水线继续", description = "融合完成后手动触发后续视频生成流水线")
-    public Result<Void> autoContinue(@PathVariable Long episodeId) {
-        productionService.manualContinueProduction(episodeId);
-        return Result.ok();
     }
 
     /**

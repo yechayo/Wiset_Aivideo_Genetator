@@ -7,10 +7,9 @@ import {
   getProductionPipeline,
   getVideoSegments,
   getPanelStates,
-  generateSinglePanelVideo,
-  autoContinue,
   retryProduction,
 } from '../../../services/episodeService';
+import { autoProduceAll, produceSinglePanel, synthesizeEpisode } from '../../../services/panelProductionService';
 import type { ProductionPipelineResponse, VideoSegmentInfo, PanelState } from '../../../services/types/episode.types';
 import PipelineView from './components/PipelineView';
 import GridFusionEditor from './components/GridFusionEditor';
@@ -216,7 +215,7 @@ const Step6page = ({ project }: Step6pageProps) => {
   const handleGeneratePanelVideo = useCallback(async (panelIndex: number) => {
     if (!episodeId) return;
     try {
-      await generateSinglePanelVideo(episodeId, panelIndex);
+      await produceSinglePanel(episodeId, panelIndex);
       await loadPanelStates(episodeId);
     } catch (e: any) {
       console.error('生成视频失败:', e);
@@ -228,12 +227,23 @@ const Step6page = ({ project }: Step6pageProps) => {
     if (!episodeId) return;
     try {
       setAutoContinuing(true);
-      await autoContinue(episodeId);
+      await autoProduceAll(episodeId);
       setViewMode('pipeline');
     } catch (e: any) {
       console.error('一键自动化失败:', e);
     } finally {
       setAutoContinuing(false);
+    }
+  }, [episodeId]);
+
+  // 合成最终视频
+  const handleCompose = useCallback(async () => {
+    if (!episodeId) return;
+    try {
+      await synthesizeEpisode(episodeId);
+      setViewMode('pipeline');
+    } catch (e: any) {
+      console.error('合成最终视频失败:', e);
     }
   }, [episodeId]);
 
@@ -407,7 +417,7 @@ const Step6page = ({ project }: Step6pageProps) => {
             {allPanelsCompleted && (
               <button
                 className={styles.composeButton}
-                onClick={handleAutoContinue}
+                onClick={handleCompose}
               >
                 统一合并生成最终视频
               </button>

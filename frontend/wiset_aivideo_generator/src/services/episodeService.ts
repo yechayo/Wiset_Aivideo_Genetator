@@ -5,7 +5,6 @@
 import { get, post } from './apiClient';
 import type { ApiResponse } from './types/auth.types';
 import type {
-  ProductionStatusResponse,
   ProductionPipelineResponse,
   GridInfoResponse,
   SplitGridPageResponse,
@@ -16,11 +15,6 @@ import type {
 /** 获取项目下的剧集列表 */
 export async function getEpisodes(projectId: string): Promise<ApiResponse<any[]>> {
   return get<ApiResponse<any[]>>(`/api/story/episodes?projectId=${projectId}`);
-}
-
-/** 获取单集生产状态 */
-export async function getProductionStatus(episodeId: string): Promise<ApiResponse<ProductionStatusResponse>> {
-  return get<ApiResponse<ProductionStatusResponse>>(`/api/episodes/${episodeId}/production-status`);
 }
 
 /** 获取项目生产管线全链路状态（Step5页面可视化） */
@@ -40,11 +34,6 @@ export async function uploadFusionImage(episodeId: string, file: File): Promise<
   return post<ApiResponse<string>>(`/api/episodes/${episodeId}/fusion-image`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-}
-
-/** 提交融合结果，恢复管线（旧接口兼容） */
-export async function submitFusion(episodeId: string, fusedReferenceImageUrl: string): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(`/api/episodes/${episodeId}/submit-fusion`, { fusedReferenceImageUrl });
 }
 
 /** 提交单页融合结果（逐格融合：每页9个URL） */
@@ -83,21 +72,6 @@ export async function retryProduction(episodeId: string): Promise<ApiResponse<vo
 /** 获取所有面板状态（原子化模式） */
 export async function getPanelStates(episodeId: string): Promise<ApiResponse<PanelState[]>> {
   return get<ApiResponse<PanelState[]>>(`/api/episodes/${episodeId}/panel-states`);
-}
-
-/** 单格视频生成（原子化模式） */
-export async function generateSinglePanelVideo(
-  episodeId: string,
-  panelIndex: number,
-): Promise<ApiResponse<{ panelIndex: number; status: string; groupId: string }>> {
-  return post<ApiResponse<{ panelIndex: number; status: string; groupId: string }>>(
-    `/api/episodes/${episodeId}/panels/${panelIndex}/generate-video`,
-  );
-}
-
-/** 手动触发流水线继续（一键自动化） */
-export async function autoContinue(episodeId: string): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(`/api/episodes/${episodeId}/auto-continue`);
 }
 
 /** 提交单页融合结果（支持 autoContinue 参数） */

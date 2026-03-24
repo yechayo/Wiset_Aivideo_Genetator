@@ -15,11 +15,9 @@ import {
 import {
   getProductionPipeline,
   getPanelStates,
-  autoContinue,
   regenerateSceneImage,
-  generateSinglePanelVideo,
 } from '../../../services/episodeService';
-import { autoProduceAll } from '../../../services/panelProductionService';
+import { autoProduceAll, produceSinglePanel, synthesizeEpisode } from '../../../services/panelProductionService';
 import { isApiSuccess } from '../../../services/apiClient';
 import type { WorkflowPhase, SceneImageState, ProductionPipelineResponse, PanelState } from '../../../services/types/episode.types';
 import Step5Card from './components/Step5Card';
@@ -475,10 +473,10 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [reviewEpisodeId, loadPanelStates]);
 
   // 自动融合（单格）
-  const handleAutoFusion = useCallback(async (_panelIndex: number) => {
+  const handleAutoFusion = useCallback(async (panelIndex: number) => {
     if (!reviewEpisodeId) return;
     try {
-      await autoContinue(reviewEpisodeId);
+      await produceSinglePanel(reviewEpisodeId, panelIndex);
       await loadPanelStates(reviewEpisodeId);
     } catch (e: any) {
       console.error('自动融合失败:', e);
@@ -508,7 +506,7 @@ const Step5page = ({ project }: Step5pageProps) => {
   const handleGenerateVideo = useCallback(async (panelIndex: number) => {
     if (!reviewEpisodeId) return;
     try {
-      await generateSinglePanelVideo(reviewEpisodeId, panelIndex);
+      await produceSinglePanel(reviewEpisodeId, panelIndex);
       await loadPanelStates(reviewEpisodeId);
     } catch (e: any) {
       console.error('生成视频失败:', e);
@@ -534,7 +532,7 @@ const Step5page = ({ project }: Step5pageProps) => {
   const handleCompose = useCallback(async () => {
     if (!reviewEpisodeId) return;
     try {
-      await autoContinue(reviewEpisodeId);
+      await synthesizeEpisode(reviewEpisodeId);
     } catch (e: any) {
       console.error('合并失败:', e);
       setApiError(e.message || '合并失败');
