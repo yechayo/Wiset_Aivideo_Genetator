@@ -503,7 +503,7 @@ public class PanelProductionService {
         List<String> transitionUrls = parseUrlList(production.getTransitionUrls());
 
         PanelVideoTaskResponse videoTask = getVideoTaskStatus(episodeId, panelIndex);
-        String tailFrameUrl = getTailFrameUrl(episodeId, panelIndex).getTailFrameUrl();
+        String tailFrameUrl = getTailFrameUrl(episodeId, panelIndex);
 
         PanelProductionStatusResponse response = new PanelProductionStatusResponse();
         response.setPanelIndex(panelIndex);

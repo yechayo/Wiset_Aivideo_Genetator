@@ -133,6 +133,17 @@ export const usePanelProductionStore = create<PanelProductionStore>()((set) => (
         }
       }
 
+      // Recalculate current stage
+      if (panel.videoStatus === 'completed') {
+        panel.currentStage = 'video';
+      } else if (panel.transitionStatus !== 'pending') {
+        panel.currentStage = 'transition';
+      } else if (panel.fusionStatus !== 'pending') {
+        panel.currentStage = 'fusion';
+      } else {
+        panel.currentStage = 'background';
+      }
+
       return { panel };
     });
   },

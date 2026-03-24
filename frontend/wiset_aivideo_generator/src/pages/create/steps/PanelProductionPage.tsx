@@ -58,24 +58,31 @@ export default function PanelProductionPage() {
   }, [episodeId, panelIdx, loadPanelState, reset]);
 
   // Start polling when generating
+  const isPollingRef = useRef(false);
   useEffect(() => {
-    if (!episodeId || !panel || panel.overallStatus !== 'in_progress') {
+    if (!episodeId || !panel) return;
+
+    const shouldPoll = panel.overallStatus === 'in_progress';
+
+    if (shouldPoll && !isPollingRef.current) {
+      isPollingRef.current = true;
+      pollingRef.current = setInterval(() => {
+        loadPanelState(parseInt(episodeId), panelIdx);
+      }, POLL_INTERVAL);
+    } else if (!shouldPoll && isPollingRef.current) {
+      isPollingRef.current = false;
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
-      return;
     }
-
-    pollingRef.current = setInterval(() => {
-      loadPanelState(parseInt(episodeId), panelIdx);
-    }, POLL_INTERVAL);
 
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
+      isPollingRef.current = false;
     };
   }, [episodeId, panelIdx, panel?.overallStatus, loadPanelState]);
 
