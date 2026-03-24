@@ -234,3 +234,30 @@ export interface ProduceRequest {
   backgroundUrl?: string;
   characterRefs?: string[];
 }
+
+/** 剧集卡片数据（组合 Episode 实体 + 面板状态） */
+export interface EpisodeCardData {
+  /** 剧集实体信息 */
+  id: number;
+  episodeNum: number;
+  title: string;
+  status: string;           // DRAFT, GENERATING, DONE, FAILED
+  productionStatus: string;  // null, NOT_STARTED, IN_PROGRESS, COMPLETED, FAILED
+  finalVideoUrl: string | null;
+  errorMsg: string | null;
+
+  /** 分镜数据（审核模式用） */
+  storyboardJson: string | null;
+  storyboardStatus: string | null;
+
+  /** 面板状态（生产模式用） */
+  panelStates: PanelState[];
+
+  /** 场景网格图 URL 列表（每页一张完整九宫格图） */
+  sceneGridUrls: string[];
+
+  /** 是否正在加载 */
+  loading: boolean;
+  /** 加载错误 */
+  loadError: string | null;
+}
