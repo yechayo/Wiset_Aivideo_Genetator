@@ -1,9 +1,11 @@
 import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styles from './EpisodeCard.module.less';
 import type { EpisodeCardData } from '../../../../services/types/episode.types';
 
 interface EpisodeCardProps {
   episode: EpisodeCardData;
+  projectId?: string;
   isCurrentReview: boolean;
   isLoadingStoryboard: boolean;
   storyboardStatusDesc: string;
@@ -22,6 +24,7 @@ type DisplayMode = 'review' | 'production';
 
 const EpisodeCard = ({
   episode,
+  projectId,
   isCurrentReview,
   isLoadingStoryboard,
   storyboardStatusDesc,
@@ -35,6 +38,7 @@ const EpisodeCard = ({
   onAutoContinue,
   isGlobalSubmitting,
 }: EpisodeCardProps) => {
+  const navigate = useNavigate();
   const [mode, setMode] = useState<DisplayMode>('review');
   const [reviseText, setReviseText] = useState('');
   const [showReviseInput, setShowReviseInput] = useState(false);
@@ -250,7 +254,15 @@ const EpisodeCard = ({
               <h4>面板状态</h4>
               <div className={styles.panelsGrid}>
                 {episode.panelStates.map((panel) => (
-                  <div key={panel.panelIndex} className={styles.panelStateCard}>
+                  <div
+                    key={panel.panelIndex}
+                    className={styles.panelStateCard}
+                    onClick={() => {
+                      if (projectId) {
+                        navigate(`/project/${projectId}/episode/${episode.id}/panel/${panel.panelIndex}`);
+                      }
+                    }}
+                  >
                     <div className={styles.panelHeader}>
                       <span className={styles.panelNum}>#{panel.panelIndex + 1}</span>
                       <span className={`${styles.status} ${styles[panel.videoStatus]}`}>
@@ -270,10 +282,24 @@ const EpisodeCard = ({
                         <video src={panel.videoUrl} controls />
                       </div>
                     )}
+                    <button
+                      className={styles.enterBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (projectId) {
+                          navigate(`/project/${projectId}/episode/${episode.id}/panel/${panel.panelIndex}`);
+                        }
+                      }}
+                    >
+                      进入生产
+                    </button>
                     {panel.videoStatus === 'failed' && panel.videoTaskId && (
                       <button
                         className={styles.retryBtn}
-                        onClick={() => onGenerateVideo(panel.panelIndex)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onGenerateVideo(panel.panelIndex);
+                        }}
                         disabled={isGlobalSubmitting}
                       >
                         重试

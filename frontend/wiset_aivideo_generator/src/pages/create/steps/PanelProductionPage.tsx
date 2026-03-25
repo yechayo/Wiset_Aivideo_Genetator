@@ -20,6 +20,9 @@ import VideoPanel from './components/VideoPanel';
 
 const POLL_INTERVAL = 3000;
 
+// 步骤顺序
+const STAGES: ProductionStage[] = ['background', 'fusion', 'transition', 'video'];
+
 export default function PanelProductionPage() {
   const { projectId, episodeId, panelIndex } = useParams<{
     projectId: string;
@@ -29,10 +32,11 @@ export default function PanelProductionPage() {
   const navigate = useNavigate();
   const panelIdx = parseInt(panelIndex || '0', 10);
 
-  const { panel, isLoading, error, loadPanelState, setOperating, setError, reset } =
+  const { panel, isLoading, error, loadPanelState, setOperating, setError, reset, isOperating } =
     usePanelProductionStore();
 
   const [storyboard, setStoryboard] = useState<any>(null);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load storyboard data
@@ -56,6 +60,19 @@ export default function PanelProductionPage() {
     loadPanelState(parseInt(episodeId), panelIdx);
     return () => { reset(); };
   }, [episodeId, panelIdx, loadPanelState, reset]);
+
+  // Auto-advance step when current step completes
+  useEffect(() => {
+    if (!panel) return;
+
+    const currentStage = STAGES[currentStepIndex];
+    const currentStatus = panel[`${currentStage}Status` as keyof typeof panel] as PanelStageStatus;
+
+    if (currentStatus === 'completed' && currentStepIndex < STAGES.length - 1) {
+      // Auto advance to next step
+      setCurrentStepIndex(currentStepIndex + 1);
+    }
+  }, [panel, currentStepIndex]);
 
   // Start polling when generating
   const isPollingRef = useRef(false);
@@ -87,6 +104,7 @@ export default function PanelProductionPage() {
   }, [episodeId, panelIdx, panel?.overallStatus, loadPanelState]);
 
   const currentPanel = storyboard?.panels?.[panelIdx];
+  const currentStage = STAGES[currentStepIndex];
 
   const formatCharacters = (chars: any): string => {
     if (!chars) return '';
@@ -107,61 +125,29 @@ export default function PanelProductionPage() {
     }).filter(Boolean).join(' / ');
   };
 
-  const handleGenerateBackground = useCallback(async () => {
-    if (!episodeId) return;
-    setOperating(true);
-    setError(null);
-    try {
-      await generateBackground(episodeId, panelIdx);
-      await loadPanelState(parseInt(episodeId), panelIdx);
-    } catch (e: any) {
-      setError(e.message || '生成背景图失败');
-    } finally {
-      setOperating(false);
+  // Handle step navigation
+  const handlePrevious = useCallback(() => {
+    if (currentStepIndex > 0) {
+      setCurrentStepIndex(currentStepIndex - 1);
     }
-  }, [episodeId, panelIdx, setOperating, setError, loadPanelState]);
+  }, [currentStepIndex]);
 
-  const handleGenerateFusion = useCallback(async () => {
-    if (!episodeId || !panel?.backgroundUrl) return;
-    setOperating(true);
-    setError(null);
-    try {
-      await generateFusion(episodeId, panelIdx, {
-        backgroundUrl: panel.backgroundUrl,
-        characterRefs: [],
-      });
-      await loadPanelState(parseInt(episodeId), panelIdx);
-    } catch (e: any) {
-      setError(e.message || '生成融合图失败');
-    } finally {
-      setOperating(false);
+  const handleNext = useCallback(() => {
+    if (currentStepIndex < STAGES.length - 1) {
+      setCurrentStepIndex(currentStepIndex + 1);
     }
-  }, [episodeId, panelIdx, panel, setOperating, setError, loadPanelState]);
+  }, [currentStepIndex]);
 
-  const handleConfirmFusion = useCallback(async () => {
-    if (!episodeId || !panel?.fusionUrl) return;
-    setOperating(true);
-    setError(null);
-    try {
-      await generateTransition(episodeId, panelIdx, { fusionUrl: panel.fusionUrl });
-      await loadPanelState(parseInt(episodeId), panelIdx);
-    } catch (e: any) {
-      setError(e.message || '生成过渡融合图失败');
-    } finally {
-      setOperating(false);
-    }
-  }, [episodeId, panelIdx, panel, setOperating, setError, loadPanelState]);
-
-  const handleGenerateVideo = useCallback(async () => {
+  // Handle one-click execute all
+  const handleExecuteAll = useCallback(async () => {
     if (!episodeId) return;
     setOperating(true);
     setError(null);
     try {
       await produceSinglePanel(episodeId, panelIdx);
-      // Start polling
       await loadPanelState(parseInt(episodeId), panelIdx);
     } catch (e: any) {
-      setError(e.message || '生成视频失败');
+      setError(e.message || '一键生成失败');
     } finally {
       setOperating(false);
     }
@@ -185,6 +171,96 @@ export default function PanelProductionPage() {
   if (isLoading && !panel) {
     return <div className={styles.loading}><div className={styles.spinner} />加载中...</div>;
   }
+
+  // Render current step content
+  const renderStepContent = () => {
+    switch (currentStage) {
+      case 'background':
+        return (
+          <BackgroundPanel
+            status={panel?.backgroundStatus || 'pending'}
+            imageUrl={panel?.backgroundUrl ?? null}
+            prompt={null}
+            onGenerate={async () => {
+              setOperating(true);
+              setError(null);
+              try {
+                await generateBackground(episodeId!, panelIdx);
+                await loadPanelState(parseInt(episodeId!), panelIdx);
+              } catch (e: any) {
+                setError(e.message || '生成背景图失败');
+              } finally {
+                setOperating(false);
+              }
+            }}
+          />
+        );
+      case 'fusion':
+        return (
+          <FusionPanel
+            status={panel?.fusionStatus || 'pending'}
+            imageUrl={panel?.fusionUrl ?? null}
+            onGenerate={async () => {
+              setOperating(true);
+              setError(null);
+              try {
+                await generateFusion(episodeId!, panelIdx, {
+                  backgroundUrl: panel?.backgroundUrl || '',
+                  characterRefs: [],
+                });
+                await loadPanelState(parseInt(episodeId!), panelIdx);
+              } catch (e: any) {
+                setError(e.message || '生成融合图失败');
+              } finally {
+                setOperating(false);
+              }
+            }}
+            onConfirm={async () => {
+              setOperating(true);
+              setError(null);
+              try {
+                await generateTransition(episodeId!, panelIdx, { fusionUrl: panel?.fusionUrl || '' });
+                await loadPanelState(parseInt(episodeId!), panelIdx);
+              } catch (e: any) {
+                setError(e.message || '生成过渡融合图失败');
+              } finally {
+                setOperating(false);
+              }
+            }}
+          />
+        );
+      case 'transition':
+        return (
+          <TransitionPanel
+            status={panel?.transitionStatus || 'pending'}
+            imageUrl={panel?.transitionUrl ?? null}
+            hasTailFrame={panelIdx > 0}
+          />
+        );
+      case 'video':
+        return (
+          <VideoPanel
+            status={panel?.videoStatus || 'pending'}
+            videoUrl={panel?.videoUrl ?? null}
+            duration={panel?.videoDuration ?? null}
+            onGenerate={async () => {
+              setOperating(true);
+              setError(null);
+              try {
+                await produceSinglePanel(episodeId!, panelIdx);
+                await loadPanelState(parseInt(episodeId!), panelIdx);
+              } catch (e: any) {
+                setError(e.message || '生成视频失败');
+              } finally {
+                setOperating(false);
+              }
+            }}
+          />
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className={styles.page}>
@@ -210,36 +286,47 @@ export default function PanelProductionPage() {
       {/* Pipeline */}
       {panel && (
         <ProductionPipeline
-          currentStage={panel.currentStage}
+          currentStage={currentStage}
           stageStatuses={stageStatuses}
         />
       )}
 
-      {/* Current Stage Content */}
-      <div className={styles.stageContent}>
-        <BackgroundPanel
-          status={panel?.backgroundStatus || 'pending'}
-          imageUrl={panel?.backgroundUrl ?? null}
-          prompt={null}
-          onGenerate={handleGenerateBackground}
-        />
-        <FusionPanel
-          status={panel?.fusionStatus || 'pending'}
-          imageUrl={panel?.fusionUrl ?? null}
-          onGenerate={handleGenerateFusion}
-          onConfirm={handleConfirmFusion}
-        />
-        <TransitionPanel
-          status={panel?.transitionStatus || 'pending'}
-          imageUrl={panel?.transitionUrl ?? null}
-          hasTailFrame={panelIdx > 0}
-        />
-        <VideoPanel
-          status={panel?.videoStatus || 'pending'}
-          videoUrl={panel?.videoUrl ?? null}
-          duration={panel?.videoDuration ?? null}
-          onGenerate={handleGenerateVideo}
-        />
+      {/* Current Step Content Area */}
+      <div className={styles.stepContentArea}>
+        <h3 className={styles.stepTitle}>
+          {currentStage === 'background' && '背景图生成'}
+          {currentStage === 'fusion' && '融合图生成'}
+          {currentStage === 'transition' && '过渡融合图'}
+          {currentStage === 'video' && '视频生成'}
+        </h3>
+        <div className={styles.stepContent}>
+          {renderStepContent()}
+        </div>
+      </div>
+
+      {/* Navigation Buttons */}
+      <div className={styles.navigation}>
+        <button
+          className={styles.secondaryBtn}
+          onClick={handlePrevious}
+          disabled={currentStepIndex === 0}
+        >
+          上一步
+        </button>
+        <button
+          className={styles.primaryBtn}
+          onClick={handleExecuteAll}
+          disabled={isOperating}
+        >
+          {isOperating ? '执行中...' : '一键执行'}
+        </button>
+        <button
+          className={styles.secondaryBtn}
+          onClick={handleNext}
+          disabled={currentStepIndex === STAGES.length - 1}
+        >
+          下一步
+        </button>
       </div>
 
       {/* Error */}

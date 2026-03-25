@@ -318,6 +318,7 @@ const Step5page = ({ project }: Step5pageProps) => {
           <EpisodeCard
             key={ep.id}
             episode={ep}
+            projectId={projectId}
             isCurrentReview={String(ep.id) === currentReviewId}
             isLoadingStoryboard={statusInfo?.isGenerating ?? false}
             storyboardStatusDesc={currentReviewId === String(ep.id) ? (statusInfo?.statusDescription || '') : ''}
