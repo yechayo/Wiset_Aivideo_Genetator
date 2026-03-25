@@ -2,6 +2,8 @@ package com.comic.repository;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.comic.entity.Character;
 import org.apache.ibatis.annotations.Mapper;
 
@@ -29,5 +31,17 @@ public interface CharacterRepository extends BaseMapper<Character> {
     default void deleteByProjectId(String projectId) {
         delete(new LambdaQueryWrapper<Character>()
             .eq(Character::getProjectId, projectId));
+    }
+
+    default IPage<Character> findPageByProjectId(String projectId, String role, String name, IPage<Character> page) {
+        LambdaQueryWrapper<Character> wrapper = new LambdaQueryWrapper<Character>()
+            .eq(Character::getProjectId, projectId);
+        if (role != null && !role.isEmpty()) {
+            wrapper.apply("JSON_EXTRACT(character_info, '$.role') = {0}", role);
+        }
+        if (name != null && !name.isEmpty()) {
+            wrapper.like("character_info", name);
+        }
+        return selectPage(page, wrapper);
     }
 }
