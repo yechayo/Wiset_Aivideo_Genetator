@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Step5 视频生产 — 详细原型</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "bg": "#131313", "surface": "#1b1b1b", "surface-2": "#1f1f1f",
+        "surface-3": "#2a2a2a", "surface-4": "#353535", "deepest": "#0e0e0e",
+        "border": "#474747", "border-2": "#353535",
+        "text-1": "#e2e2e2", "text-2": "#c6c6c6", "text-3": "#a3a3a3", "text-4": "#474747",
+        "green": "#4ade80", "yellow": "#fbbf24", "red": "#ffb4ab", "blue": "#60a5fa",
+      },
+      fontFamily: { "headline": ["Space Grotesk"], "body": ["Manrope"], "label": ["Inter"] },
+      borderRadius: { "DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px" },
+    },
+  },
+}
+</script>
+<style>
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+  body { background: #131313; color: #e2e2e2; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: #131313; }
+  ::-webkit-scrollbar-thumb { background: #353535; }
+  .material-symbols-outlined.filled { font-variation-settings: 'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+</style>
+</head>
+<body class="font-body antialiased">
+
+<!-- ====== SIDEBAR ====== -->
+<aside class="fixed left-0 top-0 h-full flex flex-col py-8 bg-surface h-screen w-64 z-40">
+  <div class="px-8 mb-12">
+    <div class="flex items-center gap-3 mb-1">
+      <span class="material-symbols-outlined text-white text-3xl">layers</span>
+      <h2 class="text-2xl font-bold tracking-tighter text-white font-headline">Wiset</h2>
+    </div>
+    <p class="text-text-3 text-xs font-label uppercase tracking-widest opacity-60">Video Production</p>
+  </div>
+  <nav class="flex-1 space-y-1">
+    <a class="text-text-3 px-6 py-4 flex items-center gap-4 hover:bg-surface-3 hover:text-white transition-all" href="#">
+      <span class="material-symbols-outlined">home</span><span class="font-medium text-sm">首页</span>
+    </a>
+    <a class="text-text-3 px-6 py-4 flex items-center gap-4 hover:bg-surface-3 hover:text-white transition-all" href="#">
+      <span class="material-symbols-outlined">add_box</span><span class="font-medium text-sm">创建项目</span>
+    </a>
+    <a class="bg-surface-3 text-white border-l-4 border-white px-6 py-4 flex items-center gap-4 transition-all" href="#">
+      <span class="material-symbols-outlined">folder_open</span><span class="font-medium text-sm">我的项目</span>
+    </a>
+    <a class="text-text-3 px-6 py-4 flex items-center gap-4 hover:bg-surface-3 hover:text-white transition-all" href="#">
+      <span class="material-symbols-outlined">settings</span><span class="font-medium text-sm">设置</span>
+    </a>
+  </nav>
+  <div class="mt-auto px-4 pb-4">
+    <div class="bg-bg p-4 flex items-center gap-3 mb-4">
+      <div class="w-10 h-10 bg-surface-4 flex items-center justify-center font-headline text-white font-bold">T</div>
+      <div class="flex flex-col"><span class="text-xs font-bold text-white">test</span><span class="text-[10px] text-text-4">ID: 1</span></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ====== MAIN ====== -->
+<div class="ml-64 flex flex-col min-h-screen">
+
+  <!-- TOP NAV -->
+  <header class="flex items-center justify-between px-8 w-full sticky top-0 z-50 bg-bg h-16 border-b border-border-2">
+    <!-- 步骤进度 -->
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2 opacity-40">
+        <div class="w-5 h-5 rounded-full border border-border flex items-center justify-center bg-surface text-[10px] text-text-2">
+          <span class="material-symbols-outlined" style="font-size:12px">check</span>
+        </div>
+        <span class="font-headline text-[10px] tracking-widest uppercase text-text-3">创意输入</span>
+      </div>
+      <span class="text-text-4 text-xs">→</span>
+      <div class="flex items-center gap-2 opacity-40">
+        <div class="w-5 h-5 rounded-full border border-border flex items-center justify-center bg-surface text-[10px] text-text-2">
+          <span class="material-symbols-outlined" style="font-size:12px">check</span>
+        </div>
+        <span class="font-headline text-[10px] tracking-widest uppercase text-text-3">剧本编辑</span>
+      </div>
+      <span class="text-text-4 text-xs">→</span>
+      <div class="flex items-center gap-2 opacity-40">
+        <div class="w-5 h-5 rounded-full border border-border flex items-center justify-center bg-surface text-[10px] text-text-2">
+          <span class="material-symbols-outlined" style="font-size:12px">check</span>
+        </div>
+        <span class="font-headline text-[10px] tracking-widest uppercase text-text-3">角色设定</span>
+      </div>
+      <span class="text-text-4 text-xs">→</span>
+      <div class="flex items-center gap-2 opacity-40">
+        <div class="w-5 h-5 rounded-full border border-border flex items-center justify-center bg-surface text-[10px] text-text-2">
+          <span class="material-symbols-outlined" style="font-size:12px">check</span>
+        </div>
+        <span class="font-headline text-[10px] tracking-widest uppercase text-text-3">素材生成</span>
+      </div>
+      <span class="text-text-4 text-xs">→</span>
+      <!-- 当前步骤 -->
+      <div class="flex items-center gap-2">
+        <div class="w-5 h-5 rounded-full border border-white flex items-center justify-center bg-surface-3 text-[10px] text-white font-bold">5</div>
+        <span class="font-headline text-[10px] tracking-widest uppercase text-white">视频生产</span>
+      </div>
+      <span class="text-text-4 text-xs">→</span>
+      <div class="flex items-center gap-2 opacity-40">
+        <div class="w-5 h-5 rounded-full border border-border flex items-center justify-center bg-surface text-[10px] text-text-4">6</div>
+        <span class="font-headline text-[10px] tracking-widest uppercase text-text-4">最终合成</span>
+      </div>
+    </div>
+
+    <!-- 右侧统计 -->
+    <div class="flex items-center gap-6">
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-green"></div>
+        <span class="text-xs text-text-2">已生成 <span class="text-white font-bold">5</span></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-text-4"></div>
+        <span class="text-xs text-text-2">未生成 <span class="text-white font-bold">7</span></span>
+      </div>
+      <div class="h-4 w-px bg-border-2"></div>
+      <button class="text-text-4 text-xs font-label hover:text-text-2 transition-colors cursor-pointer" title="后期实现">
+        <span class="material-symbols-outlined" style="font-size:14px; vertical-align: middle;">auto_awesome</span>
+        一键生成
+      </button>
+    </div>
+  </header>
+
+  <!-- CONTENT -->
+  <main class="flex-1 p-8">
+    <div class="max-w-5xl mx-auto">
+
+      <!-- 章节标题 -->
+      <div class="flex items-center gap-4 mb-4">
+        <span class="material-symbols-outlined text-text-4" style="font-size:20px">menu_book</span>
+        <h2 class="font-headline text-sm tracking-widest uppercase text-text-3">第一章 · 深夜便利店</h2>
+        <div class="flex-1 h-px bg-border-2"></div>
+        <span class="text-xs text-text-4 font-label">3 / 4 集已完成</span>
+      </div>
+
+      <!-- ====== 剧集卡片 1 — 已完成 ====== -->
+      <div class="border border-green/30 bg-surface/50 mb-2 rounded-sm">
+        <div class="flex items-center justify-between px-6 py-4">
+          <div class="flex items-center gap-4">
+            <div class="w-8 h-8 rounded-full bg-green/10 border border-green/30 flex items-center justify-center">
+              <span class="material-symbols-outlined text-green" style="font-size:16px">check</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-3">
+                <span class="font-headline text-sm text-white font-bold">第 1 集</span>
+                <span class="text-text-3 text-xs">·</span>
+                <span class="text-text-3 text-xs">深夜便利店的秘密</span>
+              </div>
+              <div class="flex items-center gap-3 mt-1">
+                <span class="text-[10px] text-green font-label">3/3 片段已完成</span>
+                <span class="text-text-4 text-[10px]">·</span>
+                <span class="text-text-4 text-[10px]">4 个场景 · 3 个角色</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex gap-1">
+              <div class="w-5 h-5 rounded bg-green/15 border border-green/40 flex items-center justify-center"><span class="material-symbols-outlined text-green" style="font-size:12px">check</span></div>
+              <div class="w-5 h-5 rounded bg-green/15 border border-green/40 flex items-center justify-center"><span class="material-symbols-outlined text-green" style="font-size:12px">check</span></div>
+              <div class="w-5 h-5 rounded bg-green/15 border border-green/40 flex items-center justify-center"><span class="material-symbols-outlined text-green" style="font-size:12px">check</span></div>
+            </div>
+            <span class="material-symbols-outlined text-text-4" style="font-size:16px">expand_more</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== 剧集卡片 2 — 进行中（展开状态）====== -->
+      <div class="border border-white bg-surface mb-2 rounded-sm">
+        <!-- 卡片头部 -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border-2">
+          <div class="flex items-center gap-4">
+            <div class="w-8 h-8 rounded-full bg-surface-3 border border-border flex items-center justify-center">
+              <span class="material-symbols-outlined text-yellow" style="font-size:16px">pending</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-3">
+                <span class="font-headline text-sm text-white font-bold">第 2 集</span>
+                <span class="text-text-3 text-xs">·</span>
+                <span class="text-text-3 text-xs">半夜来客</span>
+              </div>
+              <div class="flex items-center gap-3 mt-1">
+                <span class="text-[10px] text-yellow font-label">2/4 片段进行中</span>
+                <span class="text-text-4 text-[10px]">·</span>
+                <span class="text-text-4 text-[10px]">1 待审核</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="flex gap-1">
+              <div class="w-5 h-5 rounded bg-green/15 border border-green/40 flex items-center justify-center"><span class="material-symbols-outlined text-green" style="font-size:12px">check</span></div>
+              <div class="w-5 h-5 rounded bg-green/15 border border-green/40 flex items-center justify-center"><span class="material-symbols-outlined text-green" style="font-size:12px">check</span></div>
+              <div class="w-5 h-5 rounded bg-yellow/15 border border-yellow/40 flex items-center justify-center"><span class="material-symbols-outlined text-yellow" style="font-size:12px">priority_high</span></div>
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">4</span></div>
+            </div>
+            <span class="material-symbols-outlined text-white" style="font-size:16px">expand_less</span>
+          </div>
+        </div>
+
+        <!-- 展开内容：片段子卡片 -->
+        <div class="px-6 py-4">
+          <div class="grid grid-cols-2 gap-4">
+
+            <!-- 片段 1 — 已完成 -->
+            <div class="border border-green/20 bg-deepest rounded-sm p-4">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-green" style="font-size:14px">check_circle</span>
+                  <span class="text-xs text-text-2 font-label">片段 1</span>
+                </div>
+                <span class="text-[10px] text-green font-label uppercase tracking-widest">已完成</span>
+              </div>
+              <!-- 缩略图预览 -->
+              <div class="grid grid-cols-2 grid-rows-2 gap-1 mb-3 h-32">
+                <div class="bg-surface-3 border border-border-2 rounded-sm flex items-center justify-center overflow-hidden">
+                  <span class="material-symbols-outlined text-text-4" style="font-size:20px">image</span>
+                </div>
+                <div class="bg-surface-3 border border-border-2 rounded-sm flex items-center justify-center overflow-hidden">
+                  <span class="material-symbols-outlined text-text-4" style="font-size:20px">image</span>
+                </div>
+                <div class="bg-surface-3 border border-border-2 rounded-sm flex items-center justify-center overflow-hidden">
+                  <span class="material-symbols-outlined text-text-4" style="font-size:20px">image</span>
+                </div>
+                <div class="bg-surface-3 border border-border-2 rounded-sm flex items-center justify-center overflow-hidden">
+                  <span class="material-symbols-outlined text-text-4" style="font-size:20px">image</span>
+                </div>
+              </div>
+              <p class="text-[10px] text-text-3 leading-relaxed">小李走进便利店，发现收银台空无一人。冷柜的灯忽明忽暗，空气中弥漫着不寻常的寂静...</p>
+              <div class="flex items-center justify-between mt-3 pt-3 border-t border-border-2">
+                <div class="flex items-center gap-2">
+                  <span class="text-[9px] text-text-4 font-label">场景 ✓</span>
+                  <span class="text-text-4">·</span>
+                  <span class="text-[9px] text-text-4 font-label">四宫格 ✓</span>
+                  <span class="text-text-4">·</span>
+                  <span class="text-[9px] text-text-4 font-label">视频 ✓</span>
+                </div>
+                <button class="text-[10px] text-text-3 font-label hover:text-white transition-colors">预览</button>
+              </div>
+            </div>
+
+            <!-- 片段 2 — 已完成 -->
+            <div class="border border-green/20 bg-deepest rounded-sm p-4">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-green" style="font-size:14px">check_circle</span>
+                  <span class="text-xs text-text-2 font-label">片段 2</span>
+                </div>
+                <span class="text-[10px] text-green font-label uppercase tracking-widest">已完成</span>
+              </div>
+              <div class="grid grid-cols-2 grid-rows-2 gap-1 mb-3 h-32">
+                <div class="bg-surface-3 border border-border-2 rounded-sm flex items-center justify-center"><span class="material-symbols-outlined text-text-4" style="font-size:20px">image</span></div>
+                <div class="bg-surface-3 border border-border-2 rounded-sm flex items-center justify-center"><span class="material-symbols-outlined text-text-4" style="font-size:20px">image</span></div>
+                <div class="bg-surface-3 border border-border-2 rounded-sm flex items-center justify-center"><span class="material-symbols-outlined text-text-4" style="font-size:20px">image</span></div>
+                <div class="bg-surface-3 border border-border-2 rounded-sm flex items-center justify-center"><span class="material-symbols-outlined text-text-4" style="font-size:20px">image</span></div>
+              </div>
+              <p class="text-[10px] text-text-3 leading-relaxed">货架间的通道尽头，一个模糊的身影缓缓移动。小李紧握手机，手电筒的光束颤抖着...</p>
+              <div class="flex items-center justify-between mt-3 pt-3 border-t border-border-2">
+                <div class="flex items-center gap-2">
+                  <span class="text-[9px] text-text-4 font-label">场景 ✓</span>
+                  <span class="text-text-4">·</span>
+                  <span class="text-[9px] text-text-4 font-label">四宫格 ✓</span>
+                  <span class="text-text-4">·</span>
+                  <span class="text-[9px] text-text-4 font-label">视频 ✓</span>
+                </div>
+                <button class="text-[10px] text-text-3 font-label hover:text-white transition-colors">预览</button>
+              </div>
+            </div>
+
+            <!-- 片段 3 — 四宫格待审核（重点展示）-->
+            <div class="border border-yellow/40 bg-deepest rounded-sm p-4">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-yellow" style="font-size:14px">rate_review</span>
+                  <span class="text-xs text-text-2 font-label">片段 3</span>
+                </div>
+                <span class="text-[10px] text-yellow font-label uppercase tracking-widest">待审核</span>
+              </div>
+              <!-- 四宫格预览 -->
+              <div class="grid grid-cols-2 grid-rows-2 gap-1 mb-3 h-32">
+                <div class="bg-surface-3 border border-yellow/30 rounded-sm flex items-center justify-center">
+                  <span class="material-symbols-outlined text-yellow/60" style="font-size:20px">grid_view</span>
+                </div>
+                <div class="bg-surface-3 border border-yellow/30 rounded-sm flex items-center justify-center">
+                  <span class="material-symbols-outlined text-yellow/60" style="font-size:20px">grid_view</span>
+                </div>
+                <div class="bg-surface-3 border border-yellow/30 rounded-sm flex items-center justify-center">
+                  <span class="material-symbols-outlined text-yellow/60" style="font-size:20px">grid_view</span>
+                </div>
+                <div class="bg-surface-3 border border-yellow/30 rounded-sm flex items-center justify-center">
+                  <span class="material-symbols-outlined text-yellow/60" style="font-size:20px">grid_view</span>
+                </div>
+              </div>
+              <p class="text-[10px] text-text-3 leading-relaxed">收银台上的老式收音机突然响起，一个沙哑的声音念出一串奇怪的数字。小李意识到这些数字是...</p>
+              <div class="flex items-center justify-between mt-3 pt-3 border-t border-border-2">
+                <div class="flex items-center gap-2">
+                  <span class="text-[9px] text-text-4 font-label">场景 ✓</span>
+                  <span class="text-text-4">·</span>
+                  <span class="text-[9px] text-yellow font-label">四宫格 ◉</span>
+                  <span class="text-text-4">·</span>
+                  <span class="text-[9px] text-text-4 font-label">视频 —</span>
+                </div>
+                <button class="text-[10px] text-yellow font-label hover:text-yellow-300 transition-colors font-bold">审核</button>
+              </div>
+            </div>
+
+            <!-- 片段 4 — 未开始 -->
+            <div class="border border-border-2 bg-deepest rounded-sm p-4 opacity-50">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-text-4" style="font-size:14px">radio_button_unchecked</span>
+                  <span class="text-xs text-text-3 font-label">片段 4</span>
+                </div>
+                <span class="text-[10px] text-text-4 font-label uppercase tracking-widest">未开始</span>
+              </div>
+              <div class="grid grid-cols-2 grid-rows-2 gap-1 mb-3 h-32">
+                <div class="bg-surface border border-border-2/50 rounded-sm"></div>
+                <div class="bg-surface border border-border-2/50 rounded-sm"></div>
+                <div class="bg-surface border border-border-2/50 rounded-sm"></div>
+                <div class="bg-surface border border-border-2/50 rounded-sm"></div>
+              </div>
+              <p class="text-[10px] text-text-4 leading-relaxed">小李冲出便利店，回头望去，店铺的灯光逐一熄灭，最后一个灯泡闪烁了三下后...</p>
+              <div class="flex items-center justify-between mt-3 pt-3 border-t border-border-2">
+                <div class="flex items-center gap-2">
+                  <span class="text-[9px] text-text-4 font-label">场景 —</span>
+                  <span class="text-text-4">·</span>
+                  <span class="text-[9px] text-text-4 font-label">四宫格 —</span>
+                  <span class="text-text-4">·</span>
+                  <span class="text-[9px] text-text-4 font-label">视频 —</span>
+                </div>
+                <button class="text-[10px] text-text-3 font-label hover:text-white transition-colors">开始</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== 剧集卡片 3 — 未开始 ====== -->
+      <div class="border border-border-2 bg-surface/30 mb-2 rounded-sm">
+        <div class="flex items-center justify-between px-6 py-4">
+          <div class="flex items-center gap-4">
+            <div class="w-8 h-8 rounded-full bg-surface-2 border border-border-2 flex items-center justify-center">
+              <span class="material-symbols-outlined text-text-4" style="font-size:16px">play_circle_outline</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-3">
+                <span class="font-headline text-sm text-text-2 font-bold">第 3 集</span>
+                <span class="text-text-4 text-xs">·</span>
+                <span class="text-text-4 text-xs">消失的收银员</span>
+              </div>
+              <div class="flex items-center gap-3 mt-1">
+                <span class="text-[10px] text-text-4 font-label">0/3 片段未开始</span>
+                <span class="text-text-4 text-[10px]">·</span>
+                <span class="text-text-4 text-[10px]">3 个场景 · 2 个角色</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex gap-1">
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">1</span></div>
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">2</span></div>
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">3</span></div>
+            </div>
+            <span class="material-symbols-outlined text-text-4" style="font-size:16px">expand_more</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== 剧集卡片 4 — 未开始 ====== -->
+      <div class="border border-border-2 bg-surface/30 mb-2 rounded-sm">
+        <div class="flex items-center justify-between px-6 py-4">
+          <div class="flex items-center gap-4">
+            <div class="w-8 h-8 rounded-full bg-surface-2 border border-border-2 flex items-center justify-center">
+              <span class="material-symbols-outlined text-text-4" style="font-size:16px">play_circle_outline</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-3">
+                <span class="font-headline text-sm text-text-2 font-bold">第 4 集</span>
+                <span class="text-text-4 text-xs">·</span>
+                <span class="text-text-4 text-xs">监控录像</span>
+              </div>
+              <div class="flex items-center gap-3 mt-1">
+                <span class="text-[10px] text-text-4 font-label">0/4 片段未开始</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex gap-1">
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">1</span></div>
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">2</span></div>
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">3</span></div>
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">4</span></div>
+            </div>
+            <span class="material-symbols-outlined text-text-4" style="font-size:16px">expand_more</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 第二章 -->
+      <div class="flex items-center gap-4 mt-8 mb-4">
+        <span class="material-symbols-outlined text-text-4" style="font-size:20px">menu_book</span>
+        <h2 class="font-headline text-sm tracking-widest uppercase text-text-3">第二章 · 午夜电台</h2>
+        <div class="flex-1 h-px bg-border-2"></div>
+        <span class="text-xs text-text-4 font-label">0 / 2 集已完成</span>
+      </div>
+
+      <div class="border border-border-2 bg-surface/30 mb-2 rounded-sm">
+        <div class="flex items-center justify-between px-6 py-4">
+          <div class="flex items-center gap-4">
+            <div class="w-8 h-8 rounded-full bg-surface-2 border border-border-2 flex items-center justify-center">
+              <span class="material-symbols-outlined text-text-4" style="font-size:16px">play_circle_outline</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-3">
+                <span class="font-headline text-sm text-text-2 font-bold">第 5 集</span>
+                <span class="text-text-4 text-xs">·</span>
+                <span class="text-text-4 text-xs">午夜来电</span>
+              </div>
+              <span class="text-[10px] text-text-4 font-label mt-1 block">0/2 片段未开始</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex gap-1">
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">1</div>
+              <div class="w-5 h-5 rounded bg-deepest border border-border-2 flex items-center justify-center"><span class="text-text-4 text-[9px] font-label">2</span></div>
+            </div>
+            <span class="material-symbols-outlined text-text-4" style="font-size:16px">expand_more</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+</body>
+</html>
