@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Step5 新工作流设计</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #131313; color: #e2e2e2; font-family: 'Manrope', sans-serif; padding: 40px; }
+  h1 { font-family: 'Space Grotesk', sans-serif; font-size: 28px; margin-bottom: 8px; }
+  .subtitle { color: #a3a3a3; font-size: 14px; margin-bottom: 40px; }
+
+  .flow-container { display: flex; align-items: center; gap: 12px; margin-bottom: 48px; flex-wrap: wrap; }
+  .step-box { padding: 12px 20px; border: 1px solid #474747; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; text-align: center; min-width: 100px; }
+  .step-kept { background: #1b1b1b; color: #a3a3a3; }
+  .step-kept.active { background: #1b1b1b; border-color: #c6c6c7; color: #fff; }
+  .step-new { background: #2a2a2a; border-color: #fff; color: #fff; font-weight: 600; }
+  .arrow { color: #474747; font-size: 18px; }
+  .label { font-size: 10px; color: #474747; text-align: center; margin-top: 4px; font-family: 'Inter', sans-serif; text-transform: uppercase; letter-spacing: 0.1em; }
+
+  h2 { font-family: 'Space Grotesk', sans-serif; font-size: 20px; margin-bottom: 16px; color: #fff; }
+
+  .pipeline { background: #1b1b1b; border: 1px solid #353535; border-radius: 12px; padding: 32px; margin-bottom: 32px; }
+  .pipeline-title { font-size: 16px; font-weight: 600; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+  .pipeline-title .badge { font-size: 10px; padding: 2px 8px; background: #353535; border-radius: 99px; font-family: 'Inter', sans-serif; color: #a3a3a3; }
+
+  .steps-row { display: flex; align-items: stretch; gap: 0; }
+  .step-card { flex: 1; background: #0e0e0e; border: 1px solid #353535; padding: 20px; position: relative; }
+  .step-card:first-child { border-radius: 8px 0 0 8px; }
+  .step-card:last-child { border-radius: 0 8px 8px 0; }
+  .step-card + .step-card { border-left: 0; }
+  .step-num { font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 700; color: #353535; margin-bottom: 8px; }
+  .step-name { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  .step-desc { font-size: 12px; color: #a3a3a3; line-height: 1.6; }
+  .step-tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 99px; margin-top: 10px; font-family: 'Inter', sans-serif; }
+  .tag-auto { background: rgba(255,255,255,0.1); color: #c6c6c7; }
+  .tag-manual { background: rgba(255,180,171,0.15); color: #ffb4ab; }
+  .tag-review { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid #474747; }
+
+  .arrow-connector { display: flex; align-items: center; justify-content: center; width: 32px; color: #474747; font-size: 20px; flex-shrink: 0; }
+
+  .page-layout { background: #1b1b1b; border: 1px solid #353535; border-radius: 12px; padding: 32px; margin-bottom: 32px; }
+  .layout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .layout-item { background: #0e0e0e; border: 1px solid #353535; border-radius: 8px; padding: 20px; }
+  .layout-item h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #fff; }
+  .layout-item p { font-size: 12px; color: #a3a3a3; line-height: 1.6; }
+
+  .card-preview { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .mini-card { background: #1b1b1b; border: 1px solid #353535; border-radius: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+  .mini-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-green { background: #4ade80; }
+  .dot-yellow { background: #fbbf24; }
+  .dot-gray { background: #474747; }
+  .mini-card span { font-size: 11px; color: #c6c6c6; }
+
+  .checklist { background: #1b1b1b; border: 1px solid #353535; border-radius: 12px; padding: 32px; }
+  .checklist ul { list-style: none; padding: 0; }
+  .checklist li { padding: 8px 0; font-size: 13px; color: #c6c6c6; border-bottom: 1px solid #1f1f1f; display: flex; align-items: center; gap: 10px; }
+  .checklist li:last-child { border-bottom: 0; }
+  .check-icon { color: #4ade80; font-size: 16px; }
+
+  .note { font-size: 11px; color: #474747; margin-top: 24px; font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>Step5 新工作流 — 整体流程设计</h1>
+<p class="subtitle">基于你的描述整理，请确认方向是否正确</p>
+
+<!-- 整体步骤流程 -->
+<div class="flow-container">
+  <div>
+    <div class="step-box step-kept">Step1<br>创意输入</div>
+    <div class="label">保留</div>
+  </div>
+  <span class="arrow">→</span>
+  <div>
+    <div class="step-box step-kept">Step2<br>剧本编辑</div>
+    <div class="label">保留</div>
+  </div>
+  <span class="arrow">→</span>
+  <div>
+    <div class="step-box step-kept">Step3<br>角色配置</div>
+    <div class="label">保留</div>
+  </div>
+  <span class="arrow">→</span>
+  <div>
+    <div class="step-box step-kept active">Step4<br>素材生成</div>
+    <div class="label">保留</div>
+  </div>
+  <span class="arrow">→</span>
+  <div>
+    <div class="step-box step-new">Step5<br>视频生产</div>
+    <div class="label" style="color:#fff">重写</div>
+  </div>
+  <span class="arrow">→</span>
+  <div>
+    <div class="step-box step-new">Step6<br>最终合成</div>
+    <div class="label" style="color:#fff">新增</div>
+  </div>
+</div>
+
+<!-- Step5 流水线 -->
+<div class="pipeline">
+  <div class="pipeline-title">
+    Step5 — 每个视频片段的生产流水线
+    <span class="badge">用户手动推进</span>
+  </div>
+
+  <div class="steps-row">
+    <div class="step-card">
+      <div class="step-num">①</div>
+      <div class="step-name">调用角色资产</div>
+      <div class="step-desc">从 Step4 生成的角色素材中，自动匹配本片段涉及的角色图片资产</div>
+      <span class="step-tag tag-auto">自动</span>
+    </div>
+
+    <div class="arrow-connector">→</div>
+
+    <div class="step-card">
+      <div class="step-num">②</div>
+      <div class="step-name">生成场景图</div>
+      <div class="step-desc">根据分镜描述，AI 生成该片段的场景背景图</div>
+      <span class="step-tag tag-auto">自动</span>
+    </div>
+
+    <div class="arrow-connector">→</div>
+
+    <div class="step-card" style="border-color: #ffb4ab;">
+      <div class="step-num" style="color: #ffb4ab;">③</div>
+      <div class="step-name">四宫格漫画</div>
+      <div class="step-desc">场景图 + 角色资产 + 剧情描述 → AI 生成四宫格漫画<br><br>用户审核点：<br>• 通过 → 继续生成视频<br>• 不通过 → 输入修改建议（类似 prompt），重新生成</div>
+      <span class="step-tag tag-review">审核点</span>
+    </div>
+
+    <div class="arrow-connector">→</div>
+
+    <div class="step-card">
+      <div class="step-num">④</div>
+      <div class="step-name">生成 AI 视频</div>
+      <div class="step-desc">四宫格漫画 + 剧情描述 → AI 生成 prompt → 生成该片段的 AI 视频</div>
+      <span class="step-tag tag-manual">手动触发</span>
+    </div>
+  </div>
+</div>
+
+<!-- 页面布局 -->
+<div class="page-layout">
+  <h2>Step5 页面布局结构</h2>
+  <div class="layout-grid">
+    <div class="layout-item">
+      <h3>顶部栏</h3>
+      <p>• 左侧：返回按钮 + 项目名称<br>• 右侧：已生成/未生成 统计<br>• 预留"一键生成"按钮（后期实现）</p>
+    </div>
+    <div class="layout-item">
+      <h3>主体区域 — 剧集卡片网格</h3>
+      <p>按章节分组，展示所有剧集卡片。每张卡片内嵌多个视频片段子卡片，每个子卡片显示当前流水线阶段和状态。</p>
+    </div>
+    <div class="layout-item">
+      <h3>剧集卡片</h3>
+      <div class="card-preview">
+        <div class="mini-card"><span class="mini-dot dot-green"></span><span>片段 1 — 视频已完成 ✓</span></div>
+        <div class="mini-card"><span class="mini-dot dot-yellow"></span><span>片段 2 — 四宫格待审核</span></div>
+        <div class="mini-card"><span class="mini-dot dot-gray"></span><span>片段 3 — 未开始</span></div>
+      </div>
+    </div>
+    <div class="layout-item">
+      <h3>子卡片交互</h3>
+      <p>点击子卡片展开详情面板，显示：<br>• 当前阶段内容预览<br>• 四宫格审核界面（通过/驳回+建议）<br>• 操作按钮（生成场景图 / 生成四宫格 / 生成视频）</p>
+    </div>
+  </div>
+</div>
+
+<!-- 确认清单 -->
+<div class="checklist">
+  <h2>设计要点确认</h2>
+  <ul style="margin-top: 16px;">
+    <li><span class="check-icon">✓</span> Steps 1-4 保持不变</li>
+    <li><span class="check-icon">✓</span> Step5 合并原 Step5+Step6 的生产逻辑，全新重写</li>
+    <li><span class="check-icon">✓</span> 一集 = 一张卡片，卡片内含多个视频片段子卡片</li>
+    <li><span class="check-icon">✓</span> 每个片段 4 步流水线：角色资产 → 场景图 → 四宫格（审核） → 视频</li>
+    <li><span class="check-icon">✓</span> 用户手动推进，不自动串行</li>
+    <li><span class="check-icon">✓</span> 四宫格是唯一审核点，不通过可输入 prompt 式修改建议</li>
+    <li><span class="check-icon">✓</span> 失败时自动重试 + 用户可提供修改建议</li>
+    <li><span class="check-icon">✓</span> 预留"一键生成"按钮位置</li>
+    <li><span class="check-icon">✓</span> Step6 最终合成页面（视频拼接、预览、下载）</li>
+  </ul>
+</div>
+
+<p class="note">请在浏览器中查看此页面，然后在终端告诉我方向是否正确，或者需要调整的地方。</p>
+
+</body>
+</html>
