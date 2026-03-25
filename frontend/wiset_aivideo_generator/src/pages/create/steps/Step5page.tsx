@@ -7,8 +7,14 @@ import type {
   EpisodeState,
   SegmentState,
   ExpansionState,
+  SegmentPipelineStep,
 } from './types';
 import { useCreateStore } from '../../../stores/createStore';
+import { getScript } from '../../../services/projectService';
+import { getPanelStates } from '../../../services/episodeService';
+import type { ScriptContentResponse } from '../../../services/types/project.types';
+import type { PanelState } from '../../../services/types/episode.types';
+import EpisodeCard from './components/EpisodeCard';
 
 const POLL_INTERVAL = 3000;
 
@@ -57,8 +63,29 @@ const Step5page = ({ project }: Step5pageProps) => {
   );
 
   /**
+   * Map panel states to segment pipeline step
+   */
+  const mapPanelsToPipelineStep = (panels: PanelState[]): SegmentPipelineStep => {
+    if (panels.length === 0) return 'pending';
+
+    const allFusionCompleted = panels.every(p => p.fusionStatus === 'completed');
+    const allVideoCompleted = panels.every(p => p.videoStatus === 'completed');
+    const anyVideoFailed = panels.some(p => p.videoStatus === 'failed');
+    const anyVideoGenerating = panels.some(p => p.videoStatus === 'generating');
+    const anyFusionUrlExists = panels.some(p => p.fusionUrl !== null);
+    const anySceneExists = panels.some(p => p.sceneDescription !== null);
+
+    if (allFusionCompleted && allVideoCompleted) return 'video_completed';
+    if (anyVideoFailed) return 'video_failed';
+    if (anyVideoGenerating) return 'video_generating';
+    if (allFusionCompleted && !anyVideoGenerating) return 'comic_approved';
+    if (anyFusionUrlExists) return 'comic_review';
+    if (anySceneExists) return 'scene_ready';
+    return 'pending';
+  };
+
+  /**
    * Load project data and build chapter state tree
-   * TODO: Task 8 will integrate real API calls
    */
   const loadProjectData = useCallback(async () => {
     if (!projectId) return;
@@ -67,55 +94,141 @@ const Step5page = ({ project }: Step5pageProps) => {
     setError(null);
 
     try {
-      // Placeholder: build mock chapter structure from project metadata
-      // In Task 8, this will call real API endpoints
-      const mockChapters: ChapterState[] = [];
-      const episodesPerChapter = project.episodesPerChapter || 4;
-      const totalEpisodes = project.totalEpisodes || 0;
-      const chapterCount = Math.ceil(totalEpisodes / episodesPerChapter);
+      // Step 1: Load script data to get episodes
+      const scriptResponse = await getScript(projectId);
+      if (scriptResponse.code !== 0 || !scriptResponse.data) {
+        throw new Error(scriptResponse.message || 'Failed to load script');
+      }
 
-      for (let i = 0; i < chapterCount; i++) {
-        const chapterIndex = i + 1;
-        const startEp = i * episodesPerChapter;
-        const endEp = Math.min(startEp + episodesPerChapter, totalEpisodes);
-        const episodesInChapter: EpisodeState[] = [];
+      const scriptData: ScriptContentResponse = scriptResponse.data;
+      const episodes = scriptData.episodes || [];
 
-        for (let epIdx = startEp; epIdx < endEp; epIdx++) {
-          episodesInChapter.push({
-            episodeId: epIdx + 1,
-            episodeIndex: epIdx + 1,
-            title: `第${epIdx + 1}集`,
-            segments: [
-              {
-                segmentIndex: 0,
-                title: `片段 1`,
-                synopsis: '片段简介占位',
-                sceneThumbnail: null,
-                characterAvatars: [],
-                pipelineStep: 'pending',
-                comicUrl: null,
-                videoUrl: null,
-                feedback: '',
-              },
-            ],
+      // Step 2: Group episodes by chapterTitle
+      const chapterMap = new Map<string, typeof episodes>();
+      episodes.forEach(ep => {
+        const chapterTitle = ep.chapterTitle && ep.chapterTitle.trim() !== '' ? ep.chapterTitle : '未分章';
+        if (!chapterMap.has(chapterTitle)) {
+          chapterMap.set(chapterTitle, []);
+        }
+        chapterMap.get(chapterTitle)!.push(ep);
+      });
+
+      // Step 3: Build ChapterState array
+      const builtChapters: ChapterState[] = [];
+      let chapterIndex = 0;
+
+      for (const [chapterTitle, chapterEpisodes] of chapterMap.entries()) {
+        chapterIndex++;
+        const episodeStates: EpisodeState[] = [];
+
+        for (const ep of chapterEpisodes) {
+          if (!ep.id) continue;
+
+          const episodeId = ep.id;
+          const episodeIndex = ep.episodeNum || chapterEpisodes.indexOf(ep) + 1;
+
+          // Step 4: Get panel states for each episode
+          let panels: PanelState[] = [];
+          try {
+            const panelsResponse = await getPanelStates(String(episodeId));
+            if (panelsResponse.code === 0 && panelsResponse.data) {
+              panels = panelsResponse.data;
+            }
+          } catch (err) {
+            console.warn(`Failed to load panels for episode ${episodeId}:`, err);
+          }
+
+          // Step 5: Aggregate panels into segments (4 panels per segment)
+          const segments: SegmentState[] = [];
+          const PANELS_PER_SEGMENT = 4;
+
+          for (let i = 0; i < panels.length; i += PANELS_PER_SEGMENT) {
+            const segmentPanels = panels.slice(i, i + PANELS_PER_SEGMENT);
+            const segmentIndex = Math.floor(i / PANELS_PER_SEGMENT);
+
+            // Build segment state from panels
+            const pipelineStep = mapPanelsToPipelineStep(segmentPanels);
+
+            // Use first panel's data as representative
+            const firstPanel = segmentPanels[0];
+            const sceneThumbnail = firstPanel?.fusionUrl || null;
+
+            // Build character avatars from dialogue (parse names from dialogue)
+            const characterAvatars: { name: string; avatarUrl: string }[] = [];
+            segmentPanels.forEach(panel => {
+              if (panel.dialogue) {
+                // Simple extraction: assume format "角色名: dialogue"
+                const match = panel.dialogue.match(/^([^:：]+)[:：]/);
+                if (match) {
+                  const name = match[1].trim();
+                  if (!characterAvatars.find(c => c.name === name)) {
+                    characterAvatars.push({ name, avatarUrl: '' });
+                  }
+                }
+              }
+            });
+
+            // Build comic URL from fusion URLs
+            const comicUrl = segmentPanels.every(p => p.fusionUrl)
+              ? segmentPanels.map(p => p.fusionUrl!).join(',')
+              : null;
+
+            // Build video URL
+            const videoUrl = segmentPanels.every(p => p.videoUrl)
+              ? segmentPanels.map(p => p.videoUrl!).join(',')
+              : null;
+
+            segments.push({
+              segmentIndex,
+              title: `片段 ${segmentIndex + 1}`,
+              synopsis: firstPanel?.sceneDescription || `片段 ${segmentIndex + 1}`,
+              sceneThumbnail,
+              characterAvatars,
+              pipelineStep,
+              comicUrl,
+              videoUrl,
+              feedback: '',
+            });
+          }
+
+          // If no segments, create a placeholder
+          if (segments.length === 0) {
+            segments.push({
+              segmentIndex: 0,
+              title: '片段 1',
+              synopsis: ep.content || '暂无简介',
+              sceneThumbnail: null,
+              characterAvatars: [],
+              pipelineStep: 'pending',
+              comicUrl: null,
+              videoUrl: null,
+              feedback: '',
+            });
+          }
+
+          episodeStates.push({
+            episodeId,
+            episodeIndex,
+            title: ep.title,
+            segments,
           });
         }
 
-        mockChapters.push({
+        builtChapters.push({
           chapterIndex,
-          title: `第${chapterIndex}章`,
-          episodes: episodesInChapter,
+          title: chapterTitle,
+          episodes: episodeStates,
         });
       }
 
-      setChapters(mockChapters);
+      setChapters(builtChapters);
     } catch (err: any) {
       console.error('Failed to load project data:', err);
       setError(err?.message || '加载失败');
     } finally {
       setLoading(false);
     }
-  }, [projectId, project.episodesPerChapter, project.totalEpisodes]);
+  }, [projectId]);
 
   /**
    * Toggle episode expansion (accordion mode)
@@ -125,6 +238,69 @@ const Step5page = ({ project }: Step5pageProps) => {
       expandedEpisodeId: prev.expandedEpisodeId === episodeId ? null : episodeId,
       expandedSegmentKey: null, // Close segment when switching episodes
     }));
+  }, []);
+
+  /**
+   * Toggle segment expansion
+   */
+  const toggleSegment = useCallback((segmentKey: string | null) => {
+    setExpansion(prev => ({
+      ...prev,
+      expandedSegmentKey: segmentKey,
+    }));
+  }, []);
+
+  /**
+   * Handle segment approve
+   */
+  const handleSegmentApprove = useCallback((episodeId: number, segmentIndex: number) => {
+    setChapters(prevChapters =>
+      prevChapters.map(chapter => ({
+        ...chapter,
+        episodes: chapter.episodes.map(ep => {
+          if (ep.episodeId !== episodeId) return ep;
+          return {
+            ...ep,
+            segments: ep.segments.map(seg => {
+              if (seg.segmentIndex !== segmentIndex) return seg;
+              return { ...seg, pipelineStep: 'comic_approved' as SegmentPipelineStep };
+            }),
+          };
+        }),
+      }))
+    );
+  }, []);
+
+  /**
+   * Handle segment regenerate
+   */
+  const handleSegmentRegenerate = useCallback((episodeId: number, segmentIndex: number, feedback: string) => {
+    // For now, just log. In future, call API to regenerate
+    console.log('Regenerate segment:', episodeId, segmentIndex, feedback);
+    // TODO: Call API to regenerate scene/comic
+  }, []);
+
+  /**
+   * Handle segment generate video
+   */
+  const handleSegmentGenerateVideo = useCallback((episodeId: number, segmentIndex: number) => {
+    // For now, just update local state
+    setChapters(prevChapters =>
+      prevChapters.map(chapter => ({
+        ...chapter,
+        episodes: chapter.episodes.map(ep => {
+          if (ep.episodeId !== episodeId) return ep;
+          return {
+            ...ep,
+            segments: ep.segments.map(seg => {
+              if (seg.segmentIndex !== segmentIndex) return seg;
+              return { ...seg, pipelineStep: 'video_generating' as SegmentPipelineStep };
+            }),
+          };
+        }),
+      }))
+    );
+    // TODO: Call API to generate video
   }, []);
 
   /**
@@ -162,30 +338,24 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [startPolling, stopPolling]);
 
   /**
-   * Render a placeholder episode card (will be replaced by EpisodeCard component in Task 3)
+   * Render episode card using EpisodeCard component
    */
-  const renderEpisodePlaceholder = (episode: EpisodeState) => {
+  const renderEpisodeCard = (chapterIndex: number, episode: EpisodeState) => {
     const isExpanded = expansion.expandedEpisodeId === episode.episodeId;
 
     return (
-      <div key={episode.episodeId} className={styles.episodePlaceholder}>
-        <div className={styles.episodeHeader} onClick={() => toggleEpisode(episode.episodeId)}>
-          <span className={styles.episodeTitle}>{episode.title}</span>
-          <span className={styles.episodeArrow}>{isExpanded ? '▼' : '▶'}</span>
-        </div>
-        {isExpanded && (
-          <div className={styles.episodeContent}>
-            <div className={styles.segmentsPlaceholder}>
-              {episode.segments.map(segment => (
-                <div key={segment.segmentIndex} className={styles.segmentPlaceholder}>
-                  <span>{segment.title}</span>
-                  <span className={styles.pipelineStatus}>{segment.pipelineStep}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <EpisodeCard
+        key={episode.episodeId}
+        chapterIndex={chapterIndex}
+        episode={episode}
+        isExpanded={isExpanded}
+        onToggle={() => toggleEpisode(episode.episodeId)}
+        expandedSegmentKey={expansion.expandedSegmentKey}
+        onSegmentToggle={toggleSegment}
+        onSegmentApprove={handleSegmentApprove}
+        onSegmentRegenerate={handleSegmentRegenerate}
+        onSegmentGenerateVideo={handleSegmentGenerateVideo}
+      />
     );
   };
 
@@ -301,9 +471,9 @@ const Step5page = ({ project }: Step5pageProps) => {
                 </div>
               </div>
 
-              {/* Episode cards (placeholder for now) */}
+              {/* Episode cards */}
               <div className={styles.episodeList}>
-                {chapter.episodes.map(ep => renderEpisodePlaceholder(ep))}
+                {chapter.episodes.map(ep => renderEpisodeCard(chapter.chapterIndex, ep))}
               </div>
             </div>
           );

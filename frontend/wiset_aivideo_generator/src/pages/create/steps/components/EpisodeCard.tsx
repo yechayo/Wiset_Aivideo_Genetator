@@ -1,6 +1,7 @@
 import { ChevronDownIcon, ChevronRightIcon } from '../../../../components/icons/Icons';
 import type { EpisodeState, SegmentState, SegmentPipelineStep } from '../types';
 import styles from './EpisodeCard.module.less';
+import { SegmentCard } from './SegmentCard';
 
 interface EpisodeCardProps {
   chapterIndex: number;
@@ -9,6 +10,9 @@ interface EpisodeCardProps {
   onToggle: () => void;
   expandedSegmentKey: string | null;
   onSegmentToggle: (key: string | null) => void;
+  onSegmentApprove: (episodeId: number, segmentIndex: number) => void;
+  onSegmentRegenerate: (episodeId: number, segmentIndex: number, feedback: string) => void;
+  onSegmentGenerateVideo: (episodeId: number, segmentIndex: number) => void;
 }
 
 /**
@@ -56,32 +60,28 @@ const EpisodeCard = ({
   onToggle,
   expandedSegmentKey,
   onSegmentToggle,
+  onSegmentApprove,
+  onSegmentRegenerate,
+  onSegmentGenerateVideo,
 }: EpisodeCardProps) => {
   const episodeStatus = getEpisodeStatus(episode.segments);
 
-  // 生成片段占位符（Task 4 会替换为 SegmentCard）
-  const segmentPlaceholders = episode.segments.map((segment) => {
+  // Render segment cards using SegmentCard component
+  const segmentCards = episode.segments.map((segment) => {
     const segmentKey = `${episode.episodeId}-${segment.segmentIndex}`;
     const isSegmentExpanded = expandedSegmentKey === segmentKey;
 
     return (
-      <div
+      <SegmentCard
         key={segment.segmentIndex}
-        className={styles.segmentPlaceholder}
-        onClick={() => onSegmentToggle(isSegmentExpanded ? null : segmentKey)}
-      >
-        <div className={styles.segmentHeader}>
-          <span className={styles.segmentIndex}>片段 {segment.segmentIndex + 1}</span>
-          <span className={styles.segmentTitle}>{segment.title}</span>
-          <span className={styles.segmentStatus} style={{ backgroundColor: getSegmentStatusColor(segment.pipelineStep) }} />
-        </div>
-        {isSegmentExpanded && (
-          <div className={styles.segmentContent}>
-            <p className={styles.segmentSynopsis}>{segment.synopsis}</p>
-            <p className={styles.segmentHint}>（SegmentCard 组件将在 Task 4 中实现）</p>
-          </div>
-        )}
-      </div>
+        episodeId={episode.episodeId}
+        segment={segment}
+        isExpanded={isSegmentExpanded}
+        onToggle={() => onSegmentToggle(isSegmentExpanded ? null : segmentKey)}
+        onApprove={() => onSegmentApprove(episode.episodeId, segment.segmentIndex)}
+        onRegenerate={(feedback) => onSegmentRegenerate(episode.episodeId, segment.segmentIndex, feedback)}
+        onGenerateVideo={() => onSegmentGenerateVideo(episode.episodeId, segment.segmentIndex)}
+      />
     );
   });
 
@@ -154,7 +154,7 @@ const EpisodeCard = ({
             </div>
           ) : (
             <div className={styles.segmentList}>
-              {segmentPlaceholders}
+              {segmentCards}
             </div>
           )}
         </div>
