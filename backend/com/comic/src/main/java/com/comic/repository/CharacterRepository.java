@@ -40,7 +40,7 @@ public interface CharacterRepository extends BaseMapper<Character> {
             wrapper.apply("JSON_EXTRACT(character_info, '$.role') = {0}", role);
         }
         if (name != null && !name.isEmpty()) {
-            wrapper.like("character_info", name);
+            wrapper.apply("JSON_EXTRACT(character_info, '$.name') LIKE {0}", "%" + name + "%");
         }
         return selectPage(page, wrapper);
     }
