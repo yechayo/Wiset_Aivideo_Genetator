@@ -1,12 +1,17 @@
 import React from 'react';
 import type { SegmentState, SegmentPipelineStep } from '../types';
 import styles from './SegmentCard.module.less';
+import { ComicPanel } from './ComicPanel';
+import VideoPanel from './VideoPanel';
 
 export interface SegmentCardProps {
   episodeId: number;
   segment: SegmentState;
   isExpanded: boolean;
   onToggle: () => void;
+  onApprove: () => void;
+  onRegenerate: (feedback: string) => void;
+  onGenerateVideo: () => void;
 }
 
 /**
@@ -40,13 +45,16 @@ const getPipelineStepStatus = (step: SegmentPipelineStep): {
 /**
  * SegmentCard 组件
  * - 折叠状态：单行显示（状态图标 + 片段编号 + 摘要 + 场景 + 角色 + 进度指示器）
- * - 展开状态：Header + 左右分栏内容区（ComicPanel 占位 + VideoPanel 占位）
+ * - 展开状态：Header + 左右分栏内容区（ComicPanel + VideoPanel）
  */
 export const SegmentCard: React.FC<SegmentCardProps> = ({
   episodeId: _episodeId, // eslint-disable-line @typescript-eslint/no-unused-vars
   segment,
   isExpanded,
   onToggle,
+  onApprove,
+  onRegenerate,
+  onGenerateVideo,
 }) => {
   const stepStatus = getPipelineStepStatus(segment.pipelineStep);
 
@@ -237,41 +245,23 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
       {/* 展开内容区 */}
       {isExpanded && (
         <div className={styles.content}>
-          {/* 左侧：四宫格漫画面板占位 */}
+          {/* 左侧：四宫格漫画面板 */}
           <div className={styles.panel}>
-            <div className={styles.panelPlaceholder}>
-              <div className={styles.placeholderIcon}>
-                <svg width="48" height="48" viewBox="0 0 16 16" fill="none">
-                  <rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1" />
-                  <rect x="9" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1" />
-                  <rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1" />
-                  <rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1" />
-                </svg>
-              </div>
-              <div className={styles.placeholderText}>四宫格漫画面板</div>
-              <div className={styles.placeholderHint}>Comic Panel Placeholder</div>
-            </div>
+            <ComicPanel
+              comicUrl={segment.comicUrl}
+              pipelineStep={segment.pipelineStep}
+              onApprove={onApprove}
+              onRegenerate={onRegenerate}
+            />
           </div>
 
-          {/* 右侧：AI 视频面板占位 */}
+          {/* 右侧：AI 视频面板 */}
           <div className={styles.panel}>
-            <div className={styles.panelPlaceholder}>
-              <div className={styles.placeholderIcon}>
-                <svg width="48" height="48" viewBox="0 0 16 16" fill="none">
-                  <path
-                    d="M2 4C2 3.44772 2.44772 3 3 3H13C13.5523 3 14 3.44772 14 4V12C14 12.5523 13.5523 13 13 13H3C2.44772 13 2 12.5523 2 12V4Z"
-                    stroke="currentColor"
-                    strokeWidth="1"
-                  />
-                  <path
-                    d="M7 6.5V9.5L10 8L7 6.5Z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </div>
-              <div className={styles.placeholderText}>AI 视频面板</div>
-              <div className={styles.placeholderHint}>Video Panel Placeholder</div>
-            </div>
+            <VideoPanel
+              videoUrl={segment.videoUrl}
+              pipelineStep={segment.pipelineStep}
+              onGenerateVideo={onGenerateVideo}
+            />
           </div>
         </div>
       )}
