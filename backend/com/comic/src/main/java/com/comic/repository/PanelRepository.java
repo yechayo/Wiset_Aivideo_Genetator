@@ -15,4 +15,10 @@ public interface PanelRepository extends BaseMapper<Panel> {
             .eq(Panel::getEpisodeId, episodeId)
             .orderByAsc(Panel::getId));
     }
+
+    default Panel findByEpisodeIdAndId(Long episodeId, Long panelId) {
+        return selectOne(new LambdaQueryWrapper<Panel>()
+            .eq(Panel::getEpisodeId, episodeId)
+            .eq(Panel::getId, panelId));
+    }
 }
