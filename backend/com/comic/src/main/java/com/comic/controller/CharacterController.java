@@ -1,11 +1,11 @@
 package com.comic.controller;
 
-import com.comic.common.CharacterInfoKeys;
 import com.comic.common.Result;
 import com.comic.dto.model.CharacterDraftModel;
+import com.comic.dto.request.CharacterUpdateRequest;
+import com.comic.dto.response.CharacterListItemResponse;
 import com.comic.dto.response.CharacterStatusResponse;
-import com.comic.entity.Character;
-import com.comic.repository.CharacterRepository;
+import com.comic.dto.response.PaginatedResponse;
 import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -17,13 +17,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 
-/**
- * 角色管理接口
- */
 @RestController
-@RequestMapping("/api/characters")
+@RequestMapping("/api/projects/{projectId}/characters")
 @RequiredArgsConstructor
 @Tag(name = "角色管理")
 @SecurityRequirement(name = "bearerAuth")
@@ -31,162 +27,118 @@ public class CharacterController {
 
     private final CharacterExtractService characterExtractService;
     private final CharacterImageGenerationService characterImageGenerationService;
-    private final CharacterRepository characterRepository;
 
-    /**
-     * 从剧本中提取角色
-     */
+    // ================= CRUD 接口 =================
+
+    @GetMapping
+    @Operation(summary = "获取项目角色列表（分页）")
+    public Result<PaginatedResponse<CharacterListItemResponse>> getProjectCharacters(
+            @PathVariable String projectId,
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页数量") @RequestParam(defaultValue = "10") int size,
+            @Parameter(description = "角色类型筛选") @RequestParam(required = false) String role,
+            @Parameter(description = "角色名称模糊搜索") @RequestParam(required = false) String name) {
+        return Result.ok(characterExtractService.getProjectCharactersPage(projectId, role, name, page, size));
+    }
+
+    @GetMapping("/{charId}")
+    @Operation(summary = "获取角色详情")
+    public Result<CharacterStatusResponse> getCharacterDetail(
+            @PathVariable String projectId,
+            @PathVariable String charId) {
+        return Result.ok(characterImageGenerationService.getGenerationStatus(charId));
+    }
+
     @PostMapping("/extract")
-    @Operation(summary = "提取角色", description = "从剧本中自动提取角色信息。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<List<CharacterDraftModel>> extractCharacters(@RequestBody Map<String, String> body) {
-        String projectId = body.get("projectId");
+    @Operation(summary = "提取角色", description = "从剧本中自动提取角色信息")
+    public Result<List<CharacterDraftModel>> extractCharacters(@PathVariable String projectId) {
         List<CharacterDraftModel> characters = characterExtractService.extractCharacters(projectId);
         return Result.ok(characters);
     }
 
-    /**
-     * 获取项目角色列表
-     */
-    @GetMapping
-    @Operation(summary = "获取项目角色列表", description = "获取指定项目的所有角色信息。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<List<CharacterDraftModel>> getProjectCharacters(
-            @Parameter(description = "项目ID", required = true) @RequestParam String projectId) {
-        List<CharacterDraftModel> characters = characterExtractService.getProjectCharacters(projectId);
-        return Result.ok(characters);
-    }
-
-    /**
-     * 编辑角色特征
-     */
     @PutMapping("/{charId}")
-    @Operation(summary = "编辑角色", description = "更新角色信息。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
+    @Operation(summary = "更新角色信息")
     public Result<Void> updateCharacter(
-            @Parameter(description = "角色ID", required = true) @PathVariable String charId,
-            @RequestBody CharacterDraftModel dto) {
+            @PathVariable String projectId,
+            @PathVariable String charId,
+            @RequestBody CharacterUpdateRequest dto) {
         characterExtractService.updateCharacter(charId, dto);
         return Result.ok();
     }
 
-    /**
-     * 确认所有角色
-     */
+    @DeleteMapping("/{charId}")
+    @Operation(summary = "删除角色（逻辑删除）")
+    public Result<Void> deleteCharacter(
+            @PathVariable String projectId,
+            @PathVariable String charId) {
+        characterExtractService.deleteCharacter(charId);
+        return Result.ok();
+    }
+
+    // ================= 确认接口 =================
+
     @PostMapping("/confirm")
-    @Operation(summary = "确认角色", description = "确认项目的所有角色，锁定角色数据。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<Void> confirmCharacters(@RequestBody Map<String, String> body) {
-        String projectId = body.get("projectId");
+    @Operation(summary = "确认角色", description = "确认项目的所有角色，锁定角色数据")
+    public Result<Void> confirmCharacters(@PathVariable String projectId) {
         characterExtractService.confirmCharacters(projectId);
         return Result.ok();
     }
 
-    // ================= 角色图片生成相关接口 =================
+    // ================= 图片生成接口 =================
 
-    /**
-     * 生成角色九宫格表情大全图
-     */
-    @PostMapping("/{charId}/generate-expression")
-    @Operation(summary = "生成九宫格表情", description = "为指定角色生成九宫格表情大全图。配角会自动跳过。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
+    @PostMapping("/{charId}/generate/expression")
+    @Operation(summary = "生成九宫格表情")
     public Result<Void> generateExpression(
-            @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
+            @PathVariable String projectId,
+            @PathVariable String charId) {
         characterImageGenerationService.generateExpressionSheet(charId);
         return Result.ok();
     }
 
-    /**
-     * 设置角色视觉风格
-     */
+    @PostMapping("/{charId}/generate/three-view")
+    @Operation(summary = "生成三视图")
+    public Result<Void> generateThreeView(
+            @PathVariable String projectId,
+            @PathVariable String charId) {
+        characterImageGenerationService.generateThreeViewSheet(charId);
+        return Result.ok();
+    }
+
+    @PostMapping("/{charId}/generate/all")
+    @Operation(summary = "一键生成（表情+三视图）")
+    public Result<Void> generateAll(
+            @PathVariable String projectId,
+            @PathVariable String charId) {
+        characterImageGenerationService.generateAll(charId);
+        return Result.ok();
+    }
+
     @PutMapping("/{charId}/visual-style")
-    @Operation(summary = "设置视觉风格", description = "设置角色的视觉风格（3D/REAL/ANIME）。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
+    @Operation(summary = "设置视觉风格")
     public Result<Void> setVisualStyle(
-            @Parameter(description = "角色ID", required = true) @PathVariable String charId,
+            @PathVariable String projectId,
+            @PathVariable String charId,
             @RequestBody Map<String, String> body) {
         String visualStyle = body.get("visualStyle");
         characterImageGenerationService.setVisualStyle(charId, visualStyle);
         return Result.ok();
     }
 
-    /**
-     * 生成角色三视图大全图
-     */
-    @PostMapping("/{charId}/generate-three-view")
-    @Operation(summary = "生成三视图", description = "为指定角色生成三视图大全图（正面、侧面、背面）。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<Void> generateThreeView(
-            @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
-        characterImageGenerationService.generateThreeViewSheet(charId);
-        return Result.ok();
-    }
-
-    /**
-     * 一键生成全部（表情+三视图）
-     */
-    @PostMapping("/{charId}/generate-all")
-    @Operation(summary = "一键生成", description = "为指定角色生成全部图片（九宫格表情+三视图）。配角会跳过表情生成。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<Void> generateAll(
-            @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
-        characterImageGenerationService.generateAll(charId);
-        return Result.ok();
-    }
-
-    /**
-     * 重试生成
-     */
     @PostMapping("/{charId}/retry/{type}")
-    @Operation(summary = "重试生成", description = "重新生成指定类型的图片。type: expression 或 threeView。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
+    @Operation(summary = "重试生成")
     public Result<Void> retryGeneration(
-            @Parameter(description = "角色ID", required = true) @PathVariable String charId,
-            @Parameter(description = "生成类型: expression 或 threeView", required = true) @PathVariable String type) {
+            @PathVariable String projectId,
+            @PathVariable String charId,
+            @PathVariable String type) {
         characterImageGenerationService.retryGeneration(charId, type);
         return Result.ok();
     }
 
-    /**
-     * 获取生成状态
-     */
     @GetMapping("/{charId}/status")
-    @Operation(summary = "获取生成状态", description = "获取角色的图片生成状态和已生成的图片URL。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
+    @Operation(summary = "获取生成状态")
     public Result<CharacterStatusResponse> getGenerationStatus(
-            @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
-        Character character = characterRepository.findByCharId(charId);
-        if (character == null) {
-            return Result.fail("角色不存在");
-        }
-
-        Map<String, Object> info = character.getCharacterInfo();
-        CharacterStatusResponse dto = new CharacterStatusResponse();
-        dto.setCharId(getInfoStr(info, CharacterInfoKeys.CHAR_ID));
-        dto.setName(getInfoStr(info, CharacterInfoKeys.NAME));
-        dto.setRole(getInfoStr(info, CharacterInfoKeys.ROLE));
-        dto.setExpressionStatus(getInfoStr(info, CharacterInfoKeys.EXPRESSION_STATUS));
-        dto.setThreeViewStatus(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_STATUS));
-        dto.setExpressionError(getInfoStr(info, CharacterInfoKeys.EXPRESSION_ERROR));
-        dto.setThreeViewError(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_ERROR));
-        dto.setIsGeneratingExpression(getInfoBool(info, CharacterInfoKeys.IS_GENERATING_EXPRESSION));
-        dto.setIsGeneratingThreeView(getInfoBool(info, CharacterInfoKeys.IS_GENERATING_THREE_VIEW));
-        dto.setVisualStyle(getInfoStr(info, CharacterInfoKeys.VISUAL_STYLE));
-        dto.setExpressionGridUrl(getInfoStr(info, CharacterInfoKeys.EXPRESSION_GRID_URL));
-        dto.setThreeViewGridUrl(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_GRID_URL));
-
-        return Result.ok(dto);
-    }
-
-    /**
-     * 获取单个角色详情
-     */
-    @GetMapping("/{charId}")
-    @Operation(summary = "获取角色详情", description = "获取指定角色的详细信息。需要在 Header 中传递 JWT Token：Authorization: Bearer {token}")
-    public Result<CharacterStatusResponse> getCharacterDetail(
-            @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
-        return getGenerationStatus(charId);
-    }
-
-    private String getInfoStr(Map<String, Object> info, String key) {
-        Object v = info != null ? info.get(key) : null;
-        return v != null ? v.toString() : null;
-    }
-
-    private Boolean getInfoBool(Map<String, Object> info, String key) {
-        Object v = info != null ? info.get(key) : null;
-        if (v == null) return null;
-        if (v instanceof Boolean) return (Boolean) v;
-        return Boolean.valueOf(v.toString());
+            @PathVariable String projectId,
+            @PathVariable String charId) {
+        return Result.ok(characterImageGenerationService.getGenerationStatus(charId));
     }
 }
