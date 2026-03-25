@@ -2,6 +2,8 @@ package com.comic.service.character;
 
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
+import com.comic.common.CharacterInfoKeys;
+import com.comic.common.ProjectInfoKeys;
 import com.comic.common.ProjectStatus;
 import com.comic.dto.model.CharacterDraftModel;
 import com.comic.entity.Character;
@@ -17,10 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 
-/**
- * 角色提取服务
- * 从已确认的剧本中自动提取角色
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -31,9 +29,6 @@ public class CharacterExtractService {
     private final TextGenerationService textGenerationService;
     private final ObjectMapper objectMapper;
 
-    /**
-     * 从剧本中提取角色
-     */
     @Transactional
     public List<CharacterDraftModel> extractCharacters(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
@@ -47,20 +42,17 @@ public class CharacterExtractService {
             throw new BusinessException("请先确认剧本后再提取角色");
         }
 
-        // 更新项目状态
         project.setStatus(ProjectStatus.CHARACTER_EXTRACTING.getCode());
         projectRepository.updateById(project);
 
         try {
-            // 从项目大纲中提取角色（大纲包含完整的角色设定，且比逐集剧本紧凑）
-            String outline = project.getScriptOutline();
+            String outline = getScriptOutlineText(project);
             if (outline == null || outline.trim().isEmpty()) {
                 throw new BusinessException("项目大纲为空，无法提取角色");
             }
 
-            String storyPrompt = project.getStoryPrompt();
+            String storyPrompt = getProjectInfoStr(project, ProjectInfoKeys.STORY_PROMPT);
 
-            // 构建prompt
             String systemPrompt = "你是一个专业的角色设计师，擅长从故事大纲中提取和分析角色信息。\n\n"
                     + "请仔细阅读以下故事大纲，提取出所有重要角色，并为每个角色生成详细的角色档案。\n"
                     + "角色定位只能是以下三种之一：主角、反派、配角";
@@ -76,16 +68,12 @@ public class CharacterExtractService {
                     + "6. 返回格式示例：[{\"name\":\"张三\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\"}]\n\n"
                     + "请直接返回JSON数组：";
 
-            // 调用AI提取角色
             String result = textGenerationService.generate(systemPrompt, userPrompt);
 
-            // 解析结果
             List<CharacterDraftModel> characters = parseCharacters(result, projectId);
 
-            // 保存到数据库
             saveCharacters(projectId, characters);
 
-            // 更新项目状态
             project.setStatus(ProjectStatus.CHARACTER_REVIEW.getCode());
             projectRepository.updateById(project);
 
@@ -100,75 +88,64 @@ public class CharacterExtractService {
         }
     }
 
-    /**
-     * 确认所有角色
-     * 用户确认角色特征后，锁定数据
-     */
     @Transactional
     public void confirmCharacters(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
             throw new BusinessException("项目不存在");
         }
-
         if (!ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
             throw new BusinessException("当前状态不能确认角色");
         }
-
-        // 将所有角色标记为已确认
         List<Character> characters = characterRepository.findByProjectId(projectId);
         for (Character character : characters) {
-            character.setConfirmed(true);
-            characterRepository.updateById(character);
+            Map<String, Object> info = character.getCharacterInfo();
+            if (info != null) {
+                info.put(CharacterInfoKeys.CONFIRMED, true);
+                character.setCharacterInfo(info);
+                characterRepository.updateById(character);
+            }
         }
-
         project.setStatus(ProjectStatus.CHARACTER_CONFIRMED.getCode());
         projectRepository.updateById(project);
-
         log.info("角色已确认: projectId={}", projectId);
     }
 
-    /**
-     * 编辑角色特征
-     */
     @Transactional
     public void updateCharacter(String charId, CharacterDraftModel dto) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
             throw new BusinessException("角色不存在");
         }
-
-        character.setName(dto.getName());
-        character.setRole(dto.getRole());
-        character.setPersonality(dto.getPersonality());
-        character.setAppearance(dto.getAppearance());
-        character.setBackground(dto.getBackground());
-        character.setConfirmed(dto.getConfirmed());
-
+        Map<String, Object> info = character.getCharacterInfo();
+        if (info == null) info = new HashMap<>();
+        info.put(CharacterInfoKeys.NAME, dto.getName());
+        info.put(CharacterInfoKeys.ROLE, dto.getRole());
+        info.put("personality", dto.getPersonality());
+        info.put(CharacterInfoKeys.APPEARANCE, dto.getAppearance());
+        info.put(CharacterInfoKeys.BACKGROUND, dto.getBackground());
+        info.put(CharacterInfoKeys.CONFIRMED, dto.getConfirmed());
+        character.setCharacterInfo(info);
         characterRepository.updateById(character);
-
         log.info("角色已更新: charId={}", charId);
     }
 
-    /**
-     * 获取项目角色列表
-     */
     public List<CharacterDraftModel> getProjectCharacters(String projectId) {
         List<Character> characters = characterRepository.findByProjectId(projectId);
         List<CharacterDraftModel> result = new ArrayList<>();
-
         for (Character character : characters) {
+            Map<String, Object> info = character.getCharacterInfo();
+            if (info == null) continue;
             CharacterDraftModel dto = new CharacterDraftModel();
-            dto.setCharId(character.getCharId());
-            dto.setName(character.getName());
-            dto.setRole(character.getRole());
-            dto.setPersonality(character.getPersonality());
-            dto.setAppearance(character.getAppearance());
-            dto.setBackground(character.getBackground());
-            dto.setConfirmed(character.getConfirmed());
+            dto.setCharId(getInfoStr(info, CharacterInfoKeys.CHAR_ID));
+            dto.setName(getInfoStr(info, CharacterInfoKeys.NAME));
+            dto.setRole(getInfoStr(info, CharacterInfoKeys.ROLE));
+            dto.setPersonality(getInfoStr(info, "personality"));
+            dto.setAppearance(getInfoStr(info, CharacterInfoKeys.APPEARANCE));
+            dto.setBackground(getInfoStr(info, CharacterInfoKeys.BACKGROUND));
+            dto.setConfirmed(getInfoBool(info, CharacterInfoKeys.CONFIRMED));
             result.add(dto);
         }
-
         return result;
     }
 
@@ -176,11 +153,9 @@ public class CharacterExtractService {
 
     private List<CharacterDraftModel> parseCharacters(String jsonResult, String projectId) {
         try {
-            // 先清理AI返回的内容，去除可能的markdown标记和多余文字
             String cleanJson = extractJsonFromResponse(jsonResult);
             log.info("清理后的JSON: {}", cleanJson);
 
-            // 解析JSON
             List<Map<String, Object>> dataList = objectMapper.readValue(
                 cleanJson,
                 new TypeReference<List<Map<String, Object>>>() {}
@@ -206,10 +181,6 @@ public class CharacterExtractService {
         }
     }
 
-    /**
-     * 从AI返回的内容中提取纯JSON
-     * 处理可能的markdown代码块标记和多余文字
-     */
     private String extractJsonFromResponse(String response) {
         if (response == null || response.isEmpty()) {
             return response;
@@ -217,19 +188,16 @@ public class CharacterExtractService {
 
         String cleaned = response.trim();
 
-        // 去除开头的markdown代码块标记
         if (cleaned.startsWith("```json")) {
             cleaned = cleaned.substring(7);
         } else if (cleaned.startsWith("```")) {
             cleaned = cleaned.substring(3);
         }
 
-        // 去除结尾的markdown代码块标记
         if (cleaned.endsWith("```")) {
             cleaned = cleaned.substring(0, cleaned.length() - 3);
         }
 
-        // 尝试提取JSON数组（从第一个 [ 到最后一个 ]）
         int startIndex = cleaned.indexOf('[');
         int endIndex = cleaned.lastIndexOf(']');
 
@@ -240,9 +208,6 @@ public class CharacterExtractService {
         return cleaned.trim();
     }
 
-    /**
-     * 安全地从Map中获取字符串值
-     */
     private String getStringValue(Map<String, Object> data, String key) {
         Object value = data.get(key);
         if (value == null) {
@@ -252,34 +217,66 @@ public class CharacterExtractService {
     }
 
     private void saveCharacters(String projectId, List<CharacterDraftModel> characters) {
-        // 查询项目，获取视觉风格
         Project project = projectRepository.findByProjectId(projectId);
-        String visualStyle = (project != null && project.getVisualStyle() != null)
-                ? project.getVisualStyle() : "3D";
+        String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
+        if (visualStyle == null) visualStyle = "3D";
 
-        // 先删除旧的角色数据
         List<Character> oldCharacters = characterRepository.findByProjectId(projectId);
         for (Character old : oldCharacters) {
             characterRepository.deleteById(old.getId());
         }
 
-        // 保存新的角色数据
         for (CharacterDraftModel dto : characters) {
             Character character = new Character();
             character.setProjectId(projectId);
-            character.setCharId(dto.getCharId());
-            character.setName(dto.getName());
-            character.setRole(dto.getRole());
-            character.setPersonality(dto.getPersonality());
-            character.setAppearance(dto.getAppearance());
-            character.setBackground(dto.getBackground());
-            character.setConfirmed(false);
-            character.setVisualStyle(visualStyle);
+
+            Map<String, Object> info = new HashMap<>();
+            info.put(CharacterInfoKeys.CHAR_ID, dto.getCharId());
+            info.put(CharacterInfoKeys.NAME, dto.getName());
+            info.put(CharacterInfoKeys.ROLE, dto.getRole());
+            info.put("personality", dto.getPersonality());
+            info.put(CharacterInfoKeys.APPEARANCE, dto.getAppearance());
+            info.put(CharacterInfoKeys.BACKGROUND, dto.getBackground());
+            info.put(CharacterInfoKeys.CONFIRMED, false);
+            info.put(CharacterInfoKeys.VISUAL_STYLE, visualStyle);
+            character.setCharacterInfo(info);
+
             characterRepository.insert(character);
         }
     }
 
     private String generateCharId(String projectId) {
         return "CHAR-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private String getProjectInfoStr(Project project, String key) {
+        Map<String, Object> info = project.getProjectInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private String getInfoStr(Map<String, Object> info, String key) {
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private Boolean getInfoBool(Map<String, Object> info, String key) {
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? Boolean.valueOf(v.toString()) : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getScriptMap(Project project) {
+        Map<String, Object> info = project.getProjectInfo();
+        if (info == null) return null;
+        Object script = info.get(ProjectInfoKeys.SCRIPT);
+        return script instanceof Map ? (Map<String, Object>) script : null;
+    }
+
+    private String getScriptOutlineText(Project project) {
+        Map<String, Object> scriptMap = getScriptMap(project);
+        if (scriptMap == null) return null;
+        Object outline = scriptMap.get(ProjectInfoKeys.SCRIPT_OUTLINE);
+        return outline != null ? outline.toString() : null;
     }
 }

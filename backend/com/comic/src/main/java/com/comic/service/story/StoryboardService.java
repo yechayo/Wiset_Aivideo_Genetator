@@ -4,6 +4,7 @@ import com.comic.ai.PromptBuilder;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.AiCallException;
 import com.comic.common.BusinessException;
+import com.comic.common.EpisodeInfoKeys;
 import com.comic.common.ProjectStatus;
 import com.comic.dto.model.CharacterStateModel;
 import com.comic.dto.model.WorldConfigModel;
@@ -45,19 +46,19 @@ public class StoryboardService {
     private final ObjectMapper objectMapper;
     private final PromptBuilder promptBuilder;
 
-    private static final Set<String> ALLOWED_SHOT_TYPES = new HashSet<String>(Arrays.asList(
+    private static final Set<String> ALLOWED_SHOT_TYPES = new HashSet<>(Arrays.asList(
             "WIDE_SHOT", "MID_SHOT", "CLOSE_UP", "OVER_SHOULDER"
     ));
-    private static final Set<String> ALLOWED_CAMERA_ANGLES = new HashSet<String>(Arrays.asList(
+    private static final Set<String> ALLOWED_CAMERA_ANGLES = new HashSet<>(Arrays.asList(
             "eye_level", "low_angle", "high_angle", "bird_eye"
     ));
-    private static final Set<String> ALLOWED_PACING = new HashSet<String>(Arrays.asList(
+    private static final Set<String> ALLOWED_PACING = new HashSet<>(Arrays.asList(
             "slow", "normal", "fast"
     ));
-    private static final Set<String> ALLOWED_BUBBLE_TYPES = new HashSet<String>(Arrays.asList(
+    private static final Set<String> ALLOWED_BUBBLE_TYPES = new HashSet<>(Arrays.asList(
             "speech", "thought", "narration_box"
     ));
-    private static final Set<String> ALLOWED_COSTUME_STATE = new HashSet<String>(Arrays.asList(
+    private static final Set<String> ALLOWED_COSTUME_STATE = new HashSet<>(Arrays.asList(
             "normal", "battle_worn"
     ));
     private static final String DEFAULT_CHARACTER_POSITION = "center";
@@ -69,6 +70,31 @@ public class StoryboardService {
     @Autowired
     private PipelineService pipelineService;
 
+    // ==================== Map 辅助方法 ====================
+
+    private Map<String, Object> epInfo(Episode episode) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        if (info == null) {
+            info = new HashMap<>();
+            episode.setEpisodeInfo(info);
+        }
+        return info;
+    }
+
+    private String getEpInfoStr(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private Integer getEpInfoInt(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? ((Number) v).intValue() : null;
+    }
+
+    // ==================== 公开方法 ====================
+
     public String generateStoryboard(Long episodeId) {
         Episode episode = episodeRepository.selectById(episodeId);
         if (episode == null) {
@@ -76,23 +102,23 @@ public class StoryboardService {
         }
 
         episode.setStatus("STORYBOARD_GENERATING");
-        episode.setRetryCount(0);
-        episode.setErrorMsg(null);
+        epInfo(episode).put(EpisodeInfoKeys.RETRY_COUNT, 0);
+        epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
         episodeRepository.updateById(episode);
 
         try {
             String result = generateWithRetry(episode);
 
-            episode.setStoryboardJson(result);
+            epInfo(episode).put("storyboardJson", result);
             episode.setStatus("STORYBOARD_DONE");
-            episode.setErrorMsg(null);
+            epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
             episodeRepository.updateById(episode);
 
-            log.info("Storyboard generated: episodeId={}, episodeNum={}", episodeId, episode.getEpisodeNum());
+            log.info("Storyboard generated: episodeId={}, episodeNum={}", episodeId, getEpInfoInt(episode, EpisodeInfoKeys.EPISODE_NUM));
             return result;
         } catch (Exception e) {
             episode.setStatus("STORYBOARD_FAILED");
-            episode.setErrorMsg(e.getMessage());
+            epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, e.getMessage());
             episodeRepository.updateById(episode);
             throw e;
         }
@@ -105,23 +131,23 @@ public class StoryboardService {
         }
 
         episode.setStatus("STORYBOARD_GENERATING");
-        episode.setRetryCount(0);
-        episode.setErrorMsg(null);
+        epInfo(episode).put(EpisodeInfoKeys.RETRY_COUNT, 0);
+        epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
         episodeRepository.updateById(episode);
 
         try {
             String result = generateWithRetryAndFeedback(episode, feedback);
 
-            episode.setStoryboardJson(result);
+            epInfo(episode).put("storyboardJson", result);
             episode.setStatus("STORYBOARD_DONE");
-            episode.setErrorMsg(null);
+            epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
             episodeRepository.updateById(episode);
 
-            log.info("Storyboard revised: episodeId={}, episodeNum={}", episodeId, episode.getEpisodeNum());
+            log.info("Storyboard revised: episodeId={}, episodeNum={}", episodeId, getEpInfoInt(episode, EpisodeInfoKeys.EPISODE_NUM));
             return result;
         } catch (Exception e) {
             episode.setStatus("STORYBOARD_FAILED");
-            episode.setErrorMsg(e.getMessage());
+            epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, e.getMessage());
             episodeRepository.updateById(episode);
             throw e;
         }
@@ -250,6 +276,8 @@ public class StoryboardService {
         pipelineService.advancePipeline(projectId, "start_production");
     }
 
+    // ==================== 私有方法 ====================
+
     private void generateSingleEpisodeAsync(String projectId, Episode episode) {
         final Long epId = episode.getId();
         new Thread(() -> {
@@ -257,7 +285,10 @@ public class StoryboardService {
                 generateStoryboard(epId);
                 pipelineService.advancePipeline(projectId, "storyboard_generated");
             } catch (Exception e) {
-                log.error("Storyboard generation failed: episodeId={}, episodeNum={}", epId, episode.getEpisodeNum(), e);
+                Integer epNum = null;
+                Episode ep = episodeRepository.selectById(epId);
+                if (ep != null) epNum = getEpInfoInt(ep, EpisodeInfoKeys.EPISODE_NUM);
+                log.error("Storyboard generation failed: episodeId={}, episodeNum={}", epId, epNum != null ? epNum : "unknown", e);
                 updateEpisodeToFailedIfNeeded(epId, e.getMessage());
                 updateProjectToFailed(projectId);
             }
@@ -277,10 +308,11 @@ public class StoryboardService {
             }
         }
         for (Episode ep : episodes) {
-            // Recover stale generating episodes (e.g. app restarted while generating).
-            if ("STORYBOARD_GENERATING".equals(ep.getStatus())
-                    && (ep.getStoryboardJson() == null || ep.getStoryboardJson().trim().isEmpty())) {
-                return ep;
+            if ("STORYBOARD_GENERATING".equals(ep.getStatus())) {
+                String errorMsg = getEpInfoStr(ep, EpisodeInfoKeys.ERROR_MSG);
+                if (errorMsg != null && !errorMsg.trim().isEmpty()) {
+                    return ep;
+                }
             }
         }
         return null;
@@ -301,10 +333,14 @@ public class StoryboardService {
         if ("STORYBOARD_FAILED".equals(episode.getStatus())) {
             return true;
         }
-        return "STORYBOARD_GENERATING".equals(episode.getStatus())
-                && episode.getErrorMsg() != null
-                && !episode.getErrorMsg().trim().isEmpty()
-                && (episode.getStoryboardJson() == null || episode.getStoryboardJson().trim().isEmpty());
+        if ("STORYBOARD_GENERATING".equals(episode.getStatus())) {
+            Map<String, Object> info = episode.getEpisodeInfo();
+            if (info != null) {
+                Object errorMsg = info.get(EpisodeInfoKeys.ERROR_MSG);
+                return errorMsg != null && !errorMsg.toString().trim().isEmpty();
+            }
+        }
+        return false;
     }
 
     private void markEpisodeGenerating(Episode episode) {
@@ -312,8 +348,8 @@ public class StoryboardService {
             return;
         }
         episode.setStatus("STORYBOARD_GENERATING");
-        episode.setRetryCount(0);
-        episode.setErrorMsg(null);
+        epInfo(episode).put(EpisodeInfoKeys.RETRY_COUNT, 0);
+        epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
         episodeRepository.updateById(episode);
     }
 
@@ -323,17 +359,15 @@ public class StoryboardService {
             return;
         }
 
-        boolean hasStoryboard = episode.getStoryboardJson() != null
-                && !episode.getStoryboardJson().trim().isEmpty();
         boolean alreadyFinalized = "STORYBOARD_DONE".equals(episode.getStatus())
                 || "STORYBOARD_CONFIRMED".equals(episode.getStatus());
-        if (hasStoryboard && alreadyFinalized) {
+        if (alreadyFinalized) {
             return;
         }
 
         episode.setStatus("STORYBOARD_FAILED");
         if (errorMsg != null && !errorMsg.trim().isEmpty()) {
-            episode.setErrorMsg(errorMsg);
+            epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, errorMsg);
         }
         episodeRepository.updateById(episode);
     }
@@ -360,7 +394,7 @@ public class StoryboardService {
                 validateStoryboardJson(normalizedNode);
                 characterService.updateStatesFromStoryboard(episode.getProjectId(), normalizedNode);
 
-                episode.setRetryCount(attempt - 1);
+                epInfo(episode).put(EpisodeInfoKeys.RETRY_COUNT, attempt - 1);
                 return normalizedJson;
             } catch (AiCallException e) {
                 throw e;
@@ -378,6 +412,49 @@ public class StoryboardService {
         }
 
         throw new RuntimeException("Storyboard generation failed after retries: "
+                + (lastError != null ? lastError.getMessage() : "unknown"));
+    }
+
+    private String generateWithRetryAndFeedback(Episode episode, String feedback) {
+        WorldConfigModel world = worldRuleService.getWorldConfig(episode.getProjectId());
+        List<CharacterStateModel> charStates = characterService.getCurrentStates(episode.getProjectId());
+
+        String systemPrompt = buildSystemPrompt(world, charStates);
+        String userPrompt = buildRevisionUserPrompt(episode, feedback);
+
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                String currentSystemPrompt = buildRetrySystemPrompt(systemPrompt, attempt, lastError);
+
+                String rawResult = textGenerationService.generate(currentSystemPrompt, userPrompt);
+                String cleanResult = cleanJsonOutput(rawResult);
+
+                JsonNode jsonNode = objectMapper.readTree(cleanResult);
+                JsonNode normalizedNode = normalizeStoryboardJson(jsonNode, episode, charStates);
+                String normalizedJson = objectMapper.writeValueAsString(normalizedNode);
+
+                validateStoryboardJson(normalizedNode);
+                characterService.updateStatesFromStoryboard(episode.getProjectId(), normalizedNode);
+
+                epInfo(episode).put(EpisodeInfoKeys.RETRY_COUNT, attempt - 1);
+                return normalizedJson;
+            } catch (AiCallException e) {
+                throw e;
+            } catch (Exception e) {
+                lastError = e;
+                log.warn("Storyboard revision attempt failed: episodeId={}, attempt={}", episode.getId(), attempt, e);
+                if (attempt < 3) {
+                    try {
+                        Thread.sleep(2000L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+        }
+
+        throw new RuntimeException("Storyboard revision failed after retries: "
                 + (lastError != null ? lastError.getMessage() : "unknown"));
     }
 
@@ -406,18 +483,18 @@ public class StoryboardService {
 
     private void normalizePanelId(ObjectNode panel, Episode episode, int panelIndex) {
         if (!hasNonBlankText(panel, "panel_id")) {
-            panel.put("panel_id", buildPanelId(episode.getEpisodeNum(), panelIndex));
+            panel.put("panel_id", buildPanelId(getEpInfoInt(episode, EpisodeInfoKeys.EPISODE_NUM), panelIndex));
             return;
         }
 
         JsonNode panelId = panel.get("panel_id");
         if (panelId != null && !panelId.isTextual()) {
-            panel.put("panel_id", buildPanelId(episode.getEpisodeNum(), panelIndex));
+            panel.put("panel_id", buildPanelId(getEpInfoInt(episode, EpisodeInfoKeys.EPISODE_NUM), panelIndex));
         }
     }
 
     private Map<String, String> buildCharacterLookup(List<CharacterStateModel> charStates) {
-        Map<String, String> lookup = new HashMap<String, String>();
+        Map<String, String> lookup = new HashMap<>();
         if (charStates == null) {
             return lookup;
         }
@@ -535,49 +612,6 @@ public class StoryboardService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private String generateWithRetryAndFeedback(Episode episode, String feedback) {
-        WorldConfigModel world = worldRuleService.getWorldConfig(episode.getProjectId());
-        List<CharacterStateModel> charStates = characterService.getCurrentStates(episode.getProjectId());
-
-        String systemPrompt = buildSystemPrompt(world, charStates);
-        String userPrompt = buildRevisionUserPrompt(episode, feedback);
-
-        Exception lastError = null;
-        for (int attempt = 1; attempt <= 3; attempt++) {
-            try {
-                String currentSystemPrompt = buildRetrySystemPrompt(systemPrompt, attempt, lastError);
-
-                String rawResult = textGenerationService.generate(currentSystemPrompt, userPrompt);
-                String cleanResult = cleanJsonOutput(rawResult);
-
-                JsonNode jsonNode = objectMapper.readTree(cleanResult);
-                JsonNode normalizedNode = normalizeStoryboardJson(jsonNode, episode, charStates);
-                String normalizedJson = objectMapper.writeValueAsString(normalizedNode);
-
-                validateStoryboardJson(normalizedNode);
-                characterService.updateStatesFromStoryboard(episode.getProjectId(), normalizedNode);
-
-                episode.setRetryCount(attempt - 1);
-                return normalizedJson;
-            } catch (AiCallException e) {
-                throw e;
-            } catch (Exception e) {
-                lastError = e;
-                log.warn("Storyboard revision attempt failed: episodeId={}, attempt={}", episode.getId(), attempt, e);
-                if (attempt < 3) {
-                    try {
-                        Thread.sleep(2000L * attempt);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-            }
-        }
-
-        throw new RuntimeException("Storyboard revision failed after retries: "
-                + (lastError != null ? lastError.getMessage() : "unknown"));
-    }
-
     private String buildRetrySystemPrompt(String systemPrompt, int attempt, Exception lastError) {
         String currentSystemPrompt = attempt > 1
                 ? promptBuilder.addStricterConstraints(systemPrompt, attempt)
@@ -678,13 +712,9 @@ public class StoryboardService {
             JsonNode dialogue = requireArrayField(panel, "dialogue", panelPath, true);
             for (int j = 0; j < dialogue.size(); j++) {
                 JsonNode dialogueNode = dialogue.get(j);
-                if (dialogueNode == null || !dialogueNode.isObject()) {
-                    throw new IllegalStateException(panelPath + ".dialogue[" + j + "] must be an object");
+                if (dialogueNode == null || !dialogueNode.isTextual() || dialogueNode.asText().trim().isEmpty()) {
+                    throw new IllegalStateException(panelPath + ".dialogue[" + j + "] must be a non-empty string");
                 }
-                String dialoguePath = panelPath + ".dialogue[" + j + "]";
-                requireTextField(dialogueNode, "speaker", dialoguePath);
-                requireTextField(dialogueNode, "text", dialoguePath);
-                requireEnumField(dialogueNode, "bubble_type", dialoguePath, ALLOWED_BUBBLE_TYPES);
             }
 
             JsonNode sfx = requireArrayField(panel, "sfx", panelPath, true);
@@ -748,8 +778,10 @@ public class StoryboardService {
 
         StringBuilder sb = new StringBuilder();
         for (Episode ep : recentEps) {
-            sb.append("[EP").append(ep.getEpisodeNum()).append("] ")
-                    .append(ep.getTitle() != null ? ep.getTitle() : "")
+            Integer epNum = getEpInfoInt(ep, EpisodeInfoKeys.EPISODE_NUM);
+            String title = getEpInfoStr(ep, EpisodeInfoKeys.TITLE);
+            sb.append("[EP").append(epNum != null ? epNum : "?").append("] ")
+                    .append(title != null ? title : "")
                     .append(": ")
                     .append(preferredEpisodeText(ep))
                     .append("\n");
@@ -762,27 +794,32 @@ public class StoryboardService {
     }
 
     private String buildUserPrompt(Episode episode) {
+        Integer epNum = getEpInfoInt(episode, EpisodeInfoKeys.EPISODE_NUM);
         return promptBuilder.buildEpisodeUserPrompt(
-                episode.getEpisodeNum(),
+                epNum != null ? epNum : 0,
                 preferredEpisodeText(episode),
-                getRecentMemory(episode.getProjectId(), episode.getEpisodeNum())
+                getRecentMemory(episode.getProjectId(), epNum != null ? epNum : 0)
         );
     }
 
     private String buildRevisionUserPrompt(Episode episode, String feedback) {
+        Integer epNum = getEpInfoInt(episode, EpisodeInfoKeys.EPISODE_NUM);
+        String storyboardJson = getEpInfoStr(episode, "storyboardJson");
         return promptBuilder.buildStoryboardRevisionUserPrompt(
-                episode.getEpisodeNum(),
+                epNum != null ? epNum : 0,
                 preferredEpisodeText(episode),
-                getRecentMemory(episode.getProjectId(), episode.getEpisodeNum()),
-                episode.getStoryboardJson(),
+                getRecentMemory(episode.getProjectId(), epNum != null ? epNum : 0),
+                storyboardJson,
                 feedback
         );
     }
 
     private String preferredEpisodeText(Episode episode) {
-        if (episode.getContent() != null && !episode.getContent().trim().isEmpty()) {
-            return episode.getContent();
+        String content = getEpInfoStr(episode, EpisodeInfoKeys.CONTENT);
+        if (content != null && !content.trim().isEmpty()) {
+            return content;
         }
-        return episode.getOutlineNode() != null ? episode.getOutlineNode() : "";
+        String outlineNode = getEpInfoStr(episode, EpisodeInfoKeys.OUTLINE_NODE);
+        return outlineNode != null ? outlineNode : "";
     }
 }
