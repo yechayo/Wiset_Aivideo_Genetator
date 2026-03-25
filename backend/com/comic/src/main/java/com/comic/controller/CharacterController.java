@@ -1,5 +1,6 @@
 package com.comic.controller;
 
+import com.comic.common.CharacterInfoKeys;
 import com.comic.common.Result;
 import com.comic.dto.model.CharacterDraftModel;
 import com.comic.dto.response.CharacterStatusResponse;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 /**
  * 角色管理接口
@@ -148,19 +150,20 @@ public class CharacterController {
             return Result.fail("角色不存在");
         }
 
+        Map<String, Object> info = character.getCharacterInfo();
         CharacterStatusResponse dto = new CharacterStatusResponse();
-        dto.setCharId(character.getCharId());
-        dto.setName(character.getName());
-        dto.setRole(character.getRole());
-        dto.setExpressionStatus(character.getExpressionStatus());
-        dto.setThreeViewStatus(character.getThreeViewStatus());
-        dto.setExpressionError(character.getExpressionError());
-        dto.setThreeViewError(character.getThreeViewError());
-        dto.setIsGeneratingExpression(character.getIsGeneratingExpression());
-        dto.setIsGeneratingThreeView(character.getIsGeneratingThreeView());
-        dto.setVisualStyle(character.getVisualStyle());
-        dto.setExpressionGridUrl(character.getExpressionGridUrl());
-        dto.setThreeViewGridUrl(character.getThreeViewGridUrl());
+        dto.setCharId(getInfoStr(info, CharacterInfoKeys.CHAR_ID));
+        dto.setName(getInfoStr(info, CharacterInfoKeys.NAME));
+        dto.setRole(getInfoStr(info, CharacterInfoKeys.ROLE));
+        dto.setExpressionStatus(getInfoStr(info, CharacterInfoKeys.EXPRESSION_STATUS));
+        dto.setThreeViewStatus(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_STATUS));
+        dto.setExpressionError(getInfoStr(info, CharacterInfoKeys.EXPRESSION_ERROR));
+        dto.setThreeViewError(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_ERROR));
+        dto.setIsGeneratingExpression(getInfoBool(info, CharacterInfoKeys.IS_GENERATING_EXPRESSION));
+        dto.setIsGeneratingThreeView(getInfoBool(info, CharacterInfoKeys.IS_GENERATING_THREE_VIEW));
+        dto.setVisualStyle(getInfoStr(info, CharacterInfoKeys.VISUAL_STYLE));
+        dto.setExpressionGridUrl(getInfoStr(info, CharacterInfoKeys.EXPRESSION_GRID_URL));
+        dto.setThreeViewGridUrl(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_GRID_URL));
 
         return Result.ok(dto);
     }
@@ -173,5 +176,17 @@ public class CharacterController {
     public Result<CharacterStatusResponse> getCharacterDetail(
             @Parameter(description = "角色ID", required = true) @PathVariable String charId) {
         return getGenerationStatus(charId);
+    }
+
+    private String getInfoStr(Map<String, Object> info, String key) {
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private Boolean getInfoBool(Map<String, Object> info, String key) {
+        Object v = info != null ? info.get(key) : null;
+        if (v == null) return null;
+        if (v instanceof Boolean) return (Boolean) v;
+        return Boolean.valueOf(v.toString());
     }
 }
