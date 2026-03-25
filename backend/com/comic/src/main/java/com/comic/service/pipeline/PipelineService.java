@@ -1,7 +1,11 @@
 package com.comic.service.pipeline;
 
 import com.comic.common.BusinessException;
+import com.comic.common.CharacterInfoKeys;
+import com.comic.common.EpisodeInfoKeys;
+import com.comic.common.ProjectInfoKeys;
 import com.comic.common.ProjectStatus;
+import com.comic.dto.request.ProjectCreateRequest;
 import com.comic.dto.response.ProjectListItemResponse;
 import com.comic.dto.response.ProjectStatusResponse;
 import com.comic.entity.Character;
@@ -27,7 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -53,6 +59,40 @@ public class PipelineService {
     @Autowired
     private StoryboardService storyboardService;
 
+    // ==================== Map 辅助方法 ====================
+
+    private String getProjectInfoStr(Project project, String key) {
+        Map<String, Object> info = project.getProjectInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private Integer getProjectInfoInt(Project project, String key) {
+        Map<String, Object> info = project.getProjectInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? ((Number) v).intValue() : null;
+    }
+
+    private String getEpisodeInfoStr(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private Integer getEpisodeInfoInt(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? ((Number) v).intValue() : null;
+    }
+
+    private String getCharacterInfoStr(Character character, String key) {
+        Map<String, Object> info = character.getCharacterInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    // ==================== CRUD ====================
+
     @Transactional
     public String createProject(String userId, String storyPrompt, String genre,
                                 String targetAudience, Integer totalEpisodes,
@@ -60,13 +100,17 @@ public class PipelineService {
         Project project = new Project();
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
-        project.setStoryPrompt(storyPrompt);
-        project.setGenre(genre);
-        project.setTargetAudience(targetAudience);
-        project.setTotalEpisodes(totalEpisodes);
-        project.setEpisodeDuration(episodeDuration);
-        project.setVisualStyle(visualStyle);
+        project.setDeleted(false);
         project.setStatus(ProjectStatus.DRAFT.getCode());
+
+        Map<String, Object> info = new HashMap<>();
+        info.put(ProjectInfoKeys.STORY_PROMPT, storyPrompt);
+        info.put(ProjectInfoKeys.GENRE, genre);
+        info.put(ProjectInfoKeys.TARGET_AUDIENCE, targetAudience);
+        info.put(ProjectInfoKeys.TOTAL_EPISODES, totalEpisodes);
+        info.put(ProjectInfoKeys.EPISODE_DURATION, episodeDuration);
+        info.put(ProjectInfoKeys.VISUAL_STYLE, visualStyle);
+        project.setProjectInfo(info);
 
         projectRepository.insert(project);
 
@@ -75,23 +119,172 @@ public class PipelineService {
     }
 
     @Transactional
-    public void advancePipeline(String projectId, String event) {
+    public void updateProject(String projectId, ProjectCreateRequest request) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
-            throw new BusinessException("Project not found");
+            throw new BusinessException("项目不存在");
         }
-
-        String currentStatus = project.getStatus();
-        String nextStatus = calculateNextStatus(currentStatus, event);
-        if (nextStatus == null) {
-            throw new BusinessException("Cannot transition from status " + currentStatus + " via event " + event);
+        Map<String, Object> info = project.getProjectInfo();
+        if (info == null) {
+            info = new HashMap<>();
         }
-
-        project.setStatus(nextStatus);
+        if (request.getStoryPrompt() != null) info.put(ProjectInfoKeys.STORY_PROMPT, request.getStoryPrompt());
+        if (request.getGenre() != null) info.put(ProjectInfoKeys.GENRE, request.getGenre());
+        if (request.getTargetAudience() != null) info.put(ProjectInfoKeys.TARGET_AUDIENCE, request.getTargetAudience());
+        if (request.getTotalEpisodes() != null) info.put(ProjectInfoKeys.TOTAL_EPISODES, request.getTotalEpisodes());
+        if (request.getEpisodeDuration() != null) info.put(ProjectInfoKeys.EPISODE_DURATION, request.getEpisodeDuration());
+        if (request.getVisualStyle() != null) info.put(ProjectInfoKeys.VISUAL_STYLE, request.getVisualStyle());
+        project.setProjectInfo(info);
         projectRepository.updateById(project);
+    }
 
-        log.info("Pipeline advanced: projectId={}, {} -> {}", projectId, currentStatus, nextStatus);
-        triggerNextStageAsync(projectId, nextStatus);
+    @Transactional
+    public void logicalDeleteProject(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            throw new BusinessException("项目不存在");
+        }
+        project.setDeleted(true);
+        projectRepository.updateById(project);
+    }
+
+    // ==================== Pipeline 状态转换 ====================
+
+    @Transactional
+    public void advancePipeline(String projectId, String direction, String event) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            throw new BusinessException("项目不存在");
+        }
+
+        if ("backward".equals(direction)) {
+            rollbackPipeline(project);
+        } else {
+            String currentStatus = project.getStatus();
+            String nextStatus = calculateNextStatus(currentStatus, event);
+            if (nextStatus == null) {
+                throw new BusinessException("Cannot transition from status " + currentStatus + " via event " + event);
+            }
+            project.setStatus(nextStatus);
+            projectRepository.updateById(project);
+            log.info("Pipeline advanced: projectId={}, {} -> {}", projectId, currentStatus, nextStatus);
+            triggerNextStageAsync(projectId, nextStatus);
+        }
+    }
+
+    /** 保留旧签名的兼容方法 */
+    @Transactional
+    public void advancePipeline(String projectId, String event) {
+        advancePipeline(projectId, "forward", event);
+    }
+
+    private void rollbackPipeline(Project project) {
+        ProjectStatus current = ProjectStatus.fromCode(project.getStatus());
+        ProjectStatus previous = getRollbackTarget(current);
+        if (previous == null) {
+            throw new BusinessException("Cannot go back from status " + current.getCode());
+        }
+
+        String projectId = project.getProjectId();
+        cleanupAfterRollback(projectId, current);
+
+        project.setStatus(previous.getCode());
+        projectRepository.updateById(project);
+        log.info("Pipeline rolled back: projectId={}, {} -> {}", projectId, current.getCode(), previous.getCode());
+    }
+
+    private ProjectStatus getRollbackTarget(ProjectStatus from) {
+        switch (from) {
+            case OUTLINE_REVIEW:
+            case EPISODE_GENERATING:
+            case SCRIPT_REVIEW:
+                return ProjectStatus.DRAFT;
+            case SCRIPT_CONFIRMED:
+                return ProjectStatus.SCRIPT_REVIEW;
+            case CHARACTER_EXTRACTING:
+                return ProjectStatus.SCRIPT_CONFIRMED;
+            case CHARACTER_REVIEW:
+                return ProjectStatus.CHARACTER_EXTRACTING;
+            case CHARACTER_CONFIRMED:
+                return ProjectStatus.CHARACTER_REVIEW;
+            case IMAGE_GENERATING:
+                return ProjectStatus.CHARACTER_CONFIRMED;
+            case IMAGE_REVIEW:
+                return ProjectStatus.IMAGE_GENERATING;
+            case ASSET_LOCKED:
+                return ProjectStatus.IMAGE_REVIEW;
+            case STORYBOARD_GENERATING:
+                return ProjectStatus.ASSET_LOCKED;
+            case STORYBOARD_REVIEW:
+                return ProjectStatus.STORYBOARD_GENERATING;
+            case PRODUCING:
+                return ProjectStatus.STORYBOARD_REVIEW;
+            case COMPLETED:
+                return ProjectStatus.PRODUCING;
+            default:
+                return null;
+        }
+    }
+
+    private void cleanupAfterRollback(String projectId, ProjectStatus from) {
+        switch (from) {
+            case OUTLINE_REVIEW:
+            case EPISODE_GENERATING:
+            case SCRIPT_REVIEW:
+                episodeRepository.deleteByProjectId(projectId);
+                break;
+            case SCRIPT_CONFIRMED:
+                characterRepository.deleteByProjectId(projectId);
+                episodeRepository.deleteByProjectId(projectId);
+                break;
+            case CHARACTER_EXTRACTING:
+            case CHARACTER_REVIEW:
+            case CHARACTER_CONFIRMED:
+                characterRepository.deleteByProjectId(projectId);
+                break;
+            case IMAGE_GENERATING:
+            case IMAGE_REVIEW:
+                // 清除角色图片信息
+                List<Character> characters = characterRepository.findByProjectId(projectId);
+                for (Character c : characters) {
+                    Map<String, Object> info = c.getCharacterInfo();
+                    if (info != null) {
+                        info.remove(CharacterInfoKeys.THREE_VIEWS_URL);
+                        info.remove(CharacterInfoKeys.EXPRESSION_IMAGE_URL);
+                        info.remove(CharacterInfoKeys.EXPRESSION_STATUS);
+                        info.remove(CharacterInfoKeys.THREE_VIEW_STATUS);
+                        info.remove(CharacterInfoKeys.EXPRESSION_ERROR);
+                        info.remove(CharacterInfoKeys.THREE_VIEW_ERROR);
+                        info.remove(CharacterInfoKeys.IS_GENERATING_EXPRESSION);
+                        info.remove(CharacterInfoKeys.IS_GENERATING_THREE_VIEW);
+                        info.remove(CharacterInfoKeys.EXPRESSION_GRID_URL);
+                        info.remove(CharacterInfoKeys.THREE_VIEW_GRID_URL);
+                        info.remove(CharacterInfoKeys.EXPRESSION_GRID_PROMPT);
+                        info.remove(CharacterInfoKeys.THREE_VIEW_GRID_PROMPT);
+                        c.setCharacterInfo(info);
+                        characterRepository.updateById(c);
+                    }
+                }
+                break;
+            case ASSET_LOCKED:
+            case STORYBOARD_GENERATING:
+            case STORYBOARD_REVIEW:
+            case PRODUCING:
+                // 清除分镜和生产数据
+                List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+                for (Episode ep : episodes) {
+                    Map<String, Object> info = ep.getEpisodeInfo();
+                    if (info != null) {
+                        info.remove(EpisodeInfoKeys.PRODUCTION_STATUS);
+                        ep.setEpisodeInfo(info);
+                    }
+                    ep.setStatus("DRAFT");
+                    episodeRepository.updateById(ep);
+                }
+                break;
+            default:
+                break;
+        }
     }
 
     private void triggerNextStageAsync(String projectId, String status) {
@@ -108,10 +301,12 @@ public class PipelineService {
         }
     }
 
+    // ==================== 状态查询 ====================
+
     public Project getProjectStatus(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
-            throw new BusinessException("Project not found");
+            throw new BusinessException("项目不存在");
         }
         return project;
     }
@@ -119,7 +314,7 @@ public class PipelineService {
     public ProjectStatusResponse getProjectStatusDetail(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
-            throw new BusinessException("Project not found");
+            throw new BusinessException("项目不存在");
         }
 
         ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
@@ -147,12 +342,49 @@ public class PipelineService {
         return dto;
     }
 
+    public List<ProjectListItemResponse> getProjectsByUserId(String userId) {
+        List<Project> projects = projectRepository.findAllByUserId(userId);
+        List<ProjectListItemResponse> result = new ArrayList<>();
+        for (Project project : projects) {
+            result.add(toListItemDTO(project));
+        }
+        return result;
+    }
+
+    private ProjectListItemResponse toListItemDTO(Project project) {
+        ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
+        Map<String, Object> info = project.getProjectInfo();
+
+        ProjectListItemResponse dto = new ProjectListItemResponse();
+        dto.setProjectId(project.getProjectId());
+        dto.setStoryPrompt(getProjectInfoStr(project, ProjectInfoKeys.STORY_PROMPT));
+        dto.setGenre(getProjectInfoStr(project, ProjectInfoKeys.GENRE));
+        dto.setTargetAudience(getProjectInfoStr(project, ProjectInfoKeys.TARGET_AUDIENCE));
+        dto.setTotalEpisodes(getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES));
+        dto.setEpisodeDuration(getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION));
+        dto.setVisualStyle(getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE));
+        dto.setStatusCode(status.getCode());
+        dto.setStatusDescription(status.getDescription());
+        dto.setCurrentStep(status.getFrontendStep());
+        dto.setGenerating(status.isGenerating());
+        dto.setFailed(status.isFailed());
+        dto.setReview(status.isReview());
+        dto.setCompletedSteps(status.getCompletedSteps());
+        dto.setCreatedAt(project.getCreatedAt());
+        dto.setUpdatedAt(project.getUpdatedAt());
+
+        return dto;
+    }
+
+    // ==================== 状态增强（Producing / Storyboard）====================
+
     private void enrichProducingStatus(ProjectStatusResponse dto, String projectId) {
         try {
             List<Episode> episodes = episodeRepository.findByProjectId(projectId);
             Episode producingEpisode = null;
             for (Episode ep : episodes) {
-                if ("IN_PROGRESS".equals(ep.getProductionStatus())) {
+                String productionStatus = getEpisodeInfoStr(ep, EpisodeInfoKeys.PRODUCTION_STATUS);
+                if ("IN_PROGRESS".equals(productionStatus)) {
                     producingEpisode = ep;
                     break;
                 }
@@ -161,10 +393,11 @@ public class PipelineService {
             if (producingEpisode == null) {
                 boolean hasProducible = false;
                 for (Episode ep : episodes) {
+                    String productionStatus = getEpisodeInfoStr(ep, EpisodeInfoKeys.PRODUCTION_STATUS);
                     if ("DONE".equals(ep.getStatus())
-                            && (ep.getProductionStatus() == null
-                            || "NOT_STARTED".equals(ep.getProductionStatus())
-                            || "FAILED".equals(ep.getProductionStatus()))) {
+                            && (productionStatus == null
+                            || "NOT_STARTED".equals(productionStatus)
+                            || "FAILED".equals(productionStatus))) {
                         hasProducible = true;
                         break;
                     }
@@ -281,7 +514,8 @@ public class PipelineService {
 
             dto.setStoryboardTotalEpisodes(totalEpisodes);
             if (currentEpisode != null) {
-                dto.setStoryboardCurrentEpisode(currentEpisode.getEpisodeNum());
+                Integer epNum = getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM);
+                dto.setStoryboardCurrentEpisode(epNum);
                 dto.setStoryboardReviewEpisodeId(String.valueOf(currentEpisode.getId()));
             }
 
@@ -292,10 +526,15 @@ public class PipelineService {
                 // Auto-recover stale generating episodes so the user can retry
                 if (isStaleGenerating(failedEpisode)) {
                     failedEpisode.setStatus("STORYBOARD_FAILED");
-                    failedEpisode.setErrorMsg("Generation timed out (server may have restarted)");
+                    Map<String, Object> info = failedEpisode.getEpisodeInfo();
+                    if (info == null) {
+                        info = new HashMap<>();
+                        failedEpisode.setEpisodeInfo(info);
+                    }
+                    info.put(EpisodeInfoKeys.ERROR_MSG, "Generation timed out (server may have restarted)");
                     episodeRepository.updateById(failedEpisode);
                     log.warn("Recovered stale generating episode: episodeId={}, episodeNum={}",
-                            failedEpisode.getId(), failedEpisode.getEpisodeNum());
+                            failedEpisode.getId(), getEpisodeInfoInt(failedEpisode, EpisodeInfoKeys.EPISODE_NUM));
                 }
             }
 
@@ -314,19 +553,20 @@ public class PipelineService {
             }
 
             if (currentEpisode != null) {
+                Integer epNum = getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM);
                 switch (projectStatus) {
                     case STORYBOARD_GENERATING:
-                        dto.setStatusDescription("Generating storyboard for episode " + currentEpisode.getEpisodeNum() + "...");
+                        dto.setStatusDescription("Generating storyboard for episode " + epNum + "...");
                         break;
                     case STORYBOARD_REVIEW:
                         dto.setStatusDescription(
-                                "Review episode " + currentEpisode.getEpisodeNum()
+                                "Review episode " + epNum
                                         + " storyboard (" + completedCount + "/" + totalEpisodes + ")"
                         );
                         break;
                     case STORYBOARD_GENERATING_FAILED:
                         dto.setStatusDescription(
-                                "Episode " + currentEpisode.getEpisodeNum() + " storyboard generation failed"
+                                "Episode " + epNum + " storyboard generation failed"
                         );
                         break;
                     default:
@@ -345,9 +585,10 @@ public class PipelineService {
         if (!"STORYBOARD_GENERATING".equals(episode.getStatus())) {
             return false;
         }
-        boolean hasError = episode.getErrorMsg() != null && !episode.getErrorMsg().trim().isEmpty();
-        boolean hasStoryboard = episode.getStoryboardJson() != null && !episode.getStoryboardJson().trim().isEmpty();
-        return hasError && !hasStoryboard;
+        String errorMsg = getEpisodeInfoStr(episode, EpisodeInfoKeys.ERROR_MSG);
+        boolean hasError = errorMsg != null && !errorMsg.trim().isEmpty();
+        // storyboardJson 已移除（分镜数据存 Panel 表），只看 errorMsg 判断
+        return hasError;
     }
 
     /** Detect episodes stuck in GENERATING for too long (e.g. server restarted). */
@@ -382,38 +623,7 @@ public class PipelineService {
         }
     }
 
-    public List<ProjectListItemResponse> getProjectsByUserId(String userId) {
-        List<Project> projects = projectRepository.findAllByUserId(userId);
-        List<ProjectListItemResponse> result = new ArrayList<>();
-        for (Project project : projects) {
-            result.add(toListItemDTO(project));
-        }
-        return result;
-    }
-
-    private ProjectListItemResponse toListItemDTO(Project project) {
-        ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
-
-        ProjectListItemResponse dto = new ProjectListItemResponse();
-        dto.setProjectId(project.getProjectId());
-        dto.setStoryPrompt(project.getStoryPrompt());
-        dto.setGenre(project.getGenre());
-        dto.setTargetAudience(project.getTargetAudience());
-        dto.setTotalEpisodes(project.getTotalEpisodes());
-        dto.setEpisodeDuration(project.getEpisodeDuration());
-        dto.setVisualStyle(project.getVisualStyle());
-        dto.setStatusCode(status.getCode());
-        dto.setStatusDescription(status.getDescription());
-        dto.setCurrentStep(status.getFrontendStep());
-        dto.setGenerating(status.isGenerating());
-        dto.setFailed(status.isFailed());
-        dto.setReview(status.isReview());
-        dto.setCompletedSteps(status.getCompletedSteps());
-        dto.setCreatedAt(project.getCreatedAt());
-        dto.setUpdatedAt(project.getUpdatedAt());
-
-        return dto;
-    }
+    // ==================== 阶段触发 ====================
 
     private String calculateNextStatus(String currentStatus, String event) {
         switch (event) {
@@ -504,12 +714,13 @@ public class PipelineService {
                 int failCount = 0;
                 for (Character character : characters) {
                     try {
-                        characterImageGenerationService.generateAll(character.getCharId());
+                        String charId = getCharacterInfoStr(character, CharacterInfoKeys.CHAR_ID);
+                        characterImageGenerationService.generateAll(charId);
                         successCount++;
                     } catch (Exception e) {
                         log.warn(
                                 "Character image generation failed and will continue: charId={}, error={}",
-                                character.getCharId(),
+                                getCharacterInfoStr(character, CharacterInfoKeys.CHAR_ID),
                                 e.getMessage()
                         );
                         failCount++;
