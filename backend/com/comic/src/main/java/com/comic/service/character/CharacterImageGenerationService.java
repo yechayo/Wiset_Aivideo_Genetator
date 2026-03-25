@@ -4,6 +4,7 @@ import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.common.CharacterInfoKeys;
+import com.comic.dto.response.CharacterStatusResponse;
 import com.comic.entity.Character;
 import com.comic.repository.CharacterRepository;
 import lombok.RequiredArgsConstructor;
@@ -212,6 +213,27 @@ public class CharacterImageGenerationService {
         character.setCharacterInfo(info);
         characterRepository.updateById(character);
         log.info("设置视觉风格: charId={}, visualStyle={}", charId, visualStyle);
+    }
+
+    public CharacterStatusResponse getGenerationStatus(String charId) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在");
+        }
+        CharacterStatusResponse dto = new CharacterStatusResponse();
+        dto.setCharId(getCharInfoStr(character, CharacterInfoKeys.CHAR_ID));
+        dto.setName(getCharInfoStr(character, CharacterInfoKeys.NAME));
+        dto.setRole(getCharInfoStr(character, CharacterInfoKeys.ROLE));
+        dto.setExpressionStatus(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_STATUS));
+        dto.setThreeViewStatus(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_STATUS));
+        dto.setExpressionError(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_ERROR));
+        dto.setThreeViewError(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_ERROR));
+        dto.setIsGeneratingExpression(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_EXPRESSION));
+        dto.setIsGeneratingThreeView(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_THREE_VIEW));
+        dto.setVisualStyle(getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE));
+        dto.setExpressionGridUrl(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_GRID_URL));
+        dto.setThreeViewGridUrl(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_GRID_URL));
+        return dto;
     }
 
     // ==================== 辅助方法 ====================
