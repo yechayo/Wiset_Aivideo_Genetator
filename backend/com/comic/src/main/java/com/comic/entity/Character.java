@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 @Data
-@TableName(value = "character", autoResultMap = true)
+@TableName(value = "`character`", autoResultMap = true)
 public class Character {
 
     @TableId(type = IdType.AUTO)

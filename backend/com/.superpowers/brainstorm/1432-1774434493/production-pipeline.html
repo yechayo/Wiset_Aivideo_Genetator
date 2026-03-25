@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, sans-serif; padding: 24px; line-height: 1.7; }
+  h2 { color: #fff; font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+  h3 { font-size: 15px; margin-bottom: 6px; }
+  .section { margin-bottom: 20px; }
+
+  .stage { background: #16213e; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; border-left: 3px solid #444; }
+  .stage .num { display: inline-block; background: #333; color: #aaa; width: 22px; height: 22px; border-radius: 50%; text-align: center; line-height: 22px; font-size: 12px; margin-right: 8px; }
+  .stage .title { color: #fff; font-weight: bold; font-size: 14px; }
+  .stage .desc { color: #999; font-size: 12px; margin-top: 4px; }
+  .stage .api { background: #0d1117; border-radius: 4px; padding: 8px 10px; margin-top: 8px; font-family: monospace; font-size: 12px; color: #7ee787; }
+  .stage .api .method { color: #ff7b72; font-weight: bold; }
+  .stage .api .path { color: #79c0ff; }
+  .stage .api .note { color: #555; font-style: italic; }
+  .stage .svc { margin-top: 6px; font-size: 11px; color: #666; }
+  .stage .svc strong { color: #d2a8ff; }
+
+  .arrow { text-align: center; color: #444; font-size: 18px; margin: 4px 0; }
+
+  .step5 { border-left-color: #e74c3c; }
+  .step6 { border-left-color: #9b59b6; }
+
+  .divider { border: none; border-top: 1px dashed #333; margin: 16px 0; }
+</style>
+</head>
+<body>
+
+<h2>完整生产管线</h2>
+<p class="sub">基于后端 Service 代码梳理的真实流程</p>
+
+<div style="background:#2a1520; border-radius:8px; padding:10px 14px; margin-bottom:16px; font-size:13px;">
+  <strong style="color:#e74c3c">Step5 页面</strong> <span style="color:#888">→</span> 全部生产流程（分镜生成 → 场景图 → 融合 → 视频）<br>
+  <strong style="color:#9b59b6">Step6 页面</strong> <span style="color:#888">→</span> 视频拼接 + 下载
+</div>
+
+<!-- ========== Step5 ========== -->
+<div style="color:#e74c3c; font-weight:bold; font-size:14px; margin-bottom:10px;">STEP 5 — 全部生产</div>
+
+<!-- Stage 1 -->
+<div class="stage step5">
+  <span class="num">1</span><span class="title">分镜生成 (Storyboard Generation)</span>
+  <div class="desc">LLM 根据剧本内容生成分镜 JSON，包含每格的场景描述、角色状态、镜头参数</div>
+  <div class="svc"><strong>StoryboardService</strong> → TextGenerationService (LLM API)</div>
+  <div class="api">
+    <span class="method">POST</span> <span class="path">/panels/generate</span> <span class="note">— AI 生成分镜</span><br>
+    <span class="method">POST</span> <span class="path">/panels/confirm</span> <span class="note">— 确认分镜（用户审核后）</span><br>
+    <span class="method">POST</span> <span class="path">/panels/revise</span> <span class="note">— 基于反馈修改分镜</span><br>
+    <span class="method">POST</span> <span class="path">/panels/retry</span> <span class="note">— 重试失败生成</span>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- Stage 2 -->
+<div class="stage step5">
+  <span class="num">2</span><span class="title">分镜增强 (Storyboard Enhancement)</span>
+  <div class="desc">为分镜添加专业镜头参数：景别（大远景→大特写15种）、角度（平视→俯视7种）、运动（固定→环绕12种）</div>
+  <div class="svc"><strong>StoryboardEnhancementService</strong> → TextGenerationService (LLM API)</div>
+  <div class="api">
+    <span class="note">（generate 内部自动执行，无需单独接口）</span>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- Stage 3 -->
+<div class="stage step5">
+  <span class="num">3</span><span class="title">场景分析 & 分组 (Scene Analysis)</span>
+  <div class="desc">分析分镜内容，按场景/角色/风格分组，决定哪些分镜可以合并处理</div>
+  <div class="svc"><strong>SceneAnalysisService</strong> — 纯本地逻辑，无外部 API</div>
+  <div class="api">
+    <span class="note">（produce 内部自动执行，无需单独接口）</span>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- Stage 4 -->
+<div class="stage step5">
+  <span class="num">4</span><span class="title">参考网格图生成 (Scene Grid)</span>
+  <div class="desc">为每组分镜生成九宫格参考图（≤6格用2×3，>6格用3×3），每格1024×576</div>
+  <div class="svc"><strong>SceneGridGenService</strong> → ImageGenerationService (AI 图像 API)</div>
+  <div class="api">
+    <span class="method">GET</span> <span class="path">/panels/grid-info</span> <span class="note">— 获取网格URL、尺寸、角色参考图</span>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- Stage 5 -->
+<div class="stage step5">
+  <span class="num">5</span><span class="title">网格切分 & 融合选择 (Grid Split & Fusion)</span>
+  <div class="desc">后端将九宫格切分为单格图，前端用户在 Canvas 上手动融合角色参考图到场景图上，然后上传融合结果</div>
+  <div class="svc"><strong>GridSplitService</strong> → OssService (阿里云 OSS)</div>
+  <div class="api">
+    <span class="method">POST</span> <span class="path">/panels/split-grid-page</span> <span class="note">— 后端切分单页网格</span><br>
+    <span class="method">POST</span> <span class="path">/panels/fusion-image</span> <span class="note">— 上传前端 Canvas 导出的融合图</span><br>
+    <span class="method">POST</span> <span class="path">/panels/submit-fusion-page</span> <span class="note">— 提交单页融合结果</span><br>
+    <span class="method">GET</span> <span class="path">/panels/panel-states</span> <span class="note">— 查看所有格子的融合+视频状态</span>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- Stage 6 -->
+<div class="stage step5">
+  <span class="num">6</span><span class="title">单格生产流程 (Per-Panel Pipeline)</span>
+  <div class="desc">每格分镜依次执行：背景生成 → 融合 → 转场 → 视频生成，可逐格操作或批量自动执行</div>
+  <div class="svc">
+    <strong>PanelProductionService</strong> → ImageGenerationService (背景/融合) → SeedanceVideoService (视频)
+  </div>
+  <div class="api">
+    <span class="method">GET/POST</span> <span class="path">/panels/{id}/background</span> <span class="note">— 背景生成</span><br>
+    <span class="method">GET/POST</span> <span class="path">/panels/{id}/fusion</span> <span class="note">— 角色融合</span><br>
+    <span class="method">GET/POST</span> <span class="path">/panels/{id}/transition</span> <span class="note">— 转场生成</span><br>
+    <span class="method">GET</span> <span class="path">/panels/{id}/tail-frame</span> <span class="note">— 尾帧信息</span><br>
+    <span class="method">GET</span> <span class="path">/panels/{id}/video-task</span> <span class="note">— 视频生成任务状态</span><br>
+    <span class="method">POST</span> <span class="path">/panels/{id}/produce</span> <span class="note">— 一键生产单格（背景+融合+转场+视频）</span><br>
+    <span class="method">GET</span> <span class="path">/panels/{id}/production-status</span> <span class="note">— 单格完整生产状态</span><br>
+    <span class="method">POST</span> <span class="path">/panels/auto-produce-all</span> <span class="note">— 批量自动生产所有分镜</span>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== Step6 ========== -->
+<div style="color:#9b59b6; font-weight:bold; font-size:14px; margin-bottom:10px;">STEP 6 — 视频拼接 & 下载</div>
+
+<!-- Stage 7 -->
+<div class="stage step6">
+  <span class="num">7</span><span class="title">字幕生成 (Subtitle)</span>
+  <div class="desc">从分镜对话中提取文本，生成 SRT 字幕文件，与视频时间轴对齐</div>
+  <div class="svc"><strong>SubtitleService</strong> — 本地逻辑</div>
+  <div class="api">
+    <span class="note">（合成时自动执行，或提供单独接口）</span>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- Stage 8 -->
+<div class="stage step6">
+  <span class="num">8</span><span class="title">视频合成 (Video Composition)</span>
+  <div class="desc">用 FFmpeg 将所有分镜视频片段按顺序拼接为最终视频，可选叠加字幕</div>
+  <div class="svc"><strong>VideoCompositionService</strong> → FFmpeg (本地)</div>
+  <div class="api">
+    <span class="method">GET</span> <span class="path">/panels/video-segments</span> <span class="note">— 查看已完成的所有视频片段</span><br>
+    <span class="method">POST</span> <span class="path">/panels/synthesize</span> <span class="note">— 合成最终视频</span>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- Stage 9 -->
+<div class="stage step6">
+  <span class="num">9</span><span class="title">下载 & 管理</span>
+  <div class="desc">提供最终视频的下载链接和剧集管理</div>
+  <div class="api">
+    <span class="method">GET</span> <span class="path">/episodes/{id}</span> <span class="note">— 剧集详情（含 finalVideoUrl）</span><br>
+    <em style="color:#555">（下载走 OSS 直链，无需额外接口）</em>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div style="font-size:12px; color:#555;">
+  <strong>外部 API 调用点:</strong><br>
+  ① LLM API — 分镜生成 & 增强（Stage 1-2）<br>
+  ② AI 图像 API — 参考网格图 & 背景生成 & 融合（Stage 4, 6）<br>
+  ③ Seedance/火山引擎 API — 视频生成（Stage 6）<br>
+  ④ 阿里云 OSS — 文件存储（全流程）<br>
+  ⑤ FFmpeg — 本地视频合成（Stage 8）
+</div>
+
+</body>
+</html>

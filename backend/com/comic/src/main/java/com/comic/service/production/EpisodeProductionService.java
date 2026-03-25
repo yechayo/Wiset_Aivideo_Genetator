@@ -46,7 +46,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 /**
  * 单集视频生产主流程编排服务
  * 负责协调整个视频生产流程
+ *
+ * @deprecated 后续迭代整体删除 — 旧管线已被 PanelController + 新 PanelProductionService 替代
  */
+@Deprecated
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -60,7 +63,6 @@ public class EpisodeProductionService {
     private final SceneAnalysisService sceneAnalysisService;
     private final StoryboardEnhancementService storyboardEnhancementService;
     private final SceneGridGenService sceneGridGenService;
-    private final GridSplitService gridSplitService;
     private final VideoPromptBuilderService videoPromptBuilderService;
     private final VideoProductionQueueService videoQueueService;
     private final SubtitleService subtitleService;
@@ -554,114 +556,6 @@ public class EpisodeProductionService {
 
         response.setCharacterReferences(refs);
         return response;
-    }
-
-    /**
-     * Execute backend split for one grid page and bind row-major cells to storyboard panels.
-     */
-    public GridSplitService.SplitPageResult splitGridPageForFusion(Long episodeId, int pageIndex) {
-        Episode episode = episodeRepository.selectById(episodeId);
-        if (episode == null) {
-            throw new IllegalArgumentException("Episode not found: " + episodeId);
-        }
-
-        EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
-        if (production == null) {
-            throw new IllegalArgumentException("Production record not found.");
-        }
-        if (!"GRID_FUSION_PENDING".equals(production.getStatus())) {
-            throw new BusinessException("Grid split is only allowed when status is GRID_FUSION_PENDING.");
-        }
-
-        List<String> gridUrls = resolveGridUrls(production);
-        if (gridUrls == null || gridUrls.isEmpty()) {
-            throw new BusinessException("No scene grid page URL available.");
-        }
-        if (pageIndex < 0 || pageIndex >= gridUrls.size()) {
-            throw new BusinessException("pageIndex out of range. totalPages=" + gridUrls.size());
-        }
-
-        List<SceneGroupModel> sceneGroups = resolveSceneGroups(production);
-        List<GridPageDescriptor> pageDescriptors = buildGridPageDescriptors(sceneGroups);
-        GridPageDescriptor descriptor = pageIndex < pageDescriptors.size() ? pageDescriptors.get(pageIndex) : null;
-
-        int rows = descriptor != null ? descriptor.getRows() : 3;
-        int cols = descriptor != null ? descriptor.getCols() : 3;
-        int cellsPerPage = Math.max(rows * cols, 1);
-
-        List<JsonNode> storyboardPanels = parseStoryboardPanels(episode);
-        int startPanelIndex;
-        int validPanelCount;
-        if (descriptor != null
-                && descriptor.getSceneGroupIndex() >= 0
-                && descriptor.getSceneGroupIndex() < sceneGroups.size()) {
-            SceneGroupModel sceneGroup = sceneGroups.get(descriptor.getSceneGroupIndex());
-            int sceneGroupStart = sceneGroup.getStartPanelIndex() != null ? sceneGroup.getStartPanelIndex() : 0;
-            int sceneCellsPerPage = Math.max(resolveCellsPerPage(sceneGroup), 1);
-            int pageInGroup = Math.max(descriptor.getPageInGroup(), 0);
-            int panelCountInGroup = Math.max(sceneGroup.getPanelCount(), 0);
-            int consumed = pageInGroup * sceneCellsPerPage;
-
-            startPanelIndex = sceneGroupStart + consumed;
-            validPanelCount = Math.max(0, Math.min(sceneCellsPerPage, panelCountInGroup - consumed));
-        } else {
-            startPanelIndex = pageIndex * cellsPerPage;
-            validPanelCount = Math.max(0, Math.min(cellsPerPage, storyboardPanels.size() - startPanelIndex));
-        }
-
-        List<JsonNode> pagePanels = new ArrayList<>();
-        for (int i = 0; i < validPanelCount; i++) {
-            int panelIndex = startPanelIndex + i;
-            if (panelIndex >= 0 && panelIndex < storyboardPanels.size()) {
-                pagePanels.add(storyboardPanels.get(panelIndex));
-            }
-        }
-
-        GridSplitService.PageSplitTask task = new GridSplitService.PageSplitTask();
-        task.setPageIndex(pageIndex);
-        task.setGridImageUrl(gridUrls.get(pageIndex));
-        task.setRows(rows);
-        task.setCols(cols);
-        task.setStartPanelIndex(startPanelIndex);
-        task.setPanels(pagePanels);
-        task.setObjectKeyPrefix("episode-" + episodeId + "/grid-split");
-
-        GridSplitService.SplitBatchResult batchResult =
-                gridSplitService.splitAndUploadPages(Collections.singletonList(task));
-        if (batchResult == null || batchResult.getPages() == null || batchResult.getPages().isEmpty()) {
-            throw new BusinessException("Grid split returned empty result.");
-        }
-        return batchResult.getPages().get(0);
-    }
-
-    private List<String> resolveGridUrls(EpisodeProduction production) {
-        List<String> gridUrls = parseJsonUrlList(production.getSceneGridUrls());
-        if (gridUrls != null && !gridUrls.isEmpty()) {
-            return gridUrls;
-        }
-        if (production.getSceneGridUrl() == null || production.getSceneGridUrl().isEmpty()) {
-            return Collections.emptyList();
-        }
-        return new ArrayList<>(Collections.singletonList(production.getSceneGridUrl()));
-    }
-
-    private List<SceneGroupModel> resolveSceneGroups(EpisodeProduction production) {
-        if (production == null
-                || production.getSceneAnalysisJson() == null
-                || production.getSceneAnalysisJson().isEmpty()) {
-            return Collections.emptyList();
-        }
-        try {
-            SceneAnalysisResultModel analysis = objectMapper.readValue(
-                    production.getSceneAnalysisJson(), SceneAnalysisResultModel.class);
-            if (analysis.getSceneGroups() == null) {
-                return Collections.emptyList();
-            }
-            return analysis.getSceneGroups();
-        } catch (Exception e) {
-            log.warn("Failed to parse sceneAnalysisJson when building split task: {}", e.getMessage());
-            return Collections.emptyList();
-        }
     }
 
     private List<JsonNode> parseStoryboardPanels(Episode episode) {

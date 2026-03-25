@@ -158,8 +158,7 @@ public class CharacterPromptManager {
      */
     private String build3DThreeViewPrompt(String appearance, String personality) {
         return "全彩插画，非黑白，非灰度，" +
-               "仙侠3D动画角色，半写实风格，仙侠动画美学，" +
-               "高精度3D建模，PBR材质着色配合柔和半透明质感，次表面散射效果，" +
+               "3D动画角色，高精度3D建模，PBR材质着色配合柔和半透明质感，次表面散射效果，" +
                "环境光遮蔽，细腻光滑的皮肤纹理（非过度写实），" +
                "飘逸的布料衣物，独立的发丝，中性影棚灯光，" +
                "清晰专注的目光，自然的神态。\n\n" +

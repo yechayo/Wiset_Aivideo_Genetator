@@ -58,6 +58,7 @@ public class PanelProductionService {
     /**
      * 获取单分镜背景图状态
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public PanelBackgroundResponse getBackgroundStatus(Long episodeId, Integer panelIndex) {
         EpisodeProduction production = getOrCreateProduction(episodeId);
         List<String> urls = parseUrlList(production.getBackgroundUrls());
@@ -76,11 +77,13 @@ public class PanelProductionService {
     /**
      * 生成单分镜背景图（异步）
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void generateBackground(Long episodeId, Integer panelIndex) {
         self().doGenerateBackground(episodeId, panelIndex);
     }
 
     @Async
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void doGenerateBackground(Long episodeId, Integer panelIndex) {
         try {
             EpisodeProduction production = getOrCreateProduction(episodeId);
@@ -106,6 +109,7 @@ public class PanelProductionService {
     /**
      * 获取单分镜融合图状态
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public PanelFusionResponse getFusionStatus(Long episodeId, Integer panelIndex) {
         EpisodeProduction production = getOrCreateProduction(episodeId);
         List<String> fusionUrls = parseUrlList(production.getFusionUrls());
@@ -131,11 +135,13 @@ public class PanelProductionService {
     /**
      * 生成单分镜融合图（异步）
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void generateFusion(Long episodeId, Integer panelIndex, FusionRequest request) {
         self().doGenerateFusion(episodeId, panelIndex, request);
     }
 
     @Async
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void doGenerateFusion(Long episodeId, Integer panelIndex, FusionRequest request) {
         try {
             String backgroundUrl = request != null && request.getBackgroundUrl() != null
@@ -184,6 +190,7 @@ public class PanelProductionService {
     /**
      * 获取单分镜过渡融合图状态
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public PanelTransitionResponse getTransitionStatus(Long episodeId, Integer panelIndex) {
         EpisodeProduction production = getOrCreateProduction(episodeId);
         List<String> transitionUrls = parseUrlList(production.getTransitionUrls());
@@ -213,11 +220,13 @@ public class PanelProductionService {
      * 生成过渡融合图（异步）
      * 融合图 + 上一个分镜的尾帧 → 过渡融合图
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void generateTransition(Long episodeId, Integer panelIndex, TransitionRequest request) {
         self().doGenerateTransition(episodeId, panelIndex, request);
     }
 
     @Async
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void doGenerateTransition(Long episodeId, Integer panelIndex, TransitionRequest request) {
         int maxRetries = 3;
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
@@ -267,6 +276,7 @@ public class PanelProductionService {
     /**
      * 获取分镜尾帧URL
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public PanelTailFrameResponse getTailFrame(Long episodeId, Integer panelIndex) {
         PanelTailFrameResponse response = new PanelTailFrameResponse();
         response.setPanelIndex(panelIndex);
@@ -290,6 +300,7 @@ public class PanelProductionService {
     /**
      * 获取指定分镜的尾帧URL（供内部使用）
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public String getTailFrameUrl(Long episodeId, Integer panelIndex) {
         if (panelIndex < 0) return null;
         List<VideoProductionTask> tasks = videoTaskRepository.findByEpisodeIdAndPanelIndex(episodeId, panelIndex);
@@ -306,6 +317,7 @@ public class PanelProductionService {
     /**
      * 获取视频生成任务状态
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public PanelVideoTaskResponse getVideoTaskStatus(Long episodeId, Integer panelIndex) {
         PanelVideoTaskResponse response = new PanelVideoTaskResponse();
         response.setPanelIndex(panelIndex);
@@ -344,11 +356,13 @@ public class PanelProductionService {
      * 单分镜一键生产（异步）
      * 背景 → 融合 → 过渡融合 → 视频 → 尾帧
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void produceSinglePanel(Long episodeId, Integer panelIndex, ProduceRequest request) {
         self().doProduceSinglePanel(episodeId, panelIndex, request);
     }
 
     @Async
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void doProduceSinglePanel(Long episodeId, Integer panelIndex, ProduceRequest request) {
         try {
             // 检查上一个分镜是否完成
@@ -410,11 +424,13 @@ public class PanelProductionService {
      * 一键生成所有分镜视频（异步）
      * 按顺序逐个执行，每个分镜完成后再执行下一个
      */
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void produceAllPanels(Long episodeId, Integer startFrom) {
         self().doProduceAllPanels(episodeId, startFrom);
     }
 
     @Async
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void doProduceAllPanels(Long episodeId, Integer startFrom) {
         try {
             Episode episode = episodeRepository.selectById(episodeId);
@@ -458,6 +474,7 @@ public class PanelProductionService {
      * 合成所有分镜视频为最终视频
      */
     @Transactional
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public CompositionResultResponse synthesizeEpisode(Long episodeId) {
         EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
         if (production == null) {
@@ -833,6 +850,7 @@ public class PanelProductionService {
     }
 
     @Async
+    @Deprecated // TODO: 后续迭代删除 — 已被 panelId 系列方法替代
     public void pollVideoTask(Long taskId) {
         try {
             int maxAttempts = 120;

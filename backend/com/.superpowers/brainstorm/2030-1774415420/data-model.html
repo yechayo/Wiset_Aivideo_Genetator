@@ -1,0 +1,112 @@
+<h2>数据模型设计</h2>
+<p class="subtitle">三个实体统一 Map 结构 + Project 新增 deleted 字段</p>
+
+<div class="mockup">
+  <div class="mockup-header">Project 实体</div>
+  <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 16px; white-space: pre; overflow-x: auto;">
+<b style="color: #22c55e;">// 独立字段</b>
+id: Long (AUTO)
+projectId: String
+userId: String
+status: String
+<b style="color: #f59e0b;">deleted: Boolean (默认 false)  ← 新增</b>
+createdAt: LocalDateTime
+updatedAt: LocalDateTime
+
+<b style="color: #22c55e;">// projectInfo Map 的 key 结构</b>
+{
+  "storyPrompt": "故事提示词",
+  "genre": "热血玄幻",
+  "targetAudience": "18-30",
+  "totalEpisodes": 10,
+  "episodeDuration": 60,
+  "visualStyle": "ANIME",
+
+  "script": {
+    "outline": "Markdown 全文（展示用）",
+    "characters": [
+      { "name": "林墨", "role": "主角",
+        "personality": "...", "appearance": "...",
+        "background": "..." }
+    ],
+    "items": [
+      { "name": "暗影令牌", "description": "..." }
+    ],
+    "episodes": [
+      { "ep": 1, "title": "暗夜书店",
+        "synopsis": "...",
+        "characters": ["林墨"],
+        "keyItems": ["暗影令牌"] }
+    ]
+  }
+}
+  </div>
+</div>
+
+<div class="mockup" style="margin-top: 12px;">
+  <div class="mockup-header">Episode 实体</div>
+  <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 16px; white-space: pre; overflow-x: auto;">
+<b style="color: #22c55e;">// 独立字段</b>
+id: Long (AUTO)
+projectId: String
+status: String        // DRAFT, DONE, FAILED, ...
+createdAt: LocalDateTime
+updatedAt: LocalDateTime
+
+<b style="color: #22c55e;">// episodeInfo Map 的 key 结构</b>
+{
+  "episodeNum": 1,
+  "title": "暗夜书店",
+  "content": "完整剧本内容...",
+  "characters": "涉及角色文本",
+  "keyItems": "关键物品文本",
+  "continuityNote": "连贯性备注",
+  "visualStyleNote": "视觉风格备注",
+  "synopsis": "大纲中的梗概（从 script.episodes 复制）",
+
+  <b style="color: #f59e0b;">// 分镜阶段由 StoryboardService 填充</b>
+  "storyboardJson": "...",
+  "errorMsg": null,
+
+  <b style="color: #f59e0b;">// 生产阶段由 EpisodeProductionService 填充</b>
+  "productionStatus": "NOT_STARTED"
+}
+  </div>
+</div>
+
+<div class="mockup" style="margin-top: 12px;">
+  <div class="mockup-header">Character 实体</div>
+  <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 16px; white-space: pre; overflow-x: auto;">
+<b style="color: #22c55e;">// 独立字段</b>
+id: Long (AUTO)
+projectId: String
+status: String
+createdAt: LocalDateTime
+updatedAt: LocalDateTime
+
+<b style="color: #22c55e;">// characterInfo Map 的 key 结构</b>
+{
+  "charId": "CHAR-xxx",
+  "name": "林墨",
+  "role": "主角",
+  "personality": "冷静沉稳",
+  "appearance": "黑发、深色风衣",
+  "background": "前特工",
+
+  <b style="color: #f59e0b;">// 图像阶段填充</b>
+  "images": {
+    "front": "url",
+    "side": "url",
+    "back": "url"
+  },
+  "expressionImages": {
+    "happy": "url", "angry": "url", ...
+  }
+}
+  </div>
+</div>
+
+<h3 style="margin-top: 24px;">Repository 变更</h3>
+<div class="section">
+  <p style="color: #e2e8f0;">ProjectRepository 所有查询加 <code style="background:#1e293b;padding:2px 6px;border-radius:3px;">deleted = false</code> 条件。可通过 MyBatis-Plus <code>@SqlCondition</code> 注解或全局配置实现。</p>
+</div>

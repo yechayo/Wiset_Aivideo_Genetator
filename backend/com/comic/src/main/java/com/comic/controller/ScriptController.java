@@ -1,6 +1,7 @@
 package com.comic.controller;
 
 import com.comic.common.Result;
+import com.comic.dto.request.EpisodeGenerateRequest;
 import com.comic.dto.request.ScriptReviseRequest;
 import com.comic.service.script.ScriptService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,8 +32,33 @@ public class ScriptController {
         return Result.ok();
     }
 
+    @PostMapping("/episodes/generate")
+    @Operation(summary = "生成指定章节的剧集")
+    public Result<Void> generateEpisodes(@PathVariable String projectId,
+                                         @RequestBody EpisodeGenerateRequest request) {
+        scriptService.generateScriptEpisodes(projectId, request.getChapter(),
+                request.getEpisodeCount(), request.getModificationSuggestion());
+        return Result.ok();
+    }
+
+    @PostMapping("/episodes/generate-all")
+    @Operation(summary = "批量生成所有剩余章节的剧集")
+    public Result<Void> generateAllEpisodes(@PathVariable String projectId) {
+        scriptService.generateAllEpisodes(projectId);
+        return Result.ok();
+    }
+
+    @PostMapping("/episodes/revise")
+    @Operation(summary = "重新生成指定章节的剧集")
+    public Result<Void> reviseEpisodes(@PathVariable String projectId,
+                                       @RequestBody EpisodeGenerateRequest request) {
+        scriptService.reviseEpisodes(projectId, request.getChapter(),
+                request.getEpisodeCount(), request.getModificationSuggestion());
+        return Result.ok();
+    }
+
     @PostMapping("/confirm")
-    @Operation(summary = "确认剧本（自动分批生成剧集）")
+    @Operation(summary = "确认剧本")
     public Result<Void> confirmScript(@PathVariable String projectId) {
         scriptService.confirmScript(projectId);
         return Result.ok();
