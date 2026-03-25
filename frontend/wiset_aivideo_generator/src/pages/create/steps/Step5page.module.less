@@ -1,65 +1,91 @@
-.page {
+/**
+ * Step5page Styles
+ * Video Production Workstation
+ */
+
+// Page container
+.pageContainer {
   width: 100%;
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4);
   box-sizing: border-box;
-  padding: 32px 0;
 }
 
-.header {
-  margin-bottom: 32px;
+// Page header
+.pageHeader {
+  margin-bottom: var(--space-8);
 }
 
-.title {
+.titleSection {
+  margin-bottom: var(--space-5);
+}
+
+.pageTitle {
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-bold);
   color: var(--color-text-primary);
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--space-2) 0;
   letter-spacing: -0.02em;
 }
 
-.subtitle {
+.pageSubtitle {
   font-size: var(--font-size-md);
   color: var(--color-text-secondary);
   margin: 0;
 }
 
-.cardList {
+// Stats bar
+.statsBar {
   display: flex;
-  flex-direction: column;
-  gap: 24px;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
 }
 
-/* ---- 空状态 ---- */
-
-.emptyState {
+.statsInfo {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  gap: 20px;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 
-.emptyHint {
+.completedCount {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-success);
+}
+
+.separator {
+  font-size: var(--font-size-md);
+  color: var(--color-text-muted);
+}
+
+.totalCount {
   font-size: var(--font-size-md);
   color: var(--color-text-secondary);
-  margin: 0;
 }
 
-/* ---- 按钮 ---- */
+.statsLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin-left: var(--space-1);
+}
 
-.primaryButton {
-  padding: 12px 28px;
-  background: var(--color-accent-strong);
+.generateAllButton {
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-accent);
   color: var(--color-text-primary);
   border: none;
   border-radius: var(--radius-sm);
-  font-size: 15px;
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: opacity var(--duration-fast) var(--easing-standard);
 
-  &:hover {
-    background: var(--color-accent);
+  &:hover:not(:disabled) {
+    opacity: 0.85;
   }
 
   &:disabled {
@@ -68,48 +94,239 @@
   }
 }
 
-/* ---- API 错误 ---- */
+// Chapter list
+.chapterList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
 
-.apiError {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
+// Chapter group
+.chapterGroup {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+// Chapter header
+.chapterHeader {
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.chapterTitleRow {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  color: rgba(255, 200, 200, 0.95);
-  z-index: 1000;
-  animation: slideUp 0.3s ease;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
-.errorDismiss {
+.chapterIcon {
+  font-size: var(--font-size-md);
   flex-shrink: 0;
-  padding: 2px 8px;
-  background: rgba(247, 249, 252, 0.1);
-  border: 1px solid rgba(247, 249, 252, 0.15);
-  border-radius: 4px;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-size: 12px;
+}
+
+.chapterTitle {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.chapterDivider {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border-subtle);
+  margin: 0 var(--space-3);
+}
+
+.chapterStats {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.statDot {
+  display: inline-block;
+}
+
+// Completion dots
+.dotCompleted,
+.dotInProgress,
+.dotPending {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dotCompleted {
+  background: #4ade80; // Green - completed
+}
+
+.dotInProgress {
+  background: #fbbf24; // Yellow - in progress
+}
+
+.dotPending {
+  background: #474747; // Gray - pending
+}
+
+.chapterProgress {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chapterProgressText {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+}
+
+// Episode list
+.episodeList {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+// Placeholder episode card (will be replaced by EpisodeCard component)
+.episodePlaceholder {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: border-color var(--duration-fast) var(--easing-standard);
 
   &:hover {
-    background: rgba(247, 249, 252, 0.2);
+    border-color: var(--color-border-strong);
   }
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(8px);
-  }
+.episodeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  cursor: pointer;
+  user-select: none;
+}
+
+.episodeTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.episodeArrow {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  transition: transform var(--duration-fast) var(--easing-standard);
+}
+
+.episodeContent {
+  padding: 0 var(--space-4) var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+// Placeholder segments
+.segmentsPlaceholder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+
+.segmentPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.pipelineStatus {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+
+// Loading state
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: var(--space-4);
+  color: var(--color-text-secondary);
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-border-subtle);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
   to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: rotate(360deg);
   }
+}
+
+// Error state
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: rgba(242, 119, 123, 0.08);
+  border: 1px solid rgba(242, 119, 123, 0.15);
+  border-radius: var(--radius-lg);
+  color: var(--color-danger);
+  text-align: center;
+
+  p {
+    margin: 0;
+    font-size: var(--font-size-md);
+  }
+}
+
+.retryButton {
+  padding: var(--space-3) var(--space-5);
+  background: rgba(242, 119, 123, 0.15);
+  color: var(--color-danger);
+  border: 1px solid rgba(242, 119, 123, 0.3);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-standard);
+
+  &:hover {
+    background: rgba(242, 119, 123, 0.25);
+  }
+}
+
+// Empty state
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
 }

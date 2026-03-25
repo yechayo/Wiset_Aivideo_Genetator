@@ -1,99 +1,129 @@
-/* =============================================
- * VideoPanel — 视频生成面板
- * ============================================= */
+.videoPanel {
+  width: 100%;
+}
 
-.panel {
+.videoContainer {
+  width: 100%;
+  aspect-ratio: 16/9;
+  background-color: var(--color-bg-canvas);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.videoPlayer {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background-color: #000;
+}
+
+.placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 20px;
-  background: #1a1a2e;
-  border: 1px solid #2d2d44;
-  border-radius: 8px;
-  min-height: 200px;
+  gap: var(--space-4);
+  padding: var(--space-5);
 }
 
-.hint {
+.placeholderText {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
   margin: 0;
-  font-size: 14px;
-  color: #9ca3af;
-  text-align: center;
 }
 
-.error {
+.errorText {
+  color: var(--color-danger);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
   margin: 0;
-  font-size: 14px;
-  color: #ef4444;
-  font-weight: 600;
-  text-align: center;
 }
 
-/* ---- 视频容器 ---- */
+.generateButton {
+  background-color: var(--color-accent);
+  color: var(--color-bg-canvas);
+  border: none;
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--easing-standard);
 
-.videoContainer {
-  position: relative;
-  width: 100%;
-  max-width: 100%;
+  &:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
 }
 
-.video {
-  width: 100%;
-  height: auto;
-  border-radius: 8px;
-  display: block;
+.retryButton {
+  background-color: transparent;
+  color: #fbbf24;
+  border: 2px solid #fbbf24;
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  transition: all var(--duration-fast) var(--easing-standard);
+
+  &:hover {
+    background-color: rgba(251, 191, 36, 0.1);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
 }
 
-.duration {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 4px;
-}
-
-/* ---- 加载旋转动画 ---- */
-
+// Loading spinner
 .spinner {
-  display: inline-block;
-  width: 32px;
-  height: 32px;
-  border: 3px solid #2d2d44;
-  border-top-color: #3b82f6;
+  position: relative;
+  width: 40px;
+  height: 40px;
+}
+
+.spinnerRing {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 3px solid transparent;
+  border-top-color: var(--color-accent);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 1s linear infinite;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 3px solid transparent;
+    border-top-color: rgba(114, 183, 255, 0.5);
+    border-radius: 50%;
+    animation: spin 1.5s linear infinite reverse;
+  }
 }
 
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-/* ---- 按钮 ---- */
-
-.primaryBtn {
-  padding: 10px 24px;
-  background: #4f46e5;
-  color: #ffffff;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
-
-  &:hover {
-    opacity: 0.85;
-  }
-
-  &:focus-visible {
-    outline: 2px solid #4f46e5;
-    outline-offset: 2px;
   }
 }

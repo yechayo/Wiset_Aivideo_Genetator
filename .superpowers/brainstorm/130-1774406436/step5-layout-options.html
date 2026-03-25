@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Step5 页面布局方案</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #131313; color: #e2e2e2; font-family: 'Manrope', sans-serif; padding: 40px; }
+  h1 { font-family: 'Space Grotesk', sans-serif; font-size: 24px; margin-bottom: 8px; }
+  .subtitle { color: #a3a3a3; font-size: 13px; margin-bottom: 36px; }
+
+  .options { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .option-card { background: #1b1b1b; border: 2px solid #353535; border-radius: 12px; padding: 24px; cursor: pointer; transition: all 0.2s; }
+  .option-card:hover { border-color: #c6c6c7; }
+  .option-card.selected { border-color: #fff; background: #1f1f1f; }
+  .option-label { font-family: 'Space Grotesk', sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 0.15em; color: #474747; margin-bottom: 8px; }
+  .option-title { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; margin-bottom: 12px; color: #fff; }
+
+  .mockup { background: #0e0e0e; border: 1px solid #353535; border-radius: 8px; overflow: hidden; margin-top: 16px; }
+  .mock-header { background: #1b1b1b; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #353535; }
+  .mock-header-left { font-size: 11px; color: #a3a3a3; }
+  .mock-header-right { font-size: 10px; color: #474747; display: flex; gap: 12px; }
+  .mock-stat { display: flex; align-items: center; gap: 4px; }
+  .stat-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .stat-green { background: #4ade80; }
+  .stat-gray { background: #474747; }
+
+  .mock-body { padding: 12px; min-height: 200px; }
+
+  /* 方案A: 网格列表 */
+  .grid-layout { display: flex; flex-direction: column; gap: 10px; }
+  .chapter-label { font-size: 10px; color: #474747; font-family: 'Inter', sans-serif; text-transform: uppercase; letter-spacing: 0.1em; padding: 4px 0; }
+  .episode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ep-card { background: #1b1b1b; border: 1px solid #353535; border-radius: 6px; padding: 10px; }
+  .ep-title { font-size: 11px; font-weight: 600; color: #e2e2e2; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .ep-progress { height: 3px; background: #353535; border-radius: 99px; margin-bottom: 8px; }
+  .ep-progress-bar { height: 100%; background: #fff; border-radius: 99px; }
+  .ep-segments { display: flex; gap: 4px; }
+  .seg-dot { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #353535; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #474747; }
+  .seg-done { background: rgba(74,222,128,0.15); border-color: #4ade80; color: #4ade80; }
+  .seg-review { background: rgba(251,191,36,0.15); border-color: #fbbf24; color: #fbbf24; }
+  .seg-active { background: rgba(255,255,255,0.1); border-color: #c6c6c7; color: #c6c6c7; }
+
+  /* 方案B: 展开式 */
+  .expand-layout { display: flex; flex-direction: column; gap: 8px; }
+  .ep-expand-card { background: #1b1b1b; border: 1px solid #353535; border-radius: 6px; overflow: hidden; }
+  .ep-expand-header { padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+  .ep-expand-title { font-size: 12px; font-weight: 600; color: #e2e2e2; }
+  .ep-expand-meta { font-size: 10px; color: #474747; display: flex; gap: 8px; align-items: center; }
+  .ep-expand-body { padding: 0 12px 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg-mini { width: 48px; height: 32px; border: 1px solid #353535; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #474747; background: #0e0e0e; }
+  .seg-mini.done { border-color: #4ade80; color: #4ade80; }
+  .seg-mini.review { border-color: #fbbf24; color: #fbbf24; }
+  .seg-mini.active { border-color: #c6c6c7; color: #c6c6c7; }
+
+  .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .pros, .cons { padding: 12px; border-radius: 6px; }
+  .pros { background: rgba(74,222,128,0.05); border: 1px solid rgba(74,222,128,0.15); }
+  .cons { background: rgba(255,180,171,0.05); border: 1px solid rgba(255,180,171,0.15); }
+  .pros h4 { color: #4ade80; font-size: 11px; font-family: 'Inter', sans-serif; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .cons h4 { color: #ffb4ab; font-size: 11px; font-family: 'Inter', sans-serif; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .pros li, .cons li { font-size: 11px; color: #a3a3a3; padding: 3px 0; line-height: 1.5; }
+
+  .rec { display: inline-block; font-size: 10px; padding: 2px 8px; background: rgba(255,255,255,0.1); border-radius: 99px; color: #fff; font-family: 'Inter', sans-serif; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Step5 — 剧集卡片布局方案</h1>
+<p class="subtitle">两种布局方式，请选择你更喜欢的一种</p>
+
+<div class="options">
+  <!-- 方案 A -->
+  <div class="option-card selected" data-choice="grid" onclick="selectOption(this)">
+    <div class="option-label">方案 A</div>
+    <div class="option-title">紧凑网格视图</div>
+    <p style="font-size: 12px; color: #a3a3a3; line-height: 1.5; margin-bottom: 4px;">所有剧集以网格形式平铺，每张卡片直接显示片段进度状态。一目了然，适合快速查看整体进度。</p>
+
+    <div class="mockup">
+      <div class="mock-header">
+        <div class="mock-header-left">← 返回 · 我的项目 · 都市传说</div>
+        <div class="mock-header-right">
+          <div class="mock-stat"><span class="stat-dot stat-green"></span> 已生成 5</div>
+          <div class="mock-stat"><span class="stat-dot stat-gray"></span> 未生成 7</div>
+          <span style="color:#353535;">|</span>
+          <span style="color:#474747; font-size:10px;">预留：一键生成</span>
+        </div>
+      </div>
+      <div class="mock-body">
+        <div class="grid-layout">
+          <div class="chapter-label">第一章 · 深夜便利店</div>
+          <div class="episode-row">
+            <div class="ep-card">
+              <div class="ep-title">第 1 集 <span style="color:#4ade80; font-size:9px;">2/3</span></div>
+              <div class="ep-progress"><div class="ep-progress-bar" style="width:66%"></div></div>
+              <div class="ep-segments">
+                <div class="seg-dot seg-done">✓</div>
+                <div class="seg-dot seg-done">✓</div>
+                <div class="seg-dot seg-review">!</div>
+              </div>
+            </div>
+            <div class="ep-card">
+              <div class="ep-title">第 2 集 <span style="color:#474747; font-size:9px;">0/4</span></div>
+              <div class="ep-progress"><div class="ep-progress-bar" style="width:0%"></div></div>
+              <div class="ep-segments">
+                <div class="seg-dot">1</div>
+                <div class="seg-dot">2</div>
+                <div class="seg-dot">3</div>
+                <div class="seg-dot">4</div>
+              </div>
+            </div>
+            <div class="ep-card">
+              <div class="ep-title">第 3 集 <span style="color:#4ade80; font-size:9px;">3/3</span></div>
+              <div class="ep-progress"><div class="ep-progress-bar" style="width:100%"></div></div>
+              <div class="ep-segments">
+                <div class="seg-dot seg-done">✓</div>
+                <div class="seg-dot seg-done">✓</div>
+                <div class="seg-dot seg-done">✓</div>
+              </div>
+            </div>
+            <div class="ep-card">
+              <div class="ep-title">第 4 集 <span style="color:#fbbf24; font-size:9px;">1/3</span></div>
+              <div class="ep-progress"><div class="ep-progress-bar" style="width:33%"></div></div>
+              <div class="ep-segments">
+                <div class="seg-dot seg-done">✓</div>
+                <div class="seg-dot seg-active">2</div>
+                <div class="seg-dot">3</div>
+              </div>
+            </div>
+          </div>
+          <div class="chapter-label" style="margin-top: 8px;">第二章 · 午夜电台</div>
+          <div class="episode-row">
+            <div class="ep-card">
+              <div class="ep-title">第 5 集 <span style="color:#474747; font-size:9px;">0/2</span></div>
+              <div class="ep-progress"><div class="ep-progress-bar" style="width:0%"></div></div>
+              <div class="ep-segments">
+                <div class="seg-dot">1</div>
+                <div class="seg-dot">2</div>
+              </div>
+            </div>
+            <div class="ep-card">
+              <div class="ep-title">第 6 集 <span style="color:#474747; font-size:9px;">0/3</span></div>
+              <div class="ep-progress"><div class="ep-progress-bar" style="width:0%"></div></div>
+              <div class="ep-segments">
+                <div class="seg-dot">1</div>
+                <div class="seg-dot">2</div>
+                <div class="seg-dot">3</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros-cons">
+      <div class="pros"><h4>优点</h4><ul style="list-style:none"><li>• 一屏看到所有集的进度</li><li>• 快速定位需要操作的地方</li><li>• 状态一目了然（色点）</li></ul></div>
+      <div class="cons"><h4>缺点</h4><ul style="list-style:none"><li>• 集数多时页面较长</li><li>• 单集详情需要点击展开</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 方案 B -->
+  <div class="option-card" data-choice="expand" onclick="selectOption(this)">
+    <div class="option-label">方案 B</div>
+    <div class="option-title">展开式列表视图</div>
+    <p style="font-size: 12px; color: #a3a3a3; line-height: 1.5; margin-bottom: 4px;">剧集以可展开的列表形式排列，展开后显示所有片段的详细状态。更聚焦当前操作的集。</p>
+
+    <div class="mockup">
+      <div class="mock-header">
+        <div class="mock-header-left">← 返回 · 我的项目 · 都市传说</div>
+        <div class="mock-header-right">
+          <div class="mock-stat"><span class="stat-dot stat-green"></span> 已生成 5</div>
+          <div class="mock-stat"><span class="stat-dot stat-gray"></span> 未生成 7</div>
+          <span style="color:#353535;">|</span>
+          <span style="color:#474747; font-size:10px;">预留：一键生成</span>
+        </div>
+      </div>
+      <div class="mock-body">
+        <div class="expand-layout">
+          <div class="ep-expand-card">
+            <div class="ep-expand-header">
+              <div class="ep-expand-title">第 1 集 · 深夜便利店的秘密</div>
+              <div class="ep-expand-meta">
+                <span style="color:#4ade80;">2/3 完成</span>
+                <span style="color:#fbbf24;">1 待审核</span>
+                <span>▼</span>
+              </div>
+            </div>
+            <div class="ep-expand-body">
+              <div class="seg-mini done">✓</div>
+              <div class="seg-mini done">✓</div>
+              <div class="seg-mini review">!</div>
+            </div>
+          </div>
+          <div class="ep-expand-card">
+            <div class="ep-expand-header">
+              <div class="ep-expand-title">第 2 集 · 半夜来客</div>
+              <div class="ep-expand-meta">
+                <span>0/4 未开始</span>
+                <span>▶</span>
+              </div>
+            </div>
+          </div>
+          <div class="ep-expand-card" style="border-color: #4ade80;">
+            <div class="ep-expand-header">
+              <div class="ep-expand-title">第 3 集 · 消失的收银员</div>
+              <div class="ep-expand-meta">
+                <span style="color:#4ade80;">3/3 全部完成 ✓</span>
+                <span>▼</span>
+              </div>
+            </div>
+            <div class="ep-expand-body">
+              <div class="seg-mini done">✓</div>
+              <div class="seg-mini done">✓</div>
+              <div class="seg-mini done">✓</div>
+            </div>
+          </div>
+          <div class="ep-expand-card">
+            <div class="ep-expand-header">
+              <div class="ep-expand-title">第 4 集 · 监控录像</div>
+              <div class="ep-expand-meta">
+                <span style="color:#fbbf24;">1/3 进行中</span>
+                <span>▶</span>
+              </div>
+            </div>
+          </div>
+          <div class="ep-expand-card">
+            <div class="ep-expand-header">
+              <div class="ep-expand-title">第 5 集 · 午夜来电</div>
+              <div class="ep-expand-meta">
+                <span>0/2 未开始</span>
+                <span>▶</span>
+              </div>
+            </div>
+          </div>
+          <div class="ep-expand-card">
+            <div class="ep-expand-header">
+              <div class="ep-expand-title">第 6 集 · 最后的听众</div>
+              <div class="ep-expand-meta">
+                <span>0/3 未开始</span>
+                <span>▶</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros-cons">
+      <div class="pros"><h4>优点</h4><ul style="list-style:none"><li>• 集数多时不显得拥挤</li><li>• 展开/折叠控制信息密度</li><li>• 可同时只关注一集</li></ul></div>
+      <div class="cons"><h4>缺点</h4><ul style="list-style:none"><li>• 整体进度不如网格直观</li><li>• 需要展开才能看到片段</li></ul></div>
+    </div>
+  </div>
+</div>
+
+<p style="margin-top: 24px; font-size: 12px; color: #474747;">点击卡片选择方案，然后在终端告诉我你的选择。</p>
+
+<script>
+function selectOption(el) {
+  document.querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+</script>
+
+</body>
+</html>

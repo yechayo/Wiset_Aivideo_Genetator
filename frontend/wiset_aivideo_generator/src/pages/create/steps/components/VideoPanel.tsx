@@ -1,49 +1,89 @@
+import React from 'react';
 import styles from './VideoPanel.module.less';
-import type { PanelStageStatus } from '../../../../services/types/episode.types';
+import type { SegmentPipelineStep } from '../types';
 
-interface VideoPanelProps {
-  status: PanelStageStatus;
+export interface VideoPanelProps {
   videoUrl: string | null;
-  duration: number | null;
-  onGenerate: () => void;
+  pipelineStep: SegmentPipelineStep;
+  onGenerateVideo: () => void;
 }
 
-export default function VideoPanel({ status, videoUrl, duration, onGenerate }: VideoPanelProps) {
-  if (status === 'pending') {
-    return (
-      <div className={styles.panel}>
-        <p className={styles.hint}>过渡融合图完成后将自动生成视频</p>
-        <button className={styles.primaryBtn} onClick={onGenerate}>生成视频</button>
-      </div>
-    );
-  }
+// Loading spinner component
+const LoadingSpinner: React.FC = () => (
+  <div className={styles.spinner}>
+    <div className={styles.spinnerRing}></div>
+  </div>
+);
 
-  if (status === 'generating') {
-    return (
-      <div className={styles.panel}>
-        <div className={styles.spinner} />
-        <p>正在生成视频...</p>
-      </div>
-    );
-  }
+const VideoPanel: React.FC<VideoPanelProps> = ({ videoUrl, pipelineStep, onGenerateVideo }) => {
+  const canGenerate = pipelineStep === 'comic_approved';
+  const isGenerating = pipelineStep === 'video_generating';
+  const isCompleted = pipelineStep === 'video_completed' && videoUrl;
+  const isFailed = pipelineStep === 'video_failed';
 
-  if (status === 'failed') {
+  const renderContent = () => {
+    if (isCompleted && videoUrl) {
+      return (
+        <video
+          className={styles.videoPlayer}
+          controls
+          src={videoUrl}
+        >
+          您的浏览器不支持视频播放。
+        </video>
+      );
+    }
+
+    if (isGenerating) {
+      return (
+        <div className={styles.placeholder}>
+          <LoadingSpinner />
+          <p className={styles.placeholderText}>视频生成中...</p>
+        </div>
+      );
+    }
+
+    if (isFailed) {
+      return (
+        <div className={styles.placeholder}>
+          <p className={styles.errorText}>视频生成失败</p>
+          <button
+            className={styles.retryButton}
+            onClick={onGenerateVideo}
+          >
+            ⟳ 重试
+          </button>
+        </div>
+      );
+    }
+
+    if (canGenerate) {
+      return (
+        <div className={styles.placeholder}>
+          <button
+            className={styles.generateButton}
+            onClick={onGenerateVideo}
+          >
+            生成视频
+          </button>
+        </div>
+      );
+    }
+
     return (
-      <div className={styles.panel}>
-        <p className={styles.error}>视频生成失败</p>
-        <button className={styles.primaryBtn} onClick={onGenerate}>重新生成</button>
+      <div className={styles.placeholder}>
+        <p className={styles.placeholderText}>四宫格审核通过后可生成</p>
       </div>
     );
-  }
+  };
 
   return (
-    <div className={styles.panel}>
-      {videoUrl && (
-        <div className={styles.videoContainer}>
-          <video className={styles.video} src={videoUrl} controls />
-          {duration && <span className={styles.duration}>{duration}s</span>}
-        </div>
-      )}
+    <div className={styles.videoPanel}>
+      <div className={styles.videoContainer}>
+        {renderContent()}
+      </div>
     </div>
   );
-}
+};
+
+export default VideoPanel;

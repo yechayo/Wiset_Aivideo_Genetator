@@ -1,349 +1,162 @@
-import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { ChevronDownIcon, ChevronRightIcon } from '../../../../components/icons/Icons';
+import type { EpisodeState, SegmentState, SegmentPipelineStep } from '../types';
 import styles from './EpisodeCard.module.less';
-import type { EpisodeCardData } from '../../../../services/types/episode.types';
+import { SegmentCard } from './SegmentCard';
 
 interface EpisodeCardProps {
-  episode: EpisodeCardData;
-  projectId?: string;
-  isCurrentReview: boolean;
-  isLoadingStoryboard: boolean;
-  storyboardStatusDesc: string;
-  storyboardFailed: boolean;
-  sceneGridUrls: string[];
-  onConfirm: () => void;
-  onRevise: (feedback: string) => void;
-  onRetry: () => void;
-  onLoadStoryboard: () => void;
-  onGenerateVideo: (panelIndex: number) => void;
-  onAutoContinue: () => void;
-  isGlobalSubmitting: boolean;
+  chapterIndex: number;
+  episode: EpisodeState;
+  isExpanded: boolean;
+  onToggle: () => void;
+  expandedSegmentKey: string | null;
+  onSegmentToggle: (key: string | null) => void;
+  onSegmentApprove: (episodeId: number, segmentIndex: number) => void;
+  onSegmentRegenerate: (episodeId: number, segmentIndex: number, feedback: string) => void;
+  onSegmentGenerateVideo: (episodeId: number, segmentIndex: number) => void;
 }
 
-type DisplayMode = 'review' | 'production';
+/**
+ * 计算剧集的整体状态
+ * - 已完成: 所有 segments 都是 video_completed
+ * - 进行中: 有 segment 处于 comic_review/comic_approved/video_generating
+ * - 未开始: 所有 segments 都是 pending/scene_ready
+ */
+const getEpisodeStatus = (segments: SegmentState[]): 'completed' | 'in-progress' | 'not-started' => {
+  if (segments.length === 0) return 'not-started';
 
+  const allCompleted = segments.every(s => s.pipelineStep === 'video_completed');
+  if (allCompleted) return 'completed';
+
+  const hasInProgress = segments.some(s =>
+    s.pipelineStep === 'comic_review' ||
+    s.pipelineStep === 'comic_approved' ||
+    s.pipelineStep === 'video_generating'
+  );
+  if (hasInProgress) return 'in-progress';
+
+  return 'not-started';
+};
+
+/**
+ * 获取片段的状态颜色
+ * - 绿色: video_completed
+ * - 黄色: comic_review/comic_approved/video_generating
+ * - 灰色: pending/scene_ready
+ */
+const getSegmentStatusColor = (step: SegmentPipelineStep): string => {
+  if (step === 'video_completed') return '#4ade80';
+  if (step === 'comic_review' || step === 'comic_approved' || step === 'video_generating') return '#fbbf24';
+  return '#474747';
+};
+
+/**
+ * 剧集卡片组件
+ * 显示剧集标题、简介、完成状态，支持折叠/展开
+ */
 const EpisodeCard = ({
+  chapterIndex: _chapterIndex, // Prefix with underscore to indicate intentionally unused
   episode,
-  projectId,
-  isCurrentReview,
-  isLoadingStoryboard,
-  storyboardStatusDesc,
-  storyboardFailed,
-  sceneGridUrls,
-  onConfirm,
-  onRevise,
-  onRetry,
-  onLoadStoryboard,
-  onGenerateVideo,
-  onAutoContinue,
-  isGlobalSubmitting,
+  isExpanded,
+  onToggle,
+  expandedSegmentKey,
+  onSegmentToggle,
+  onSegmentApprove,
+  onSegmentRegenerate,
+  onSegmentGenerateVideo,
 }: EpisodeCardProps) => {
-  const navigate = useNavigate();
-  const [mode, setMode] = useState<DisplayMode>('review');
-  const [reviseText, setReviseText] = useState('');
-  const [showReviseInput, setShowReviseInput] = useState(false);
+  const episodeStatus = getEpisodeStatus(episode.segments);
 
-  const handleRevise = useCallback(() => {
-    if (reviseText.trim()) {
-      onRevise(reviseText.trim());
-      setReviseText('');
-      setShowReviseInput(false);
-    }
-  }, [reviseText, onRevise]);
+  // Render segment cards using SegmentCard component
+  const segmentCards = episode.segments.map((segment) => {
+    const segmentKey = `${episode.episodeId}-${segment.segmentIndex}`;
+    const isSegmentExpanded = expandedSegmentKey === segmentKey;
 
-  const canReview = isCurrentReview && episode.status === 'GENERATING';
-  const isInProduction = episode.status === 'DONE' || episode.productionStatus === 'IN_PROGRESS';
-
-  // 解析分镜 JSON
-  const parsedStoryboard = episode.storyboardJson
-    ? (() => {
-        try {
-          return JSON.parse(episode.storyboardJson);
-        } catch {
-          return null;
-        }
-      })()
-    : null;
-
-  const panels = parsedStoryboard?.panels || [];
+    return (
+      <SegmentCard
+        key={segment.segmentIndex}
+        episodeId={episode.episodeId}
+        segment={segment}
+        isExpanded={isSegmentExpanded}
+        onToggle={() => onSegmentToggle(isSegmentExpanded ? null : segmentKey)}
+        onApprove={() => onSegmentApprove(episode.episodeId, segment.segmentIndex)}
+        onRegenerate={(feedback) => onSegmentRegenerate(episode.episodeId, segment.segmentIndex, feedback)}
+        onGenerateVideo={() => onSegmentGenerateVideo(episode.episodeId, segment.segmentIndex)}
+      />
+    );
+  });
 
   return (
-    <div className={styles.card}>
-      {/* Card Header */}
-      <div className={styles.header}>
-        <div className={styles.episodeInfo}>
-          <span className={styles.episodeNum}>EP {episode.episodeNum}</span>
-          <h3 className={styles.title}>{episode.title}</h3>
+    <div className={`${styles.episodeCard} ${styles[episodeStatus]} ${isExpanded ? styles.expanded : ''}`}>
+      {/* 卡片头部 */}
+      <div className={styles.cardHeader} onClick={onToggle}>
+        <div className={styles.headerLeft}>
+          {isExpanded ? (
+            <ChevronDownIcon className={styles.chevron} />
+          ) : (
+            <ChevronRightIcon className={styles.chevron} />
+          )}
+          <div className={styles.titleSection}>
+            <h4 className={styles.title}>
+              第{episode.episodeIndex}集：{episode.title}
+            </h4>
+            <span className={styles.segmentCount}>{episode.segments.length} 个片段</span>
+          </div>
         </div>
-        <div className={styles.statusBadges}>
-          {episode.status === 'DONE' && (
-            <span className={`${styles.badge} ${styles.success}`}>已完成</span>
+
+        <div className={styles.headerRight}>
+          {/* 状态图标 */}
+          {episodeStatus === 'completed' && (
+            <div className={`${styles.statusIcon} ${styles.completed}`}>
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
           )}
-          {episode.status === 'GENERATING' && (
-            <span className={`${styles.badge} ${styles.processing}`}>生成中</span>
+          {episodeStatus === 'in-progress' && (
+            <div className={`${styles.statusIcon} ${styles.inProgress}`}>
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                <path d="M12 6V12L16 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </div>
           )}
-          {episode.status === 'FAILED' && (
-            <span className={`${styles.badge} ${styles.error}`}>失败</span>
+          {episodeStatus === 'not-started' && (
+            <div className={`${styles.statusIcon} ${styles.notStarted}`}>
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                <path d="M12 8V16M8 12H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </div>
           )}
-          {episode.productionStatus === 'IN_PROGRESS' && (
-            <span className={`${styles.badge} ${styles.active}`}>生产中</span>
+
+          {/* 片段完成指示器（折叠时显示） */}
+          {!isExpanded && episode.segments.length > 0 && (
+            <div className={styles.segmentIndicator}>
+              {episode.segments.map((segment) => (
+                <div
+                  key={segment.segmentIndex}
+                  className={styles.segmentDot}
+                  style={{ backgroundColor: getSegmentStatusColor(segment.pipelineStep) }}
+                  title={`片段 ${segment.segmentIndex + 1}: ${segment.pipelineStep}`}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>
 
-      {/* Mode Switcher */}
-      <div className={styles.modeSwitcher}>
-        <button
-          className={`${styles.modeBtn} ${mode === 'review' ? styles.active : ''}`}
-          onClick={() => setMode('review')}
-          disabled={!canReview && !parsedStoryboard}
-        >
-          分镜审核
-        </button>
-        <button
-          className={`${styles.modeBtn} ${mode === 'production' ? styles.active : ''}`}
-          onClick={() => setMode('production')}
-          disabled={!isInProduction}
-        >
-          视频生产
-        </button>
-      </div>
-
-      {/* Review Mode */}
-      {mode === 'review' && (
-        <div className={styles.reviewMode}>
-          {isLoadingStoryboard && isCurrentReview && (
-            <div className={styles.loadingState}>
-              <div className={styles.spinner} />
-              <p>生成分镜中...</p>
-              {storyboardStatusDesc && (
-                <span className={styles.statusDesc}>{storyboardStatusDesc}</span>
-              )}
-            </div>
-          )}
-
-          {storyboardFailed && isCurrentReview && (
-            <div className={styles.errorState}>
-              <p className={styles.errorText}>分镜生成失败</p>
-              {storyboardStatusDesc && (
-                <span className={styles.errorDesc}>{storyboardStatusDesc}</span>
-              )}
-              <button
-                className={styles.retryBtn}
-                onClick={onRetry}
-                disabled={isGlobalSubmitting}
-              >
-                重试
-              </button>
-            </div>
-          )}
-
-          {parsedStoryboard && panels.length > 0 && (
-            <div className={styles.storyboardContent}>
-              <div className={styles.panelsList}>
-                {panels.map((panel: any, idx: number) => (
-                  <div key={idx} className={styles.panelItem}>
-                    <span className={styles.panelIndex}>#{idx + 1}</span>
-                    <div className={styles.panelDetails}>
-                      <p><strong>场景:</strong> {panel.scene || panel.background?.scene_desc || '-'}</p>
-                      <p><strong>角色:</strong> {
-                        typeof panel.characters === 'string'
-                          ? panel.characters
-                          : Array.isArray(panel.characters)
-                            ? panel.characters.map((c: any) => c.name).join(', ')
-                            : '-'
-                      }</p>
-                      <p><strong>对白:</strong> {
-                        typeof panel.dialogue === 'string'
-                          ? panel.dialogue
-                          : Array.isArray(panel.dialogue)
-                            ? panel.dialogue.map((d: any) => d.speaker ? `${d.speaker}: ${d.text}` : d.text).join(' ')
-                            : '-'
-                      }</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className={styles.reviewActions}>
-                {!showReviseInput ? (
-                  <>
-                    <button
-                      className={styles.confirmBtn}
-                      onClick={onConfirm}
-                      disabled={isGlobalSubmitting}
-                    >
-                      确认分镜
-                    </button>
-                    <button
-                      className={styles.reviseBtn}
-                      onClick={() => setShowReviseInput(true)}
-                      disabled={isGlobalSubmitting}
-                    >
-                      修订
-                    </button>
-                  </>
-                ) : (
-                  <div className={styles.reviseInput}>
-                    <textarea
-                      value={reviseText}
-                      onChange={(e) => setReviseText(e.target.value)}
-                      placeholder="请描述需要修改的内容..."
-                      rows={3}
-                      className={styles.textarea}
-                    />
-                    <div className={styles.reviseActions}>
-                      <button
-                        className={styles.submitBtn}
-                        onClick={handleRevise}
-                        disabled={!reviseText.trim() || isGlobalSubmitting}
-                      >
-                        提交修订
-                      </button>
-                      <button
-                        className={styles.cancelBtn}
-                        onClick={() => {
-                          setShowReviseInput(false);
-                          setReviseText('');
-                        }}
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {!parsedStoryboard && !isLoadingStoryboard && !storyboardFailed && (
+      {/* 展开内容 */}
+      {isExpanded && (
+        <div className={styles.cardContent}>
+          {episode.segments.length === 0 ? (
             <div className={styles.emptyState}>
-              <p>暂无分镜数据</p>
-              {isCurrentReview && (
-                <button
-                  className={styles.loadBtn}
-                  onClick={onLoadStoryboard}
-                  disabled={isGlobalSubmitting}
-                >
-                  加载分镜
-                </button>
-              )}
+              <p>暂无片段</p>
+            </div>
+          ) : (
+            <div className={styles.segmentList}>
+              {segmentCards}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Production Mode */}
-      {mode === 'production' && (
-        <div className={styles.productionMode}>
-          {sceneGridUrls.length > 0 && (
-            <div className={styles.sceneGrids}>
-              <h4>场景网格图</h4>
-              <div className={styles.gridGallery}>
-                {sceneGridUrls.map((url, idx) => (
-                  <div key={idx} className={styles.gridItem}>
-                    <img src={url} alt={`Scene Grid ${idx + 1}`} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {episode.panelStates.length > 0 && (
-            <div className={styles.panelStates}>
-              <h4>面板状态</h4>
-              <div className={styles.panelsGrid}>
-                {episode.panelStates.map((panel) => (
-                  <div
-                    key={panel.panelIndex}
-                    className={styles.panelStateCard}
-                    onClick={() => {
-                      if (projectId) {
-                        navigate(`/project/${projectId}/episode/${episode.id}/panel/${panel.panelIndex}`);
-                      }
-                    }}
-                  >
-                    <div className={styles.panelHeader}>
-                      <span className={styles.panelNum}>#{panel.panelIndex + 1}</span>
-                      <span className={`${styles.status} ${styles[panel.videoStatus]}`}>
-                        {panel.videoStatus === 'completed' && '已完成'}
-                        {panel.videoStatus === 'generating' && '生成中'}
-                        {panel.videoStatus === 'pending' && '待生成'}
-                        {panel.videoStatus === 'failed' && '失败'}
-                      </span>
-                    </div>
-                    {panel.fusionUrl && (
-                      <div className={styles.fusionImage}>
-                        <img src={panel.fusionUrl} alt={`Panel ${panel.panelIndex}`} />
-                      </div>
-                    )}
-                    {panel.videoUrl && (
-                      <div className={styles.videoPreview}>
-                        <video src={panel.videoUrl} controls />
-                      </div>
-                    )}
-                    <button
-                      className={styles.enterBtn}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (projectId) {
-                          navigate(`/project/${projectId}/episode/${episode.id}/panel/${panel.panelIndex}`);
-                        }
-                      }}
-                    >
-                      进入生产
-                    </button>
-                    {panel.videoStatus === 'failed' && panel.videoTaskId && (
-                      <button
-                        className={styles.retryBtn}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onGenerateVideo(panel.panelIndex);
-                        }}
-                        disabled={isGlobalSubmitting}
-                      >
-                        重试
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {sceneGridUrls.length === 0 && episode.panelStates.length === 0 && (
-            <div className={styles.emptyState}>
-              <p>暂无生产数据</p>
-            </div>
-          )}
-
-          {episode.panelStates.length > 0 && (
-            <div className={styles.productionActions}>
-              <button
-                className={styles.autoContinueBtn}
-                onClick={onAutoContinue}
-                disabled={isGlobalSubmitting}
-              >
-                一键自动化
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Final Video */}
-      {episode.finalVideoUrl && (
-        <div className={styles.finalVideo}>
-          <h4>最终视频</h4>
-          <video src={episode.finalVideoUrl} controls />
-        </div>
-      )}
-
-      {/* Error Message */}
-      {episode.errorMsg && (
-        <div className={styles.errorMessage}>
-          <span className={styles.errorIcon}>⚠</span>
-          {episode.errorMsg}
         </div>
       )}
     </div>
