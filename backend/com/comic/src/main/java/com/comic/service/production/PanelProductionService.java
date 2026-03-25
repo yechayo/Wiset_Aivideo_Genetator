@@ -10,9 +10,11 @@ import com.comic.dto.request.TransitionRequest;
 import com.comic.dto.response.*;
 import com.comic.entity.Episode;
 import com.comic.entity.EpisodeProduction;
+import com.comic.entity.Panel;
 import com.comic.entity.VideoProductionTask;
 import com.comic.repository.EpisodeProductionRepository;
 import com.comic.repository.EpisodeRepository;
+import com.comic.repository.PanelRepository;
 import com.comic.repository.VideoProductionTaskRepository;
 import com.comic.service.oss.OssService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -39,6 +41,7 @@ public class PanelProductionService {
     private final EpisodeRepository episodeRepository;
     private final EpisodeProductionRepository productionRepository;
     private final VideoProductionTaskRepository videoTaskRepository;
+    private final PanelRepository panelRepository;
     private final ImageGenerationService imageGenerationService;
     private final VideoGenerationService videoGenerationService;
     private final VideoCompositionService videoCompositionService;
@@ -493,49 +496,248 @@ public class PanelProductionService {
 
     // ==================== 获取完整分镜状态 ====================
 
+    // ==================== 新版：基于 panelId 的生产状态 ====================
+
     /**
-     * 获取单分镜完整生产状态
+     * 获取单 Panel 完整生产状态（基于 panelId）
      */
-    public PanelProductionStatusResponse getPanelProductionStatus(Long episodeId, Integer panelIndex) {
-        EpisodeProduction production = getOrCreateProduction(episodeId);
-        List<String> bgUrls = parseUrlList(production.getBackgroundUrls());
-        List<String> fusionUrls = parseUrlList(production.getFusionUrls());
-        List<String> transitionUrls = parseUrlList(production.getTransitionUrls());
-
-        PanelVideoTaskResponse videoTask = getVideoTaskStatus(episodeId, panelIndex);
-        String tailFrameUrl = getTailFrameUrl(episodeId, panelIndex);
-
+    public PanelProductionStatusResponse getProductionStatus(Long panelId) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
         PanelProductionStatusResponse response = new PanelProductionStatusResponse();
-        response.setPanelIndex(panelIndex);
-
-        // 背景
-        response.setBackgroundUrl(getUrlFromList(bgUrls, panelIndex));
-        response.setBackgroundStatus(getUrlFromList(bgUrls, panelIndex) != null ? "completed" : "pending");
-
-        // 融合
-        response.setFusionUrl(getUrlFromList(fusionUrls, panelIndex));
-        response.setFusionStatus(getUrlFromList(fusionUrls, panelIndex) != null ? "completed" : "pending");
-
-        // 过渡
-        response.setTransitionUrl(getUrlFromList(transitionUrls, panelIndex));
-        response.setTransitionStatus(getUrlFromList(transitionUrls, panelIndex) != null ? "completed" : "pending");
-
-        // 视频
-        response.setVideoUrl(videoTask.getVideoUrl());
-        response.setVideoStatus(videoTask.getStatus());
-        response.setVideoDuration(videoTask.getDuration());
-
-        // 尾帧
-        response.setTailFrameUrl(tailFrameUrl);
-
-        // 整体状态判断
-        String overall = determineOverallStatus(response);
-        response.setOverallStatus(overall);
-
-        // 当前阶段
-        response.setCurrentStage(determineCurrentStage(response));
-
+        response.setPanelId(panelId);
+        Map<String, Object> info = panel.getPanelInfo();
+        if (info == null) {
+            response.setOverallStatus("pending");
+            response.setCurrentStage("background");
+            return response;
+        }
+        String bgUrl = getStr(info, "backgroundUrl");
+        response.setBackgroundUrl(bgUrl);
+        response.setBackgroundStatus(bgUrl != null ? "completed" : "pending");
+        String comicUrl = getStr(info, "comicUrl");
+        String comicStatus = getStr(info, "comicStatus");
+        response.setComicUrl(comicUrl);
+        response.setComicStatus(comicStatus != null ? comicStatus : (comicUrl != null ? "approved" : "pending"));
+        String videoUrl = getStr(info, "videoUrl");
+        String videoStatus = getStr(info, "videoStatus");
+        response.setVideoUrl(videoUrl);
+        response.setVideoStatus(videoStatus != null ? videoStatus : (videoUrl != null ? "completed" : "pending"));
+        response.setOverallStatus(determineNewOverallStatus(response));
+        response.setCurrentStage(determineNewCurrentStage(response));
         return response;
+    }
+
+    /**
+     * 批量获取所有 Panel 生产状态
+     */
+    public List<PanelProductionStatusResponse> getBatchProductionStatus(Long episodeId) {
+        List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
+        return panels.stream().map(p -> getProductionStatus(p.getId())).collect(Collectors.toList());
+    }
+
+    // ==================== 新版：基于 panelId 的背景图 ====================
+
+    /**
+     * 获取背景图状态（基于 panelId）
+     */
+    public PanelBackgroundResponse getBackgroundStatusByPanelId(Long panelId) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
+        PanelBackgroundResponse response = new PanelBackgroundResponse();
+        response.setPanelId(panelId);
+        Map<String, Object> info = panel.getPanelInfo();
+        String bgUrl = info != null ? getStr(info, "backgroundUrl") : null;
+        if (bgUrl != null) {
+            response.setBackgroundUrl(bgUrl);
+            response.setStatus("completed");
+        } else {
+            response.setStatus("pending");
+        }
+        return response;
+    }
+
+    /**
+     * 生成背景图（基于 panelId，异步）
+     */
+    public void generateBackgroundByPanelId(Long panelId) {
+        self().doGenerateBackgroundByPanelId(panelId);
+    }
+
+    @Async
+    public void doGenerateBackgroundByPanelId(Long panelId) {
+        try {
+            Panel panel = panelRepository.selectById(panelId);
+            if (panel == null) throw new BusinessException("分镜不存在");
+            String prompt = extractSceneDescription(panel);
+            String imageUrl = imageGenerationService.generate(prompt, 1280, 720, "anime");
+            Map<String, Object> info = panel.getPanelInfo() != null ? panel.getPanelInfo() : new HashMap<>();
+            info.put("backgroundUrl", imageUrl);
+            info.put("backgroundStatus", "completed");
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+            log.info("背景图生成完成: panelId={}", panelId);
+        } catch (Exception e) {
+            log.error("背景图生成失败: panelId={}", panelId, e);
+            updatePanelState(panelId, "backgroundStatus", "failed", e.getMessage());
+            throw new BusinessException("背景图生成失败: " + e.getMessage());
+        }
+    }
+
+    // ==================== 新版：基于 panelId 的视频 ====================
+
+    /**
+     * 获取视频状态（基于 panelId）
+     */
+    public VideoStatusResponse getVideoStatusByPanelId(Long panelId) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
+        VideoStatusResponse response = new VideoStatusResponse();
+        response.setPanelId(panelId);
+        Map<String, Object> info = panel.getPanelInfo();
+        String videoUrl = info != null ? getStr(info, "videoUrl") : null;
+        String videoStatus = info != null ? getStr(info, "videoStatus") : null;
+        String taskId = info != null ? getStr(info, "videoTaskId") : null;
+        String errorMsg = info != null ? getStr(info, "errorMessage") : null;
+        response.setVideoUrl(videoUrl);
+        response.setStatus(videoStatus != null ? videoStatus : (videoUrl != null ? "completed" : "pending"));
+        response.setTaskId(taskId);
+        response.setErrorMessage(errorMsg);
+        return response;
+    }
+
+    /**
+     * 生成视频（基于 panelId，异步）
+     */
+    public void generateVideoByPanelId(Long panelId) {
+        self().doGenerateVideoByPanelId(panelId);
+    }
+
+    @Async
+    public void doGenerateVideoByPanelId(Long panelId) {
+        try {
+            Panel panel = panelRepository.selectById(panelId);
+            if (panel == null) throw new BusinessException("分镜不存在");
+            Map<String, Object> info = panel.getPanelInfo();
+            String comicUrl = getStr(info, "comicUrl");
+            String comicStatus = getStr(info, "comicStatus");
+            if (!"approved".equals(comicStatus) || comicUrl == null) {
+                throw new BusinessException("四宫格漫画未审核通过，请先审核");
+            }
+            info.put("videoStatus", "generating");
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+            String prompt = extractSceneDescription(panel);
+            String taskId = videoGenerationService.generateAsync(prompt, 5, "16:9", comicUrl);
+            info.put("videoTaskId", taskId);
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+            self().pollNewVideoTask(panelId, taskId);
+            log.info("视频生成已提交: panelId={}, taskId={}", panelId, taskId);
+        } catch (Exception e) {
+            log.error("视频生成失败: panelId={}", panelId, e);
+            updatePanelState(panelId, "videoStatus", "failed", e.getMessage());
+            throw new BusinessException("视频生成失败: " + e.getMessage());
+        }
+    }
+
+    @Async
+    public void pollNewVideoTask(Long panelId, String taskId) {
+        try {
+            for (int i = 0; i < 120; i++) {
+                VideoGenerationService.TaskStatus status = videoGenerationService.getTaskStatus(taskId);
+                if (status == null) { Thread.sleep(5000); continue; }
+                switch (status.getStatus()) {
+                    case "completed":
+                        String videoUrl = status.getVideoUrl();
+                        if (videoUrl == null) videoUrl = videoGenerationService.downloadVideo(status.getTaskId());
+                        Panel panel = panelRepository.selectById(panelId);
+                        if (panel != null) {
+                            Map<String, Object> info = panel.getPanelInfo();
+                            info.put("videoUrl", videoUrl);
+                            info.put("videoStatus", "completed");
+                            info.put("errorMessage", null);
+                            panel.setPanelInfo(info);
+                            panelRepository.updateById(panel);
+                        }
+                        log.info("视频生成完成: panelId={}", panelId);
+                        return;
+                    case "failed":
+                        updatePanelState(panelId, "videoStatus", "failed", status.getErrorMessage());
+                        return;
+                    default:
+                        Thread.sleep(5000);
+                        break;
+                }
+            }
+            updatePanelState(panelId, "videoStatus", "failed", "视频生成超时");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.error("视频任务轮询异常: panelId={}", panelId, e);
+        }
+    }
+
+    /**
+     * 重试失败的视频生成
+     */
+    public void retryVideoByPanelId(Long panelId) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
+        Map<String, Object> info = panel.getPanelInfo();
+        String videoStatus = getStr(info, "videoStatus");
+        if (!"failed".equals(videoStatus)) {
+            throw new BusinessException("当前状态不可重试，仅支持重试失败的视频");
+        }
+        info.put("videoStatus", "pending");
+        info.put("errorMessage", null);
+        panel.setPanelInfo(info);
+        panelRepository.updateById(panel);
+        generateVideoByPanelId(panelId);
+    }
+
+    // ==================== 新版内部辅助方法 ====================
+
+    private String getStr(Map<String, Object> info, String key) {
+        Object v = info.get(key);
+        return v != null ? v.toString() : null;
+    }
+
+    private String extractSceneDescription(Panel panel) {
+        Map<String, Object> info = panel.getPanelInfo();
+        if (info == null) return "";
+        String desc = getStr(info, "sceneDescription");
+        if (desc != null && !desc.isEmpty()) return desc;
+        desc = getStr(info, "image_prompt_hint");
+        return desc != null ? desc : "";
+    }
+
+    private void updatePanelState(Long panelId, String stateKey, String stateValue, String errorMsg) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) return;
+        Map<String, Object> info = panel.getPanelInfo() != null ? panel.getPanelInfo() : new HashMap<>();
+        info.put(stateKey, stateValue);
+        if (errorMsg != null) info.put("errorMessage", errorMsg);
+        panel.setPanelInfo(info);
+        panelRepository.updateById(panel);
+    }
+
+    private String determineNewOverallStatus(PanelProductionStatusResponse r) {
+        if ("completed".equals(r.getVideoStatus())) return "completed";
+        if ("failed".equals(r.getVideoStatus()) || "failed".equals(r.getComicStatus()) || "failed".equals(r.getBackgroundStatus())) return "failed";
+        if ("generating".equals(r.getVideoStatus()) || "generating".equals(r.getComicStatus()) || "generating".equals(r.getBackgroundStatus())) return "in_progress";
+        if (r.getBackgroundUrl() != null || r.getComicUrl() != null) return "in_progress";
+        return "pending";
+    }
+
+    private String determineNewCurrentStage(PanelProductionStatusResponse r) {
+        if ("completed".equals(r.getVideoStatus())) return "video";
+        if ("generating".equals(r.getVideoStatus())) return "video";
+        if ("approved".equals(r.getComicStatus())) return "video";
+        if ("generating".equals(r.getComicStatus())) return "comic";
+        if ("pending".equals(r.getComicStatus()) && r.getBackgroundUrl() != null) return "comic";
+        if ("generating".equals(r.getBackgroundStatus())) return "background";
+        return "background";
     }
 
     // ==================== 内部辅助方法 ====================
@@ -746,41 +948,4 @@ public class PanelProductionService {
         return null;
     }
 
-    private String determineOverallStatus(PanelProductionStatusResponse r) {
-        // 如果视频已完成，整体完成
-        if ("completed".equals(r.getVideoStatus())) return "completed";
-        // 如果视频失败，整体失败
-        if ("failed".equals(r.getVideoStatus())) return "failed";
-        // 如果任何阶段在生成中
-        if ("generating".equals(r.getBackgroundStatus())
-                || "generating".equals(r.getFusionStatus())
-                || "generating".equals(r.getTransitionStatus())
-                || "generating".equals(r.getVideoStatus())) return "in_progress";
-        // 如果有任何失败
-        if ("failed".equals(r.getBackgroundStatus())
-                || "failed".equals(r.getFusionStatus())
-                || "failed".equals(r.getTransitionStatus())) return "failed";
-        // 如果有任何完成
-        if ("completed".equals(r.getBackgroundStatus())
-                || "completed".equals(r.getFusionStatus())
-                || "completed".equals(r.getTransitionStatus())) return "in_progress";
-        return "pending";
-    }
-
-    private String determineCurrentStage(PanelProductionStatusResponse r) {
-        if ("completed".equals(r.getVideoStatus())) return "video";
-        if ("generating".equals(r.getVideoStatus()) || "pending".equals(r.getVideoStatus())) {
-            if ("completed".equals(r.getTransitionStatus())) return "video";
-            if ("generating".equals(r.getTransitionStatus()) || "pending".equals(r.getTransitionStatus())) {
-                if ("completed".equals(r.getFusionStatus())) return "transition";
-                if ("generating".equals(r.getFusionStatus()) || "pending".equals(r.getFusionStatus())) {
-                    if ("completed".equals(r.getBackgroundStatus())) return "fusion";
-                    return "background";
-                }
-                return "fusion";
-            }
-            return "transition";
-        }
-        return "background";
-    }
 }

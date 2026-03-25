@@ -7,6 +7,7 @@ import lombok.Data;
  */
 @Data
 public class PanelBackgroundResponse {
+    private Long panelId;
     private Integer panelIndex;
     private String backgroundUrl;
     private String status;

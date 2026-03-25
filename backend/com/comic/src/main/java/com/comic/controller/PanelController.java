@@ -1,14 +1,17 @@
 package com.comic.controller;
 
 import com.comic.common.Result;
+import com.comic.dto.request.ComicReviseRequest;
 import com.comic.dto.request.PanelCreateRequest;
 import com.comic.dto.request.PanelReviseRequest;
 import com.comic.dto.request.PanelUpdateRequest;
-import com.comic.dto.response.PanelListItemResponse;
+import com.comic.dto.response.*;
 import com.comic.entity.Episode;
 import com.comic.repository.EpisodeRepository;
 import com.comic.service.job.JobQueueService;
 import com.comic.service.panel.PanelService;
+import com.comic.service.production.ComicGenerationService;
+import com.comic.service.production.PanelProductionService;
 import com.comic.service.story.StoryboardService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -31,6 +34,8 @@ public class PanelController {
     private final StoryboardService storyboardService;
     private final JobQueueService jobQueueService;
     private final EpisodeRepository episodeRepository;
+    private final PanelProductionService panelProductionService;
+    private final ComicGenerationService comicGenerationService;
 
     // ================= 分镜 CRUD =================
 
@@ -155,6 +160,129 @@ public class PanelController {
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
         storyboardService.retryFailedStoryboard(episodeId);
+        return Result.ok();
+    }
+
+    // ================= 生产状态查询 =================
+
+    @GetMapping("/{panelId}/production-status")
+    @Operation(summary = "单 Panel 完整生产状态")
+    public Result<PanelProductionStatusResponse> getProductionStatus(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        return Result.ok(panelProductionService.getProductionStatus(panelId));
+    }
+
+    @GetMapping("/production-statuses")
+    @Operation(summary = "批量获取所有 Panel 生产状态")
+    public Result<List<PanelProductionStatusResponse>> getBatchProductionStatuses(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        return Result.ok(panelProductionService.getBatchProductionStatus(episodeId));
+    }
+
+    // ================= 背景图生成 =================
+
+    @GetMapping("/{panelId}/background")
+    @Operation(summary = "获取背景图状态")
+    public Result<PanelBackgroundResponse> getBackgroundStatus(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        return Result.ok(panelProductionService.getBackgroundStatusByPanelId(panelId));
+    }
+
+    @PostMapping("/{panelId}/background")
+    @Operation(summary = "生成背景图（自动匹配角色）")
+    public Result<Void> generateBackground(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        panelProductionService.generateBackgroundByPanelId(panelId);
+        return Result.ok();
+    }
+
+    @PostMapping("/{panelId}/background/regenerate")
+    @Operation(summary = "重新生成背景图")
+    public Result<Void> regenerateBackground(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        panelProductionService.generateBackgroundByPanelId(panelId);
+        return Result.ok();
+    }
+
+    // ================= 四宫格漫画（AI 融合，审核点） =================
+
+    @GetMapping("/{panelId}/comic")
+    @Operation(summary = "获取四宫格状态")
+    public Result<ComicStatusResponse> getComicStatus(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        return Result.ok(comicGenerationService.getComicStatus(panelId));
+    }
+
+    @PostMapping("/{panelId}/comic")
+    @Operation(summary = "生成四宫格漫画")
+    public Result<Void> generateComic(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        comicGenerationService.generateComic(panelId);
+        return Result.ok();
+    }
+
+    @PostMapping("/{panelId}/comic/approve")
+    @Operation(summary = "审核通过四宫格")
+    public Result<Void> approveComic(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        comicGenerationService.approveComic(panelId);
+        return Result.ok();
+    }
+
+    @PostMapping("/{panelId}/comic/revise")
+    @Operation(summary = "退回重生成四宫格")
+    public Result<Void> reviseComic(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId,
+            @RequestBody ComicReviseRequest request) {
+        comicGenerationService.reviseComic(panelId, request.getFeedback());
+        return Result.ok();
+    }
+
+    // ================= AI 视频生成 =================
+
+    @GetMapping("/{panelId}/video")
+    @Operation(summary = "获取视频状态")
+    public Result<VideoStatusResponse> getVideoStatus(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        return Result.ok(panelProductionService.getVideoStatusByPanelId(panelId));
+    }
+
+    @PostMapping("/{panelId}/video")
+    @Operation(summary = "生成视频（四宫格 → 视频大模型）")
+    public Result<Void> generateVideo(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        panelProductionService.generateVideoByPanelId(panelId);
+        return Result.ok();
+    }
+
+    @PostMapping("/{panelId}/video/retry")
+    @Operation(summary = "重试失败的视频生成")
+    public Result<Void> retryVideo(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        panelProductionService.retryVideoByPanelId(panelId);
         return Result.ok();
     }
 }
