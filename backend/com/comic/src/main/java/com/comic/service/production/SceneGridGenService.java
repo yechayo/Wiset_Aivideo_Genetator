@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Scene grid generation service.
@@ -110,7 +111,7 @@ public class SceneGridGenService {
                     prompt,
                     totalWidth,
                     totalHeight,
-                    project.getVisualStyle()
+                    getProjectInfoStr(project, "visualStyle")
             );
             pageUrls.add(imageUrl);
         }
@@ -161,7 +162,7 @@ public class SceneGridGenService {
             int validCellCount
     ) {
         Episode episode = episodeRepository.selectById(episodeId);
-        if (episode == null || episode.getStoryboardJson() == null) {
+        if (episode == null || getEpisodeInfoStr(episode, "storyboardJson") == null) {
             return null;
         }
 
@@ -169,7 +170,7 @@ public class SceneGridGenService {
         int safeValidCount = Math.max(0, Math.min(validCellCount, totalCells));
 
         try {
-            JsonNode rootNode = objectMapper.readTree(episode.getStoryboardJson());
+            JsonNode rootNode = objectMapper.readTree(getEpisodeInfoStr(episode, "storyboardJson"));
             JsonNode panelsNode = rootNode.get("panels");
             if (panelsNode == null || !panelsNode.isArray()) {
                 return null;
@@ -243,7 +244,7 @@ public class SceneGridGenService {
         String location = sceneGroup != null && sceneGroup.getLocation() != null ? sceneGroup.getLocation() : "";
         String timeOfDay = sceneGroup != null ? safeText(sceneGroup.getTimeOfDay()) : "";
         String mood = sceneGroup != null ? safeText(sceneGroup.getMood()) : "";
-        String style = project != null && project.getVisualStyle() != null ? project.getVisualStyle() : "cinematic";
+        String style = project != null && getProjectInfoStr(project, "visualStyle") != null ? getProjectInfoStr(project, "visualStyle") : "cinematic";
 
         StringBuilder prompt = new StringBuilder();
         prompt.append("Generate a storyboard grid image with ")
@@ -350,6 +351,18 @@ public class SceneGridGenService {
             return "";
         }
         return value.trim().replaceAll("\\s+", " ");
+    }
+
+    private String getEpisodeInfoStr(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private String getProjectInfoStr(Project project, String key) {
+        Map<String, Object> info = project.getProjectInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
     }
 
     @Getter

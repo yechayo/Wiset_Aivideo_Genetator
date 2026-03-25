@@ -540,6 +540,12 @@ public class PanelProductionService {
 
     // ==================== 内部辅助方法 ====================
 
+    private String getEpisodeInfoStr(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
     private EpisodeProduction getOrCreateProduction(Long episodeId) {
         EpisodeProduction production = productionRepository.findByEpisodeId(episodeId);
         if (production == null) {
@@ -550,11 +556,11 @@ public class PanelProductionService {
 
     private String getPanelPrompt(Long episodeId, Integer panelIndex) {
         Episode episode = episodeRepository.selectById(episodeId);
-        if (episode == null || episode.getStoryboardJson() == null) {
+        if (episode == null || getEpisodeInfoStr(episode, "storyboardJson") == null) {
             return "";
         }
         try {
-            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(episode.getStoryboardJson());
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(getEpisodeInfoStr(episode, "storyboardJson"));
             com.fasterxml.jackson.databind.JsonNode panels = root.get("panels");
             if (panels != null && panelIndex < panels.size()) {
                 com.fasterxml.jackson.databind.JsonNode panel = panels.get(panelIndex);
@@ -695,9 +701,9 @@ public class PanelProductionService {
     }
 
     private int getTotalPanels(Episode episode) {
-        if (episode.getStoryboardJson() == null) return 0;
+        if (getEpisodeInfoStr(episode, "storyboardJson") == null) return 0;
         try {
-            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(episode.getStoryboardJson());
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(getEpisodeInfoStr(episode, "storyboardJson"));
             com.fasterxml.jackson.databind.JsonNode panels = root.get("panels");
             return panels != null ? panels.size() : 0;
         } catch (Exception e) {

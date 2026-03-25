@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -89,12 +90,12 @@ public class StoryboardEnhancementService {
         if (episode == null) {
             throw new IllegalArgumentException("Episode not found: " + episodeId);
         }
-        if (episode.getStoryboardJson() == null || episode.getStoryboardJson().trim().isEmpty()) {
+        if (getEpisodeInfoStr(episode, "storyboardJson") == null || getEpisodeInfoStr(episode, "storyboardJson").trim().isEmpty()) {
             throw new IllegalArgumentException("Storyboard JSON is empty for episode: " + episodeId);
         }
 
-        String enhancedJson = enhanceStoryboardJson(episode.getStoryboardJson());
-        episode.setStoryboardJson(enhancedJson);
+        String enhancedJson = enhanceStoryboardJson(getEpisodeInfoStr(episode, "storyboardJson"));
+        episode.getEpisodeInfo().put("storyboardJson", enhancedJson);
         episodeRepository.updateById(episode);
     }
 
@@ -347,6 +348,12 @@ public class StoryboardEnhancementService {
             throw new IllegalStateException("LLM enhancement field is missing: " + field);
         }
         return value.asText().trim();
+    }
+
+    private String getEpisodeInfoStr(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
     }
 
     private enum EnhancementMode {

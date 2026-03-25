@@ -250,7 +250,7 @@ public class VideoPromptBuilderService {
         }
         Map<String, Character> charMap = new HashMap<>();
         for (Character c : characters) {
-            charMap.put(c.getName(), c);
+            charMap.put(getCharacterInfoStr(c, "name"), c);
         }
         StringBuilder sb = new StringBuilder();
         sb.append("\n\nCRITICAL CHARACTER CONSISTENCY REQUIREMENTS:\n");
@@ -258,8 +258,8 @@ public class VideoPromptBuilderService {
         sb.append("- Zero tolerance for deviation in: facial features, hair color/style, body proportions, clothing\n");
         for (String name : characterNames) {
             Character c = charMap.get(name);
-            if (c != null && c.getAppearance() != null && !c.getAppearance().isEmpty()) {
-                sb.append("- Character ").append(name).append(": ").append(c.getAppearance()).append("\n");
+            if (c != null && getCharacterInfoStr(c, "appearance") != null && !getCharacterInfoStr(c, "appearance").isEmpty()) {
+                sb.append("- Character ").append(name).append(": ").append(getCharacterInfoStr(c, "appearance")).append("\n");
             }
         }
         sb.append("- Maintain absolute visual continuity across all shots\n");
@@ -448,6 +448,12 @@ public class VideoPromptBuilderService {
         map.put("霓虹", "neon lighting, vibrant colored glow");
         map.put("烛光", "candlelight, warm flickering illumination");
         return map.getOrDefault(lighting, "");
+    }
+
+    private String getCharacterInfoStr(Character character, String key) {
+        Map<String, Object> info = character.getCharacterInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
     }
 
     /**

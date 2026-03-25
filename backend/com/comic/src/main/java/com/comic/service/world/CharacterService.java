@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +23,12 @@ public class CharacterService {
     private final CharacterRepository characterRepository;
     private final ObjectMapper objectMapper;
 
+    private String getCharacterInfoStr(Character character, String key) {
+        Map<String, Object> info = character.getCharacterInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
     @Cacheable(value = "characterStates", key = "#projectId")
     public List<CharacterStateModel> getCurrentStates(String projectId) {
         List<Character> characters = characterRepository.findByProjectId(projectId);
@@ -30,11 +37,11 @@ public class CharacterService {
         for (Character character : characters) {
             try {
                 CharacterStateModel dto = parseOrDefault(character);
-                dto.setCharId(character.getCharId());
-                dto.setName(character.getName());
+                dto.setCharId(getCharacterInfoStr(character, "charId"));
+                dto.setName(getCharacterInfoStr(character, "name"));
                 dtos.add(dto);
             } catch (Exception e) {
-                log.warn("Failed to parse character state: charId={}", character.getCharId(), e);
+                log.warn("Failed to parse character state: charId={}", getCharacterInfoStr(character, "charId"), e);
             }
         }
         return dtos;
@@ -59,7 +66,7 @@ public class CharacterService {
                 continue;
             }
 
-            Character character = characterRepository.findByProjectIdAndCharId(projectId, charId);
+            Character character = characterRepository.findByCharId(charId);
             if (character == null) {
                 continue;
             }
@@ -77,7 +84,7 @@ public class CharacterService {
                     newState.setCostumeState(costumeState);
                 }
 
-                character.setCurrentStateJson(objectMapper.writeValueAsString(newState));
+                character.getCharacterInfo().put("currentStateJson", objectMapper.writeValueAsString(newState));
                 characterRepository.updateById(character);
             } catch (Exception e) {
                 log.warn("Failed to update character state: charId={}", charId, e);
@@ -86,11 +93,11 @@ public class CharacterService {
     }
 
     private CharacterStateModel parseOrDefault(Character character) throws Exception {
-        String stateJson = character.getCurrentStateJson();
+        String stateJson = getCharacterInfoStr(character, "currentStateJson");
         if (stateJson == null || stateJson.trim().isEmpty()) {
             CharacterStateModel state = new CharacterStateModel();
-            state.setCharId(character.getCharId());
-            state.setName(character.getName());
+            state.setCharId(getCharacterInfoStr(character, "charId"));
+            state.setName(getCharacterInfoStr(character, "name"));
             state.setLocation("unknown");
             state.setEmotion("neutral");
             state.setCostumeState("normal");

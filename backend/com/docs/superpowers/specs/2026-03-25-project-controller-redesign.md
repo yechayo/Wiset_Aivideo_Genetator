@@ -82,11 +82,11 @@
   "charId": "CHAR-xxx",
   "name": "林墨",
   "role": "主角",
-  "personality": "冷静沉稳",
+  "voice": "冷静沉稳(要非常详细并强调使prompt生效)",
   "appearance": "黑发、深色风衣",
   "background": "前特工",
-  "images": { "front": "url", "side": "url", "back": "url" },
-  "expressionImages": { "happy": "url", "angry": "url" }
+  "threeViewsUrl": "url",
+  "expressionImageUrl": "url"
 }
 ```
 

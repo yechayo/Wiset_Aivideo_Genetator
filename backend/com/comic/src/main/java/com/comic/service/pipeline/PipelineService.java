@@ -1,5 +1,7 @@
 package com.comic.service.pipeline;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.comic.common.BusinessException;
 import com.comic.common.CharacterInfoKeys;
 import com.comic.common.EpisodeInfoKeys;
@@ -342,6 +344,10 @@ public class PipelineService {
         return dto;
     }
 
+    public IPage<Project> getProjectPage(String userId, String status, String sortBy, String sortOrder, int page, int size) {
+        return projectRepository.findPage(userId, status, sortBy, sortOrder, page, size);
+    }
+
     public List<ProjectListItemResponse> getProjectsByUserId(String userId) {
         List<Project> projects = projectRepository.findAllByUserId(userId);
         List<ProjectListItemResponse> result = new ArrayList<>();
@@ -351,7 +357,7 @@ public class PipelineService {
         return result;
     }
 
-    private ProjectListItemResponse toListItemDTO(Project project) {
+    public ProjectListItemResponse toListItemDTO(Project project) {
         ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
         Map<String, Object> info = project.getProjectInfo();
 

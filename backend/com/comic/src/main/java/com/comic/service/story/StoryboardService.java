@@ -771,7 +771,17 @@ public class StoryboardService {
 
     private String getRecentMemory(String projectId, int currentEp) {
         int startEp = Math.max(1, currentEp - 5);
-        List<Episode> recentEps = episodeRepository.findRecentEpisodes(projectId, startEp, currentEp - 1);
+        List<Episode> recentEps = episodeRepository.findByProjectId(projectId).stream()
+                .filter(ep -> {
+                    Integer epNum = getEpInfoInt(ep, EpisodeInfoKeys.EPISODE_NUM);
+                    return epNum != null && epNum >= startEp && epNum < currentEp;
+                })
+                .sorted((a, b) -> {
+                    Integer aNum = getEpInfoInt(a, EpisodeInfoKeys.EPISODE_NUM);
+                    Integer bNum = getEpInfoInt(b, EpisodeInfoKeys.EPISODE_NUM);
+                    return Integer.compare(aNum != null ? aNum : 0, bNum != null ? bNum : 0);
+                })
+                .collect(java.util.stream.Collectors.toList());
         if (recentEps.isEmpty()) {
             return "This is the first episode.";
         }

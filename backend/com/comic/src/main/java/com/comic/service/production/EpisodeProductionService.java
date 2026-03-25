@@ -85,7 +85,8 @@ public class EpisodeProductionService {
             throw new IllegalArgumentException("剧集不存在: " + episodeId);
         }
 
-        if (episode.getStoryboardJson() == null || episode.getStoryboardJson().isEmpty()) {
+        String storyboardJson = getEpisodeInfoStr(episode, "storyboardJson");
+        if (storyboardJson == null || storyboardJson.isEmpty()) {
             throw new IllegalArgumentException("剧集分镜数据为空，请先生成分镜");
         }
 
@@ -121,8 +122,8 @@ public class EpisodeProductionService {
         productionRepository.insert(production);
 
         // 更新Episode状态
-        episode.setProductionStatus("IN_PROGRESS");
-        episode.setProductionProgress(5);
+        episode.getEpisodeInfo().put("productionStatus", "IN_PROGRESS");
+        episode.getEpisodeInfo().put("productionProgress", 5);
         episodeRepository.updateById(episode);
 
         // 异步执行生产流程
@@ -213,9 +214,9 @@ public class EpisodeProductionService {
                     production.getSceneAnalysisJson(), SceneAnalysisResultModel.class);
             Project project = projectRepository.findByProjectId(projectId);
             List<VideoTaskGroupModel> taskGroups = videoPromptBuilderService.buildPromptsForPanels(
-                    episode.getStoryboardJson(),
+                    getEpisodeInfoStr(episode, "storyboardJson"),
                     sceneAnalysis.getSceneGroups(),
-                    project.getVisualStyle(),
+                    getProjectInfoStr(project, "visualStyle"),
                     projectId
             );
 
@@ -272,7 +273,7 @@ public class EpisodeProductionService {
 
             // 阶段5: 字幕生成
             updateProductionStatus(production, "GENERATING_SUBS", "SUBTITLE_GENERATION", 90, "正在生成字幕...");
-            String subtitleUrl = subtitleService.generateSubtitles(episode.getStoryboardJson(), getVideoSegments(episode.getId()));
+            String subtitleUrl = subtitleService.generateSubtitles(getEpisodeInfoStr(episode, "storyboardJson"), getVideoSegments(episode.getId()));
             production.setSubtitleUrl(subtitleUrl);
             productionRepository.updateById(production);
 
@@ -291,9 +292,9 @@ public class EpisodeProductionService {
             productionRepository.updateById(production);
 
             // 更新Episode
-            episode.setProductionStatus("COMPLETED");
-            episode.setProductionProgress(100);
-            episode.setFinalVideoUrl(finalVideoUrl);
+            episode.getEpisodeInfo().put("productionStatus", "COMPLETED");
+            episode.getEpisodeInfo().put("productionProgress", 100);
+            episode.getEpisodeInfo().put("finalVideoUrl", finalVideoUrl);
             episodeRepository.updateById(episode);
 
             log.info("视频生产完成: productionId={}, url={}", production.getProductionId(), finalVideoUrl);
@@ -315,7 +316,7 @@ public class EpisodeProductionService {
         production.setRetryCount(production.getRetryCount() + 1);
         productionRepository.updateById(production);
 
-        episode.setProductionStatus("FAILED");
+        episode.getEpisodeInfo().put("productionStatus", "FAILED");
         episodeRepository.updateById(episode);
     }
 
@@ -381,7 +382,7 @@ public class EpisodeProductionService {
         // 同步更新Episode
         Episode episode = episodeRepository.selectById(production.getEpisodeId());
         if (episode != null) {
-            episode.setProductionProgress(progress);
+            episode.getEpisodeInfo().put("productionProgress", progress);
             episodeRepository.updateById(episode);
         }
     }
@@ -532,9 +533,11 @@ public class EpisodeProductionService {
 
         // 查询角色参考图
         String projectId = episode.getProjectId();
-        List<Character> confirmedCharacters = characterRepository.findConfirmedByProjectId(projectId);
+        List<Character> confirmedCharacters = characterRepository.findByProjectId(projectId).stream()
+                .filter(c -> "true".equals(getCharacterInfoStr(c, "confirmed")))
+                .collect(Collectors.toList());
         Map<String, Character> characterMap = confirmedCharacters.stream()
-                .collect(Collectors.toMap(Character::getName, c -> c, (a, b) -> a));
+                .collect(Collectors.toMap(c -> getCharacterInfoStr(c, "name"), c -> c, (a, b) -> a));
 
         List<GridInfoResponse.CharacterReferenceInfo> refs = characterNames.stream()
                 .distinct()
@@ -543,8 +546,8 @@ public class EpisodeProductionService {
                     Character c = characterMap.get(name);
                     GridInfoResponse.CharacterReferenceInfo info = new GridInfoResponse.CharacterReferenceInfo();
                     info.setCharacterName(name);
-                    info.setThreeViewGridUrl(c.getThreeViewGridUrl());
-                    info.setExpressionGridUrl(c.getExpressionGridUrl());
+                    info.setThreeViewGridUrl(getCharacterInfoStr(c, "threeViewGridUrl"));
+                    info.setExpressionGridUrl(getCharacterInfoStr(c, "expressionGridUrl"));
                     return info;
                 })
                 .collect(Collectors.toList());
@@ -662,11 +665,12 @@ public class EpisodeProductionService {
     }
 
     private List<JsonNode> parseStoryboardPanels(Episode episode) {
-        if (episode == null || episode.getStoryboardJson() == null || episode.getStoryboardJson().isEmpty()) {
+        String sbJson = getEpisodeInfoStr(episode, "storyboardJson");
+        if (episode == null || sbJson == null || sbJson.isEmpty()) {
             throw new BusinessException("Storyboard JSON is empty.");
         }
         try {
-            JsonNode root = objectMapper.readTree(episode.getStoryboardJson());
+            JsonNode root = objectMapper.readTree(sbJson);
             JsonNode panelsNode = root.get("panels");
             if (panelsNode == null || !panelsNode.isArray()) {
                 throw new BusinessException("Invalid storyboard JSON: panels is missing or not an array.");
@@ -876,9 +880,9 @@ public class EpisodeProductionService {
         production.setFusedGridUrls(null);
         productionRepository.updateById(production);
 
-        episode.setProductionStatus("IN_PROGRESS");
-        episode.setProductionProgress(5);
-        episode.setFinalVideoUrl(null);
+        episode.getEpisodeInfo().put("productionStatus", "IN_PROGRESS");
+        episode.getEpisodeInfo().put("productionProgress", 5);
+        episode.getEpisodeInfo().put("finalVideoUrl", null);
         episodeRepository.updateById(episode);
 
         self().executeProductionFlow(episode, production);
@@ -1128,7 +1132,7 @@ public class EpisodeProductionService {
         // 重新查询（上面生成分镜后状态已变更）
         episodes = episodeRepository.findByProjectId(projectId);
         for (Episode episode : episodes) {
-            String prodStatus = episode.getProductionStatus();
+            String prodStatus = getEpisodeInfoStr(episode, "productionStatus");
             if ("DONE".equals(episode.getStatus())
                     && (prodStatus == null || "NOT_STARTED".equals(prodStatus) || "FAILED".equals(prodStatus))) {
                 startProduction(episode.getId());
@@ -1138,7 +1142,7 @@ public class EpisodeProductionService {
 
         log.warn("没有找到可生产的剧集: projectId={}, episodes={}", projectId,
                 episodes.stream().map(e -> String.format("[id=%d,status=%s,prodStatus=%s]",
-                        e.getId(), e.getStatus(), e.getProductionStatus())).collect(java.util.stream.Collectors.toList()));
+                        e.getId(), e.getStatus(), getEpisodeInfoStr(e, "productionStatus"))).collect(java.util.stream.Collectors.toList()));
         throw new IllegalStateException("没有找到可以生产的剧集");
     }
 
@@ -1156,13 +1160,13 @@ public class EpisodeProductionService {
         log.info("[Pipeline] 查询管线状态: projectId={}, episodes.size={}", projectId, episodes.size());
         for (Episode ep : episodes) {
             log.info("[Pipeline]   episode: id={}, num={}, status={}, prodStatus={}",
-                    ep.getId(), ep.getEpisodeNum(), ep.getStatus(), ep.getProductionStatus());
+                    ep.getId(), getEpisodeInfoInt(ep, "episodeNum"), ep.getStatus(), getEpisodeInfoStr(ep, "productionStatus"));
         }
         Episode targetEpisode = null;
 
         // 优先找 IN_PROGRESS 的
         for (Episode ep : episodes) {
-            if ("IN_PROGRESS".equals(ep.getProductionStatus())) {
+            if ("IN_PROGRESS".equals(getEpisodeInfoStr(ep, "productionStatus"))) {
                 targetEpisode = ep;
                 break;
             }
@@ -1170,8 +1174,8 @@ public class EpisodeProductionService {
         // 其次找 NOT_STARTED 或 DONE 但未开始生产的
         if (targetEpisode == null) {
             for (Episode ep : episodes) {
-                if ("NOT_STARTED".equals(ep.getProductionStatus())
-                        || ("DONE".equals(ep.getStatus()) && ep.getProductionStatus() == null)) {
+                if ("NOT_STARTED".equals(getEpisodeInfoStr(ep, "productionStatus"))
+                        || ("DONE".equals(ep.getStatus()) && getEpisodeInfoStr(ep, "productionStatus") == null)) {
                     targetEpisode = ep;
                     break;
                 }
@@ -1180,7 +1184,7 @@ public class EpisodeProductionService {
         // 再找 COMPLETED 的
         if (targetEpisode == null) {
             for (Episode ep : episodes) {
-                if ("COMPLETED".equals(ep.getProductionStatus())) {
+                if ("COMPLETED".equals(getEpisodeInfoStr(ep, "productionStatus"))) {
                     targetEpisode = ep;
                     break;
                 }
@@ -1189,7 +1193,7 @@ public class EpisodeProductionService {
         // 最后找 FAILED 的
         if (targetEpisode == null) {
             for (Episode ep : episodes) {
-                if ("FAILED".equals(ep.getProductionStatus())) {
+                if ("FAILED".equals(getEpisodeInfoStr(ep, "productionStatus"))) {
                     targetEpisode = ep;
                     break;
                 }
@@ -1210,9 +1214,9 @@ public class EpisodeProductionService {
         }
 
         response.setEpisodeId(String.valueOf(targetEpisode.getId()));
-        response.setEpisodeTitle(targetEpisode.getTitle());
+        response.setEpisodeTitle(getEpisodeInfoStr(targetEpisode, "title"));
         response.setEpisodeStatus(targetEpisode.getStatus());
-        response.setProductionStatus(targetEpisode.getProductionStatus());
+        response.setProductionStatus(getEpisodeInfoStr(targetEpisode, "productionStatus"));
 
         // 读取 EpisodeProduction
         EpisodeProduction production = productionRepository.findByEpisodeId(targetEpisode.getId());
@@ -1220,7 +1224,7 @@ public class EpisodeProductionService {
         // 组装管线阶段
         List<PipelineStageDTO> stages = buildPipelineStages(targetEpisode, production);
         response.setStages(stages);
-        response.setFinalVideoUrl(targetEpisode.getFinalVideoUrl());
+        response.setFinalVideoUrl(getEpisodeInfoStr(targetEpisode, "finalVideoUrl"));
 
         if (production != null) {
             List<String> gridUrls = parseJsonUrlList(production.getSceneGridUrls());
@@ -1239,7 +1243,7 @@ public class EpisodeProductionService {
         if (production != null) {
             response.setErrorMessage(production.getErrorMessage());
         } else if ("FAILED".equals(targetEpisode.getStatus())) {
-            response.setErrorMessage(targetEpisode.getErrorMsg());
+            response.setErrorMessage(getEpisodeInfoStr(targetEpisode, "errorMsg"));
         }
 
         return response;
@@ -1258,7 +1262,7 @@ public class EpisodeProductionService {
         String prodMessage = production != null ? production.getProgressMessage() : null;
 
         // 1. 分镜生成 — 基于 Episode.status
-        stages.add(buildStoryboardStage(episodeStatus, episode.getErrorMsg()));
+        stages.add(buildStoryboardStage(episodeStatus, getEpisodeInfoStr(episode, "errorMsg")));
 
         if ("DRAFT".equals(episodeStatus) || "FAILED".equals(episodeStatus) && prodStatus == null) {
             // 分镜还没完成，后续阶段全 pending
@@ -1515,7 +1519,7 @@ public class EpisodeProductionService {
             state.setPanelIndex(i);
 
             // 格子标识
-            state.setPanelId("ep" + (episode.getEpisodeNum() != null ? episode.getEpisodeNum() : 1) + "_p" + (i + 1));
+            state.setPanelId("ep" + (getEpisodeInfoInt(episode, "episodeNum") != null ? getEpisodeInfoInt(episode, "episodeNum") : 1) + "_p" + (i + 1));
 
             // 分镜描述信息
             state.setSceneDescription(safeGetText(panelNode, "sceneDescription"));
@@ -1763,13 +1767,14 @@ public class EpisodeProductionService {
 
         // 6. 从 episode.storyboardJson 提取该 panel 的 scene_desc
         Episode episode = episodeRepository.selectById(episodeId);
-        if (episode == null || episode.getStoryboardJson() == null || episode.getStoryboardJson().isEmpty()) {
+        String sbJson = getEpisodeInfoStr(episode, "storyboardJson");
+        if (episode == null || sbJson == null || sbJson.isEmpty()) {
             throw new BusinessException("分镜数据为空");
         }
 
         String sceneDesc;
         try {
-            JsonNode rootNode = objectMapper.readTree(episode.getStoryboardJson());
+            JsonNode rootNode = objectMapper.readTree(sbJson);
             JsonNode panelsNode = rootNode.get("panels");
             if (panelsNode == null || !panelsNode.isArray()) {
                 throw new BusinessException("分镜JSON格式错误：panels 节点不存在");
@@ -1866,5 +1871,31 @@ public class EpisodeProductionService {
 
         log.info("场景图重生成完成: episodeId={}, panelIndex={}, newGridUrl={}",
                 episodeId, panelIndex, globalPageIndex < newPageUrls.size() ? newPageUrls.get(globalPageIndex) : "N/A");
+    }
+
+    // ==================== Map 辅助方法 ====================
+
+    private String getEpisodeInfoStr(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private Integer getEpisodeInfoInt(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? ((Number) v).intValue() : null;
+    }
+
+    private String getProjectInfoStr(Project project, String key) {
+        Map<String, Object> info = project.getProjectInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private String getCharacterInfoStr(Character character, String key) {
+        Map<String, Object> info = character.getCharacterInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
     }
 }

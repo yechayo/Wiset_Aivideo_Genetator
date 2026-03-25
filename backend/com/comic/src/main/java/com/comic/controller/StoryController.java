@@ -46,7 +46,7 @@ public class StoryController {
         if (episode == null) {
             return Result.fail(404, "找不到该集数");
         }
-        if (episode.getStoryboardJson() != null && !episode.getStoryboardJson().trim().isEmpty()) {
+        if (getEpisodeInfoStr(episode, "storyboardJson") != null && !getEpisodeInfoStr(episode, "storyboardJson").trim().isEmpty()) {
             return Result.fail("当前剧集已有分镜，请使用修改分镜接口");
         }
 
@@ -161,7 +161,7 @@ public class StoryController {
         if (episode == null) {
             return Result.fail(404, "找不到该集数");
         }
-        if (episode.getStoryboardJson() != null && !episode.getStoryboardJson().trim().isEmpty()) {
+        if (getEpisodeInfoStr(episode, "storyboardJson") != null && !getEpisodeInfoStr(episode, "storyboardJson").trim().isEmpty()) {
             return Result.fail("当前剧集已有分镜，请使用修改分镜接口");
         }
         try {
@@ -200,5 +200,11 @@ public class StoryController {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private String getEpisodeInfoStr(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
     }
 }

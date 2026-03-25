@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -39,7 +40,7 @@ public class SceneAnalysisService {
             throw new IllegalArgumentException("剧集不存在: " + episodeId);
         }
 
-        String storyboardJson = episode.getStoryboardJson();
+        String storyboardJson = getEpisodeInfoStr(episode, "storyboardJson");
         if (storyboardJson == null || storyboardJson.isEmpty()) {
             throw new IllegalArgumentException("剧集分镜数据为空，请先生成分镜");
         }
@@ -222,6 +223,12 @@ public class SceneAnalysisService {
                 group.setTimeOfDay("白天");
             }
         }
+    }
+
+    private String getEpisodeInfoStr(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
     }
 
     /**

@@ -159,12 +159,24 @@ public class PromptBuilder {
             return buildSingleEpisodePrompt(genre, params);
         }
 
-        return "创建章节级剧本大纲，使用中文 markdown 格式。\n"
-                + "总集数：" + totalEpisodes + "\n"
-                + "章节数：" + params.chapterCount + "\n"
-                + "每章参考集数：" + params.episodesPerChapter + "\n"
+        return "你是一名专业的漫画剧本编剧。\n"
+                + "请根据用户提供的信息生成结构化的剧本大纲。\n"
+                + "题材类型：" + genre + "\n"
                 + "目标受众：" + targetAudience + "\n"
-                + "包含角色、关键物品和章节剧情线。";
+                + "总集数：" + totalEpisodes + "\n\n"
+                + "输出格式：仅返回 JSON，不要 markdown 代码块标记。\n"
+                + "JSON 结构：\n"
+                + "{\n"
+                + "  \"outline\": \"Markdown 格式的完整大纲文本\",\n"
+                + "  \"characters\": [{\"name\":\"...\",\"role\":\"主角/反派/配角\",\"personality\":\"...\",\"appearance\":\"...\",\"background\":\"...\"}],\n"
+                + "  \"items\": [{\"name\":\"...\",\"description\":\"...\"}],\n"
+                + "  \"episodes\": [{\"ep\":1,\"title\":\"...\",\"synopsis\":\"...\",\"characters\":[\"角色名\"],\"keyItems\":[\"物品名\"]}]\n"
+                + "}\n\n"
+                + "要求：\n"
+                + "1. outline 包含完整的世界观、角色小传、关键物品设定、章节剧情线\n"
+                + "2. episodes 数组长度必须等于总集数 " + totalEpisodes + "\n"
+                + "3. 每集 synopsis 100-200 字\n"
+                + "4. characters 和 items 尽可能详细";
     }
 
     public String buildScriptOutlineUserPrompt(String storyPrompt, String genre, String setting,

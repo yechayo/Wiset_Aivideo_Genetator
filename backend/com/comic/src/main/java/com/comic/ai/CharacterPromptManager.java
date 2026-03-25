@@ -3,12 +3,20 @@ package com.comic.ai;
 import com.comic.entity.Character;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+
 /**
  * 角色图片生成提示词管理器
  * 从 promptManager.md 迁移的专业提示词模板
  */
 @Component
 public class CharacterPromptManager {
+
+    private String getCharInfoStr(Character character, String key) {
+        Map<String, Object> info = character.getCharacterInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
 
     /**
      * 视觉风格枚举
@@ -73,8 +81,8 @@ public class CharacterPromptManager {
      * 一次性生成包含9个表情的3x3网格图
      */
     public String buildExpressionGridPrompt(Character character, VisualStyle style) {
-        String appearance = character.getAppearance() != null ? character.getAppearance() : "";
-        String personality = character.getPersonality() != null ? character.getPersonality() : "";
+        String appearance = getCharInfoStr(character, "appearance");
+        String personality = getCharInfoStr(character, "personality");
 
         switch (style.getPromptStyle()) {
             case D_3D:
@@ -93,8 +101,8 @@ public class CharacterPromptManager {
      * 一次性生成包含3个角度的三视图
      */
     public String buildThreeViewGridPrompt(Character character, VisualStyle style) {
-        String appearance = character.getAppearance() != null ? character.getAppearance() : "";
-        String personality = character.getPersonality() != null ? character.getPersonality() : "";
+        String appearance = getCharInfoStr(character, "appearance");
+        String personality = getCharInfoStr(character, "personality");
 
         switch (style.getPromptStyle()) {
             case D_3D:
