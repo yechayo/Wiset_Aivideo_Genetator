@@ -1,11 +1,16 @@
 package com.comic.service.character;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.common.CharacterInfoKeys;
 import com.comic.common.ProjectInfoKeys;
 import com.comic.common.ProjectStatus;
 import com.comic.dto.model.CharacterDraftModel;
+import com.comic.dto.request.CharacterUpdateRequest;
+import com.comic.dto.response.CharacterListItemResponse;
+import com.comic.dto.response.PaginatedResponse;
 import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
@@ -62,10 +67,10 @@ public class CharacterExtractService {
                     + "要求：\n"
                     + "1. 只返回纯JSON数组，不要有任何其他文字说明\n"
                     + "2. 不要使用markdown代码块标记\n"
-                    + "3. 每个角色必须包含：name(姓名), role(角色定位), personality(性格), appearance(外貌), background(背景)\n"
+                    + "3. 每个角色必须包含：name(姓名), role(角色定位), personality(性格), appearance(外貌), background(背景), voice(声音特点)\n"
                     + "4. 所有字段都必须有值，不能为null\n"
                     + "5. role只能是：主角、反派、配角\n"
-                    + "6. 返回格式示例：[{\"name\":\"张三\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\"}]\n\n"
+                    + "6. 返回格式示例：[{\"name\":\"张三\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\",\"voice\":\"沉稳男声\"}]\n\n"
                     + "请直接返回JSON数组：";
 
             String result = textGenerationService.generate(systemPrompt, userPrompt);
@@ -112,41 +117,60 @@ public class CharacterExtractService {
     }
 
     @Transactional
-    public void updateCharacter(String charId, CharacterDraftModel dto) {
+    public void updateCharacter(String charId, CharacterUpdateRequest dto) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
             throw new BusinessException("角色不存在");
         }
+        Project project = projectRepository.findByProjectId(character.getProjectId());
+        if (project == null || !ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
+            throw new BusinessException("当前状态不能编辑角色");
+        }
         Map<String, Object> info = character.getCharacterInfo();
         if (info == null) info = new HashMap<>();
-        info.put(CharacterInfoKeys.NAME, dto.getName());
-        info.put(CharacterInfoKeys.ROLE, dto.getRole());
-        info.put("personality", dto.getPersonality());
-        info.put(CharacterInfoKeys.APPEARANCE, dto.getAppearance());
-        info.put(CharacterInfoKeys.BACKGROUND, dto.getBackground());
-        info.put(CharacterInfoKeys.CONFIRMED, dto.getConfirmed());
+        if (dto.getName() != null) {
+            info.put(CharacterInfoKeys.NAME, dto.getName());
+        }
+        if (dto.getPersonality() != null) {
+            info.put(CharacterInfoKeys.PERSONALITY, dto.getPersonality());
+        }
+        if (dto.getVoice() != null) {
+            info.put(CharacterInfoKeys.VOICE, dto.getVoice());
+        }
+        if (dto.getAppearance() != null) {
+            info.put(CharacterInfoKeys.APPEARANCE, dto.getAppearance());
+        }
+        if (dto.getBackground() != null) {
+            info.put(CharacterInfoKeys.BACKGROUND, dto.getBackground());
+        }
         character.setCharacterInfo(info);
         characterRepository.updateById(character);
         log.info("角色已更新: charId={}", charId);
     }
 
-    public List<CharacterDraftModel> getProjectCharacters(String projectId) {
-        List<Character> characters = characterRepository.findByProjectId(projectId);
-        List<CharacterDraftModel> result = new ArrayList<>();
-        for (Character character : characters) {
-            Map<String, Object> info = character.getCharacterInfo();
-            if (info == null) continue;
-            CharacterDraftModel dto = new CharacterDraftModel();
-            dto.setCharId(getInfoStr(info, CharacterInfoKeys.CHAR_ID));
-            dto.setName(getInfoStr(info, CharacterInfoKeys.NAME));
-            dto.setRole(getInfoStr(info, CharacterInfoKeys.ROLE));
-            dto.setPersonality(getInfoStr(info, "personality"));
-            dto.setAppearance(getInfoStr(info, CharacterInfoKeys.APPEARANCE));
-            dto.setBackground(getInfoStr(info, CharacterInfoKeys.BACKGROUND));
-            dto.setConfirmed(getInfoBool(info, CharacterInfoKeys.CONFIRMED));
-            result.add(dto);
+    public PaginatedResponse<CharacterListItemResponse> getProjectCharactersPage(
+            String projectId, String role, String name, int page, int size) {
+        IPage<Character> charPage = characterRepository.findPageByProjectId(
+                projectId, role, name, new Page<>(page, size));
+        List<CharacterListItemResponse> items = new ArrayList<>();
+        for (Character character : charPage.getRecords()) {
+            items.add(toListItemResponse(character));
         }
-        return result;
+        return PaginatedResponse.of(items, charPage.getTotal(), (int) charPage.getCurrent(), (int) charPage.getSize());
+    }
+
+    @Transactional
+    public void deleteCharacter(String charId) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在");
+        }
+        Project project = projectRepository.findByProjectId(character.getProjectId());
+        if (project == null || !ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
+            throw new BusinessException("当前状态不能删除角色");
+        }
+        characterRepository.deleteById(character.getId());
+        log.info("角色已删除: charId={}", charId);
     }
 
     // ================= 私有方法 =================
@@ -167,9 +191,10 @@ public class CharacterExtractService {
                 dto.setCharId(generateCharId(projectId));
                 dto.setName(getStringValue(data, "name"));
                 dto.setRole(getStringValue(data, "role"));
-                dto.setPersonality(getStringValue(data, "personality"));
+                dto.setPersonality(getStringValue(data, CharacterInfoKeys.PERSONALITY));
                 dto.setAppearance(getStringValue(data, "appearance"));
                 dto.setBackground(getStringValue(data, "background"));
+                dto.setVoice(getStringValue(data, "voice"));
                 dto.setConfirmed(false);
                 result.add(dto);
             }
@@ -234,7 +259,8 @@ public class CharacterExtractService {
             info.put(CharacterInfoKeys.CHAR_ID, dto.getCharId());
             info.put(CharacterInfoKeys.NAME, dto.getName());
             info.put(CharacterInfoKeys.ROLE, dto.getRole());
-            info.put("personality", dto.getPersonality());
+            info.put(CharacterInfoKeys.PERSONALITY, dto.getPersonality());
+            info.put(CharacterInfoKeys.VOICE, dto.getVoice());
             info.put(CharacterInfoKeys.APPEARANCE, dto.getAppearance());
             info.put(CharacterInfoKeys.BACKGROUND, dto.getBackground());
             info.put(CharacterInfoKeys.CONFIRMED, false);
@@ -243,6 +269,24 @@ public class CharacterExtractService {
 
             characterRepository.insert(character);
         }
+    }
+
+    private CharacterListItemResponse toListItemResponse(Character character) {
+        CharacterListItemResponse resp = new CharacterListItemResponse();
+        Map<String, Object> info = character.getCharacterInfo();
+        if (info == null) return resp;
+        resp.setCharId(getInfoStr(info, CharacterInfoKeys.CHAR_ID));
+        resp.setName(getInfoStr(info, CharacterInfoKeys.NAME));
+        resp.setRole(getInfoStr(info, CharacterInfoKeys.ROLE));
+        resp.setPersonality(getInfoStr(info, CharacterInfoKeys.PERSONALITY));
+        resp.setVoice(getInfoStr(info, CharacterInfoKeys.VOICE));
+        resp.setAppearance(getInfoStr(info, CharacterInfoKeys.APPEARANCE));
+        resp.setVisualStyle(getInfoStr(info, CharacterInfoKeys.VISUAL_STYLE));
+        resp.setExpressionStatus(getInfoStr(info, CharacterInfoKeys.EXPRESSION_STATUS));
+        resp.setThreeViewStatus(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_STATUS));
+        resp.setConfirmed(getInfoBool(info, CharacterInfoKeys.CONFIRMED));
+        resp.setCreatedAt(character.getCreatedAt());
+        return resp;
     }
 
     private String generateCharId(String projectId) {
