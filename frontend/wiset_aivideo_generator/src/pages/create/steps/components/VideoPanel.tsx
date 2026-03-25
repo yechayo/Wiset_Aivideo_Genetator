@@ -1,13 +1,12 @@
 import React from 'react';
 import styles from './VideoPanel.module.less';
+import type { SegmentPipelineStep } from '../types';
 
 export interface VideoPanelProps {
   videoUrl: string | null;
   pipelineStep: SegmentPipelineStep;
   onGenerateVideo: () => void;
 }
-
-export type SegmentPipelineStep = 'pending' | 'scene_ready' | 'comic_review' | 'comic_approved' | 'video_generating' | 'video_completed' | 'video_failed';
 
 // Loading spinner component
 const LoadingSpinner: React.FC = () => (
