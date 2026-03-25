@@ -4,6 +4,7 @@ public final class CharacterInfoKeys {
     public static final String CHAR_ID = "charId";
     public static final String NAME = "name";
     public static final String ROLE = "role";
+    public static final String PERSONALITY = "personality";
     public static final String VOICE = "voice";
     public static final String APPEARANCE = "appearance";
     public static final String BACKGROUND = "background";
