@@ -3,6 +3,8 @@ package com.comic.service.script;
 import com.comic.ai.PromptBuilder;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
+import com.comic.common.EpisodeInfoKeys;
+import com.comic.common.ProjectInfoKeys;
 import com.comic.common.ProjectStatus;
 import com.comic.dto.model.WorldConfigModel;
 import com.comic.entity.Episode;
@@ -55,12 +57,62 @@ public class ScriptService {
     private static final String STATUS_EPISODE_FAILED = ProjectStatus.EPISODE_GENERATING_FAILED.getCode();
     private static final int DEFAULT_EPISODE_COUNT = 4;
 
+    // ==================== Map 辅助方法 ====================
+
+    private String getProjectInfoStr(Project project, String key) {
+        Map<String, Object> info = project.getProjectInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private Integer getProjectInfoInt(Project project, String key) {
+        Map<String, Object> info = project.getProjectInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? ((Number) v).intValue() : null;
+    }
+
+    private String getEpisodeInfoStr(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private Integer getEpisodeInfoInt(Episode episode, String key) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? ((Number) v).intValue() : null;
+    }
+
+    private Map<String, Object> ensureProjectInfo(Project project) {
+        Map<String, Object> info = project.getProjectInfo();
+        if (info == null) {
+            info = new HashMap<>();
+            project.setProjectInfo(info);
+        }
+        return info;
+    }
+
+    private Map<String, Object> ensureEpisodeInfo(Episode episode) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        if (info == null) {
+            info = new HashMap<>();
+            episode.setEpisodeInfo(info);
+        }
+        return info;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getScriptMap(Project project) {
+        Map<String, Object> info = project.getProjectInfo();
+        if (info == null) return null;
+        Object script = info.get(ProjectInfoKeys.SCRIPT);
+        return script instanceof Map ? (Map<String, Object>) script : null;
+    }
+
     // ================= 第一步：生成剧本大纲 =================
 
     /**
      * 生成剧本大纲
-     * POST /api/projects/{projectId}/generate-script
-     * 复用原有接口，改为生成大纲
      */
     @Transactional
     public void generateScriptOutline(String projectId) {
@@ -68,6 +120,13 @@ public class ScriptService {
         if (project == null) {
             throw new BusinessException("项目不存在");
         }
+
+        Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
+        String genre = getProjectInfoStr(project, ProjectInfoKeys.GENRE);
+        String targetAudience = getProjectInfoStr(project, ProjectInfoKeys.TARGET_AUDIENCE);
+        String storyPrompt = getProjectInfoStr(project, ProjectInfoKeys.STORY_PROMPT);
+        Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
+        String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
 
         // 更新项目状态
         project.setStatus(STATUS_OUTLINE_GENERATING);
@@ -79,18 +138,18 @@ public class ScriptService {
 
             // 构建生成大纲的prompt
             String systemPrompt = promptBuilder.buildScriptOutlineSystemPrompt(
-                project.getTotalEpisodes(),
-                project.getGenre(),
-                project.getTargetAudience()
+                totalEpisodes != null ? totalEpisodes : 4,
+                genre,
+                targetAudience
             );
 
             String userPrompt = promptBuilder.buildScriptOutlineUserPrompt(
-                project.getStoryPrompt(),
-                project.getGenre(),
+                storyPrompt,
+                genre,
                 worldConfig.getRulesText(),
-                project.getTotalEpisodes(),
-                project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
-                project.getVisualStyle() != null ? project.getVisualStyle() : "REAL"
+                totalEpisodes != null ? totalEpisodes : 4,
+                episodeDuration != null ? episodeDuration / 60 : 1,
+                visualStyle != null ? visualStyle : "REAL"
             );
 
             log.info("systemPrompt: {}", systemPrompt);
@@ -99,11 +158,20 @@ public class ScriptService {
             // 调用文本生成服务生成大纲
             String outlineContent = textGenerationService.generate(systemPrompt, userPrompt);
 
-            // 保存大纲到项目
-            project.setScriptOutline(outlineContent);
-            PromptBuilder.ScriptParams params = promptBuilder.calculateScriptParameters(project.getTotalEpisodes());
+            // 保存大纲到 projectInfo
+            Map<String, Object> info = ensureProjectInfo(project);
+            Map<String, Object> scriptMap = getScriptMap(project);
+            if (scriptMap == null) {
+                scriptMap = new HashMap<>();
+                info.put(ProjectInfoKeys.SCRIPT, scriptMap);
+            }
+            scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
+
+            PromptBuilder.ScriptParams params = promptBuilder.calculateScriptParameters(
+                totalEpisodes != null ? totalEpisodes : 4);
             int fallbackEpisodeCount = params.isSingleEpisode ? 1 : Math.max(1, params.episodesPerChapter);
-            project.setEpisodesPerChapter(fallbackEpisodeCount);
+            info.put(ProjectInfoKeys.EPISODES_PER_CHAPTER, fallbackEpisodeCount);
+
             project.setStatus(STATUS_OUTLINE_REVIEW);
             projectRepository.updateById(project);
 
@@ -121,8 +189,6 @@ public class ScriptService {
 
     /**
      * 生成指定章节的剧集
-     * POST /api/projects/{projectId}/generate-episodes
-     * 支持单集模式和多集模式
      */
     @Transactional
     public void generateScriptEpisodes(String projectId, String chapter, Integer episodeCount, String modificationSuggestion) {
@@ -144,11 +210,12 @@ public class ScriptService {
 
         // 更新状态
         project.setStatus(STATUS_EPISODE_GENERATING);
-        project.setSelectedChapter(chapter);
+        Map<String, Object> info = ensureProjectInfo(project);
+        info.put(ProjectInfoKeys.SELECTED_CHAPTER, chapter);
         projectRepository.updateById(project);
 
         try {
-            String outline = project.getScriptOutline();
+            String outline = getScriptOutlineText(project);
 
             // 从大纲提取全局信息
             String globalCharacters = extractCharactersFromOutline(outline);
@@ -157,7 +224,9 @@ public class ScriptService {
             // 获取前序剧集摘要（保持连贯性）
             String previousSummary = buildPreviousEpisodesSummary(projectId);
 
-            // 构建分集prompt（单集/多集统一使用章节 prompt）
+            Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
+
+            // 构建分集prompt
             String systemPrompt = promptBuilder.buildScriptEpisodeSystemPrompt();
             String userPrompt = promptBuilder.buildScriptEpisodeUserPrompt(
                 outline,
@@ -166,7 +235,7 @@ public class ScriptService {
                 globalItems,
                 previousSummary,
                 resolvedEpisodeCount,
-                project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
+                episodeDuration != null ? episodeDuration / 60 : 1,
                 modificationSuggestion
             );
 
@@ -193,7 +262,6 @@ public class ScriptService {
 
     /**
      * 批量生成所有剩余章节的剧集
-     * 按顺序生成，如果某章失败则停止
      */
     @Transactional
     public void generateAllEpisodes(String projectId) {
@@ -207,23 +275,26 @@ public class ScriptService {
             throw new BusinessException("当前状态不能生成分集，请先生成并确认大纲");
         }
 
+        Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
+
         // 判断是否为单集模式
-        boolean isSingleEpisode = project.getTotalEpisodes() != null && project.getTotalEpisodes() == 1;
+        boolean isSingleEpisode = totalEpisodes != null && totalEpisodes == 1;
 
         // 获取所有章节
         List<String> chapters;
         if (isSingleEpisode) {
             chapters = Collections.singletonList("单集剧本");
         } else {
-            chapters = extractChaptersFromOutline(project.getScriptOutline());
+            chapters = extractChaptersFromOutline(getScriptOutlineText(project));
         }
 
         // 获取已生成的章节
         List<Episode> existingEpisodes = episodeRepository.findByProjectId(projectId);
         Set<String> generatedChapters = new HashSet<>();
         for (Episode ep : existingEpisodes) {
-            if (ep.getChapterTitle() != null) {
-                generatedChapters.add(ep.getChapterTitle());
+            String chapterTitle = getEpisodeInfoStr(ep, EpisodeInfoKeys.CHAPTER_TITLE);
+            if (chapterTitle != null) {
+                generatedChapters.add(chapterTitle);
             }
         }
 
@@ -257,8 +328,6 @@ public class ScriptService {
 
     /**
      * 确认剧本
-     * - OUTLINE_REVIEW 状态：确认大纲（单集模式可直接确认，多集模式需先生成所有章节）
-     * - SCRIPT_REVIEW 状态：确认所有分集，进入下一阶段
      */
     @Transactional
     public void confirmScript(String projectId) {
@@ -276,7 +345,6 @@ public class ScriptService {
         }
 
         if (STATUS_OUTLINE_REVIEW.equals(status)) {
-            // 检查是否已生成所有章节的剧集
             if (isAllChaptersGenerated(project)) {
                 project.setStatus(STATUS_SCRIPT_CONFIRMED);
                 log.info("剧本全部确认完成: projectId={}", projectId);
@@ -284,7 +352,6 @@ public class ScriptService {
                 throw new BusinessException("请先生成所有章节的剧集");
             }
         } else if (STATUS_SCRIPT_REVIEW.equals(status)) {
-            // 确认分集
             if (isAllChaptersGenerated(project)) {
                 project.setStatus(STATUS_SCRIPT_CONFIRMED);
                 log.info("剧本全部确认完成: projectId={}", projectId);
@@ -306,8 +373,7 @@ public class ScriptService {
     }
 
     /**
-     * 直接保存用户编辑的大纲（不触发 AI 重新生成）
-     * 保存后会删除所有已生成剧集（大纲变更导致剧集失效）
+     * 直接保存用户编辑的大纲
      */
     @Transactional
     public void updateScriptOutline(String projectId, String outline) {
@@ -320,7 +386,13 @@ public class ScriptService {
             throw new BusinessException("当前状态不能修改大纲");
         }
 
-        project.setScriptOutline(outline);
+        Map<String, Object> scriptMap = getScriptMap(project);
+        if (scriptMap == null) {
+            Map<String, Object> info = ensureProjectInfo(project);
+            scriptMap = new HashMap<>();
+            info.put(ProjectInfoKeys.SCRIPT, scriptMap);
+        }
+        scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outline);
         projectRepository.updateById(project);
 
         // 大纲变更，删除已生成的所有剧集
@@ -331,7 +403,6 @@ public class ScriptService {
 
     /**
      * 修改大纲
-     * 支持 OUTLINE_REVIEW 和 SCRIPT_CONFIRMED 状态修改
      */
     @Transactional
     public void reviseOutline(String projectId, String revisionNote, String currentOutline) {
@@ -342,12 +413,12 @@ public class ScriptService {
 
         String status = project.getStatus();
 
-        // 只允许在 OUTLINE_REVIEW 状态修改大纲
         if (!STATUS_OUTLINE_REVIEW.equals(status)) {
             throw new BusinessException("当前状态不能修改大纲");
         }
 
-        project.setScriptRevisionNote(revisionNote);
+        Map<String, Object> info = ensureProjectInfo(project);
+        info.put(ProjectInfoKeys.SCRIPT_REVISION_NOTE, revisionNote);
         projectRepository.updateById(project);
 
         // 重新生成大纲
@@ -379,8 +450,6 @@ public class ScriptService {
 
     /**
      * 获取剧本内容供预览
-     * 包含：大纲、章节列表、已生成的剧集
-     * 支持单集模式和多集模式
      */
     public Map<String, Object> getScriptContent(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
@@ -390,34 +459,32 @@ public class ScriptService {
 
         List<Episode> episodes = episodeRepository.findByProjectId(projectId);
 
-        // 判断是否为单集模式
-        boolean isSingleEpisode = project.getTotalEpisodes() != null && project.getTotalEpisodes() == 1;
+        Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
+        boolean isSingleEpisode = totalEpisodes != null && totalEpisodes == 1;
+        String outline = getScriptOutlineText(project);
 
         Map<String, Object> result = new HashMap<>();
         result.put("project", project);
-        result.put("outline", project.getScriptOutline());
+        result.put("outline", outline);
         result.put("isSingleEpisode", isSingleEpisode);
         result.put("episodes", episodes);
 
         if (isSingleEpisode) {
-            // 单集模式：用"单集剧本"作为唯一章节，与多集模式统一数据结构
             String singleChapter = "单集剧本";
             boolean hasEpisodes = !episodes.isEmpty();
             result.put("chapters", Collections.singletonList(singleChapter));
             result.put("generatedChapters", hasEpisodes ? Collections.singletonList(singleChapter) : Collections.emptyList());
             result.put("pendingChapters", hasEpisodes ? Collections.emptyList() : Collections.singletonList(singleChapter));
             result.put("nextChapter", hasEpisodes ? null : singleChapter);
-            // needGenerateScript 保留向后兼容，但前端不再依赖它
             result.put("needGenerateScript", !hasEpisodes);
         } else {
-            // 多集模式：提取章节列表
-            List<String> chapters = extractChaptersFromOutline(project.getScriptOutline());
+            List<String> chapters = extractChaptersFromOutline(outline);
 
-            // 计算已生成和未生成的章节
             Set<String> generatedChapters = new HashSet<>();
             for (Episode ep : episodes) {
-                if (ep.getChapterTitle() != null) {
-                    generatedChapters.add(ep.getChapterTitle());
+                String chapterTitle = getEpisodeInfoStr(ep, EpisodeInfoKeys.CHAPTER_TITLE);
+                if (chapterTitle != null) {
+                    generatedChapters.add(chapterTitle);
                 }
             }
 
@@ -428,7 +495,6 @@ public class ScriptService {
                 }
             }
 
-            // 找出下一个待生成的章节
             String nextChapter = pendingChapters.isEmpty() ? null : pendingChapters.get(0);
 
             result.put("chapters", chapters);
@@ -442,10 +508,17 @@ public class ScriptService {
 
     // ================= 私有方法：解析与提取 =================
 
+    private String getScriptOutlineText(Project project) {
+        Map<String, Object> scriptMap = getScriptMap(project);
+        if (scriptMap != null) {
+            Object outline = scriptMap.get(ProjectInfoKeys.SCRIPT_OUTLINE);
+            return outline != null ? outline.toString() : null;
+        }
+        return null;
+    }
+
     /**
      * 从大纲中提取章节列表
-     * 正则匹配 "#### 第X章：..." 格式
-     * 支持多种格式变体，提高兼容性
      */
     public List<String> extractChaptersFromOutline(String outline) {
         List<String> chapters = new ArrayList<>();
@@ -454,15 +527,9 @@ public class ScriptService {
             return chapters;
         }
 
-        // 匹配多种可能的章节标题格式：
-        // 1. #### 第X章：章节名称（第A-B集）
-        // 2. ### 第X章：章节名称
-        // 3. #### 第X章 章节名称
-        // 4. #### 章节X：章节名称
-        // 支持中文数字和阿拉伯数字
         String[] patterns = {
-            "#{3,4}\\s+第([一二三四五六七八九十百千万0-9]+)章[：:]?\\s*([^\\n]*)",  // #### 第X章：...
-            "#{3,4}\\s+([一二三四五六七八九十百千万0-9]+)[、.\\s]+[^\\n]*章[：:]?\\s*([^\\n]*)"  // #### X. 章节标题...
+            "#{3,4}\\s+第([一二三四五六七八九十百千万0-9]+)章[：:]?\\s*([^\\n]*)",
+            "#{3,4}\\s+([一二三四五六七八九十百千万0-9]+)[、.\\s]+[^\\n]*章[：:]?\\s*([^\\n]*)"
         };
 
         for (String patternStr : patterns) {
@@ -471,14 +538,12 @@ public class ScriptService {
 
             while (matcher.find()) {
                 String chapterTitle = matcher.group().trim();
-                // 确保不重复添加
                 if (!chapters.contains(chapterTitle)) {
                     chapters.add(chapterTitle);
                 }
             }
         }
 
-        // 如果以上格式都没匹配到，尝试更宽松的匹配：查找所有 ### 或 #### 开头的行
         if (chapters.isEmpty()) {
             log.warn("标准章节格式未匹配到，尝试宽松匹配");
             Pattern loosePattern = Pattern.compile("^(#{3,4})\\s*(第.+章[^\\n]*)", Pattern.MULTILINE);
@@ -504,7 +569,6 @@ public class ScriptService {
             return "未找到明确的角色定义";
         }
 
-        // 匹配 "## 主要人物小传" 部分
         Pattern pattern = Pattern.compile("## 主要人物小传[^#]*", Pattern.DOTALL);
         Matcher matcher = pattern.matcher(outline);
 
@@ -523,7 +587,6 @@ public class ScriptService {
             return "未找到明确的物品定义";
         }
 
-        // 匹配 "## 关键物品设定" 部分
         Pattern pattern = Pattern.compile("## 关键物品设定[^#]*", Pattern.DOTALL);
         Matcher matcher = pattern.matcher(outline);
 
@@ -546,13 +609,19 @@ public class ScriptService {
 
         StringBuilder sb = new StringBuilder();
         for (Episode ep : episodes) {
-            sb.append("第").append(ep.getEpisodeNum()).append("集：").append(ep.getTitle()).append("\n");
-            sb.append("- 涉及角色：").append(ep.getCharacters() != null ? ep.getCharacters() : "无").append("\n");
-            sb.append("- 关键物品：").append(ep.getKeyItems() != null ? ep.getKeyItems() : "无").append("\n");
-            if (ep.getContent() != null && ep.getContent().length() > 200) {
-                sb.append("- 剧情摘要：").append(ep.getContent().substring(0, 200)).append("...\n");
-            } else if (ep.getContent() != null) {
-                sb.append("- 剧情摘要：").append(ep.getContent()).append("\n");
+            Integer epNum = getEpisodeInfoInt(ep, EpisodeInfoKeys.EPISODE_NUM);
+            String title = getEpisodeInfoStr(ep, EpisodeInfoKeys.TITLE);
+            String characters = getEpisodeInfoStr(ep, EpisodeInfoKeys.CHARACTERS);
+            String keyItems = getEpisodeInfoStr(ep, EpisodeInfoKeys.KEY_ITEMS);
+            String content = getEpisodeInfoStr(ep, EpisodeInfoKeys.CONTENT);
+
+            sb.append("第").append(epNum).append("集：").append(title != null ? title : "").append("\n");
+            sb.append("- 涉及角色：").append(characters != null ? characters : "无").append("\n");
+            sb.append("- 关键物品：").append(keyItems != null ? keyItems : "无").append("\n");
+            if (content != null && content.length() > 200) {
+                sb.append("- 剧情摘要：").append(content.substring(0, 200)).append("...\n");
+            } else if (content != null) {
+                sb.append("- 剧情摘要：").append(content).append("\n");
             }
             sb.append("\n");
         }
@@ -564,18 +633,18 @@ public class ScriptService {
      * 验证章节顺序（必须顺序生成）
      */
     private void validateChapterOrder(Project project, String chapter) {
-        List<String> chapters = extractChaptersFromOutline(project.getScriptOutline());
+        String outline = getScriptOutlineText(project);
+        List<String> chapters = extractChaptersFromOutline(outline);
         List<Episode> existingEpisodes = episodeRepository.findByProjectId(project.getProjectId());
 
-        // 获取已生成的章节
         Set<String> generatedChapters = new HashSet<>();
         for (Episode ep : existingEpisodes) {
-            if (ep.getChapterTitle() != null && project.getProjectId().equals(ep.getProjectId())) {
-                generatedChapters.add(ep.getChapterTitle());
+            String chapterTitle = getEpisodeInfoStr(ep, EpisodeInfoKeys.CHAPTER_TITLE);
+            if (chapterTitle != null && project.getProjectId().equals(ep.getProjectId())) {
+                generatedChapters.add(chapterTitle);
             }
         }
 
-        // 找到第一个未生成的章节
         String expectedNext = null;
         for (String ch : chapters) {
             if (!generatedChapters.contains(ch)) {
@@ -584,7 +653,6 @@ public class ScriptService {
             }
         }
 
-        // 验证用户选择的是否是下一个待生成的章节
         if (expectedNext != null && !expectedNext.equals(chapter)) {
             throw new BusinessException("必须顺序生成章节。下一个待生成的章节是：" + expectedNext);
         }
@@ -594,11 +662,9 @@ public class ScriptService {
      * 检查是否已生成所有章节
      */
     private boolean isAllChaptersGenerated(Project project) {
-        List<String> chapters = extractChaptersFromOutline(project.getScriptOutline());
+        Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
         List<Episode> episodes = episodeRepository.findByProjectId(project.getProjectId());
-
-        // 简化判断：已生成的集数 >= 总集数
-        return episodes.size() >= project.getTotalEpisodes();
+        return episodes.size() >= (totalEpisodes != null ? totalEpisodes : 0);
     }
 
     /**
@@ -607,16 +673,17 @@ public class ScriptService {
     private void deleteEpisodesByChapter(String projectId, String chapter) {
         List<Episode> episodes = episodeRepository.findByProjectId(projectId);
         for (Episode ep : episodes) {
-            if (chapter.equals(ep.getChapterTitle())) {
+            if (chapter.equals(getEpisodeInfoStr(ep, EpisodeInfoKeys.CHAPTER_TITLE))) {
                 episodeRepository.deleteById(ep.getId());
             }
         }
     }
 
     int resolveEpisodeCount(Project project, String chapter, Integer requestedEpisodeCount, boolean isBatch) {
+        Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
         boolean isSingleEpisode = project != null
-                && project.getTotalEpisodes() != null
-                && project.getTotalEpisodes() == 1;
+                && totalEpisodes != null
+                && totalEpisodes == 1;
         if (isSingleEpisode) {
             return 1;
         }
@@ -630,8 +697,9 @@ public class ScriptService {
             return chapterDerivedCount;
         }
 
-        if (project != null && project.getEpisodesPerChapter() != null && project.getEpisodesPerChapter() > 0) {
-            return project.getEpisodesPerChapter();
+        Integer episodesPerChapter = getProjectInfoInt(project, ProjectInfoKeys.EPISODES_PER_CHAPTER);
+        if (project != null && episodesPerChapter != null && episodesPerChapter > 0) {
+            return episodesPerChapter;
         }
 
         return DEFAULT_EPISODE_COUNT;
@@ -686,10 +754,8 @@ public class ScriptService {
             }
             cleanJson = cleanJson.trim();
 
-            // 解析 JSON（支持数组和单对象两种格式）
             JsonNode rootNode = objectMapper.readTree(cleanJson);
 
-            // 如果 AI 返回的是单个对象（单集模式常见），包装成数组统一处理
             List<JsonNode> episodeNodes = new ArrayList<>();
             if (rootNode.isArray()) {
                 for (JsonNode node : rootNode) {
@@ -705,21 +771,26 @@ public class ScriptService {
             for (JsonNode episodeNode : episodeNodes) {
                 Episode episode = new Episode();
                 episode.setProjectId(project.getProjectId());
-                episode.setEpisodeNum(episodeNum++);
-                episode.setTitle(getJsonText(episodeNode, "title", "第" + (episodeNum - 1) + "集"));
-                episode.setContent(getJsonText(episodeNode, "content", ""));
-                episode.setCharacters(getJsonText(episodeNode, "characters", ""));
-                episode.setKeyItems(getJsonText(episodeNode, "keyItems", ""));
-                episode.setContinuityNote(getJsonText(episodeNode, "continuityNote", ""));
-                episode.setVisualStyleNote(getJsonText(episodeNode, "visualStyleNote", ""));
-                episode.setChapterTitle(chapterTitle);
                 episode.setStatus("DRAFT");
-                episode.setRetryCount(0);
+
+                Map<String, Object> epInfo = new HashMap<>();
+                epInfo.put(EpisodeInfoKeys.EPISODE_NUM, episodeNum++);
+                epInfo.put(EpisodeInfoKeys.TITLE, getJsonText(episodeNode, "title", "第" + (episodeNum - 1) + "集"));
+                epInfo.put(EpisodeInfoKeys.CONTENT, getJsonText(episodeNode, "content", ""));
+                epInfo.put(EpisodeInfoKeys.CHARACTERS, getJsonText(episodeNode, "characters", ""));
+                epInfo.put(EpisodeInfoKeys.KEY_ITEMS, getJsonText(episodeNode, "keyItems", ""));
+                epInfo.put(EpisodeInfoKeys.CONTINUITY_NOTE, getJsonText(episodeNode, "continuityNote", ""));
+                epInfo.put(EpisodeInfoKeys.VISUAL_STYLE_NOTE, getJsonText(episodeNode, "visualStyleNote", ""));
+                epInfo.put(EpisodeInfoKeys.CHAPTER_TITLE, chapterTitle);
+                epInfo.put(EpisodeInfoKeys.RETRY_COUNT, 0);
+                episode.setEpisodeInfo(epInfo);
 
                 episodeRepository.insert(episode);
                 episodes.add(episode);
             }
 
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("解析剧集JSON失败", e);
             throw new BusinessException("解析剧集内容失败: " + e.getMessage());
@@ -735,16 +806,14 @@ public class ScriptService {
         List<Episode> existing = episodeRepository.findByProjectId(projectId);
         int max = 0;
         for (Episode ep : existing) {
-            if (ep.getEpisodeNum() != null && ep.getEpisodeNum() > max) {
-                max = ep.getEpisodeNum();
+            Integer epNum = getEpisodeInfoInt(ep, EpisodeInfoKeys.EPISODE_NUM);
+            if (epNum != null && epNum > max) {
+                max = epNum;
             }
         }
         return max + 1;
     }
 
-    /**
-     * 安全获取JSON文本字段
-     */
     private String getJsonText(JsonNode node, String field, String defaultValue) {
         if (node.has(field) && !node.get(field).isNull()) {
             return node.get(field).asText(defaultValue);
@@ -760,20 +829,26 @@ public class ScriptService {
         projectRepository.updateById(project);
 
         try {
-            // 构建带修改意见的prompt
+            Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
+            String genre = getProjectInfoStr(project, ProjectInfoKeys.GENRE);
+            String targetAudience = getProjectInfoStr(project, ProjectInfoKeys.TARGET_AUDIENCE);
+            String storyPrompt = getProjectInfoStr(project, ProjectInfoKeys.STORY_PROMPT);
+            Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
+            String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
+
             String systemPrompt = promptBuilder.buildScriptOutlineSystemPrompt(
-                project.getTotalEpisodes(),
-                project.getGenre(),
-                project.getTargetAudience()
+                totalEpisodes != null ? totalEpisodes : 4,
+                genre,
+                targetAudience
             );
 
             String userPrompt = promptBuilder.buildScriptOutlineUserPrompt(
-                project.getStoryPrompt(),
-                project.getGenre(),
+                storyPrompt,
+                genre,
                 currentOutline,
-                project.getTotalEpisodes(),
-                project.getEpisodeDuration() != null ? project.getEpisodeDuration() / 60 : 1,
-                project.getVisualStyle() != null ? project.getVisualStyle() : "REAL"
+                totalEpisodes != null ? totalEpisodes : 4,
+                episodeDuration != null ? episodeDuration / 60 : 1,
+                visualStyle != null ? visualStyle : "REAL"
             );
 
             // 添加修改意见
@@ -781,11 +856,18 @@ public class ScriptService {
 
             String outlineContent = textGenerationService.generate(systemPrompt, userPrompt);
 
-            project.setScriptOutline(outlineContent);
+            Map<String, Object> info = ensureProjectInfo(project);
+            Map<String, Object> scriptMap = getScriptMap(project);
+            if (scriptMap == null) {
+                scriptMap = new HashMap<>();
+                info.put(ProjectInfoKeys.SCRIPT, scriptMap);
+            }
+            scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
+
             project.setStatus(STATUS_OUTLINE_REVIEW);
             projectRepository.updateById(project);
 
-            // 删除之前生成的所有剧集（因为大纲变了）
+            // 删除之前生成的所有剧集
             episodeRepository.deleteByProjectId(project.getProjectId());
 
             log.info("大纲重新生成完成: projectId={}", project.getProjectId());
