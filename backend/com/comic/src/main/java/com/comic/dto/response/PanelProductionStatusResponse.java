@@ -1,24 +1,22 @@
 package com.comic.dto.response;
 
 import lombok.Data;
-import java.util.List;
 
-/**
- * 单分镜完整生产状态响应
- */
 @Data
 public class PanelProductionStatusResponse {
-    private Integer panelIndex;
+    private Long panelId;
     private String overallStatus;
-    private String backgroundUrl;
-    private String backgroundStatus;
-    private String fusionUrl;
-    private String fusionStatus;
-    private String transitionUrl;
-    private String transitionStatus;
-    private String videoUrl;
-    private String videoStatus;
-    private Integer videoDuration;
-    private String tailFrameUrl;
     private String currentStage;
+
+    private String backgroundStatus;
+    private String backgroundUrl;
+
+    private String comicStatus;
+    private String comicUrl;
+
+    private String videoStatus;
+    private String videoUrl;
+    private Integer videoDuration;
+
+    private String errorMessage;
 }
