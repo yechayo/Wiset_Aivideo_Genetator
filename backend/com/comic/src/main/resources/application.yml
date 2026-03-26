@@ -18,6 +18,19 @@ spring:
   config:
     import: optional:file:./.env[.properties]
 
+  # ---------- Redis ----------
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: 0
+    timeout: 5000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 4
+        min-idle: 0
+
   # 缓存配置（本地用Caffeine内存缓存�?
   cache:
     type: caffeine
@@ -112,7 +125,7 @@ comic:
   ark:
     api-key: ${ARK_API_KEY}
     base-url: https://ark.cn-beijing.volces.com/api/v3
-    seedream-model: doubao-seedream-4-0-250828  # Seedream 图片模型
+    seedream-model: doubao-seedream-5-0-lite-260128  # Seedream 图片模型
     seedance-model: doubao-seedance-1-5-pro-251215  # Seedance 视频模型
 
   # ========== DeepSeek API 配置（思考模式） ==========

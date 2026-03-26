@@ -1,6 +1,6 @@
 package com.comic.service.script;
 
-import com.comic.ai.PromptBuilder;
+import com.comic.ai.ScriptPromptBuilder;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.common.EpisodeInfoKeys;
@@ -38,7 +38,7 @@ public class ScriptService {
     private final ProjectRepository projectRepository;
     private final EpisodeRepository episodeRepository;
     private final TextGenerationService textGenerationService;
-    private final PromptBuilder promptBuilder;
+    private final ScriptPromptBuilder scriptPromptBuilder;
     private final WorldRuleService worldRuleService;
     private final ObjectMapper objectMapper;
 
@@ -47,10 +47,7 @@ public class ScriptService {
     private PipelineService pipelineService;
 
     // 状态常量（统一使用 ProjectStatus 枚举）
-    private static final String STATUS_DRAFT = ProjectStatus.DRAFT.getCode();
-    private static final String STATUS_OUTLINE_GENERATING = ProjectStatus.OUTLINE_GENERATING.getCode();
     private static final String STATUS_OUTLINE_REVIEW = ProjectStatus.OUTLINE_REVIEW.getCode();
-    private static final String STATUS_EPISODE_GENERATING = ProjectStatus.EPISODE_GENERATING.getCode();
     private static final String STATUS_SCRIPT_REVIEW = ProjectStatus.SCRIPT_REVIEW.getCode();
     private static final String STATUS_SCRIPT_CONFIRMED = ProjectStatus.SCRIPT_CONFIRMED.getCode();
     private static final String STATUS_OUTLINE_FAILED = ProjectStatus.OUTLINE_GENERATING_FAILED.getCode();
@@ -128,22 +125,20 @@ public class ScriptService {
         Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
         String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
 
-        // 更新项目状态
-        project.setStatus(STATUS_OUTLINE_GENERATING);
-        projectRepository.updateById(project);
+        // 状态已由 triggerNextStage 设置为 OUTLINE_GENERATING，无需重复设置
 
         try {
             // 获取世界观配置
             WorldConfigModel worldConfig = worldRuleService.getWorldConfig(projectId);
 
             // 构建生成大纲的prompt
-            String systemPrompt = promptBuilder.buildScriptOutlineSystemPrompt(
+            String systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
                 totalEpisodes != null ? totalEpisodes : 4,
                 genre,
                 targetAudience
             );
 
-            String userPrompt = promptBuilder.buildScriptOutlineUserPrompt(
+            String userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
                 storyPrompt,
                 genre,
                 worldConfig.getRulesText(),
@@ -167,20 +162,18 @@ public class ScriptService {
             }
             scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
 
-            PromptBuilder.ScriptParams params = promptBuilder.calculateScriptParameters(
+            ScriptPromptBuilder.ScriptParams params = scriptPromptBuilder.calculateScriptParameters(
                 totalEpisodes != null ? totalEpisodes : 4);
             int fallbackEpisodeCount = params.isSingleEpisode ? 1 : Math.max(1, params.episodesPerChapter);
             info.put(ProjectInfoKeys.EPISODES_PER_CHAPTER, fallbackEpisodeCount);
 
-            project.setStatus(STATUS_OUTLINE_REVIEW);
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(projectId, "script_generated");
 
             log.info("剧本大纲生成完成: projectId={}", projectId);
 
         } catch (Exception e) {
             log.error("剧本大纲生成失败: projectId={}", projectId, e);
-            project.setStatus(STATUS_OUTLINE_FAILED);
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(projectId, "script_failed");
             throw new BusinessException("剧本大纲生成失败: " + e.getMessage());
         }
     }
@@ -209,7 +202,6 @@ public class ScriptService {
         int resolvedEpisodeCount = resolveEpisodeCount(project, chapter, episodeCount, false);
 
         // 更新状态
-        project.setStatus(STATUS_EPISODE_GENERATING);
         Map<String, Object> info = ensureProjectInfo(project);
         info.put(ProjectInfoKeys.SELECTED_CHAPTER, chapter);
         projectRepository.updateById(project);
@@ -227,8 +219,8 @@ public class ScriptService {
             Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
 
             // 构建分集prompt
-            String systemPrompt = promptBuilder.buildScriptEpisodeSystemPrompt();
-            String userPrompt = promptBuilder.buildScriptEpisodeUserPrompt(
+            String systemPrompt = scriptPromptBuilder.buildScriptEpisodeSystemPrompt();
+            String userPrompt = scriptPromptBuilder.buildScriptEpisodeUserPrompt(
                 outline,
                 chapter,
                 globalCharacters,
@@ -246,16 +238,14 @@ public class ScriptService {
             List<Episode> episodes = parseAndSaveEpisodes(project, episodesJson, chapter);
 
             // 更新状态
-            project.setStatus(STATUS_SCRIPT_REVIEW);
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(projectId, "script_generated");
 
             log.info("分集生成完成: projectId={}, chapter={}, episodes={}",
                     projectId, chapter, episodes.size());
 
         } catch (Exception e) {
             log.error("分集生成失败: projectId={}, chapter={}", projectId, chapter, e);
-            project.setStatus(STATUS_EPISODE_FAILED);
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(projectId, "script_failed");
             throw new BusinessException("分集生成失败: " + e.getMessage());
         }
     }
@@ -346,14 +336,12 @@ public class ScriptService {
 
         if (STATUS_OUTLINE_REVIEW.equals(status)) {
             if (isAllChaptersGenerated(project)) {
-                project.setStatus(STATUS_SCRIPT_CONFIRMED);
                 log.info("剧本全部确认完成: projectId={}", projectId);
             } else {
                 throw new BusinessException("请先生成所有章节的剧集");
             }
         } else if (STATUS_SCRIPT_REVIEW.equals(status)) {
             if (isAllChaptersGenerated(project)) {
-                project.setStatus(STATUS_SCRIPT_CONFIRMED);
                 log.info("剧本全部确认完成: projectId={}", projectId);
             } else {
                 throw new BusinessException("请先生成所有章节的剧集");
@@ -362,14 +350,8 @@ public class ScriptService {
             throw new BusinessException("当前状态不能确认剧本");
         }
 
-        projectRepository.updateById(project);
-
-        // 推进管线到角色提取阶段
-        try {
-            pipelineService.advancePipeline(projectId, "start_character_extraction");
-        } catch (Exception e) {
-            log.warn("推进管线失败（角色提取将不会自动触发）: projectId={}, error={}", projectId, e.getMessage());
-        }
+        // 推进状态到 SCRIPT_CONFIRMED，然后自动触发角色提取
+        pipelineService.advancePipeline(projectId, "confirm_script");
     }
 
     /**
@@ -825,8 +807,7 @@ public class ScriptService {
      * 重新生成大纲
      */
     private void regenerateOutline(Project project, String revisionNote, String currentOutline) {
-        project.setStatus(STATUS_OUTLINE_GENERATING);
-        projectRepository.updateById(project);
+        pipelineService.advancePipeline(project.getProjectId(), "revise_outline");
 
         try {
             Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
@@ -836,13 +817,13 @@ public class ScriptService {
             Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
             String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
 
-            String systemPrompt = promptBuilder.buildScriptOutlineSystemPrompt(
+            String systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
                 totalEpisodes != null ? totalEpisodes : 4,
                 genre,
                 targetAudience
             );
 
-            String userPrompt = promptBuilder.buildScriptOutlineUserPrompt(
+            String userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
                 storyPrompt,
                 genre,
                 currentOutline,
@@ -864,8 +845,7 @@ public class ScriptService {
             }
             scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
 
-            project.setStatus(STATUS_OUTLINE_REVIEW);
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(project.getProjectId(), "script_generated");
 
             // 删除之前生成的所有剧集
             episodeRepository.deleteByProjectId(project.getProjectId());
@@ -874,8 +854,7 @@ public class ScriptService {
 
         } catch (Exception e) {
             log.error("大纲重新生成失败", e);
-            project.setStatus(STATUS_OUTLINE_FAILED);
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(project.getProjectId(), "script_failed");
             throw new BusinessException("大纲重新生成失败: " + e.getMessage());
         }
     }

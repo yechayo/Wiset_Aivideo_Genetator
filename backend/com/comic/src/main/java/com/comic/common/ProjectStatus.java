@@ -3,7 +3,11 @@ package com.comic.common;
 import lombok.Getter;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -38,9 +42,9 @@ public enum ProjectStatus {
     IMAGE_GENERATING_FAILED("IMAGE_GENERATING_FAILED", "图像生成失败", 4),
 
     // 分镜阶段（逐集生成+逐集审核）
-    STORYBOARD_GENERATING("STORYBOARD_GENERATING", "分镜生成中", 5),
-    STORYBOARD_REVIEW("STORYBOARD_REVIEW", "分镜审核", 5),
-    STORYBOARD_GENERATING_FAILED("STORYBOARD_GENERATING_FAILED", "分镜生成失败", 5),
+    PANEL_GENERATING("PANEL_GENERATING", "分镜生成中", 5),
+    PANEL_REVIEW("PANEL_REVIEW", "分镜审核", 5),
+    PANEL_GENERATING_FAILED("PANEL_GENERATING_FAILED", "分镜生成失败", 5),
 
     // 生产阶段
     PRODUCING("PRODUCING", "生产中", 6),
@@ -84,6 +88,81 @@ public enum ProjectStatus {
         return DRAFT;
     }
 
+    /** 合法状态转换: Map<起始状态, Map<事件, 目标状态>> */
+    private static final Map<ProjectStatus, Map<String, ProjectStatus>> ALLOWED_TRANSITIONS;
+
+    static {
+        Map<ProjectStatus, Map<String, ProjectStatus>> map = new EnumMap<>(ProjectStatus.class);
+
+        // DRAFT → OUTLINE_GENERATING
+        put(map, DRAFT, "start_script_generation", OUTLINE_GENERATING);
+
+        // 剧本阶段内部
+        put(map, OUTLINE_GENERATING, "script_generated", SCRIPT_REVIEW);
+        put(map, OUTLINE_GENERATING, "script_failed", OUTLINE_GENERATING_FAILED);
+        put(map, OUTLINE_REVIEW, "generate_episodes", EPISODE_GENERATING);
+        put(map, OUTLINE_REVIEW, "revise_outline", OUTLINE_GENERATING);
+        put(map, OUTLINE_REVIEW, "confirm_script", SCRIPT_CONFIRMED);
+        put(map, EPISODE_GENERATING, "script_generated", SCRIPT_REVIEW);
+        put(map, EPISODE_GENERATING, "script_failed", EPISODE_GENERATING_FAILED);
+        put(map, SCRIPT_REVIEW, "generate_episodes", EPISODE_GENERATING);
+        put(map, SCRIPT_REVIEW, "revise_episodes", EPISODE_GENERATING);
+        put(map, SCRIPT_REVIEW, "confirm_script", SCRIPT_CONFIRMED);
+
+        // 失败重试
+        put(map, OUTLINE_GENERATING_FAILED, "retry", DRAFT);
+        put(map, EPISODE_GENERATING_FAILED, "retry", OUTLINE_REVIEW);
+        put(map, CHARACTER_EXTRACTING_FAILED, "retry", SCRIPT_CONFIRMED);
+        put(map, IMAGE_GENERATING_FAILED, "retry", CHARACTER_CONFIRMED);
+        put(map, PANEL_GENERATING_FAILED, "retry", ASSET_LOCKED);
+
+        // 剧本 → 角色
+        put(map, SCRIPT_CONFIRMED, "start_character_extraction", CHARACTER_EXTRACTING);
+
+        // 角色阶段
+        put(map, CHARACTER_EXTRACTING, "characters_extracted", CHARACTER_REVIEW);
+        put(map, CHARACTER_EXTRACTING, "characters_failed", CHARACTER_EXTRACTING_FAILED);
+        put(map, CHARACTER_REVIEW, "confirm_characters", CHARACTER_CONFIRMED);
+
+        // 角色 → 图像
+        put(map, CHARACTER_CONFIRMED, "start_image_generation", IMAGE_GENERATING);
+
+        // 图像阶段
+        put(map, IMAGE_GENERATING, "images_generated", IMAGE_REVIEW);
+        put(map, IMAGE_GENERATING, "images_failed", IMAGE_GENERATING_FAILED);
+        put(map, IMAGE_REVIEW, "confirm_images", ASSET_LOCKED);
+
+        // 素材 → 分镜
+        put(map, ASSET_LOCKED, "start_panels", PANEL_GENERATING);
+
+        // 分镜阶段
+        put(map, PANEL_GENERATING, "panels_generated", PANEL_REVIEW);
+        put(map, PANEL_GENERATING, "panels_failed", PANEL_GENERATING_FAILED);
+        put(map, PANEL_REVIEW, "confirm_panels", PANEL_REVIEW);
+        put(map, PANEL_REVIEW, "all_panels_confirmed", PRODUCING);
+        put(map, PANEL_REVIEW, "revise_panels", PANEL_GENERATING);
+        put(map, PANEL_GENERATING_FAILED, "retry", ASSET_LOCKED);
+
+        // 生产 → 完成
+        put(map, PRODUCING, "production_completed", COMPLETED);
+
+        ALLOWED_TRANSITIONS = Collections.unmodifiableMap(map);
+    }
+
+    private static void put(Map<ProjectStatus, Map<String, ProjectStatus>> map,
+                            ProjectStatus from, String event, ProjectStatus to) {
+        map.computeIfAbsent(from, k -> new HashMap<>()).put(event, to);
+    }
+
+    /**
+     * 校验状态转换是否合法，返回目标状态；不合法返回 null。
+     */
+    public static ProjectStatus resolveTransition(ProjectStatus from, String event) {
+        if (from == null || event == null) return null;
+        Map<String, ProjectStatus> events = ALLOWED_TRANSITIONS.get(from);
+        return events != null ? events.get(event) : null;
+    }
+
     /**
      * 是否为失败状态
      */
@@ -117,7 +196,7 @@ public enum ProjectStatus {
         }
         // 当前步骤处于确认态时，当前步骤也算完成
         if (this == SCRIPT_CONFIRMED || this == CHARACTER_CONFIRMED || this == ASSET_LOCKED
-                || this == COMPLETED || this == STORYBOARD_REVIEW) {
+                || this == COMPLETED || this == PANEL_REVIEW) {
             steps.add(current);
         }
         return steps;
@@ -151,11 +230,11 @@ public enum ProjectStatus {
             case IMAGE_REVIEW:
                 return Arrays.asList("confirm_images");
             case ASSET_LOCKED:
-                return Arrays.asList("start_storyboard");
-            case STORYBOARD_GENERATING:
+                return Arrays.asList("start_panels");
+            case PANEL_GENERATING:
                 return Arrays.asList();
-            case STORYBOARD_REVIEW:
-                return Arrays.asList("confirm_storyboard", "revise_storyboard", "start_production");
+            case PANEL_REVIEW:
+                return Arrays.asList("confirm_panels", "revise_panels", "start_production");
             case PRODUCING:
                 return Arrays.asList();
             case COMPLETED:

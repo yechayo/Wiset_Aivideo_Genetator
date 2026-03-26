@@ -15,10 +15,13 @@ import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.ProjectRepository;
+import com.comic.service.pipeline.PipelineService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +37,10 @@ public class CharacterExtractService {
     private final TextGenerationService textGenerationService;
     private final ObjectMapper objectMapper;
 
+    @Lazy
+    @Autowired
+    private PipelineService pipelineService;
+
     @Transactional
     public List<CharacterDraftModel> extractCharacters(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
@@ -47,8 +54,7 @@ public class CharacterExtractService {
             throw new BusinessException("请先确认剧本后再提取角色");
         }
 
-        project.setStatus(ProjectStatus.CHARACTER_EXTRACTING.getCode());
-        projectRepository.updateById(project);
+        // 状态已由 triggerNextStage 设置，无需重复设置
 
         try {
             String outline = getScriptOutlineText(project);
@@ -79,16 +85,14 @@ public class CharacterExtractService {
 
             saveCharacters(projectId, characters);
 
-            project.setStatus(ProjectStatus.CHARACTER_REVIEW.getCode());
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(projectId, "characters_extracted");
 
             log.info("角色提取完成: projectId={}, 角色数={}", projectId, characters.size());
             return characters;
 
         } catch (Exception e) {
             log.error("角色提取失败: projectId={}", projectId, e);
-            project.setStatus(ProjectStatus.CHARACTER_EXTRACTING_FAILED.getCode());
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(projectId, "characters_failed");
             throw new BusinessException("角色提取失败: " + e.getMessage());
         }
     }
@@ -111,8 +115,7 @@ public class CharacterExtractService {
                 characterRepository.updateById(character);
             }
         }
-        project.setStatus(ProjectStatus.CHARACTER_CONFIRMED.getCode());
-        projectRepository.updateById(project);
+        pipelineService.advancePipeline(projectId, "confirm_characters");
         log.info("角色已确认: projectId={}", projectId);
     }
 
@@ -281,6 +284,7 @@ public class CharacterExtractService {
         resp.setPersonality(getInfoStr(info, CharacterInfoKeys.PERSONALITY));
         resp.setVoice(getInfoStr(info, CharacterInfoKeys.VOICE));
         resp.setAppearance(getInfoStr(info, CharacterInfoKeys.APPEARANCE));
+        resp.setBackground(getInfoStr(info, CharacterInfoKeys.BACKGROUND));
         resp.setVisualStyle(getInfoStr(info, CharacterInfoKeys.VISUAL_STYLE));
         resp.setExpressionStatus(getInfoStr(info, CharacterInfoKeys.EXPRESSION_STATUS));
         resp.setThreeViewStatus(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_STATUS));

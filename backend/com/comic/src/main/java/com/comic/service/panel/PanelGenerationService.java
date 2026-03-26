@@ -284,8 +284,7 @@ public class PanelGenerationService {
         Episode nextEpisode = findNextPendingEpisode(projectId);
         if (nextEpisode != null) {
             Project project = projectRepository.findByProjectId(projectId);
-            project.setStatus(ProjectStatus.PANEL_GENERATING.getCode());
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(projectId, "start_panels");
             generateSingleEpisodeAsync(projectId, nextEpisode);
         } else {
             log.info("All episodes confirmed: projectId={}", projectId);
@@ -305,8 +304,7 @@ public class PanelGenerationService {
         String projectId = episode.getProjectId();
         Project project = projectRepository.findByProjectId(projectId);
         if (project != null) {
-            project.setStatus(ProjectStatus.PANEL_GENERATING.getCode());
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(projectId, "start_panels");
         }
         markEpisodeGenerating(episode);
 
@@ -334,14 +332,12 @@ public class PanelGenerationService {
         if (nextEpisode == null) {
             log.warn("No pending episodes for panel generation: projectId={}", projectId);
             if (ProjectStatus.PANEL_GENERATING.getCode().equals(project.getStatus())) {
-                project.setStatus(ProjectStatus.PANEL_REVIEW.getCode());
-                projectRepository.updateById(project);
+                pipelineService.advancePipeline(projectId, "panels_generated");
             }
             return;
         }
 
-        project.setStatus(ProjectStatus.PANEL_GENERATING.getCode());
-        projectRepository.updateById(project);
+        // 状态已由 advancePipeline("start_panels") 设置
         markEpisodeGenerating(nextEpisode);
 
         generateSingleEpisodeAsync(projectId, nextEpisode);
@@ -482,8 +478,7 @@ public class PanelGenerationService {
     private void updateProjectToFailed(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project != null && ProjectStatus.PANEL_GENERATING.getCode().equals(project.getStatus())) {
-            project.setStatus(ProjectStatus.PANEL_GENERATING_FAILED.getCode());
-            projectRepository.updateById(project);
+            pipelineService.advancePipeline(projectId, "panels_failed");
         }
     }
 

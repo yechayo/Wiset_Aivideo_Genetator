@@ -4,15 +4,22 @@ import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.common.CharacterInfoKeys;
+import com.comic.common.ProjectStatus;
 import com.comic.dto.response.CharacterStatusResponse;
 import com.comic.entity.Character;
+import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
+import com.comic.repository.ProjectRepository;
+import com.comic.service.pipeline.PipelineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -21,8 +28,13 @@ import java.util.Map;
 public class CharacterImageGenerationService {
 
     private final CharacterRepository characterRepository;
+    private final ProjectRepository projectRepository;
     private final ImageGenerationService imageGenerationService;
     private final CharacterPromptManager characterPromptManager;
+
+    @Lazy
+    @Autowired
+    private PipelineService pipelineService;
 
     public void generateExpressionSheet(String charId) {
         Character character = characterRepository.findByCharId(charId);
@@ -77,6 +89,8 @@ public class CharacterImageGenerationService {
 
             log.info("九宫格大全图生成完成: charId={}", charId);
 
+            checkAndAdvanceProjectStatus(character);
+
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -118,7 +132,7 @@ public class CharacterImageGenerationService {
             String prompt = characterPromptManager.buildThreeViewGridPrompt(character, visualStyle);
             log.info("三视图提示词长度: {} char", prompt.length());
 
-            String imageUrl = imageGenerationService.generate(prompt, 1024, 1536, visualStyle.getCode().toLowerCase());
+            String imageUrl = imageGenerationService.generate(prompt, 2848, 1600, visualStyle.getCode().toLowerCase());
             log.info("三视图大全图生成完成: {}", imageUrl);
 
             info.put(CharacterInfoKeys.THREE_VIEW_GRID_URL, imageUrl);
@@ -128,6 +142,8 @@ public class CharacterImageGenerationService {
             characterRepository.updateById(character);
 
             log.info("三视图大全图生成完成: charId={}", charId);
+
+            checkAndAdvanceProjectStatus(character);
 
         } catch (BusinessException e) {
             throw e;
@@ -224,6 +240,11 @@ public class CharacterImageGenerationService {
         dto.setCharId(getCharInfoStr(character, CharacterInfoKeys.CHAR_ID));
         dto.setName(getCharInfoStr(character, CharacterInfoKeys.NAME));
         dto.setRole(getCharInfoStr(character, CharacterInfoKeys.ROLE));
+        dto.setPersonality(getCharInfoStr(character, CharacterInfoKeys.PERSONALITY));
+        dto.setVoice(getCharInfoStr(character, CharacterInfoKeys.VOICE));
+        dto.setAppearance(getCharInfoStr(character, CharacterInfoKeys.APPEARANCE));
+        dto.setBackground(getCharInfoStr(character, CharacterInfoKeys.BACKGROUND));
+        dto.setConfirmed(getCharInfoBool(character, CharacterInfoKeys.CONFIRMED));
         dto.setExpressionStatus(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_STATUS));
         dto.setThreeViewStatus(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_STATUS));
         dto.setExpressionError(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_ERROR));
@@ -234,6 +255,43 @@ public class CharacterImageGenerationService {
         dto.setExpressionGridUrl(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_GRID_URL));
         dto.setThreeViewGridUrl(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_GRID_URL));
         return dto;
+    }
+
+    // ==================== 状态推进 ====================
+
+    private void checkAndAdvanceProjectStatus(Character character) {
+        String projectId = character.getProjectId();
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null || !ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
+            return;
+        }
+
+        List<Character> allCharacters = characterRepository.findByProjectId(projectId);
+        boolean allDone = allCharacters.stream().allMatch(c -> isCharacterImageComplete(c));
+
+        if (allDone) {
+            log.info("所有角色图片生成完成: projectId={}", projectId);
+            pipelineService.advancePipeline(projectId, "images_generated");
+        }
+    }
+
+    private boolean isCharacterImageComplete(Character character) {
+        Map<String, Object> info = character.getCharacterInfo();
+        if (info == null) return false;
+
+        String threeViewStatus = info.get(CharacterInfoKeys.THREE_VIEW_STATUS) != null
+                ? info.get(CharacterInfoKeys.THREE_VIEW_STATUS).toString() : null;
+        if (!"COMPLETED".equals(threeViewStatus)) return false;
+
+        // 配角只需要三视图
+        String role = info.get(CharacterInfoKeys.ROLE) != null
+                ? info.get(CharacterInfoKeys.ROLE).toString() : null;
+        if ("配角".equals(role)) return true;
+
+        // 主角/反派还需要九宫格
+        String expressionStatus = info.get(CharacterInfoKeys.EXPRESSION_STATUS) != null
+                ? info.get(CharacterInfoKeys.EXPRESSION_STATUS).toString() : null;
+        return "COMPLETED".equals(expressionStatus);
     }
 
     // ==================== 辅助方法 ====================

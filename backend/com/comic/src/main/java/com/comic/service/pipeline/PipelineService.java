@@ -1,7 +1,6 @@
 package com.comic.service.pipeline;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.comic.common.BusinessException;
 import com.comic.common.CharacterInfoKeys;
 import com.comic.common.EpisodeInfoKeys;
@@ -12,17 +11,16 @@ import com.comic.dto.response.ProjectListItemResponse;
 import com.comic.dto.response.ProjectStatusResponse;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
-import com.comic.entity.EpisodeProduction;
+import com.comic.entity.Panel;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
-import com.comic.repository.EpisodeProductionRepository;
 import com.comic.repository.EpisodeRepository;
+import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
-import com.comic.service.production.EpisodeProductionService;
 import com.comic.service.script.ScriptService;
-import com.comic.service.story.StoryboardService;
+import com.comic.service.panel.PanelGenerationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,20 +44,25 @@ import java.util.concurrent.CompletableFuture;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class PipelineService {
+public class PipelineService implements StageCompletionCallback {
 
     private final ProjectRepository projectRepository;
     private final EpisodeRepository episodeRepository;
-    private final EpisodeProductionRepository episodeProductionRepository;
+    private final PanelRepository panelRepository;
     private final CharacterRepository characterRepository;
     private final ScriptService scriptService;
     private final CharacterExtractService characterExtractService;
     private final CharacterImageGenerationService characterImageGenerationService;
-    private final EpisodeProductionService episodeProductionService;
+    private final ProjectStatusBroadcaster broadcaster;
 
     @Lazy
     @Autowired
-    private StoryboardService storyboardService;
+    private PanelGenerationService panelGenerationService;
+
+    /** 自引用，用于异步线程中调用 advancePipeline（绕过 Spring 代理） */
+    @Lazy
+    @Autowired
+    private PipelineService pipelineServiceSelf;
 
     // ==================== Map 辅助方法 ====================
 
@@ -150,34 +153,53 @@ public class PipelineService {
         projectRepository.updateById(project);
     }
 
-    // ==================== Pipeline 状态转换 ====================
+    // ==================== Pipeline 状态转换（唯一入口）====================
+
+    @Override
+    @Transactional
+    public void onStageComplete(String projectId, String event) {
+        advancePipeline(projectId, event);
+    }
+
+    @Override
+    @Transactional
+    public void onStageFailed(String projectId, String event) {
+        advancePipeline(projectId, event);
+    }
 
     @Transactional
-    public void advancePipeline(String projectId, String direction, String event) {
+    public void advancePipeline(String projectId, String event) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
             throw new BusinessException("项目不存在");
         }
 
-        if ("backward".equals(direction)) {
-            rollbackPipeline(project);
-        } else {
-            String currentStatus = project.getStatus();
-            String nextStatus = calculateNextStatus(currentStatus, event);
-            if (nextStatus == null) {
-                throw new BusinessException("Cannot transition from status " + currentStatus + " via event " + event);
-            }
-            project.setStatus(nextStatus);
-            projectRepository.updateById(project);
-            log.info("Pipeline advanced: projectId={}, {} -> {}", projectId, currentStatus, nextStatus);
-            triggerNextStageAsync(projectId, nextStatus);
+        ProjectStatus current = ProjectStatus.fromCode(project.getStatus());
+        ProjectStatus next = ProjectStatus.resolveTransition(current, event);
+
+        if (next == null) {
+            log.warn("Illegal transition rejected: projectId={}, current={}, event={}", projectId, current, event);
+            throw new BusinessException("非法状态转换: " + current.getCode() + " + " + event);
         }
+
+        String oldStatus = project.getStatus();
+        project.setStatus(next.getCode());
+        projectRepository.updateById(project);
+        log.info("Pipeline advanced: projectId={}, {} -> {} (event={})", projectId, oldStatus, next.getCode(), event);
+
+        broadcaster.broadcast(projectId, oldStatus, next.getCode());
+        triggerNextStage(projectId, next);
     }
 
-    /** 保留旧签名的兼容方法 */
     @Transactional
-    public void advancePipeline(String projectId, String event) {
-        advancePipeline(projectId, "forward", event);
+    public void advancePipeline(String projectId, String direction, String event) {
+        if ("backward".equals(direction)) {
+            Project project = projectRepository.findByProjectId(projectId);
+            if (project == null) throw new BusinessException("项目不存在");
+            rollbackPipeline(project);
+        } else {
+            advancePipeline(projectId, event);
+        }
     }
 
     private void rollbackPipeline(Project project) {
@@ -193,6 +215,7 @@ public class PipelineService {
         project.setStatus(previous.getCode());
         projectRepository.updateById(project);
         log.info("Pipeline rolled back: projectId={}, {} -> {}", projectId, current.getCode(), previous.getCode());
+        broadcaster.broadcast(projectId, current.getCode(), previous.getCode());
     }
 
     private ProjectStatus getRollbackTarget(ProjectStatus from) {
@@ -215,12 +238,12 @@ public class PipelineService {
                 return ProjectStatus.IMAGE_GENERATING;
             case ASSET_LOCKED:
                 return ProjectStatus.IMAGE_REVIEW;
-            case STORYBOARD_GENERATING:
+            case PANEL_GENERATING:
                 return ProjectStatus.ASSET_LOCKED;
-            case STORYBOARD_REVIEW:
-                return ProjectStatus.STORYBOARD_GENERATING;
+            case PANEL_REVIEW:
+                return ProjectStatus.PANEL_GENERATING;
             case PRODUCING:
-                return ProjectStatus.STORYBOARD_REVIEW;
+                return ProjectStatus.PANEL_REVIEW;
             case COMPLETED:
                 return ProjectStatus.PRODUCING;
             default:
@@ -269,8 +292,8 @@ public class PipelineService {
                 }
                 break;
             case ASSET_LOCKED:
-            case STORYBOARD_GENERATING:
-            case STORYBOARD_REVIEW:
+            case PANEL_GENERATING:
+            case PANEL_REVIEW:
             case PRODUCING:
                 // 清除分镜和生产数据
                 List<Episode> episodes = episodeRepository.findByProjectId(projectId);
@@ -282,24 +305,28 @@ public class PipelineService {
                     }
                     ep.setStatus("DRAFT");
                     episodeRepository.updateById(ep);
+
+                    // 清除该 Episode 下所有 Panel 的生产状态
+                    List<Panel> panels = panelRepository.findByEpisodeId(ep.getId());
+                    for (Panel panel : panels) {
+                        Map<String, Object> panelInfo = panel.getPanelInfo();
+                        if (panelInfo != null) {
+                            panelInfo.remove("backgroundUrl");
+                            panelInfo.remove("backgroundStatus");
+                            panelInfo.remove("comicUrl");
+                            panelInfo.remove("comicStatus");
+                            panelInfo.remove("videoUrl");
+                            panelInfo.remove("videoStatus");
+                            panelInfo.remove("videoTaskId");
+                            panelInfo.remove("errorMessage");
+                            panel.setPanelInfo(panelInfo);
+                            panelRepository.updateById(panel);
+                        }
+                    }
                 }
                 break;
             default:
                 break;
-        }
-    }
-
-    private void triggerNextStageAsync(String projectId, String status) {
-        try {
-            triggerNextStage(projectId, status);
-        } catch (Exception e) {
-            log.error(
-                    "Failed to trigger next stage after status update: projectId={}, status={}, error={}",
-                    projectId,
-                    status,
-                    e.getMessage(),
-                    e
-            );
         }
     }
 
@@ -331,10 +358,10 @@ public class PipelineService {
 
         if (status == ProjectStatus.PRODUCING) {
             enrichProducingStatus(dto, projectId);
-        } else if (status == ProjectStatus.STORYBOARD_GENERATING
-                || status == ProjectStatus.STORYBOARD_REVIEW
-                || status == ProjectStatus.STORYBOARD_GENERATING_FAILED) {
-            enrichStoryboardStatus(dto, projectId);
+        } else if (status == ProjectStatus.PANEL_GENERATING
+                || status == ProjectStatus.PANEL_REVIEW
+                || status == ProjectStatus.PANEL_GENERATING_FAILED) {
+            enrichPanelStatus(dto, projectId);
         } else {
             dto.setStatusCode(status.getCode());
             dto.setStatusDescription(status.getDescription());
@@ -382,67 +409,67 @@ public class PipelineService {
         return dto;
     }
 
-    // ==================== 状态增强（Producing / Storyboard）====================
-
+    // ==================== 状态增强（Producing / Panel）====================
     private void enrichProducingStatus(ProjectStatusResponse dto, String projectId) {
         try {
             List<Episode> episodes = episodeRepository.findByProjectId(projectId);
-            Episode producingEpisode = null;
+
+            // 聚合所有 Episode 下 Panel 的生产状态
+            int totalPanels = 0;
+            int completedPanels = 0;
+            int failedPanels = 0;
+            int generatingPanels = 0;
+            boolean hasPending = false;
+
             for (Episode ep : episodes) {
-                String productionStatus = getEpisodeInfoStr(ep, EpisodeInfoKeys.PRODUCTION_STATUS);
-                if ("IN_PROGRESS".equals(productionStatus)) {
-                    producingEpisode = ep;
-                    break;
+                List<Panel> panels = panelRepository.findByEpisodeId(ep.getId());
+                totalPanels += panels.size();
+                for (Panel panel : panels) {
+                    String overallStatus = getPanelOverallStatus(panel);
+                    if ("completed".equals(overallStatus)) {
+                        completedPanels++;
+                    } else if ("failed".equals(overallStatus)) {
+                        failedPanels++;
+                    } else if ("in_progress".equals(overallStatus)) {
+                        generatingPanels++;
+                    } else {
+                        hasPending = true;
+                    }
                 }
             }
 
-            if (producingEpisode == null) {
-                boolean hasProducible = false;
-                for (Episode ep : episodes) {
-                    String productionStatus = getEpisodeInfoStr(ep, EpisodeInfoKeys.PRODUCTION_STATUS);
-                    if ("DONE".equals(ep.getStatus())
-                            && (productionStatus == null
-                            || "NOT_STARTED".equals(productionStatus)
-                            || "FAILED".equals(productionStatus))) {
-                        hasProducible = true;
-                        break;
-                    }
-                    if ("DRAFT".equals(ep.getStatus()) || "FAILED".equals(ep.getStatus())) {
-                        hasProducible = true;
-                        break;
-                    }
-                }
-
+            if (totalPanels == 0) {
+                // 没有 Panel，等待用户操作
                 dto.setStatusCode("PRODUCING");
-                dto.setStatusDescription(hasProducible ? "Ready to start production" : "Producing");
+                dto.setStatusDescription("Ready to start production");
                 dto.setGenerating(false);
                 return;
             }
 
-            EpisodeProduction production = episodeProductionRepository.findByEpisodeId(producingEpisode.getId());
-            if (production == null) {
-                dto.setStatusCode("PRODUCING");
-                dto.setStatusDescription("Producing");
-                dto.setGenerating(true);
+            // 所有 Panel 完成 → 项目自动完成
+            if (completedPanels == totalPanels) {
+                dto.setStatusCode(ProjectStatus.COMPLETED.getCode());
+                dto.setStatusDescription("Completed");
+                dto.setGenerating(false);
+                dto.setProductionProgress(100);
                 return;
             }
 
-            String episodeStatus = production.getStatus();
-            String progressMsg = production.getProgressMessage();
-            int progress = production.getProgressPercent() != null ? production.getProgressPercent() : 0;
-
-            dto.setStatusCode(mapEpisodeToProjectStatus(episodeStatus));
-            dto.setStatusDescription(progressMsg != null ? progressMsg : "Producing");
-            dto.setGenerating(isEpisodeGenerating(episodeStatus));
+            // 计算进度百分比
+            int progress = (int) ((completedPanels * 100.0) / totalPanels);
             dto.setProductionProgress(progress);
-            dto.setProductionSubStage(episodeStatus);
 
-            if ("COMPLETED".equals(episodeStatus)) {
-                Project project = projectRepository.findByProjectId(projectId);
-                project.setStatus(ProjectStatus.COMPLETED.getCode());
-                projectRepository.updateById(project);
-                dto.setStatusCode(ProjectStatus.COMPLETED.getCode());
-                dto.setStatusDescription("Completed");
+            if (generatingPanels > 0) {
+                dto.setStatusCode("PRODUCING");
+                dto.setStatusDescription("Producing (" + completedPanels + "/" + totalPanels + " panels)");
+                dto.setGenerating(true);
+            } else if (failedPanels > 0) {
+                dto.setStatusCode("PRODUCING");
+                dto.setStatusDescription("Production failed on some panels (" + failedPanels + " failed)");
+                dto.setGenerating(false);
+            } else {
+                dto.setStatusCode("PRODUCING");
+                dto.setStatusDescription(hasPending ? "Ready to start production" : "Producing");
                 dto.setGenerating(false);
             }
         } catch (Exception e) {
@@ -453,28 +480,35 @@ public class PipelineService {
         }
     }
 
-    private String mapEpisodeToProjectStatus(String episodeStatus) {
-        if (episodeStatus == null) {
-            return "PRODUCING";
-        }
-        switch (episodeStatus) {
-            case "ANALYZING":
-            case "GRID_GENERATING":
-            case "GRID_FUSION_PENDING":
-            case "BUILDING_PROMPTS":
-            case "GENERATING":
-            case "GENERATING_SUBS":
-            case "COMPOSING":
-                return "PRODUCING";
-            case "COMPLETED":
-                return "COMPLETED";
-            case "FAILED":
-            default:
-                return "PRODUCING";
-        }
+    /**
+     * 根据 Panel.panelInfo 推导整体生产状态
+     */
+    private String getPanelOverallStatus(Panel panel) {
+        Map<String, Object> info = panel.getPanelInfo();
+        if (info == null) return "pending";
+
+        String videoStatus = strVal(info, "videoStatus");
+        String comicStatus = strVal(info, "comicStatus");
+        String bgStatus = strVal(info, "backgroundStatus");
+        String bgUrl = strVal(info, "backgroundUrl");
+
+        // 视频完成 → 整体完成
+        if ("completed".equals(videoStatus)) return "completed";
+        // 任一阶段失败 → 整体失败
+        if ("failed".equals(videoStatus) || "failed".equals(comicStatus) || "failed".equals(bgStatus)) return "failed";
+        // 任一阶段正在生成
+        if ("generating".equals(videoStatus) || "generating".equals(comicStatus) || "generating".equals(bgStatus)) return "in_progress";
+        // 有产出但未完成
+        if (bgUrl != null || strVal(info, "comicUrl") != null) return "in_progress";
+        return "pending";
     }
 
-    private void enrichStoryboardStatus(ProjectStatusResponse dto, String projectId) {
+    private String strVal(Map<String, Object> map, String key) {
+        Object v = map.get(key);
+        return v != null ? v.toString() : null;
+    }
+
+    private void enrichPanelStatus(ProjectStatusResponse dto, String projectId) {
         try {
             Project project = projectRepository.findByProjectId(projectId);
             List<Episode> episodes = episodeRepository.findByProjectId(projectId);
@@ -487,18 +521,18 @@ public class PipelineService {
 
             for (Episode ep : episodes) {
                 if (failedEpisode == null
-                        && ("STORYBOARD_FAILED".equals(ep.getStatus())
-                            || isStoryboardGeneratingWithError(ep)
+                        && ("PANEL_FAILED".equals(ep.getStatus())
+                            || isPanelGeneratingWithError(ep)
                             || isStaleGenerating(ep))) {
                     failedEpisode = ep;
                 }
                 if (generatingEpisode == null
-                        && "STORYBOARD_GENERATING".equals(ep.getStatus())
-                        && !isStoryboardGeneratingWithError(ep)
+                        && "PANEL_GENERATING".equals(ep.getStatus())
+                        && !isPanelGeneratingWithError(ep)
                         && !isStaleGenerating(ep)) {
                     generatingEpisode = ep;
                 }
-                if (reviewEpisode == null && "STORYBOARD_DONE".equals(ep.getStatus())) {
+                if (reviewEpisode == null && "PANEL_DONE".equals(ep.getStatus())) {
                     reviewEpisode = ep;
                 }
                 if (draftEpisode == null && (ep.getStatus() == null || "DRAFT".equals(ep.getStatus()))) {
@@ -513,35 +547,21 @@ public class PipelineService {
 
             int completedCount = 0;
             for (Episode ep : episodes) {
-                if ("STORYBOARD_CONFIRMED".equals(ep.getStatus())) {
+                if ("PANEL_CONFIRMED".equals(ep.getStatus())) {
                     completedCount++;
                 }
             }
 
-            dto.setStoryboardTotalEpisodes(totalEpisodes);
+            dto.setPanelTotalEpisodes(totalEpisodes);
             if (currentEpisode != null) {
                 Integer epNum = getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM);
-                dto.setStoryboardCurrentEpisode(epNum);
-                dto.setStoryboardReviewEpisodeId(String.valueOf(currentEpisode.getId()));
+                dto.setPanelCurrentEpisode(epNum);
+                dto.setPanelReviewEpisodeId(String.valueOf(currentEpisode.getId()));
             }
 
             ProjectStatus projectStatus = ProjectStatus.fromCode(project.getStatus());
-            if (failedEpisode != null && projectStatus == ProjectStatus.STORYBOARD_GENERATING) {
-                projectStatus = ProjectStatus.STORYBOARD_GENERATING_FAILED;
-
-                // Auto-recover stale generating episodes so the user can retry
-                if (isStaleGenerating(failedEpisode)) {
-                    failedEpisode.setStatus("STORYBOARD_FAILED");
-                    Map<String, Object> info = failedEpisode.getEpisodeInfo();
-                    if (info == null) {
-                        info = new HashMap<>();
-                        failedEpisode.setEpisodeInfo(info);
-                    }
-                    info.put(EpisodeInfoKeys.ERROR_MSG, "Generation timed out (server may have restarted)");
-                    episodeRepository.updateById(failedEpisode);
-                    log.warn("Recovered stale generating episode: episodeId={}, episodeNum={}",
-                            failedEpisode.getId(), getEpisodeInfoInt(failedEpisode, EpisodeInfoKeys.EPISODE_NUM));
-                }
+            if (failedEpisode != null && projectStatus == ProjectStatus.PANEL_GENERATING) {
+                projectStatus = ProjectStatus.PANEL_GENERATING_FAILED;
             }
 
             dto.setStatusCode(projectStatus.getCode());
@@ -550,29 +570,29 @@ public class PipelineService {
             dto.setFailed(projectStatus.isFailed());
             dto.setReview(projectStatus.isReview());
 
-            boolean allConfirmed = completedCount == totalEpisodes && projectStatus == ProjectStatus.STORYBOARD_REVIEW;
-            dto.setStoryboardAllConfirmed(allConfirmed);
+            boolean allConfirmed = completedCount == totalEpisodes && projectStatus == ProjectStatus.PANEL_REVIEW;
+            dto.setPanelAllConfirmed(allConfirmed);
             if (allConfirmed) {
-                dto.setStoryboardReviewEpisodeId(null);
-                dto.setStatusDescription("All " + totalEpisodes + " storyboard episodes are confirmed");
+                dto.setPanelReviewEpisodeId(null);
+                dto.setStatusDescription("All " + totalEpisodes + " panel episodes are confirmed");
                 return;
             }
 
             if (currentEpisode != null) {
                 Integer epNum = getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM);
                 switch (projectStatus) {
-                    case STORYBOARD_GENERATING:
-                        dto.setStatusDescription("Generating storyboard for episode " + epNum + "...");
+                    case PANEL_GENERATING:
+                        dto.setStatusDescription("Generating panels for episode " + epNum + "...");
                         break;
-                    case STORYBOARD_REVIEW:
+                    case PANEL_REVIEW:
                         dto.setStatusDescription(
                                 "Review episode " + epNum
-                                        + " storyboard (" + completedCount + "/" + totalEpisodes + ")"
+                                        + " panels (" + completedCount + "/" + totalEpisodes + ")"
                         );
                         break;
-                    case STORYBOARD_GENERATING_FAILED:
+                    case PANEL_GENERATING_FAILED:
                         dto.setStatusDescription(
-                                "Episode " + epNum + " storyboard generation failed"
+                                "Episode " + epNum + " panel generation failed"
                         );
                         break;
                     default:
@@ -580,29 +600,29 @@ public class PipelineService {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to enrich storyboard status: projectId={}, error={}", projectId, e.getMessage());
+            log.warn("Failed to enrich panel status: projectId={}, error={}", projectId, e.getMessage());
         }
     }
 
-    private boolean isStoryboardGeneratingWithError(Episode episode) {
+    private boolean isPanelGeneratingWithError(Episode episode) {
         if (episode == null) {
             return false;
         }
-        if (!"STORYBOARD_GENERATING".equals(episode.getStatus())) {
+        if (!"PANEL_GENERATING".equals(episode.getStatus())) {
             return false;
         }
         String errorMsg = getEpisodeInfoStr(episode, EpisodeInfoKeys.ERROR_MSG);
         boolean hasError = errorMsg != null && !errorMsg.trim().isEmpty();
-        // storyboardJson 已移除（分镜数据存 Panel 表），只看 errorMsg 判断
+        // panelJson 已移除（分镜数据存 Panel 表），只看 errorMsg 判断
         return hasError;
     }
 
     /** Detect episodes stuck in GENERATING for too long (e.g. server restarted). */
     private boolean isStaleGenerating(Episode episode) {
-        if (episode == null || !"STORYBOARD_GENERATING".equals(episode.getStatus())) {
+        if (episode == null || !"PANEL_GENERATING".equals(episode.getStatus())) {
             return false;
         }
-        if (isStoryboardGeneratingWithError(episode)) {
+        if (isPanelGeneratingWithError(episode)) {
             return false;
         }
         LocalDateTime updatedAt = episode.getUpdatedAt();
@@ -612,67 +632,10 @@ public class PipelineService {
         return Duration.between(updatedAt, LocalDateTime.now()).toMinutes() >= 10;
     }
 
-    private boolean isEpisodeGenerating(String episodeStatus) {
-        if (episodeStatus == null) {
-            return false;
-        }
-        switch (episodeStatus) {
-            case "ANALYZING":
-            case "GRID_GENERATING":
-            case "BUILDING_PROMPTS":
-            case "GENERATING":
-            case "GENERATING_SUBS":
-            case "COMPOSING":
-                return true;
-            default:
-                return false;
-        }
-    }
-
     // ==================== 阶段触发 ====================
 
-    private String calculateNextStatus(String currentStatus, String event) {
-        switch (event) {
-            case "start_script_generation":
-                return ProjectStatus.OUTLINE_GENERATING.getCode();
-            case "script_generated":
-                return ProjectStatus.SCRIPT_REVIEW.getCode();
-            case "script_confirmed":
-                return ProjectStatus.SCRIPT_CONFIRMED.getCode();
-            case "script_revision_requested":
-                return ProjectStatus.OUTLINE_REVIEW.getCode();
-            case "start_character_extraction":
-                return ProjectStatus.CHARACTER_EXTRACTING.getCode();
-            case "characters_extracted":
-                return ProjectStatus.CHARACTER_REVIEW.getCode();
-            case "characters_confirmed":
-                return ProjectStatus.CHARACTER_CONFIRMED.getCode();
-            case "start_image_generation":
-                return ProjectStatus.IMAGE_GENERATING.getCode();
-            case "images_generated":
-                return ProjectStatus.IMAGE_REVIEW.getCode();
-            case "image_confirmed":
-                return ProjectStatus.ASSET_LOCKED.getCode();
-            case "start_storyboard":
-                return ProjectStatus.STORYBOARD_GENERATING.getCode();
-            case "storyboard_generated":
-                return ProjectStatus.STORYBOARD_REVIEW.getCode();
-            case "storyboard_revision":
-                return ProjectStatus.STORYBOARD_GENERATING.getCode();
-            case "storyboard_retry":
-                return ProjectStatus.STORYBOARD_GENERATING.getCode();
-            case "start_production":
-                return ProjectStatus.PRODUCING.getCode();
-            case "production_completed":
-                return ProjectStatus.COMPLETED.getCode();
-            default:
-                return null;
-        }
-    }
-
-    private void triggerNextStage(String projectId, String status) {
-        ProjectStatus projectStatus = ProjectStatus.fromCode(status);
-        switch (projectStatus) {
+    private void triggerNextStage(String projectId, ProjectStatus status) {
+        switch (status) {
             case OUTLINE_GENERATING:
                 scriptService.generateScriptOutline(projectId);
                 break;
@@ -685,24 +648,20 @@ public class PipelineService {
                 generateAllCharacterImagesAsync(projectId);
                 break;
 
-            case STORYBOARD_GENERATING:
+            case PANEL_GENERATING:
                 CompletableFuture.runAsync(() -> {
                     try {
-                        storyboardService.startStoryboardGeneration(projectId);
+                        panelGenerationService.startPanelGeneration(projectId);
                     } catch (Exception e) {
-                        log.error("Storyboard generation failed: projectId={}, error={}", projectId, e.getMessage(), e);
+                        log.error("Panel generation failed: projectId={}, error={}", projectId, e.getMessage(), e);
                     }
                 });
                 break;
 
             case PRODUCING:
-                CompletableFuture.runAsync(() -> {
-                    try {
-                        episodeProductionService.startProductionForProject(projectId);
-                    } catch (Exception e) {
-                        log.error("Production failed: projectId={}, error={}", projectId, e.getMessage(), e);
-                    }
-                });
+                // 新流程：生产由用户通过 PanelController 按 Panel 手动触发
+                // PipelineService 只负责项目级状态，不再自动启动生产
+                log.info("Project entered PRODUCING state: projectId={}. User manages panels via PanelController.", projectId);
                 break;
 
             default:
@@ -742,17 +701,21 @@ public class PipelineService {
 
                 Project project = projectRepository.findByProjectId(projectId);
                 if (project != null && ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
-                    project.setStatus(ProjectStatus.IMAGE_REVIEW.getCode());
-                    projectRepository.updateById(project);
-                    log.info("Project moved to IMAGE_REVIEW: projectId={}", projectId);
+                    try {
+                        pipelineServiceSelf.advancePipeline(projectId, "images_generated");
+                    } catch (Exception e2) {
+                        log.warn("Failed to advance status after image generation: projectId={}, error={}", projectId, e2.getMessage());
+                    }
                 }
             } catch (Exception e) {
                 log.error("Character image batch generation failed: projectId={}", projectId, e);
                 Project project = projectRepository.findByProjectId(projectId);
                 if (project != null && ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
-                    project.setStatus(ProjectStatus.IMAGE_GENERATING_FAILED.getCode());
-                    projectRepository.updateById(project);
-                    log.info("Project moved to IMAGE_GENERATING_FAILED: projectId={}", projectId);
+                    try {
+                        pipelineServiceSelf.advancePipeline(projectId, "images_failed");
+                    } catch (Exception e2) {
+                        log.warn("Failed to set failed status: projectId={}, error={}", projectId, e2.getMessage());
+                    }
                 }
             }
         });
