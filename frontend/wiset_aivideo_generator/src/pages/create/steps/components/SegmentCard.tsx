@@ -12,6 +12,8 @@ export interface SegmentCardProps {
   onApprove: () => void;
   onRegenerate: (feedback: string) => void;
   onGenerateVideo: () => void;
+  onGenerateBackground?: (panelId: string) => void;
+  isGeneratingBackground?: boolean;
 }
 
 /**
@@ -55,6 +57,8 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
   onApprove,
   onRegenerate,
   onGenerateVideo,
+  onGenerateBackground,
+  isGeneratingBackground,
 }) => {
   const stepStatus = getPipelineStepStatus(segment.pipelineStep);
 
@@ -117,12 +121,27 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
               <img src={segment.sceneThumbnail} alt="" />
             </div>
           ) : (
-            <div className={styles.sceneIcon}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                <circle cx="5" cy="7" r="1.5" fill="currentColor" />
-                <path d="M2 12L4.5 9L7 11.5L10 8L14 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+            <div
+              className={`${styles.sceneIcon} ${onGenerateBackground ? styles.clickable : ''}`}
+              onClick={onGenerateBackground ? (e) => {
+                e.stopPropagation();
+                onGenerateBackground(segment.panelData?.panelId || '');
+              } : undefined}
+              title={onGenerateBackground ? '生成背景图' : undefined}
+            >
+              {isGeneratingBackground ? (
+                <span className={styles.generatingText}>生成中...</span>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                    <circle cx="5" cy="7" r="1.5" fill="currentColor" />
+                    <path d="M2 12L4.5 9L7 11.5L10 8L14 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span className={styles.scenePlaceholderText}>点击生成背景</span>
+                  <span className={styles.clickIcon}>👆</span>
+                </>
+              )}
             </div>
           )}
 
@@ -136,7 +155,11 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
                   style={{ zIndex: 10 - idx }}
                   title={char.name}
                 >
-                  {char.name.charAt(0)}
+                  {char.avatarUrl ? (
+                    <img src={char.avatarUrl} alt={char.name} />
+                  ) : (
+                    char.name.charAt(0)
+                  )}
                 </div>
               ))}
               {segment.characterAvatars.length > 3 && (

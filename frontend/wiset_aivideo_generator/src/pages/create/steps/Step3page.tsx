@@ -1,15 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import styles from './Step3page.module.less';
-import type { Project, CharacterDraft, CharacterStatus } from '../../../services';
+import type { Project, CharacterListItem } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useCreateStore } from '../../../stores/createStore';
 import {
   getCharacters,
   extractCharacters,
   updateCharacter,
+  deleteCharacter,
   confirmCharacters,
-  getCharacterStatus,
   setVisualStyle,
 } from '../../../services/characterService';
 import { UsersIcon } from '../../../components/icons/Icons';
@@ -20,8 +20,7 @@ interface Step3pageProps extends StepContentProps {
 
 /** 角色在组件内的合并数据 */
 interface CharacterItem {
-  draft: CharacterDraft;
-  status?: CharacterStatus;
+  char: CharacterListItem;
 }
 
 const ROLE_OPTIONS = [
@@ -31,9 +30,12 @@ const ROLE_OPTIONS = [
 ];
 
 const VISUAL_STYLE_OPTIONS = [
-  { value: '3D', label: '3D' },
-  { value: 'REAL', label: '写实' },
-  { value: 'ANIME', label: '动漫' },
+  { value: '3D', label: '3D 写实渲染' },
+  { value: 'REAL', label: '照片级写实' },
+  { value: 'ANIME', label: '日系2D动漫' },
+  { value: 'MANGA', label: '日本漫画' },
+  { value: 'INK', label: '中国水墨画' },
+  { value: 'CYBERPUNK', label: '赛博朋克' },
 ];
 
 const Step3page = ({ project }: Step3pageProps) => {
@@ -48,7 +50,7 @@ const Step3page = ({ project }: Step3pageProps) => {
 
   // 展开/编辑状态
   const [expandedCharId, setExpandedCharId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<CharacterDraft>>({});
+  const [editForm, setEditForm] = useState<Partial<CharacterListItem>>({});
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -62,26 +64,18 @@ const Step3page = ({ project }: Step3pageProps) => {
   // 加载角色列表
   const fetchCharacters = useCallback(async () => {
     if (!projectId) return;
+    setLoading(true);
+    setError('');
     try {
       const res = await getCharacters(projectId);
       if (res.code === 200 && res.data) {
-        const items: CharacterItem[] = await Promise.all(
-          res.data.map(async (draft) => {
-            try {
-              const statusRes = await getCharacterStatus(draft.charId);
-              if (statusRes.code === 200 && statusRes.data) {
-                return { draft, status: statusRes.data };
-              }
-            } catch {
-              // 忽略单个角色状态获取失败
-            }
-            return { draft };
-          })
-        );
+        const items: CharacterItem[] = res.data.items.map(char => ({ char }));
         setCharacters(items);
       }
     } catch (err: any) {
       setError(err.message || '获取角色列表失败');
+    } finally {
+      setLoading(false);
     }
   }, [projectId]);
 
@@ -93,20 +87,8 @@ const Step3page = ({ project }: Step3pageProps) => {
       setLoading(true);
       try {
         const res = await getCharacters(projectId);
-        if (res.code === 200 && res.data && res.data.length > 0) {
-          const items: CharacterItem[] = await Promise.all(
-            res.data.map(async (draft) => {
-              try {
-                const statusRes = await getCharacterStatus(draft.charId);
-                if (statusRes.code === 200 && statusRes.data) {
-                  return { draft, status: statusRes.data };
-                }
-              } catch {
-                // 忽略单个角色状态获取失败
-              }
-              return { draft };
-            })
-          );
+        if (res.code === 200 && res.data && res.data.items.length > 0) {
+          const items: CharacterItem[] = res.data.items.map(char => ({ char }));
           setCharacters(items);
           setLoading(false);
         } else {
@@ -154,15 +136,16 @@ const Step3page = ({ project }: Step3pageProps) => {
       setExpandedCharId(null);
       setEditForm({});
     } else {
-      const char = characters.find(c => c.draft.charId === charId);
+      const char = characters.find(c => c.char.charId === charId);
       if (char) {
         setExpandedCharId(charId);
         setEditForm({
-          name: char.draft.name,
-          role: char.draft.role,
-          personality: char.draft.personality,
-          appearance: char.draft.appearance,
-          background: char.draft.background,
+          name: char.char.name,
+          role: char.char.role,
+          personality: char.char.personality,
+          appearance: char.char.appearance,
+          voice: char.char.voice,
+          background: char.char.background,
         });
       }
     }
@@ -177,8 +160,10 @@ const Step3page = ({ project }: Step3pageProps) => {
   const handleSave = async (charId: string) => {
     setSaving(true);
     try {
-      await updateCharacter(charId, editForm);
+      await updateCharacter(project.projectId!, charId, editForm);
       await fetchCharacters();
+      setExpandedCharId(null);
+      setEditForm({});
     } catch (err: any) {
       alert(err.message || '保存失败');
     } finally {
@@ -186,13 +171,29 @@ const Step3page = ({ project }: Step3pageProps) => {
     }
   };
 
+  // 删除角色
+  const handleDelete = async (charId: string) => {
+    const confirmed = window.confirm('确定要删除该角色吗？删除后不可恢复。');
+    if (!confirmed) return;
+    try {
+      await deleteCharacter(project.projectId!, charId);
+      if (expandedCharId === charId) {
+        setExpandedCharId(null);
+        setEditForm({});
+      }
+      await fetchCharacters();
+    } catch (err: any) {
+      alert(err.message || '删除失败');
+    }
+  };
+
   // 设置视觉风格
   const handleStyleChange = async (charId: string, style: string) => {
     setCharacters(prev => prev.map(item => {
-      if (item.draft.charId !== charId) return item;
+      if (item.char.charId !== charId) return item;
       return {
         ...item,
-        status: { ...item.status!, visualStyle: style },
+        char: { ...item.char, visualStyle: style },
       };
     }));
     try {
@@ -243,14 +244,7 @@ const Step3page = ({ project }: Step3pageProps) => {
       ) : error ? (
         <div className={styles.errorState}>
           <p>{error}</p>
-          <button className={styles.retryButton} onClick={() => {
-            setError('');
-            const projectId = project.projectId;
-            if (projectId) {
-              setLoading(true);
-              fetchCharacters();
-            }
-          }}>
+          <button className={styles.retryButton} onClick={fetchCharacters}>
             重试
           </button>
         </div>
@@ -288,27 +282,27 @@ const Step3page = ({ project }: Step3pageProps) => {
         <>
           <div className={styles.characterGrid}>
             {characters.map(char => {
-              const isExpanded = expandedCharId === char.draft.charId;
-              const st = char.status;
+              const isExpanded = expandedCharId === char.char.charId;
+              const st = char.char;
 
               return (
                 <div
-                  key={char.draft.charId}
+                  key={char.char.charId}
                   className={`${styles.characterCard} ${isExpanded ? styles.expanded : ''}`}
                   role={isExpanded ? undefined : 'button'}
                   tabIndex={isExpanded ? -1 : 0}
                   aria-expanded={isExpanded}
-                  aria-label={`${char.draft.name} - ${char.draft.role}`}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleExpand(char.draft.charId); } }}
+                  aria-label={`${char.char.name} - ${char.char.role}`}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleExpand(char.char.charId); } }}
                 >
-                  <div className={styles.cardHeader} onClick={() => handleExpand(char.draft.charId)}>
+                  <div className={styles.cardHeader} onClick={() => handleExpand(char.char.charId)}>
                     <div className={styles.cardAvatar}>
-                      <span>{char.draft.name.charAt(0)}</span>
+                      <span>{char.char.name.charAt(0)}</span>
                     </div>
                     <div className={styles.cardInfo}>
-                      <h3 className={styles.cardName}>{char.draft.name}</h3>
-                      <span className={`${styles.cardRole} ${getRoleClass(char.draft.role)}`}>
-                        {char.draft.role}
+                      <h3 className={styles.cardName}>{char.char.name}</h3>
+                      <span className={`${styles.cardRole} ${getRoleClass(char.char.role)}`}>
+                        {char.char.role}
                       </span>
                     </div>
                   </div>
@@ -324,21 +318,30 @@ const Step3page = ({ project }: Step3pageProps) => {
                       >
                         <div className={styles.editHeader}>
                           <h4 className={styles.editTitle}>角色详情</h4>
-                          <button
-                            className={styles.collapseBtn}
-                            onClick={() => { setExpandedCharId(null); setEditForm({}); }}
-                            aria-label="收起角色详情"
-                          >
-                            收起
-                          </button>
+                          <div className={styles.editHeaderActions}>
+                            <button
+                              className={styles.deleteBtn}
+                              onClick={() => handleDelete(char.char.charId)}
+                              aria-label="删除角色"
+                            >
+                              删除角色
+                            </button>
+                            <button
+                              className={styles.collapseBtn}
+                              onClick={() => { setExpandedCharId(null); setEditForm({}); }}
+                              aria-label="收起角色详情"
+                            >
+                              收起
+                            </button>
+                          </div>
                         </div>
 
                         <div className={styles.expandedLeft}>
                           <div className={styles.editForm}>
                             <div className={styles.formGroup}>
-                              <label className={styles.formLabel} htmlFor={`name-${char.draft.charId}`}>角色名称</label>
+                              <label className={styles.formLabel} htmlFor={`name-${char.char.charId}`}>角色名称</label>
                               <input
-                                id={`name-${char.draft.charId}`}
+                                id={`name-${char.char.charId}`}
                                 className={styles.formInput}
                                 value={editForm.name || ''}
                                 onChange={(e) => handleFormChange('name', e.target.value)}
@@ -346,9 +349,9 @@ const Step3page = ({ project }: Step3pageProps) => {
                               />
                             </div>
                             <div className={styles.formGroup}>
-                              <label className={styles.formLabel} htmlFor={`role-${char.draft.charId}`}>角色定位</label>
+                              <label className={styles.formLabel} htmlFor={`role-${char.char.charId}`}>角色定位</label>
                               <select
-                                id={`role-${char.draft.charId}`}
+                                id={`role-${char.char.charId}`}
                                 className={styles.formSelect}
                                 value={editForm.role || ''}
                                 onChange={(e) => handleFormChange('role', e.target.value)}
@@ -359,12 +362,12 @@ const Step3page = ({ project }: Step3pageProps) => {
                               </select>
                             </div>
                             <div className={styles.formGroup}>
-                              <label className={styles.formLabel} htmlFor={`style-${char.draft.charId}`}>视觉风格</label>
+                              <label className={styles.formLabel} htmlFor={`style-${char.char.charId}`}>视觉风格</label>
                               <select
-                                id={`style-${char.draft.charId}`}
+                                id={`style-${char.char.charId}`}
                                 className={styles.formSelect}
-                                value={st?.visualStyle || project.genre || '3D'}
-                                onChange={(e) => handleStyleChange(char.draft.charId, e.target.value)}
+                                value={st?.visualStyle || project.projectInfo?.visualStyle || project.projectInfo?.genre || '3D'}
+                                onChange={(e) => handleStyleChange(char.char.charId, e.target.value)}
                               >
                                 {VISUAL_STYLE_OPTIONS.map(opt => (
                                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -372,9 +375,9 @@ const Step3page = ({ project }: Step3pageProps) => {
                               </select>
                             </div>
                             <div className={styles.formGroup}>
-                              <label className={styles.formLabel} htmlFor={`personality-${char.draft.charId}`}>性格描述</label>
+                              <label className={styles.formLabel} htmlFor={`personality-${char.char.charId}`}>性格描述</label>
                               <input
-                                id={`personality-${char.draft.charId}`}
+                                id={`personality-${char.char.charId}`}
                                 className={styles.formInput}
                                 value={editForm.personality || ''}
                                 onChange={(e) => handleFormChange('personality', e.target.value)}
@@ -382,9 +385,9 @@ const Step3page = ({ project }: Step3pageProps) => {
                               />
                             </div>
                             <div className={`${styles.formGroup} ${styles.fullWidth}`}>
-                              <label className={styles.formLabel} htmlFor={`appearance-${char.draft.charId}`}>外貌描述</label>
+                              <label className={styles.formLabel} htmlFor={`appearance-${char.char.charId}`}>外貌描述</label>
                               <textarea
-                                id={`appearance-${char.draft.charId}`}
+                                id={`appearance-${char.char.charId}`}
                                 className={styles.formTextarea}
                                 value={editForm.appearance || ''}
                                 onChange={(e) => handleFormChange('appearance', e.target.value)}
@@ -392,9 +395,19 @@ const Step3page = ({ project }: Step3pageProps) => {
                               />
                             </div>
                             <div className={`${styles.formGroup} ${styles.fullWidth}`}>
-                              <label className={styles.formLabel} htmlFor={`background-${char.draft.charId}`}>背景故事</label>
+                              <label className={styles.formLabel} htmlFor={`voice-${char.char.charId}`}>声音描述</label>
                               <textarea
-                                id={`background-${char.draft.charId}`}
+                                id={`voice-${char.char.charId}`}
+                                className={styles.formTextarea}
+                                value={editForm.voice || ''}
+                                onChange={(e) => handleFormChange('voice', e.target.value)}
+                                placeholder="角色声音特征"
+                              />
+                            </div>
+                            <div className={`${styles.formGroup} ${styles.fullWidth}`}>
+                              <label className={styles.formLabel} htmlFor={`background-${char.char.charId}`}>背景故事</label>
+                              <textarea
+                                id={`background-${char.char.charId}`}
                                 className={styles.formTextarea}
                                 value={editForm.background || ''}
                                 onChange={(e) => handleFormChange('background', e.target.value)}
@@ -405,7 +418,7 @@ const Step3page = ({ project }: Step3pageProps) => {
 
                           <button
                             className={styles.saveBtn}
-                            onClick={() => handleSave(char.draft.charId)}
+                            onClick={() => handleSave(char.char.charId)}
                             disabled={saving}
                             aria-label="保存角色修改"
                           >
