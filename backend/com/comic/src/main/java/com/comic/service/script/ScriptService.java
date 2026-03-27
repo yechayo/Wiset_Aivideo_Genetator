@@ -9,7 +9,7 @@ import com.comic.entity.Episode;
 import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.PipelineService;
+import com.comic.statemachine.service.ProjectStateMachineService;
 import com.comic.service.world.WorldRuleService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +29,6 @@ import java.util.regex.Pattern;
  * 实现两级剧本生成：大纲生成 + 分章节剧集生成
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ScriptService {
 
@@ -39,10 +38,24 @@ public class ScriptService {
     private final PromptBuilder promptBuilder;
     private final WorldRuleService worldRuleService;
     private final ObjectMapper objectMapper;
+    private final ProjectStateMachineService stateMachineService;
 
-    @Lazy
-    @Autowired
-    private PipelineService pipelineService;
+    public ScriptService(
+            ProjectRepository projectRepository,
+            EpisodeRepository episodeRepository,
+            TextGenerationService textGenerationService,
+            PromptBuilder promptBuilder,
+            WorldRuleService worldRuleService,
+            ObjectMapper objectMapper,
+            @Lazy ProjectStateMachineService stateMachineService) {
+        this.projectRepository = projectRepository;
+        this.episodeRepository = episodeRepository;
+        this.textGenerationService = textGenerationService;
+        this.promptBuilder = promptBuilder;
+        this.worldRuleService = worldRuleService;
+        this.objectMapper = objectMapper;
+        this.stateMachineService = stateMachineService;
+    }
 
     // 状态常量（统一使用 ProjectStatus 枚举）
     private static final String STATUS_DRAFT = ProjectStatus.DRAFT.getCode();
@@ -297,12 +310,8 @@ public class ScriptService {
 
         projectRepository.updateById(project);
 
-        // 推进管线到角色提取阶段
-        try {
-            pipelineService.advancePipeline(projectId, "start_character_extraction");
-        } catch (Exception e) {
-            log.warn("推进管线失败（角色提取将不会自动触发）: projectId={}, error={}", projectId, e.getMessage());
-        }
+        log.info("剧本已确认: projectId={}", projectId);
+        // 状态转换现在由状态机处理，不再手动触发
     }
 
     /**

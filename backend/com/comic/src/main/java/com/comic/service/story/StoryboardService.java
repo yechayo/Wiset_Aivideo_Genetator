@@ -11,7 +11,8 @@ import com.comic.entity.Episode;
 import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.PipelineService;
+import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.statemachine.service.ProjectStateMachineService;
 import com.comic.service.world.CharacterService;
 import com.comic.service.world.WorldRuleService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -33,7 +34,6 @@ import java.util.Map;
 import java.util.Set;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class StoryboardService {
 
@@ -44,6 +44,26 @@ public class StoryboardService {
     private final ProjectRepository projectRepository;
     private final ObjectMapper objectMapper;
     private final PromptBuilder promptBuilder;
+    private final ProjectStateMachineService stateMachineService;
+
+    public StoryboardService(
+            TextGenerationService textGenerationService,
+            CharacterService characterService,
+            WorldRuleService worldRuleService,
+            EpisodeRepository episodeRepository,
+            ProjectRepository projectRepository,
+            ObjectMapper objectMapper,
+            PromptBuilder promptBuilder,
+            @Lazy ProjectStateMachineService stateMachineService) {
+        this.textGenerationService = textGenerationService;
+        this.characterService = characterService;
+        this.worldRuleService = worldRuleService;
+        this.episodeRepository = episodeRepository;
+        this.projectRepository = projectRepository;
+        this.objectMapper = objectMapper;
+        this.promptBuilder = promptBuilder;
+        this.stateMachineService = stateMachineService;
+    }
 
     private static final Set<String> ALLOWED_SHOT_TYPES = new HashSet<String>(Arrays.asList(
             "WIDE_SHOT", "MID_SHOT", "CLOSE_UP", "OVER_SHOULDER"
@@ -64,10 +84,6 @@ public class StoryboardService {
     private static final String DEFAULT_CHARACTER_POSE = "standing";
     private static final String DEFAULT_CHARACTER_EXPRESSION = "neutral";
     private static final String DEFAULT_COSTUME_STATE = "normal";
-
-    @Lazy
-    @Autowired
-    private PipelineService pipelineService;
 
     public String generateStoryboard(Long episodeId) {
         Episode episode = episodeRepository.selectById(episodeId);
@@ -193,7 +209,8 @@ public class StoryboardService {
         new Thread(() -> {
             try {
                 generateStoryboardWithFeedback(epId, fb);
-                pipelineService.advancePipeline(projectId, "storyboard_generated");
+                // 状态转换现在由状态机处理
+                stateMachineService.sendEvent(projectId, ProjectEventType._STORYBOARD_DONE);
             } catch (Exception e) {
                 log.error("Storyboard revision failed: episodeId={}", epId, e);
                 updateEpisodeToFailedIfNeeded(epId, e.getMessage());
@@ -224,7 +241,8 @@ public class StoryboardService {
         new Thread(() -> {
             try {
                 generateStoryboard(epId);
-                pipelineService.advancePipeline(projectId, "storyboard_generated");
+                // 状态转换现在由状态机处理
+                stateMachineService.sendEvent(projectId, ProjectEventType._STORYBOARD_DONE);
             } catch (Exception e) {
                 log.error("Storyboard retry failed: episodeId={}", epId, e);
                 updateEpisodeToFailedIfNeeded(epId, e.getMessage());
@@ -247,7 +265,8 @@ public class StoryboardService {
             }
         }
 
-        pipelineService.advancePipeline(projectId, "start_production");
+        // 状态转换现在由状态机处理
+        stateMachineService.sendEvent(projectId, ProjectEventType.START_PRODUCTION);
     }
 
     private void generateSingleEpisodeAsync(String projectId, Episode episode) {
@@ -255,7 +274,8 @@ public class StoryboardService {
         new Thread(() -> {
             try {
                 generateStoryboard(epId);
-                pipelineService.advancePipeline(projectId, "storyboard_generated");
+                // 状态转换现在由状态机处理
+                stateMachineService.sendEvent(projectId, ProjectEventType._STORYBOARD_DONE);
             } catch (Exception e) {
                 log.error("Storyboard generation failed: episodeId={}, episodeNum={}", epId, episode.getEpisodeNum(), e);
                 updateEpisodeToFailedIfNeeded(epId, e.getMessage());

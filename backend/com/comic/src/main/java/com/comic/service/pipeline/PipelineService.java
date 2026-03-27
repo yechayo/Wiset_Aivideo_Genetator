@@ -4,110 +4,40 @@ import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
 import com.comic.dto.response.ProjectListItemResponse;
 import com.comic.dto.response.ProjectStatusResponse;
-import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.EpisodeProduction;
 import com.comic.entity.Project;
-import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeProductionRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.character.CharacterExtractService;
-import com.comic.service.character.CharacterImageGenerationService;
-import com.comic.service.production.EpisodeProductionService;
-import com.comic.service.script.ScriptService;
-import com.comic.service.story.StoryboardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 /**
- * Pipeline orchestration service.
- * Drives project status transitions and triggers the next stage when needed.
+ * Project Status Query Service
+ * 状态查询服务（状态转换已迁移到状态机）
+ *
+ * @deprecated 状态转换功能已迁移到 ProjectStateMachineService，此类仅保留状态查询功能
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
+@Deprecated
 public class PipelineService {
 
     private final ProjectRepository projectRepository;
     private final EpisodeRepository episodeRepository;
     private final EpisodeProductionRepository episodeProductionRepository;
-    private final CharacterRepository characterRepository;
-    private final ScriptService scriptService;
-    private final CharacterExtractService characterExtractService;
-    private final CharacterImageGenerationService characterImageGenerationService;
-    private final EpisodeProductionService episodeProductionService;
 
-    @Lazy
-    @Autowired
-    private StoryboardService storyboardService;
-
-    @Transactional
-    public String createProject(String userId, String storyPrompt, String genre,
-                                String targetAudience, Integer totalEpisodes,
-                                Integer episodeDuration, String visualStyle) {
-        Project project = new Project();
-        project.setProjectId(generateProjectId());
-        project.setUserId(userId);
-        project.setStoryPrompt(storyPrompt);
-        project.setGenre(genre);
-        project.setTargetAudience(targetAudience);
-        project.setTotalEpisodes(totalEpisodes);
-        project.setEpisodeDuration(episodeDuration);
-        project.setVisualStyle(visualStyle);
-        project.setStatus(ProjectStatus.DRAFT.getCode());
-
-        projectRepository.insert(project);
-
-        log.info("Project created: projectId={}, userId={}", project.getProjectId(), userId);
-        return project.getProjectId();
-    }
-
-    @Transactional
-    public void advancePipeline(String projectId, String event) {
-        Project project = projectRepository.findByProjectId(projectId);
-        if (project == null) {
-            throw new BusinessException("Project not found");
-        }
-
-        String currentStatus = project.getStatus();
-        String nextStatus = calculateNextStatus(currentStatus, event);
-        if (nextStatus == null) {
-            throw new BusinessException("Cannot transition from status " + currentStatus + " via event " + event);
-        }
-
-        project.setStatus(nextStatus);
-        projectRepository.updateById(project);
-
-        log.info("Pipeline advanced: projectId={}, {} -> {}", projectId, currentStatus, nextStatus);
-        triggerNextStageAsync(projectId, nextStatus);
-    }
-
-    private void triggerNextStageAsync(String projectId, String status) {
-        try {
-            triggerNextStage(projectId, status);
-        } catch (Exception e) {
-            log.error(
-                    "Failed to trigger next stage after status update: projectId={}, status={}, error={}",
-                    projectId,
-                    status,
-                    e.getMessage(),
-                    e
-            );
-        }
-    }
-
+    /**
+     * 获取项目状态
+     */
     public Project getProjectStatus(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
@@ -116,6 +46,9 @@ public class PipelineService {
         return project;
     }
 
+    /**
+     * 获取项目状态详情
+     */
     public ProjectStatusResponse getProjectStatusDetail(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
@@ -146,6 +79,20 @@ public class PipelineService {
 
         return dto;
     }
+
+    /**
+     * 获取用户项目列表
+     */
+    public List<ProjectListItemResponse> getProjectsByUserId(String userId) {
+        List<Project> projects = projectRepository.findAllByUserId(userId);
+        List<ProjectListItemResponse> result = new ArrayList<>();
+        for (Project project : projects) {
+            result.add(toListItemDTO(project));
+        }
+        return result;
+    }
+
+    // ===== 私有方法 =====
 
     private void enrichProducingStatus(ProjectStatusResponse dto, String projectId) {
         try {
@@ -289,7 +236,6 @@ public class PipelineService {
             if (failedEpisode != null && projectStatus == ProjectStatus.STORYBOARD_GENERATING) {
                 projectStatus = ProjectStatus.STORYBOARD_GENERATING_FAILED;
 
-                // Auto-recover stale generating episodes so the user can retry
                 if (isStaleGenerating(failedEpisode)) {
                     failedEpisode.setStatus("STORYBOARD_FAILED");
                     failedEpisode.setErrorMsg("Generation timed out (server may have restarted)");
@@ -350,7 +296,6 @@ public class PipelineService {
         return hasError && !hasStoryboard;
     }
 
-    /** Detect episodes stuck in GENERATING for too long (e.g. server restarted). */
     private boolean isStaleGenerating(Episode episode) {
         if (episode == null || !"STORYBOARD_GENERATING".equals(episode.getStatus())) {
             return false;
@@ -382,15 +327,6 @@ public class PipelineService {
         }
     }
 
-    public List<ProjectListItemResponse> getProjectsByUserId(String userId) {
-        List<Project> projects = projectRepository.findAllByUserId(userId);
-        List<ProjectListItemResponse> result = new ArrayList<>();
-        for (Project project : projects) {
-            result.add(toListItemDTO(project));
-        }
-        return result;
-    }
-
     private ProjectListItemResponse toListItemDTO(Project project) {
         ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
 
@@ -413,135 +349,5 @@ public class PipelineService {
         dto.setUpdatedAt(project.getUpdatedAt());
 
         return dto;
-    }
-
-    private String calculateNextStatus(String currentStatus, String event) {
-        switch (event) {
-            case "start_script_generation":
-                return ProjectStatus.OUTLINE_GENERATING.getCode();
-            case "script_generated":
-                return ProjectStatus.SCRIPT_REVIEW.getCode();
-            case "script_confirmed":
-                return ProjectStatus.SCRIPT_CONFIRMED.getCode();
-            case "script_revision_requested":
-                return ProjectStatus.OUTLINE_REVIEW.getCode();
-            case "start_character_extraction":
-                return ProjectStatus.CHARACTER_EXTRACTING.getCode();
-            case "characters_extracted":
-                return ProjectStatus.CHARACTER_REVIEW.getCode();
-            case "characters_confirmed":
-                return ProjectStatus.CHARACTER_CONFIRMED.getCode();
-            case "start_image_generation":
-                return ProjectStatus.IMAGE_GENERATING.getCode();
-            case "images_generated":
-                return ProjectStatus.IMAGE_REVIEW.getCode();
-            case "image_confirmed":
-                return ProjectStatus.ASSET_LOCKED.getCode();
-            case "start_storyboard":
-                return ProjectStatus.STORYBOARD_GENERATING.getCode();
-            case "storyboard_generated":
-                return ProjectStatus.STORYBOARD_REVIEW.getCode();
-            case "storyboard_revision":
-                return ProjectStatus.STORYBOARD_GENERATING.getCode();
-            case "storyboard_retry":
-                return ProjectStatus.STORYBOARD_GENERATING.getCode();
-            case "start_production":
-                return ProjectStatus.PRODUCING.getCode();
-            case "production_completed":
-                return ProjectStatus.COMPLETED.getCode();
-            default:
-                return null;
-        }
-    }
-
-    private void triggerNextStage(String projectId, String status) {
-        ProjectStatus projectStatus = ProjectStatus.fromCode(status);
-        switch (projectStatus) {
-            case OUTLINE_GENERATING:
-                scriptService.generateScriptOutline(projectId);
-                break;
-
-            case CHARACTER_EXTRACTING:
-                characterExtractService.extractCharacters(projectId);
-                break;
-
-            case IMAGE_GENERATING:
-                generateAllCharacterImagesAsync(projectId);
-                break;
-
-            case STORYBOARD_GENERATING:
-                CompletableFuture.runAsync(() -> {
-                    try {
-                        storyboardService.startStoryboardGeneration(projectId);
-                    } catch (Exception e) {
-                        log.error("Storyboard generation failed: projectId={}, error={}", projectId, e.getMessage(), e);
-                    }
-                });
-                break;
-
-            case PRODUCING:
-                CompletableFuture.runAsync(() -> {
-                    try {
-                        episodeProductionService.startProductionForProject(projectId);
-                    } catch (Exception e) {
-                        log.error("Production failed: projectId={}, error={}", projectId, e.getMessage(), e);
-                    }
-                });
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    private void generateAllCharacterImagesAsync(String projectId) {
-        CompletableFuture.runAsync(() -> {
-            try {
-                List<Character> characters = characterRepository.findByProjectId(projectId);
-                log.info("Generating character images: projectId={}, characterCount={}", projectId, characters.size());
-
-                int successCount = 0;
-                int failCount = 0;
-                for (Character character : characters) {
-                    try {
-                        characterImageGenerationService.generateAll(character.getCharId());
-                        successCount++;
-                    } catch (Exception e) {
-                        log.warn(
-                                "Character image generation failed and will continue: charId={}, error={}",
-                                character.getCharId(),
-                                e.getMessage()
-                        );
-                        failCount++;
-                    }
-                }
-
-                log.info(
-                        "Character image generation finished: projectId={}, success={}, fail={}",
-                        projectId,
-                        successCount,
-                        failCount
-                );
-
-                Project project = projectRepository.findByProjectId(projectId);
-                if (project != null && ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
-                    project.setStatus(ProjectStatus.IMAGE_REVIEW.getCode());
-                    projectRepository.updateById(project);
-                    log.info("Project moved to IMAGE_REVIEW: projectId={}", projectId);
-                }
-            } catch (Exception e) {
-                log.error("Character image batch generation failed: projectId={}", projectId, e);
-                Project project = projectRepository.findByProjectId(projectId);
-                if (project != null && ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
-                    project.setStatus(ProjectStatus.IMAGE_GENERATING_FAILED.getCode());
-                    projectRepository.updateById(project);
-                    log.info("Project moved to IMAGE_GENERATING_FAILED: projectId={}", projectId);
-                }
-            }
-        });
-    }
-
-    private String generateProjectId() {
-        return "PROJ-" + UUID.randomUUID().toString().substring(0, 8);
     }
 }

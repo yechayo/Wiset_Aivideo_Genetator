@@ -6,9 +6,11 @@ import com.comic.dto.response.ProjectListItemResponse;
 import com.comic.dto.response.ProjectStatusResponse;
 import com.comic.entity.Project;
 import com.comic.entity.User;
+import com.comic.repository.ProjectRepository;
 import com.comic.repository.UserRepository;
-import com.comic.service.pipeline.PipelineService;
 import com.comic.service.script.ScriptService;
+import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.statemachine.service.ProjectStateMachineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -21,7 +23,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 项目管理接口
+ * 项目管理接口（使用状态机）
  */
 @RestController
 @RequestMapping("/api/projects")
@@ -29,8 +31,9 @@ import java.util.Map;
 @SecurityRequirement(name = "bearerAuth")
 public class ProjectController {
 
-    private final PipelineService pipelineService;
+    private final ProjectStateMachineService stateMachineService;
     private final ScriptService scriptService;
+    private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
 
     /**
@@ -44,55 +47,58 @@ public class ProjectController {
         User user = userRepository.findByUsername(userDetails.getUsername());
         String userId = user.getId().toString();
 
-        String projectId = pipelineService.createProject(
-            userId,
-            dto.getStoryPrompt(),
-            dto.getGenre(),
-            dto.getTargetAudience(),
-            dto.getTotalEpisodes(),
-            dto.getEpisodeDuration(),
-            dto.getVisualStyle()
-        );
+        // 创建项目实体
+        Project project = new Project();
+        project.setProjectId(generateProjectId());
+        project.setUserId(userId);
+        project.setStoryPrompt(dto.getStoryPrompt());
+        project.setGenre(dto.getGenre());
+        project.setTargetAudience(dto.getTargetAudience());
+        project.setTotalEpisodes(dto.getTotalEpisodes());
+        project.setEpisodeDuration(dto.getEpisodeDuration());
+        project.setVisualStyle(dto.getVisualStyle());
+        project.setStatus("DRAFT");
+
+        projectRepository.insert(project);
+
+        // 初始化状态机
+        stateMachineService.getStateMachine(project.getProjectId());
 
         Map<String, String> result = new HashMap<>();
-        result.put("projectId", projectId);
+        result.put("projectId", project.getProjectId());
         return Result.ok(result);
     }
 
     /**
      * 获取项目信息
      * GET /api/projects/{projectId}
-     * 返回项目基本信息
      */
     @GetMapping("/{projectId}")
     public Result<Project> getProjectStatus(@PathVariable String projectId) {
-        Project project = pipelineService.getProjectStatus(projectId);
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            return Result.fail(404, "项目不存在");
+        }
         return Result.ok(project);
     }
 
     /**
-     * 获取项目状态详情
-     * GET /api/projects/{projectId}/status
-     * 返回完整状态信息，包含步骤映射和可用操作
-     */
-    @GetMapping("/{projectId}/status")
-    @Operation(summary = "获取项目状态详情", description = "返回项目当前状态的完整信息，包含前端步骤映射、已完成步骤和可用操作")
-    public Result<ProjectStatusResponse> getProjectStatusDetail(@PathVariable String projectId) {
-        ProjectStatusResponse statusDetail = pipelineService.getProjectStatusDetail(projectId);
-        return Result.ok(statusDetail);
-    }
-
-    /**
-     * 获取当前用户的所有项目列表
+     * 获取项目列表
      * GET /api/projects
      */
     @GetMapping
-    @Operation(summary = "获取项目列表", description = "获取当前用户创建的所有项目（含状态映射信息）")
+    @Operation(summary = "获取项目列表", description = "获取当前用户创建的所有项目")
     public Result<java.util.List<ProjectListItemResponse>> getProjects(@Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
         User user = userRepository.findByUsername(userDetails.getUsername());
         String userId = user.getId().toString();
-        java.util.List<ProjectListItemResponse> projects = pipelineService.getProjectsByUserId(userId);
-        return Result.ok(projects);
+        java.util.List<Project> projects = projectRepository.findAllByUserId(userId);
+
+        java.util.List<ProjectListItemResponse> result = new java.util.ArrayList<>();
+        for (Project project : projects) {
+            result.add(toListItemDTO(project));
+        }
+
+        return Result.ok(result);
     }
 
     /**
@@ -100,9 +106,12 @@ public class ProjectController {
      * POST /api/projects/{projectId}/generate-script
      */
     @PostMapping("/{projectId}/generate-script")
-    @Operation(summary = "生成剧本大纲", description = "生成剧本大纲（Markdown格式），包含角色、物品、章节结构")
+    @Operation(summary = "生成剧本大纲", description = "生成剧本大纲（Markdown格式）")
     public Result<Void> generateScriptOutline(@PathVariable String projectId) {
-        scriptService.generateScriptOutline(projectId);
+        // 发送事件到状态机
+        Map<String, Object> headers = new HashMap<>();
+        headers.put("projectId", projectId);
+        stateMachineService.sendEvent(projectId, ProjectEventType.GENERATE_OUTLINE, headers);
         return Result.ok();
     }
 
@@ -111,7 +120,7 @@ public class ProjectController {
      * POST /api/projects/{projectId}/generate-episodes
      */
     @PostMapping("/{projectId}/generate-episodes")
-    @Operation(summary = "生成章节剧集", description = "生成指定章节的剧集内容。必须按顺序生成章节。")
+    @Operation(summary = "生成章节剧集", description = "生成指定章节的剧集内容")
     public Result<Void> generateEpisodes(@PathVariable String projectId,
                                           @RequestBody Map<String, Object> body) {
         String chapter = (String) body.get("chapter");
@@ -122,7 +131,19 @@ public class ProjectController {
             return Result.fail("章节不能为空");
         }
 
+        // 直接调用 ScriptService（内部会更新状态）
         scriptService.generateScriptEpisodes(projectId, chapter, episodeCount, modificationSuggestion);
+        return Result.ok();
+    }
+
+    /**
+     * 批量生成所有剧集
+     * POST /api/projects/{projectId}/generate-all-episodes
+     */
+    @PostMapping("/{projectId}/generate-all-episodes")
+    @Operation(summary = "批量生成全部章节", description = "按顺序生成所有剩余章节的剧集")
+    public Result<Void> generateAllEpisodes(@PathVariable String projectId) {
+        scriptService.generateAllEpisodes(projectId);
         return Result.ok();
     }
 
@@ -141,16 +162,19 @@ public class ProjectController {
      */
     @PostMapping("/{projectId}/confirm-script")
     public Result<Void> confirmScript(@PathVariable String projectId) {
-        scriptService.confirmScript(projectId);
+        // 发送事件到状态机
+        Map<String, Object> headers = new HashMap<>();
+        headers.put("projectId", projectId);
+        stateMachineService.sendEvent(projectId, ProjectEventType.CONFIRM_SCRIPT, headers);
         return Result.ok();
     }
 
     /**
-     * 修改剧本（大纲或分集）
+     * 修改剧本
      * POST /api/projects/{projectId}/revise-script
      */
     @PostMapping("/{projectId}/revise-script")
-    @Operation(summary = "修改剧本", description = "修改大纲或指定章节的剧集。不传chapter则修改大纲，传chapter则修改该章节的分集")
+    @Operation(summary = "修改剧本", description = "修改大纲或指定章节的剧集")
     public Result<Void> reviseScript(@PathVariable String projectId,
                                      @RequestBody Map<String, Object> body) {
         String revisionNote = (String) body.get("revisionNote");
@@ -161,17 +185,22 @@ public class ProjectController {
         if (chapter != null && !chapter.isEmpty()) {
             scriptService.reviseEpisodes(projectId, chapter, episodeCount, revisionNote);
         } else {
-            scriptService.reviseOutline(projectId, revisionNote, currentOutline);
+            // 发送修改大纲事件到状态机
+            Map<String, Object> headers = new HashMap<>();
+            headers.put("projectId", projectId);
+            headers.put("revisionNote", revisionNote);
+            headers.put("currentOutline", currentOutline);
+            stateMachineService.sendEvent(projectId, ProjectEventType.REQUEST_OUTLINE_REVISION, headers);
         }
         return Result.ok();
     }
 
     /**
-     * 直接保存用户编辑的大纲
+     * 直接保存大纲
      * PATCH /api/projects/{projectId}/script-outline
      */
     @PatchMapping("/{projectId}/script-outline")
-    @Operation(summary = "保存大纲", description = "直接保存用户编辑的大纲内容，不触发 AI 重新生成。保存后会删除已生成的剧集。")
+    @Operation(summary = "保存大纲", description = "直接保存用户编辑的大纲内容")
     public Result<Void> updateScriptOutline(@PathVariable String projectId,
                                             @RequestBody Map<String, String> body) {
         String outline = body.get("outline");
@@ -182,27 +211,21 @@ public class ProjectController {
         return Result.ok();
     }
 
-    /**
-     * 批量生成所有剩余章节的剧集
-     * POST /api/projects/{projectId}/generate-all-episodes
-     */
-    @PostMapping("/{projectId}/generate-all-episodes")
-    @Operation(summary = "批量生成全部章节", description = "按顺序生成所有剩余章节的剧集。如果某章生成失败则停止。")
-    public Result<Void> generateAllEpisodes(@PathVariable String projectId) {
-        scriptService.generateAllEpisodes(projectId);
-        return Result.ok();
-    }
+    // ===== 私有方法 =====
 
-    /**
-     * 推进流水线
-     * POST /api/projects/{projectId}/advance
-     */
-    @PostMapping("/{projectId}/advance")
-    public Result<Void> advancePipeline(@PathVariable String projectId,
-                                        @RequestBody Map<String, String> body) {
-        String event = body.get("event");
-        pipelineService.advancePipeline(projectId, event);
-        return Result.ok();
+    private ProjectListItemResponse toListItemDTO(Project project) {
+        ProjectListItemResponse dto = new ProjectListItemResponse();
+        dto.setProjectId(project.getProjectId());
+        dto.setStoryPrompt(project.getStoryPrompt());
+        dto.setGenre(project.getGenre());
+        dto.setTargetAudience(project.getTargetAudience());
+        dto.setTotalEpisodes(project.getTotalEpisodes());
+        dto.setEpisodeDuration(project.getEpisodeDuration());
+        dto.setVisualStyle(project.getVisualStyle());
+        dto.setStatusCode(project.getStatus());
+        dto.setCreatedAt(project.getCreatedAt());
+        dto.setUpdatedAt(project.getUpdatedAt());
+        return dto;
     }
 
     private Integer parseOptionalPositiveInt(Object rawValue) {
@@ -216,5 +239,9 @@ public class ProjectController {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private String generateProjectId() {
+        return "PROJ-" + java.util.UUID.randomUUID().toString().substring(0, 8);
     }
 }
