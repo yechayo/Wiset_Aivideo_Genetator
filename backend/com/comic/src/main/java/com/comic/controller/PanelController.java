@@ -1,5 +1,7 @@
 package com.comic.controller;
 
+import com.comic.common.BusinessException;
+import com.comic.common.ProjectStatus;
 import com.comic.common.Result;
 import com.comic.dto.request.ComicReviseRequest;
 import com.comic.dto.request.PanelCreateRequest;
@@ -7,12 +9,16 @@ import com.comic.dto.request.PanelReviseRequest;
 import com.comic.dto.request.PanelUpdateRequest;
 import com.comic.dto.response.*;
 import com.comic.entity.Episode;
+import com.comic.entity.Job;
+import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
+import com.comic.repository.JobRepository;
+import com.comic.repository.ProjectRepository;
 import com.comic.service.job.JobQueueService;
 import com.comic.service.panel.PanelService;
 import com.comic.service.production.ComicGenerationService;
 import com.comic.service.production.PanelProductionService;
-import com.comic.service.story.StoryboardService;
+import com.comic.service.panel.PanelGenerationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,11 +37,13 @@ import java.util.Map;
 public class PanelController {
 
     private final PanelService panelService;
-    private final StoryboardService storyboardService;
+    private final PanelGenerationService panelGenerationService;
     private final JobQueueService jobQueueService;
     private final EpisodeRepository episodeRepository;
+    private final JobRepository jobRepository;
     private final PanelProductionService panelProductionService;
     private final ComicGenerationService comicGenerationService;
+    private final ProjectRepository projectRepository;
 
     // ================= 分镜 CRUD =================
 
@@ -72,6 +80,7 @@ public class PanelController {
             @PathVariable Long episodeId,
             @PathVariable Long panelId,
             @RequestBody PanelUpdateRequest request) {
+        guardPanelNotInProduction(projectId);
         panelService.updatePanel(projectId, episodeId, panelId, request);
         return Result.ok();
     }
@@ -82,6 +91,7 @@ public class PanelController {
             @PathVariable String projectId,
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
+        guardPanelNotInProduction(projectId);
         panelService.deletePanel(projectId, episodeId, panelId);
         return Result.ok();
     }
@@ -97,11 +107,12 @@ public class PanelController {
         if (episode == null) {
             return Result.fail(404, "剧集不存在");
         }
-        String jobId = jobQueueService.submitStoryboardJob(episodeId);
+        String jobId = jobQueueService.submitPanelGenerationJob(episodeId);
         Map<String, String> result = new HashMap<>();
         result.put("jobId", jobId);
         return Result.ok(result);
     }
+
 
     @GetMapping("/generate/{jobId}/status")
     @Operation(summary = "分镜生成任务状态")
@@ -111,23 +122,38 @@ public class PanelController {
             @PathVariable String jobId) {
         Map<String, Object> status = new HashMap<>();
         status.put("jobId", jobId);
-        Episode episode = episodeRepository.findByProjectIdAndId(projectId, episodeId);
-        if (episode == null) {
-            return Result.fail(404, "剧集不存在");
+
+        // 优先查 job 表（真实任务状态）
+        Job job = jobRepository.selectById(jobId);
+        if (job == null) {
+            // job 不存在，可能是旧数据被清理了，返回 unknown 让前端重新请求
+            status.put("status", "unknown");
+            return Result.ok(status);
         }
-        String epStatus = episode.getStatus();
-        if ("STORYBOARD_DONE".equals(epStatus) || "STORYBOARD_CONFIRMED".equals(epStatus)) {
-            status.put("status", "completed");
-        } else if ("STORYBOARD_FAILED".equals(epStatus)) {
-            status.put("status", "failed");
-            Map<String, Object> info = episode.getEpisodeInfo();
-            if (info != null && info.get("errorMsg") != null) {
-                status.put("errorMessage", info.get("errorMsg").toString());
-            }
-        } else if ("STORYBOARD_GENERATING".equals(epStatus)) {
-            status.put("status", "processing");
-        } else {
-            status.put("status", "pending");
+
+        switch (job.getStatus()) {
+            case "PENDING":
+                status.put("status", "pending");
+                status.put("progress", job.getProgress());
+                status.put("message", job.getProgressMsg());
+                break;
+            case "RUNNING":
+                status.put("status", "processing");
+                status.put("progress", job.getProgress());
+                status.put("message", job.getProgressMsg());
+                break;
+            case "SUCCESS":
+                status.put("status", "completed");
+                break;
+            case "FAILED":
+                status.put("status", "failed");
+                if (job.getErrorMsg() != null) {
+                    status.put("errorMessage", job.getErrorMsg());
+                }
+                break;
+            default:
+                status.put("status", "unknown");
+                break;
         }
         return Result.ok(status);
     }
@@ -138,7 +164,7 @@ public class PanelController {
             @PathVariable String projectId,
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
-        storyboardService.confirmEpisodeStoryboard(episodeId);
+        panelGenerationService.confirmPanels(episodeId);
         return Result.ok();
     }
 
@@ -149,7 +175,7 @@ public class PanelController {
             @PathVariable Long episodeId,
             @PathVariable Long panelId,
             @RequestBody PanelReviseRequest request) {
-        storyboardService.reviseEpisodeStoryboard(episodeId, request.getFeedback());
+        panelGenerationService.revisePanels(episodeId, request.getFeedback());
         return Result.ok();
     }
 
@@ -159,7 +185,7 @@ public class PanelController {
             @PathVariable String projectId,
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
-        storyboardService.retryFailedStoryboard(episodeId);
+        panelGenerationService.retryFailedPanels(episodeId);
         return Result.ok();
     }
 
@@ -241,6 +267,7 @@ public class PanelController {
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
         comicGenerationService.approveComic(panelId);
+        panelProductionService.startOrResume(projectId);
         return Result.ok();
     }
 
@@ -283,6 +310,19 @@ public class PanelController {
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
         panelProductionService.retryVideoByPanelId(panelId);
+        panelProductionService.startOrResume(projectId);
         return Result.ok();
+    }
+
+    // ================= 边界保护 =================
+
+    /**
+     * 检查项目是否正在生产中，如果是则阻止分镜变更操作
+     */
+    private void guardPanelNotInProduction(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project != null && ProjectStatus.PRODUCING.getCode().equals(project.getStatus())) {
+            throw new BusinessException("当前项目正在生产中，无法变更分镜");
+        }
     }
 }

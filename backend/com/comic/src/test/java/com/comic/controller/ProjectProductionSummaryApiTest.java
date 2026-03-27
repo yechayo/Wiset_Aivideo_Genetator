@@ -16,6 +16,8 @@ import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import com.comic.service.script.ScriptService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -43,6 +45,8 @@ class ProjectProductionSummaryApiTest {
             mock(CharacterExtractService.class), mock(CharacterImageGenerationService.class),
             mock(ProjectStatusBroadcaster.class)
         );
+
+        ReflectionTestUtils.setField(pipelineService, "stringRedisTemplate", mock(StringRedisTemplate.class));
     }
 
     @Test

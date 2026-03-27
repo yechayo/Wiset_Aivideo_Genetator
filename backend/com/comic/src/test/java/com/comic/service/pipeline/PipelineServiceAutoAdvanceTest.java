@@ -14,6 +14,7 @@ import com.comic.service.script.ScriptService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.HashMap;
@@ -81,6 +82,7 @@ class PipelineServiceAutoAdvanceTest {
 
         // Inject mocked dependencies via reflection
         ReflectionTestUtils.setField(pipelineService, "panelGenerationService", panelGenerationService);
+        ReflectionTestUtils.setField(pipelineService, "stringRedisTemplate", mock(StringRedisTemplate.class));
 
         // Inject pipelineServiceSelf spy for auto-advance chain verification
         PipelineService spySelf = spy(pipelineService);

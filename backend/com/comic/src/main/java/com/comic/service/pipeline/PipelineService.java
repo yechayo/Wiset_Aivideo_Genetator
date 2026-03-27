@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -68,6 +69,10 @@ public class PipelineService implements StageCompletionCallback {
     @Lazy
     @Autowired
     private PipelineService pipelineServiceSelf;
+
+    /** Redis 操作，用于回滚时释放生产锁 */
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
 
     // ==================== Map 辅助方法 ====================
 
@@ -312,6 +317,14 @@ public class PipelineService implements StageCompletionCallback {
             case PANEL_GENERATING:
             case PANEL_REVIEW:
             case PRODUCING:
+                // 回滚 PRODUCING 时释放生产锁
+                if (from == ProjectStatus.PRODUCING && stringRedisTemplate != null) {
+                    try {
+                        stringRedisTemplate.delete("lock:production:" + projectId);
+                    } catch (Exception e) {
+                        log.warn("Failed to release production lock during rollback: projectId={}", projectId, e);
+                    }
+                }
                 // 清除分镜和生产数据
                 List<Episode> episodes = episodeRepository.findByProjectId(projectId);
                 for (Episode ep : episodes) {

@@ -17,6 +17,7 @@ import com.comic.service.script.ScriptService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.HashMap;
@@ -67,6 +68,7 @@ class ProjectStateMachineE2ETest {
         // Inject @Lazy @Autowired dependencies via reflection
         ReflectionTestUtils.setField(pipelineService, "panelGenerationService", panelGenerationService);
         ReflectionTestUtils.setField(pipelineService, "panelProductionService", panelProductionService);
+        ReflectionTestUtils.setField(pipelineService, "stringRedisTemplate", mock(StringRedisTemplate.class));
 
         // Use spy for pipelineServiceSelf to allow auto-advance chain
         PipelineService spySelf = spy(pipelineService);

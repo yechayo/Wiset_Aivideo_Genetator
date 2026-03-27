@@ -181,6 +181,33 @@ class PanelProductionOrchestratorTest {
         verify(pipelineService, times(1)).advancePipeline("proj-dbl", "production_completed");
     }
 
+    @Test
+    void restart_resume_should_not_double_start_same_panel() {
+        // Simulate service restart: lock is not held, resume picks up where left off
+        Project project = createProject("proj-rst", ProjectStatus.PRODUCING);
+        when(projectRepository.findByProjectId("proj-rst")).thenReturn(project);
+
+        Episode ep1 = createEpisode(1L, "proj-rst");
+        when(episodeRepository.findByProjectId("proj-rst")).thenReturn(Arrays.asList(ep1));
+
+        // Panel with comic pending_review (paused state)
+        Panel panel1 = createPanel(10L, 1L, "http://bg.png", "pending_review", null, null);
+        when(panelRepository.findByEpisodeId(1L)).thenReturn(Arrays.asList(panel1));
+
+        // First resume: should pause (pending_review)
+        panelProductionService.startOrResume("proj-rst");
+        verify(pipelineService, never()).advancePipeline(anyString(), anyString());
+
+        // Reset the lock mock so second call can acquire it (simulating restart)
+        reset(stringRedisTemplate);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), any())).thenReturn(true);
+
+        // Second resume (simulating restart): should still pause (pending_review is still the state)
+        panelProductionService.startOrResume("proj-rst");
+        verify(pipelineService, never()).advancePipeline(anyString(), anyString());
+    }
+
     // Helper methods
     private Project createProject(String projectId, ProjectStatus status) {
         Project p = new Project();
