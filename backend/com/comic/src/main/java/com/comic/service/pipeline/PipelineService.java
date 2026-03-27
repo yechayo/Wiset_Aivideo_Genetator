@@ -658,10 +658,22 @@ public class PipelineService implements StageCompletionCallback {
                 });
                 break;
 
+            case SCRIPT_CONFIRMED:
+                // Auto-advance: confirm -> immediately start character extraction
+                pipelineServiceSelf.advancePipeline(projectId, "start_character_extraction");
+                break;
+
+            case CHARACTER_CONFIRMED:
+                // Auto-advance: confirm -> immediately start image generation
+                pipelineServiceSelf.advancePipeline(projectId, "start_image_generation");
+                break;
+
+            case ASSET_LOCKED:
+                // Auto-advance: images confirmed -> immediately start panel generation
+                pipelineServiceSelf.advancePipeline(projectId, "start_panels");
+                break;
+
             case PRODUCING:
-                // 新流程：生产由用户通过 PanelController 按 Panel 手动触发
-                // PipelineService 只负责项目级状态，不再自动启动生产
-                log.info("Project entered PRODUCING state: projectId={}. User manages panels via PanelController.", projectId);
                 break;
 
             default:

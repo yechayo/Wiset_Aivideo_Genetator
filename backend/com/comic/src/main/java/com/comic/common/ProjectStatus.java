@@ -218,23 +218,23 @@ public enum ProjectStatus {
             case SCRIPT_REVIEW:
                 return Arrays.asList("generate_episodes", "revise_episodes", "confirm_script");
             case SCRIPT_CONFIRMED:
-                return Arrays.asList("extract_characters", "revise_outline");
+                return Arrays.asList("revise_outline");
             case CHARACTER_EXTRACTING:
                 return Arrays.asList();
             case CHARACTER_REVIEW:
                 return Arrays.asList("confirm_characters", "update_character");
             case CHARACTER_CONFIRMED:
-                return Arrays.asList("generate_images");
+                return Arrays.asList();
             case IMAGE_GENERATING:
                 return Arrays.asList();
             case IMAGE_REVIEW:
                 return Arrays.asList("confirm_images");
             case ASSET_LOCKED:
-                return Arrays.asList("start_panels");
+                return Arrays.asList();
             case PANEL_GENERATING:
                 return Arrays.asList();
             case PANEL_REVIEW:
-                return Arrays.asList("confirm_panels", "revise_panels", "start_production");
+                return Arrays.asList("confirm_panels", "revise_panels");
             case PRODUCING:
                 return Arrays.asList();
             case COMPLETED:

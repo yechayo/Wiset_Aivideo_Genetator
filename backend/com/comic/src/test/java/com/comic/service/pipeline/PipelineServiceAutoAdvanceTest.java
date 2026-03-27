@@ -24,9 +24,11 @@ import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -79,6 +81,10 @@ class PipelineServiceAutoAdvanceTest {
 
         // Inject mocked dependencies via reflection
         ReflectionTestUtils.setField(pipelineService, "panelGenerationService", panelGenerationService);
+
+        // Inject pipelineServiceSelf spy for auto-advance chain verification
+        PipelineService spySelf = spy(pipelineService);
+        ReflectionTestUtils.setField(pipelineService, "pipelineServiceSelf", spySelf);
     }
 
     @Test
@@ -97,22 +103,11 @@ class PipelineServiceAutoAdvanceTest {
             fail("Should not throw exception: " + e.getMessage());
         }
 
-        // Then: Status should transition to SCRIPT_CONFIRMED
-        ArgumentCaptor<Project> projectCaptor = ArgumentCaptor.forClass(Project.class);
-        verify(projectRepository, times(1)).updateById(projectCaptor.capture());
-        Project updatedProject = projectCaptor.getValue();
-
-        assertEquals(
-            ProjectStatus.SCRIPT_CONFIRMED.getCode(),
-            updatedProject.getStatus(),
-            "After confirming script, project should be in SCRIPT_CONFIRMED state"
-        );
-
-        // And: Character extraction should be automatically triggered
+        // Then: Character extraction should be automatically triggered
         verify(characterExtractService, times(1)).extractCharacters(eq("test-project-1"));
 
-        // Eventually, the status should become CHARACTER_EXTRACTING
-        // This verifies the auto-advance chain: SCRIPT_REVIEW -> SCRIPT_CONFIRMED -> CHARACTER_EXTRACTING
+        // Verify status eventually reached CHARACTER_EXTRACTING
+        assertEquals(ProjectStatus.CHARACTER_EXTRACTING.getCode(), project.getStatus());
     }
 
     @Test
@@ -131,22 +126,12 @@ class PipelineServiceAutoAdvanceTest {
             fail("Should not throw exception: " + e.getMessage());
         }
 
-        // Then: Status should transition to CHARACTER_CONFIRMED
-        ArgumentCaptor<Project> projectCaptor = ArgumentCaptor.forClass(Project.class);
-        verify(projectRepository, times(1)).updateById(projectCaptor.capture());
-        Project updatedProject = projectCaptor.getValue();
+        // Then: Verify auto-advance to image generation was triggered
+        PipelineService spySelf = (PipelineService) ReflectionTestUtils.getField(pipelineService, "pipelineServiceSelf");
+        verify(spySelf).advancePipeline(eq("test-project-2"), eq("start_image_generation"));
 
-        assertEquals(
-            ProjectStatus.CHARACTER_CONFIRMED.getCode(),
-            updatedProject.getStatus(),
-            "After confirming characters, project should be in CHARACTER_CONFIRMED state"
-        );
-
-        // And: Image generation should be automatically triggered
-        verify(characterImageGenerationService, times(1)).generateAll(anyString());
-
-        // Eventually, the status should become IMAGE_GENERATING
-        // This verifies the auto-advance chain: CHARACTER_REVIEW -> CHARACTER_CONFIRMED -> IMAGE_GENERATING
+        // Verify status eventually reached IMAGE_GENERATING
+        assertEquals(ProjectStatus.IMAGE_GENERATING.getCode(), project.getStatus());
     }
 
     @Test
@@ -166,22 +151,11 @@ class PipelineServiceAutoAdvanceTest {
             fail("Should not throw exception: " + e.getMessage());
         }
 
-        // Then: Status should transition to ASSET_LOCKED
-        ArgumentCaptor<Project> projectCaptor = ArgumentCaptor.forClass(Project.class);
-        verify(projectRepository, times(1)).updateById(projectCaptor.capture());
-        Project updatedProject = projectCaptor.getValue();
-
-        assertEquals(
-            ProjectStatus.ASSET_LOCKED.getCode(),
-            updatedProject.getStatus(),
-            "After confirming images, project should be in ASSET_LOCKED state"
-        );
-
-        // And: Panel generation should be automatically triggered
+        // Then: Verify panel generation was auto-triggered
         verify(panelGenerationService, times(1)).startPanelGeneration(eq("test-project-3"));
 
-        // Eventually, the status should become PANEL_GENERATING
-        // This verifies the auto-advance chain: IMAGE_REVIEW -> ASSET_LOCKED -> PANEL_GENERATING
+        // Verify status eventually reached PANEL_GENERATING
+        assertEquals(ProjectStatus.PANEL_GENERATING.getCode(), project.getStatus());
     }
 
     @Test
