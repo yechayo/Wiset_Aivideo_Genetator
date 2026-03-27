@@ -2,30 +2,10 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './ProjectDetailPage.module.less';
 import { ArrowLeftIcon, EditIcon } from '../../components/icons/Icons';
-import { getProject } from '../../services/projectService';
-import type { Project, ProjectStatus } from '../../services/types/project.types';
+import { getProject, getProjectStatus } from '../../services/projectService';
+import type { Project, ProjectStatusInfo } from '../../services/types/project.types';
 
-// 项目状态中文映射
-const statusMap: Partial<Record<ProjectStatus, string>> = {
-  DRAFT: '草稿',
-  OUTLINE_GENERATING: '剧本生成中',
-  OUTLINE_REVIEW: '大纲审核',
-  SCRIPT_REVIEW: '剧本审核',
-  SCRIPT_CONFIRMED: '剧本已确认',
-  EPISODE_GENERATING: '剧集生成中',
-  COMPLETED: '已完成',
-};
-
-// 状态颜色映射
-const statusColorMap: Partial<Record<ProjectStatus, string>> = {
-  DRAFT: styles.statusDraft,
-  OUTLINE_GENERATING: styles.statusGenerating,
-  OUTLINE_REVIEW: styles.statusReview,
-  SCRIPT_REVIEW: styles.statusReview,
-  SCRIPT_CONFIRMED: styles.statusConfirmed,
-  EPISODE_GENERATING: styles.statusGenerating,
-  COMPLETED: styles.statusCompleted,
-};
+const pi = (p?: Project) => p?.projectInfo;
 
 // 类型中文映射
 const genreMap: Record<string, string> = {
@@ -59,16 +39,23 @@ function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
+  const [statusInfo, setStatusInfo] = useState<ProjectStatusInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 获取项目详情
+  // 获取项目详情和状态
   useEffect(() => {
     async function fetchProject() {
       if (!projectId) return;
       try {
-        const response = await getProject(projectId);
-        if ((response.code === 0 || response.code === 200) && response.data) {
-          setProject(response.data);
+        const [projectRes, statusRes] = await Promise.all([
+          getProject(projectId),
+          getProjectStatus(projectId),
+        ]);
+        if ((projectRes.code === 0 || projectRes.code === 200) && projectRes.data) {
+          setProject(projectRes.data);
+        }
+        if ((statusRes.code === 0 || statusRes.code === 200) && statusRes.data) {
+          setStatusInfo(statusRes.data);
         }
       } catch (error) {
         console.error('获取项目详情失败:', error);
@@ -130,10 +117,14 @@ function ProjectDetailPage() {
             <h1 className={styles.projectTitle}>项目详情</h1>
             <span
               className={`${styles.projectStatus} ${
-                project.status ? (statusColorMap[project.status] || styles.statusDraft) : styles.statusDraft
+                statusInfo?.isFailed ? styles.statusFailed
+                  : statusInfo?.isGenerating ? styles.statusGenerating
+                  : statusInfo?.isReview ? styles.statusReview
+                  : statusInfo?.statusCode === 'COMPLETED' ? styles.statusCompleted
+                  : styles.statusDraft
               }`}
             >
-              {project.status ? (statusMap[project.status] || project.status) : '草稿'}
+              {statusInfo?.statusDescription || '草稿'}
             </span>
           </div>
           <div className={styles.projectId}>ID: {project.projectId}</div>
@@ -145,31 +136,31 @@ function ProjectDetailPage() {
           <div className={styles.infoGrid}>
             <div className={styles.infoItem}>
               <span className={styles.infoLabel}>故事大纲</span>
-              <span className={styles.infoValue}>{project.storyPrompt}</span>
+              <span className={styles.infoValue}>{pi(project)?.storyPrompt}</span>
             </div>
             <div className={styles.infoItem}>
               <span className={styles.infoLabel}>类型风格</span>
               <span className={styles.infoValue}>
-                {genreMap[project.genre] || project.genre}
+                {genreMap[pi(project)?.genre || ''] || pi(project)?.genre || '未分类'}
               </span>
             </div>
             <div className={styles.infoItem}>
               <span className={styles.infoLabel}>目标受众</span>
               <span className={styles.infoValue}>
-                {audienceMap[project.targetAudience] || project.targetAudience}
+                {audienceMap[pi(project)?.targetAudience || ''] || pi(project)?.targetAudience}
               </span>
             </div>
             <div className={styles.infoItem}>
               <span className={styles.infoLabel}>总集数</span>
-              <span className={styles.infoValue}>{project.totalEpisodes} 集</span>
+              <span className={styles.infoValue}>{pi(project)?.totalEpisodes || 0} 集</span>
             </div>
             <div className={styles.infoItem}>
               <span className={styles.infoLabel}>单集时长</span>
-              <span className={styles.infoValue}>{project.episodeDuration} 秒</span>
+              <span className={styles.infoValue}>{pi(project)?.episodeDuration || 0} 秒</span>
             </div>
             <div className={styles.infoItem}>
               <span className={styles.infoLabel}>每章集数</span>
-              <span className={styles.infoValue}>{project.episodesPerChapter || 4} 集</span>
+              <span className={styles.infoValue}>{pi(project)?.episodesPerChapter || 4} 集</span>
             </div>
           </div>
         </div>
@@ -189,32 +180,51 @@ function ProjectDetailPage() {
           </div>
         </div>
 
-        {/* 剧本修改意见 */}
-        {project.scriptRevisionNote && (
-          <div className={styles.section}>
-            <h2 className={styles.sectionTitle}>剧本修改意见</h2>
-            <div className={styles.revisionNote}>
-              {project.scriptRevisionNote}
-            </div>
-          </div>
-        )}
-
         {/* 剧本大纲 */}
-        {project.scriptOutline && (
+        {pi(project)?.script?.outline && (
           <div className={styles.section}>
             <h2 className={styles.sectionTitle}>剧本大纲</h2>
             <div className={styles.outlineContent}>
-              <pre>{project.scriptOutline}</pre>
+              <pre>{pi(project)!.script!.outline}</pre>
             </div>
           </div>
         )}
 
         {/* 当前选中章节 */}
-        {project.selectedChapter && (
+        {pi(project)?.selectedChapter && (
           <div className={styles.section}>
             <h2 className={styles.sectionTitle}>当前章节</h2>
             <div className={styles.selectedChapter}>
-              {project.selectedChapter}
+              {pi(project)!.selectedChapter}
+            </div>
+          </div>
+        )}
+
+        {/* 状态详情 */}
+        {statusInfo && (
+          <div className={styles.section}>
+            <h2 className={styles.sectionTitle}>状态详情</h2>
+            <div className={styles.infoGrid}>
+              <div className={styles.infoItem}>
+                <span className={styles.infoLabel}>状态码</span>
+                <span className={styles.infoValue}>{statusInfo.statusCode}</span>
+              </div>
+              <div className={styles.infoItem}>
+                <span className={styles.infoLabel}>当前步骤</span>
+                <span className={styles.infoValue}>第 {statusInfo.currentStep} 步</span>
+              </div>
+              {statusInfo.completedSteps.length > 0 && (
+                <div className={styles.infoItem}>
+                  <span className={styles.infoLabel}>已完成步骤</span>
+                  <span className={styles.infoValue}>{statusInfo.completedSteps.join(', ')}</span>
+                </div>
+              )}
+              {statusInfo.availableActions.length > 0 && (
+                <div className={styles.infoItem}>
+                  <span className={styles.infoLabel}>可用操作</span>
+                  <span className={styles.infoValue}>{statusInfo.availableActions.join(', ')}</span>
+                </div>
+              )}
             </div>
           </div>
         )}

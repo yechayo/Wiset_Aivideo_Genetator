@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback, useRef, useState } from 'react';
+import { useEffect, useMemo, useCallback, useRef, useState, createContext, useContext } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import styles from './CreatePage.module.less';
 import { CREATE_STEPS } from './constants/steps';
@@ -11,6 +11,23 @@ import Step3page from './steps/Step3page';
 import Step4page from './steps/Step4page';
 import Step5page from './steps/Step5page';
 import Step6page from './steps/Step6page';
+import ScriptGeneratingOverlay from './components/ScriptGeneratingOverlay';
+
+/**
+ * Step1 → Step2 过渡遮罩 context
+ * Step1 生成完成后保持遮罩，直到 Step2 mount 并调用 hideTransitionOverlay
+ */
+export const TransitionOverlayContext = createContext<{
+  showTransitionOverlay: () => void;
+  hideTransitionOverlay: () => void;
+  isTransitionOverlayVisible: boolean;
+}>({
+  showTransitionOverlay: () => {},
+  hideTransitionOverlay: () => {},
+  isTransitionOverlayVisible: false,
+});
+
+export const useTransitionOverlay = () => useContext(TransitionOverlayContext);
 
 /**
  * 创建流程布局组件
@@ -27,6 +44,8 @@ const CreateLayout = () => {
   const { currentProject, setCurrentProject } = useProjectStore();
   const [pollPaused, setPollPaused] = useState(false);
   const [isStepTransitioning, setIsStepTransitioning] = useState(false);
+  // Step1→Step2 过渡遮罩状态
+  const [isTransitionOverlayVisible, setIsTransitionOverlayVisible] = useState(false);
 
   // 手动暂停/恢复轮询（测试用）
   const togglePolling = useCallback(() => {
@@ -88,11 +107,10 @@ const CreateLayout = () => {
     }
   }, [statusInfo, urlStep, isLoadingStatus, navigate, getStepUrl]);
 
-  // 步骤切换时的过渡loading
+  // 步骤切换时的过渡 loading
   useEffect(() => {
     if (urlStep && currentProject?.projectId) {
       setIsStepTransitioning(true);
-      // 给步骤页面500ms加载时间
       const timer = setTimeout(() => {
         setIsStepTransitioning(false);
       }, 500);
@@ -145,39 +163,58 @@ const CreateLayout = () => {
     }
   };
 
-  const showLoadingOverlay = (statusInfo?.isGenerating ?? false) || isStepTransitioning;
+  const showLoadingOverlay =
+    ((statusInfo?.isGenerating ?? false) && statusInfo?.statusCode !== 'PANEL_GENERATING')
+    || isStepTransitioning;
+
+  // 用 useCallback 稳定函数引用，避免每次渲染都创建新函数导致 Step2page 的 effect 重复触发
+  const showTransitionOverlay = useCallback(() => setIsTransitionOverlayVisible(true), []);
+  const hideTransitionOverlay = useCallback(() => setIsTransitionOverlayVisible(false), []);
+  const transitionOverlayCtx = useMemo(() => ({
+    showTransitionOverlay,
+    hideTransitionOverlay,
+    isTransitionOverlayVisible,
+  }), [showTransitionOverlay, hideTransitionOverlay, isTransitionOverlayVisible]);
 
   return (
-    <div className={styles.createContainer}>
-      {/* Step 指示器 */}
-      <StepIndicator
-        steps={CREATE_STEPS}
-        currentStep={urlStep}
-        completedSteps={effectiveCompletedSteps}
-        onStepClick={handleStepClick}
-      />
+    <TransitionOverlayContext.Provider value={transitionOverlayCtx}>
+      <div className={styles.createContainer}>
+        {/* Step 指示器 */}
+        <StepIndicator
+          steps={CREATE_STEPS}
+          currentStep={urlStep}
+          completedSteps={effectiveCompletedSteps}
+          onStepClick={handleStepClick}
+        />
 
-      {/* 步骤内容 */}
-      {renderStepContent()}
+        {/* 步骤内容 */}
+        {renderStepContent()}
 
-      {/* 测试工具：暂停/恢复轮询 */}
-      <button
-        onClick={togglePolling}
-        className={`${styles.pollingToggle} ${pollPaused ? styles.pollingTogglePaused : ''}`}
-      >
-        {pollPaused ? '▶ 恢复轮询' : '⏸ 暂停轮询'}
-      </button>
+        {/* 测试工具：暂停/恢复轮询 */}
+        <button
+          onClick={togglePolling}
+          className={`${styles.pollingToggle} ${pollPaused ? styles.pollingTogglePaused : ''}`}
+        >
+          {pollPaused ? '▶ 恢复轮询' : '⏸ 暂停轮询'}
+        </button>
 
-      {/* 全局 loading 遮罩：生成中时禁止操作 */}
-      {showLoadingOverlay && (
-        <div className={styles.loadingOverlay}>
-          <div className={styles.loadingContent}>
-            <div className={styles.loadingSpinner} />
-            <p>{statusInfo?.statusDescription || '正在生成中...'}</p>
+        {/* 全局 loading 遮罩：生成中时禁止操作 */}
+        {showLoadingOverlay && (
+          <div className={styles.loadingOverlay}>
+            <div className={styles.loadingContent}>
+              <div className={styles.loadingSpinner} />
+              <p>{statusInfo?.statusDescription || '正在生成中...'}</p>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        {/* Step1→Step2 过渡遮罩：无缝覆盖步骤切换空白期 */}
+        <ScriptGeneratingOverlay
+          isVisible={isTransitionOverlayVisible}
+          phase="loading"
+        />
+      </div>
+    </TransitionOverlayContext.Provider>
   );
 };
 

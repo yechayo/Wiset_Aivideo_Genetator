@@ -9,7 +9,6 @@ interface ChapterListProps {
   pendingChapters: string[];
   episodes: Episode[];
   onGenerateClick?: (chapter: string) => void;
-  onRegenerateClick?: (chapter: string) => void;
 }
 
 /**
@@ -21,8 +20,7 @@ const ChapterList = ({
   generatedChapters,
   pendingChapters,
   episodes,
-  onGenerateClick,
-  onRegenerateClick
+  onGenerateClick
 }: ChapterListProps) => {
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set());
 
@@ -43,7 +41,7 @@ const ChapterList = ({
 
   // 获取章节对应的剧集
   const getChapterEpisodes = (chapter: string) => {
-    return episodes.filter((ep) => ep.chapterTitle === chapter);
+    return episodes.filter((ep) => ep.episodeInfo?.chapterTitle === chapter);
   };
 
   if (chapters.length === 0) {
@@ -103,24 +101,8 @@ const ChapterList = ({
               {expanded && chapterEpisodes.length > 0 && (
                 <div className={styles.episodeList}>
                   {chapterEpisodes.map((episode) => (
-                    <EpisodeCard key={episode.id || episode.episodeNum} episode={episode} />
+                    <EpisodeCard key={episode.id || episode.episodeInfo?.episodeNum} episode={episode} />
                   ))}
-                  {/* 重新生成按钮 */}
-                  {generated && onRegenerateClick && (
-                    <div className={styles.regenerateActions}>
-                      <button
-                        className={styles.regenerateButton}
-                        onClick={() => onRegenerateClick(chapter)}
-                      >
-                        <svg className={styles.icon} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M4 4V8H8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          <path d="M20 20V16H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          <path d="M4 8C4 8 5.5 4 12 4C18.5 4 20 8 20 8M20 16C20 16 18.5 20 12 20C5.5 20 4 16 4 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                        重新生成
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -151,20 +133,20 @@ const ChapterList = ({
  */
 const EpisodeCard = ({ episode }: { episode: Episode }) => {
   const [expanded, setExpanded] = useState(false);
-  const isLongContent = episode.content && episode.content.length > 200;
+  const isLongContent = episode.episodeInfo?.content && episode.episodeInfo.content.length > 200;
 
   return (
     <div className={styles.episodeCard}>
       <div className={styles.episodeHeader}>
         <span className={styles.episodeTitle}>
-          第{episode.episodeNum || '-'}集：{episode.title}
+          第{episode.episodeInfo?.episodeNum || '-'}集：{episode.episodeInfo?.title}
         </span>
       </div>
       <div className={styles.episodeContent}>
-        {episode.content && (
+        {episode.episodeInfo?.content && (
           <>
             <p className={styles.content}>
-              {expanded ? episode.content : episode.content.substring(0, 200)}
+              {expanded ? episode.episodeInfo.content : episode.episodeInfo.content.substring(0, 200)}
               {isLongContent && !expanded && '...'}
             </p>
             {isLongContent && (
@@ -178,22 +160,22 @@ const EpisodeCard = ({ episode }: { episode: Episode }) => {
           </>
         )}
         <div className={styles.episodeMeta}>
-          {episode.characters && (
+          {episode.episodeInfo?.characters && (
             <div className={styles.metaItem}>
               <span className={styles.metaLabel}>角色：</span>
-              <span className={styles.metaValue}>{episode.characters}</span>
+              <span className={styles.metaValue}>{episode.episodeInfo.characters}</span>
             </div>
           )}
-          {episode.keyItems && (
+          {episode.episodeInfo?.keyItems && (
             <div className={styles.metaItem}>
               <span className={styles.metaLabel}>物品：</span>
-              <span className={styles.metaValue}>{episode.keyItems}</span>
+              <span className={styles.metaValue}>{episode.episodeInfo.keyItems}</span>
             </div>
           )}
-          {episode.visualStyleNote && (
+          {episode.episodeInfo?.visualStyleNote && (
             <div className={styles.metaItem}>
               <span className={styles.metaLabel}>视觉风格：</span>
-              <span className={styles.metaValue}>{episode.visualStyleNote}</span>
+              <span className={styles.metaValue}>{episode.episodeInfo.visualStyleNote}</span>
             </div>
           )}
         </div>

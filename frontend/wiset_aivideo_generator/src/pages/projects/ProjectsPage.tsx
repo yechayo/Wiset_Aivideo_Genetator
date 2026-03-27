@@ -35,7 +35,7 @@ function ProjectsPage() {
       try {
         const response = await getProjects();
         if ((response.code === 0 || response.code === 200) && response.data) {
-          setProjects(response.data);
+          setProjects(response.data.items);
         }
       } catch (error) {
         console.error('获取项目列表失败:', error);

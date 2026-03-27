@@ -28,16 +28,16 @@ function normalizeStatusInfo(raw: ProjectStatusInfo | Record<string, any>): Proj
   const fallbackIsReview = statusCode.endsWith('_REVIEW');
 
   const reviewEpisodeId =
-    data.storyboardReviewEpisodeId === null || data.storyboardReviewEpisodeId === undefined
+    data.panelReviewEpisodeId === null || data.panelReviewEpisodeId === undefined
       ? undefined
-      : String(data.storyboardReviewEpisodeId);
+      : String(data.panelReviewEpisodeId);
 
   return {
     ...(data as ProjectStatusInfo),
     isGenerating: typeof generating === 'boolean' ? generating : fallbackIsGenerating,
     isFailed: typeof failed === 'boolean' ? failed : fallbackIsFailed,
     isReview: typeof review === 'boolean' ? review : fallbackIsReview,
-    storyboardReviewEpisodeId: reviewEpisodeId,
+    panelReviewEpisodeId: reviewEpisodeId,
   };
 }
 
@@ -56,7 +56,7 @@ export const useCreateStore = create<CreateState>()((set, get) => ({
 
       try {
         const response = await getProjectStatus(projectId);
-        if (response.code === 200 && response.data) {
+        if ((response.code === 0 || response.code === 200) && response.data) {
           set({ statusInfo: normalizeStatusInfo(response.data) });
         }
       } catch (error) {
@@ -83,7 +83,7 @@ export const useCreateStore = create<CreateState>()((set, get) => ({
     set({ isLoadingStatus: true });
     try {
       const response = await getProjectStatus(projectId);
-      if (response.code === 200 && response.data) {
+      if ((response.code === 0 || response.code === 200) && response.data) {
         set({ statusInfo: normalizeStatusInfo(response.data) });
       }
     } catch (error) {

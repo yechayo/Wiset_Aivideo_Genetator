@@ -1,6 +1,19 @@
 /** 片段流水线状态 */
 export type SegmentPipelineStep = 'pending' | 'scene_ready' | 'comic_review' | 'comic_approved' | 'video_generating' | 'video_completed' | 'video_failed';
 
+/** 分镜详细信息 */
+export interface PanelData {
+  panelId: string;
+  shotType: string;
+  cameraAngle: string;
+  pacing: string;
+  dialogue: string;
+  characters: any[];
+  background: any;
+  imagePromptHint: string;
+  sfx: string[];
+}
+
 /** 片段状态 */
 export interface SegmentState {
   segmentIndex: number;
@@ -12,6 +25,7 @@ export interface SegmentState {
   comicUrl: string | null;
   videoUrl: string | null;
   feedback: string;
+  panelData?: PanelData;
 }
 
 /** 剧集状态 */
