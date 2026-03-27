@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import styles from './Step4page.module.less';
 import type { Project, CharacterListItem, CharacterStatus } from '../../../services';
+import { isApiSuccess } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useCreateStore } from '../../../stores/createStore';
 import {
@@ -10,6 +11,7 @@ import {
   generateAllImages,
   generateImage,
   retryGeneration,
+  confirmImages,
 } from '../../../services/characterService';
 import { advanceStatus } from '../../../services/projectService';
 
@@ -37,14 +39,14 @@ const Step4page = ({ project }: Step4pageProps) => {
     if (!projectId) return;
     try {
       const res = await getCharacters(projectId);
-      if (res.code === 200 && res.data) {
+      if (isApiSuccess(res) && res.data) {
         const items = res.data.items;
         setCharacters(items);
 
         // 并行获取每个角色的详情（图片生成状态）
         const statuses = await Promise.all(
           items.map(char => getCharacterStatus(projectId, char.charId)
-            .then(r => (r.code === 200 && r.data ? r.data : null))
+            .then(r => (isApiSuccess(r) && r.data ? r.data : null))
             .catch(() => null))
         );
         const map = new Map<string, CharacterStatus>();
@@ -104,29 +106,15 @@ const Step4page = ({ project }: Step4pageProps) => {
     // 不需要在 cleanup 中停止，statusCode 变化的 effect 会处理
   }, [generatingIds.size, startPolling]);
 
-  // 检测所有角色图片是否已生成完毕，自动推进到 IMAGE_REVIEW
-  useEffect(() => {
-    if (statusCode !== 'IMAGE_GENERATING' || characters.length === 0 || generatingIds.size > 0) return;
-
-    const allDone = characters.every((char) => {
-      const isSupporting = char.role === '配角';
-      return char.threeViewStatus === 'COMPLETED' && (isSupporting || char.expressionStatus === 'COMPLETED');
-    });
-
-    if (allDone && projectId) {
-      advanceStatus(projectId, 'forward', 'images_generated').catch((err) => {
-        console.error('自动推进到 IMAGE_REVIEW 失败:', err);
-      });
-    }
-  }, [statusCode, characters, generatingIds.size, projectId]);
-
   // ========== 操作处理 ==========
 
   const handleStartGeneration = async () => {
     if (!projectId) return;
     setActionLoading(true);
     try {
-      await advanceStatus(projectId, 'forward', 'start_image_generation');
+      // CHARACTER_CONFIRMED → IMAGE_GENERATING 是原子自动推进，
+      // 调用 confirmCharacters 触发即可
+      await confirmCharacters(projectId);
     } catch (err: any) {
       alert(err.message || '启动生成失败');
     } finally {
@@ -140,7 +128,7 @@ const Step4page = ({ project }: Step4pageProps) => {
     if (!confirmed) return;
     setActionLoading(true);
     try {
-      await advanceStatus(projectId, 'forward', 'image_confirmed');
+      await confirmImages(projectId);
     } catch (err: any) {
       alert(err.message || '确认失败');
     } finally {
@@ -150,11 +138,12 @@ const Step4page = ({ project }: Step4pageProps) => {
 
   const handleStartProduction = async () => {
     if (!projectId) return;
-    const confirmed = window.confirm('确认后将开始生成分镜脚本，完成后进入分镜审核。是否继续？');
+    const confirmed = window.confirm('确认后将锁定素材并开始生成分镜，完成后进入分镜审核。是否继续？');
     if (!confirmed) return;
     setActionLoading(true);
     try {
-      await advanceStatus(projectId, 'forward', 'start_storyboard');
+      await confirmImages(projectId);
+      // IMAGE_REVIEW → ASSET_LOCKED → PANEL_GENERATING 是原子推进，
       // 立即同步后端状态，触发路由跳转到 step 5
       if (projectId) {
         await syncStatus(projectId);
@@ -170,7 +159,7 @@ const Step4page = ({ project }: Step4pageProps) => {
     if (!projectId) return;
     setActionLoading(true);
     try {
-      await advanceStatus(projectId, 'forward', 'start_image_generation');
+      await advanceStatus(projectId, 'forward', 'retry');
     } catch (err: any) {
       alert(err.message || '重试失败');
     } finally {

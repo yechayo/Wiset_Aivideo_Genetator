@@ -26,7 +26,7 @@ export async function getCharacters(projectId: string, params?: GetCharactersPar
  * 从剧本中提取角色
  */
 export async function extractCharacters(projectId: string): Promise<ApiResponse<CharacterDraft[]>> {
-  return post<ApiResponse<CharacterDraft[]>>('/api/characters/extract', { projectId });
+  return post<ApiResponse<CharacterDraft[]>>(`/api/projects/${projectId}/characters/extract`);
 }
 
 /**
@@ -87,14 +87,14 @@ export async function generateImage(
 
 /**
  * 重试生成
- * @param type 'expression' 或 'threeview'
+ * @param type 'expression' 或 'threeView'（API 路径映射为 expression / three-view）
  */
 export async function retryGeneration(
   projectId: string,
   charId: string,
   type: 'expression' | 'threeView'
 ): Promise<ApiResponse<void>> {
-  const apiType = type === 'expression' ? 'expression' : 'threeview';
+  const apiType = type === 'expression' ? 'expression' : 'three-view';
   return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}/retry/${apiType}`);
 }
 
@@ -102,8 +102,17 @@ export async function retryGeneration(
  * 设置角色视觉风格
  */
 export async function setVisualStyle(
+  projectId: string,
   charId: string,
   visualStyle: string
 ): Promise<ApiResponse<void>> {
-  return put<ApiResponse<void>>(`/api/characters/${charId}/visual-style`, { visualStyle });
+  return put<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}/visual-style`, { visualStyle });
+}
+
+/**
+ * 确认角色图片，锁定素材
+ * 触发状态推进：IMAGE_REVIEW → ASSET_LOCKED → PANEL_GENERATING
+ */
+export async function confirmImages(projectId: string): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/images/confirm`);
 }
