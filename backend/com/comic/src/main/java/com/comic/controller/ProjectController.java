@@ -6,6 +6,7 @@ import com.comic.dto.request.AdvanceRequest;
 import com.comic.dto.request.ProjectCreateRequest;
 import com.comic.dto.response.PaginatedResponse;
 import com.comic.dto.response.ProjectListItemResponse;
+import com.comic.dto.response.ProjectProductionSummaryResponse;
 import com.comic.dto.response.ProjectStatusResponse;
 import com.comic.entity.Project;
 import com.comic.entity.User;
@@ -64,6 +65,12 @@ public class ProjectController {
     @Operation(summary = "获取项目状态详情")
     public Result<ProjectStatusResponse> getProjectStatusDetail(@PathVariable String projectId) {
         return Result.ok(pipelineService.getProjectStatusDetail(projectId));
+    }
+
+    @GetMapping("/{projectId}/production/summary")
+    @Operation(summary = "获取项目生产摘要", description = "PRODUCING 阶段专用：当前 Panel、进度、阻塞原因")
+    public Result<ProjectProductionSummaryResponse> getProductionSummary(@PathVariable String projectId) {
+        return Result.ok(pipelineService.getProductionSummary(projectId));
     }
 
     @GetMapping

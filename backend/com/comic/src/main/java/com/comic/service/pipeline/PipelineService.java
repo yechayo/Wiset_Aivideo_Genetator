@@ -8,6 +8,7 @@ import com.comic.common.ProjectInfoKeys;
 import com.comic.common.ProjectStatus;
 import com.comic.dto.request.ProjectCreateRequest;
 import com.comic.dto.response.ProjectListItemResponse;
+import com.comic.dto.response.ProjectProductionSummaryResponse;
 import com.comic.dto.response.ProjectStatusResponse;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
@@ -385,6 +386,84 @@ public class PipelineService implements StageCompletionCallback {
         }
 
         return dto;
+    }
+
+    /**
+     * 获取项目级生产摘要（PRODUCING 阶段）
+     */
+    public ProjectProductionSummaryResponse getProductionSummary(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            throw new BusinessException("项目不存在");
+        }
+
+        ProjectProductionSummaryResponse summary = new ProjectProductionSummaryResponse();
+
+        List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        int totalPanels = 0;
+        int completedPanels = 0;
+        int currentIndex = 0;
+
+        for (Episode episode : episodes) {
+            List<Panel> panels = panelRepository.findByEpisodeId(episode.getId());
+            for (Panel panel : panels) {
+                totalPanels++;
+                currentIndex++;
+                Map<String, Object> info = panel.getPanelInfo();
+                String videoStatus = info != null ? strVal(info, "videoStatus") : null;
+
+                if ("completed".equals(videoStatus)) {
+                    completedPanels++;
+                    continue;
+                }
+
+                // This is the first non-completed panel -> it's the current panel
+                if (summary.getCurrentPanelId() == null) {
+                    summary.setCurrentEpisodeId(episode.getId());
+                    summary.setCurrentPanelId(panel.getId());
+                    summary.setCurrentPanelIndex(currentIndex);
+
+                    // Determine sub-stage and blocked reason
+                    if (info == null) {
+                        summary.setProductionSubStage("background");
+                    } else {
+                        String bgStatus = strVal(info, "backgroundStatus");
+                        String comicStatus = strVal(info, "comicStatus");
+                        String vStatus = strVal(info, "videoStatus");
+
+                        if ("failed".equals(bgStatus)) {
+                            summary.setProductionSubStage("background");
+                            summary.setBlockedReason("panel_failed");
+                        } else if ("generating".equals(bgStatus)) {
+                            summary.setProductionSubStage("background");
+                        } else if ("failed".equals(comicStatus)) {
+                            summary.setProductionSubStage("comic");
+                            summary.setBlockedReason("panel_failed");
+                        } else if ("generating".equals(comicStatus)) {
+                            summary.setProductionSubStage("comic");
+                        } else if ("pending_review".equals(comicStatus)) {
+                            summary.setProductionSubStage("pending_review");
+                            summary.setBlockedReason("awaiting_comic_approval");
+                        } else if ("approved".equals(comicStatus)) {
+                            if ("failed".equals(vStatus)) {
+                                summary.setProductionSubStage("video");
+                                summary.setBlockedReason("panel_failed");
+                            } else if ("generating".equals(vStatus)) {
+                                summary.setProductionSubStage("video");
+                            } else {
+                                summary.setProductionSubStage("video");
+                            }
+                        } else {
+                            summary.setProductionSubStage("background");
+                        }
+                    }
+                }
+            }
+        }
+
+        summary.setTotalPanelCount(totalPanels);
+        summary.setCompletedPanelCount(completedPanels);
+        return summary;
     }
 
     public IPage<Project> getProjectPage(String userId, String status, String sortBy, String sortOrder, int page, int size) {
