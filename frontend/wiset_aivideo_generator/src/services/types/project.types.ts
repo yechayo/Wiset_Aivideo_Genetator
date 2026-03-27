@@ -18,8 +18,8 @@ export interface Scene {
 export interface Script {
   title?: string;
   content?: string;
+  outline?: string;
   scenes?: Scene[];
-  // 后续可扩展更多字段
 }
 
 /**
@@ -28,7 +28,7 @@ export interface Script {
 export interface CreateProjectRequest {
   storyPrompt: string;
   genre?: string;
-  visualStyle?: string;
+  visualStyle?: VisualStyle;
   targetAudience: string;
   totalEpisodes: number;
   episodeDuration: number;
@@ -41,9 +41,11 @@ export type ProjectStatus =
   | 'DRAFT'
   | 'OUTLINE_GENERATING'
   | 'OUTLINE_REVIEW'
+  | 'OUTLINE_GENERATING_FAILED'
+  | 'EPISODE_GENERATING'
+  | 'EPISODE_GENERATING_FAILED'
   | 'SCRIPT_REVIEW'
   | 'SCRIPT_CONFIRMED'
-  | 'EPISODE_GENERATING'
   | 'CHARACTER_EXTRACTING'
   | 'CHARACTER_REVIEW'
   | 'CHARACTER_CONFIRMED'
@@ -52,39 +54,41 @@ export type ProjectStatus =
   | 'IMAGE_REVIEW'
   | 'IMAGE_GENERATING_FAILED'
   | 'ASSET_LOCKED'
-  | 'STORYBOARD_GENERATING'
-  | 'STORYBOARD_REVIEW'
-  | 'STORYBOARD_GENERATING_FAILED'
+  | 'PANEL_GENERATING'
+  | 'PANEL_REVIEW'
+  | 'PANEL_GENERATING_FAILED'
   | 'PRODUCING'
+  | 'VIDEO_ASSEMBLING'
   | 'COMPLETED';
+
+/**
+ * 创建项目响应
+ */
+export interface CreateProjectResponse {
+  projectId: string;
+}
 
 /**
  * 项目信息
  */
 export interface Project {
   id?: number;
-  projectId?: string; // 项目唯一标识（UUID）
-  userId?: string; // 用户ID
-  storyPrompt: string; // 故事提示词/大纲
-  genre: string; // 类型（热血玄幻、都市异能等）
-  visualStyle?: string; // 画面风格（3D/REAL/ANIME）
-  targetAudience: string; // 目标受众
-  totalEpisodes: number; // 总集数
-  episodeDuration: number; // 单集时长（秒）
-  status?: ProjectStatus; // 项目状态
-  scriptRevisionNote?: string; // 剧本修改意见
-  scriptOutline?: string; // 剧本大纲
-  selectedChapter?: string; // 当前选中的章节
-  episodesPerChapter?: number; // 每章集数（默认4）
-  script?: Script;
+  projectId?: string;
+  userId?: string;
+  status?: string;
+  deleted?: boolean;
+  projectInfo?: ProjectInfoData;
   createdAt?: string;
   updatedAt?: string;
 }
 
 /**
- * 修订脚本请求参数（支持动态属性）
+ * 修订脚本请求参数
  */
-export type ReviseScriptRequest = Record<string, string>;
+export interface ReviseScriptRequest {
+  revisionNote: string;
+  currentOutline?: string;
+}
 
 /**
  * 修订脚本响应
@@ -103,23 +107,31 @@ export interface GenerateScriptResponse {
 }
 
 /**
+ * 剧集详细信息（嵌套在 Episode.episodeInfo 中）
+ */
+export interface EpisodeInfo {
+  title: string;
+  content: string;
+  characters: string;
+  keyItems: string;
+  episodeNum?: number;
+  retryCount?: number;
+  chapterTitle?: string;
+  continuityNote?: string;
+  visualStyleNote?: string;
+}
+
+/**
  * 剧集信息
  */
 export interface Episode {
   id?: number;
   projectId?: string;
-  title: string;
-  content: string;
-  characters: string;
-  keyItems: string;
-  continuityNote?: string;
-  visualStyleNote?: string;
-  chapterTitle?: string;
-  episodeNum?: number;
-  outlineNode?: string;
-  storyboardJson?: string;
   status?: string;
   errorMsg?: string;
+  episodeInfo?: EpisodeInfo;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /**
@@ -141,6 +153,24 @@ export interface StoryboardData {
   panels: StoryboardPanel[];
 }
 
+/** 视觉风格枚举 */
+export type VisualStyle = '3D' | 'REAL' | 'ANIME' | 'MANGA' | 'INK' | 'CYBERPUNK';
+
+/**
+ * 项目基本信息（嵌套在 Project.projectInfo 中）
+ */
+export interface ProjectInfoData {
+  genre?: string | null;
+  script?: Script;
+  storyPrompt?: string;
+  visualStyle?: VisualStyle;
+  totalEpisodes?: number;
+  targetAudience?: string;
+  episodeDuration?: number;
+  selectedChapter?: string;
+  episodesPerChapter?: number;
+}
+
 /**
  * 完整的脚本内容响应
  */
@@ -160,8 +190,8 @@ export interface ScriptContentResponse {
  * 生成剧集请求参数
  */
 export interface GenerateEpisodesRequest {
-  chapter: string;
-  episodeCount: number;
+  chapter: number;
+  episodeCount?: number;
   modificationSuggestion?: string;
 }
 
@@ -180,10 +210,10 @@ export interface ProjectStatusInfo {
   availableActions: string[];
   productionProgress?: number;
   productionSubStage?: string;
-  storyboardCurrentEpisode?: number;
-  storyboardTotalEpisodes?: number;
-  storyboardReviewEpisodeId?: string;
-  storyboardAllConfirmed?: boolean;
+  panelCurrentEpisode?: number;
+  panelTotalEpisodes?: number;
+  panelReviewEpisodeId?: string;
+  panelAllConfirmed?: boolean;
 }
 
 /**
@@ -210,6 +240,26 @@ export interface ProjectListItem {
 
 // ================= 角色相关类型 =================
 
+
+
+/**
+ * 角色列表项（后端返回）
+ */
+export interface CharacterListItem {
+  charId: string;
+  name: string;
+  role: string;
+  personality: string;
+  background?: string;
+  voice?: string;
+  appearance: string;
+  visualStyle: string;
+  expressionStatus: string | null;
+  threeViewStatus: string | null;
+  confirmed: boolean;
+  createdAt: string;
+}
+
 /**
  * 角色草稿（从剧本提取的角色）
  */
@@ -224,7 +274,7 @@ export interface CharacterDraft {
 }
 
 /**
- * 角色生成状态（含图片URL）
+ * 角色生成状态（详情接口返回）
  */
 export interface CharacterStatus {
   charId: string;
@@ -232,11 +282,11 @@ export interface CharacterStatus {
   role: string;
   expressionStatus: string;    // pending/generating/completed/failed
   threeViewStatus: string;
-  expressionError: string;
-  threeViewError: string;
-  isGeneratingExpression: boolean;
-  isGeneratingThreeView: boolean;
-  visualStyle: string;         // 3D/REAL/ANIME
-  expressionGridUrl: string;
-  threeViewGridUrl: string;
+  expressionError?: string;
+  threeViewError?: string;
+  isGeneratingExpression?: boolean;
+  isGeneratingThreeView?: boolean;
+  visualStyle?: string;         // 3D/ANIME/COMIC
+  expressionGridUrl?: string;
+  threeViewGridUrl?: string;
 }

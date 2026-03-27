@@ -3,7 +3,7 @@
  */
 
 import { get, post } from './apiClient';
-import type { ApiResponse } from './types/auth.types';
+import type { ApiResponse, PaginatedResponse } from './types/auth.types';
 import type {
   ProductionStatusResponse,
   ProductionPipelineResponse,
@@ -13,9 +13,33 @@ import type {
   PanelState,
 } from './types/episode.types';
 
-/** 获取项目下的剧集列表 */
-export async function getEpisodes(projectId: string): Promise<ApiResponse<any[]>> {
-  return get<ApiResponse<any[]>>(`/api/story/episodes?projectId=${projectId}`);
+/** 获取剧集的分镜列表 */
+export async function getPanels(projectId: string, episodeId: number): Promise<ApiResponse<any[]>> {
+  return get<ApiResponse<any[]>>(`/api/projects/${projectId}/episodes/${episodeId}/panels`);
+}
+
+/** AI 生成分镜 */
+export async function generatePanels(projectId: string, episodeId: number): Promise<ApiResponse<any>> {
+  return post<ApiResponse<any>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/generate`);
+}
+
+/** 分镜生成任务状态 */
+export async function getPanelGenerateStatus(
+  projectId: string,
+  episodeId: number,
+  jobId: string
+): Promise<ApiResponse<any>> {
+  return get<ApiResponse<any>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/generate/${jobId}/status`);
+}
+
+/** 获取项目下的剧集列表（分页） */
+export async function getEpisodes(
+  projectId: string,
+  params?: { page?: number; size?: number; name?: string }
+): Promise<ApiResponse<PaginatedResponse>> {
+  return get<ApiResponse<PaginatedResponse>>(`/api/projects/${projectId}/episodes`, {
+    params: { page: 1, size: 10, ...params },
+  });
 }
 
 /** 获取单集生产状态 */
@@ -120,5 +144,52 @@ export async function regenerateSceneImage(
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/episodes/${episodeId}/panels/${panelIndex}/regenerate-scene`,
+  );
+}
+
+/** 生成背景图（自动匹配角色） */
+export async function generateBackground(
+  projectId: string,
+  episodeId: number,
+  panelId: number,
+): Promise<ApiResponse<any>> {
+  return post<ApiResponse<any>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/background`,
+  );
+}
+
+/** 获取背景图状态 */
+export async function getBackgroundStatus(
+  projectId: string,
+  episodeId: number,
+  panelId: number,
+): Promise<ApiResponse<{
+  panelId: number;
+  panelIndex: number;
+  backgroundUrl: string;
+  status: string;
+  prompt: string;
+}>> {
+  return get<ApiResponse<{
+    panelId: number;
+    panelIndex: number;
+    backgroundUrl: string;
+    status: string;
+    prompt: string;
+  }>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/background`,
+  );
+}
+
+/** 修改分镜 */
+export async function revisePanel(
+  projectId: string,
+  episodeId: number,
+  panelId: number,
+  feedback: string,
+): Promise<ApiResponse<any>> {
+  return post<ApiResponse<any>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/revise`,
+    { feedback },
   );
 }

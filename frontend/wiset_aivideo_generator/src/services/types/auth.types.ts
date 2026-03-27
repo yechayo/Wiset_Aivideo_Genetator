@@ -33,6 +33,18 @@ export interface AuthResponse {
  */
 export interface ApiResponse<T = any> {
   code: number;
-  message: string;
+  msg: string;
+  message?: string; // 兼容旧字段
   data?: T;
+}
+
+/**
+ * 分页响应格式
+ */
+export interface PaginatedResponse<T = any> {
+  items: T[];
+  total: number;
+  page: number;
+  size: number;
+  totalPages: number;
 }

@@ -2,16 +2,20 @@ import { useState } from 'react';
 import styles from '../CreatePage.module.less';
 import { ChevronDownIcon } from '../../../components/icons/Icons';
 import { createProject, generateScript, isApiSuccess } from '../../../services';
-import type { CreateProjectRequest, Project } from '../../../services';
+import type { CreateProjectRequest, Project, VisualStyle } from '../../../services';
 import type { StepContentProps } from '../types';
 import ScriptGeneratingOverlay from '../components/ScriptGeneratingOverlay';
 import { useProjectStore } from '../../../stores';
+import { useTransitionOverlay } from '../CreateLayout';
 
-// 画面风格选项（与后端 CharacterStatus.visualStyle 保持一致）
+// 画面风格选项（与后端 visualStyle 保持一致）
 const visualStyleOptions = [
-  { value: '3D', label: '3D' },
-  { value: 'REAL', label: '写实' },
-  { value: 'ANIME', label: '动漫' },
+  { value: '3D', label: '3D 写实渲染' },
+  { value: 'REAL', label: '照片级写实' },
+  { value: 'ANIME', label: '日系2D动漫' },
+  { value: 'MANGA', label: '日本漫画' },
+  { value: 'INK', label: '中国水墨画' },
+  { value: 'CYBERPUNK', label: '赛博朋克' },
 ];
 
 // 目标受众选项
@@ -63,19 +67,22 @@ interface Step1ContentProps extends StepContentProps {
 /**
  * Step 1: 创意输入
  */
-const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
+const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
   // 表单状态
   const [storyIdea, setStoryIdea] = useState('');
   const [generateMode, setGenerateMode] = useState<'single' | 'series'>('single');
-  const [visualStyle, setVisualStyle] = useState('');
+  const [visualStyle, setVisualStyle] = useState<VisualStyle | ''>('');
   const [targetAudience, setTargetAudience] = useState('');
   const [totalEpisodes, setTotalEpisodes] = useState(10);
   const [episodeDuration, setEpisodeDuration] = useState('60');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+  const [generatingPhase, setGeneratingPhase] = useState<'creating' | 'generating' | 'loading'>('creating');
 
   // 使用 projectStore 存储项目数据
   const setCurrentProject = useProjectStore((state) => state.setCurrentProject);
+  // 过渡遮罩 context：生成完成后保持遮罩到 Step2 mount
+  const { showTransitionOverlay } = useTransitionOverlay();
 
   // 处理生成
   const handleGenerate = async () => {
@@ -85,12 +92,13 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
     }
 
     setIsGenerating(true);
+    setGeneratingPhase('creating');
 
     try {
       // 映射表单字段到 API 字段
       const requestData: CreateProjectRequest = {
         storyPrompt: storyIdea,
-        visualStyle,
+        visualStyle: visualStyle || undefined,
         targetAudience,
         totalEpisodes: generateMode === 'series' ? totalEpisodes : 1,
         episodeDuration: parseFloat(episodeDuration),
@@ -102,23 +110,24 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
       if (isApiSuccess(createResult) && createResult.data) {
         console.log('项目创建成功:', createResult.data);
 
-        // 获取项目 ID（优先使用 projectId，回退到 id）
-        const projectId = createResult.data.projectId || (createResult.data.id ? String(createResult.data.id) : null);
+        const projectId = createResult.data.projectId;
 
-        // 验证 id 存在
+        // 验证 projectId 存在
         if (!projectId) {
           console.error('创建成功但缺少项目 ID');
           alert('项目创建成功但缺少 ID，请重试');
           return;
         }
 
-        // 保存到 store 和 props（兼容旧的 props 传递）
-        setCurrentProject(createResult.data);
-        onProjectCreated(createResult.data);
+        // 构造 Project 对象存入 store（后端只返回 projectId）
+        const projectData: Project = { projectId };
+        setCurrentProject(projectData);
+        onProjectCreated(projectData);
 
         // 2. 自动触发剧本生成
         console.log('开始生成剧本，项目 ID:', projectId);
 
+        setGeneratingPhase('generating');
         setIsGeneratingScript(true);
         try {
           const scriptResult = await generateScript(projectId);
@@ -126,18 +135,23 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
 
           if (isApiSuccess(scriptResult)) {
             console.log('剧本生成成功');
+            // 切换到加载阶段，保持遮罩直到 Step2 接管
+            setGeneratingPhase('loading');
           } else {
             console.warn('剧本生成返回非成功状态:', scriptResult.message);
+            setGeneratingPhase('loading');
           }
         } catch (scriptError) {
           console.error('剧本生成失败:', scriptError);
           // 即使剧本生成失败，也继续流程
-        } finally {
-          setIsGeneratingScript(false);
+          setGeneratingPhase('loading');
         }
+        // 通知 CreateLayout 显示全局过渡遮罩，覆盖 Step1→Step2 的空白期
+        showTransitionOverlay();
+        setIsGeneratingScript(false);
+        // Step2 mount 后会调用 hideTransitionOverlay 接管
 
-        // 完成此步骤，进入下一步
-        onComplete?.();
+        // 不在这里主动跳转，等待状态轮询/SSE驱动步骤切换
       } else {
         console.error('创建失败:', createResult.message);
         alert(`创建失败: ${createResult.message}`);
@@ -220,7 +234,7 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
               id="visual-style"
               className={styles.select}
               value={visualStyle}
-              onChange={(e) => setVisualStyle(e.target.value)}
+              onChange={(e) => setVisualStyle(e.target.value as VisualStyle)}
             >
               <option value="" disabled>
                 Select Option
@@ -310,8 +324,8 @@ const Step1Content = ({ onComplete, onProjectCreated }: Step1ContentProps) => {
 
       {/* 剧本生成加载遮罩 */}
       <ScriptGeneratingOverlay
-        isVisible={isGeneratingScript}
-        message="AI 正在根据您的创意生成剧本，这可能需要几秒到几分钟时间..."
+        isVisible={isGenerating || isGeneratingScript}
+        phase={generatingPhase}
       />
     </div>
   );

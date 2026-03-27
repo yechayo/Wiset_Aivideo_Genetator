@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronDownIcon, ChevronRightIcon } from '../../../../components/icons/Icons';
 import styles from './OutlineEditor.module.less';
 
 interface OutlineEditorProps {
@@ -15,7 +16,7 @@ interface OutlineEditorProps {
 const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }: OutlineEditorProps) => {
   const [content, setContent] = useState(outline);
   const [isEditing, setIsEditing] = useState(false);
-  const [isPreview, setIsPreview] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
 
   const handleDirectSave = () => {
     onSaveDirect?.(content);
@@ -34,19 +35,17 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }
     setIsEditing(false);
   };
 
-  const handleEdit = () => {
-    setIsEditing(true);
-    setIsPreview(false);
-  };
-
   return (
     <div className={styles.outlineEditor}>
       {/* 工具栏 */}
-      <div className={styles.toolbar}>
+      <div className={styles.toolbar} onClick={() => !isEditing && setCollapsed(!collapsed)}>
         <div className={styles.toolbarLeft}>
+          <button className={styles.collapseButton} onClick={() => setCollapsed(!collapsed)}>
+            {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
+          </button>
           <h3 className={styles.title}>剧本大纲</h3>
         </div>
-        <div className={styles.toolbarRight}>
+        <div className={styles.toolbarRight} onClick={(e) => e.stopPropagation()}>
           {!readOnly && (
             <>
               {isEditing ? (
@@ -71,26 +70,14 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }
                   </button>
                 </>
               ) : (
-                <>
-                  <button
-                    className={`${styles.viewButton} ${!isPreview ? styles.active : ''}`}
-                    onClick={() => setIsPreview(false)}
-                  >
-                    编辑
-                  </button>
-                  <button
-                    className={`${styles.viewButton} ${isPreview ? styles.active : ''}`}
-                    onClick={() => setIsPreview(true)}
-                  >
-                    预览
-                  </button>
+                !collapsed && (
                   <button
                     className={styles.editButton}
-                    onClick={handleEdit}
+                    onClick={() => setIsEditing(true)}
                   >
                     修改大纲
                   </button>
-                </>
+                )
               )}
             </>
           )}
@@ -98,32 +85,25 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }
       </div>
 
       {/* 内容区域 */}
-      <div className={styles.contentArea}>
-        {isEditing ? (
-          <textarea
-            className={styles.textarea}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="输入剧本大纲..."
-          />
-        ) : (
-          <div className={styles.preview}>
-            {isPreview ? (
+      {!collapsed && (
+        <div className={styles.contentArea}>
+          {isEditing ? (
+            <textarea
+              className={styles.textarea}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="输入剧本大纲..."
+            />
+          ) : (
+            <div className={styles.preview}>
               <div
                 className={styles.markdownContent}
                 dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
               />
-            ) : (
-              <textarea
-                className={styles.textarea}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                readOnly={readOnly}
-              />
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

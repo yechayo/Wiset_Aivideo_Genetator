@@ -5,6 +5,7 @@
 import { get, post, patch } from './apiClient';
 import type {
   CreateProjectRequest,
+  CreateProjectResponse,
   Episode,
   GenerateEpisodesRequest,
   GenerateScriptResponse,
@@ -15,62 +16,26 @@ import type {
   ReviseScriptResponse,
   ScriptContentResponse
 } from './types/project.types';
-import type { ApiResponse } from './types/auth.types';
-
-// Mock 模式开关（可通过环境变量控制）
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true' || false;
-
-/**
- * Mock 数据：创建项目响应
- */
-function mockCreateProject(data: CreateProjectRequest): Promise<ApiResponse<Project>> {
-  // 模拟延迟
-  return new Promise<ApiResponse<Project>>((resolve) => {
-    setTimeout(() => {
-      resolve({
-        code: 0,
-        message: '创建成功',
-        data: {
-          id: Math.floor(Math.random() * 10000) + 1,
-          storyPrompt: data.storyPrompt,
-          genre: data.genre || '',
-          visualStyle: data.visualStyle || '3D',
-          targetAudience: data.targetAudience,
-          totalEpisodes: data.totalEpisodes,
-          episodeDuration: data.episodeDuration,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      });
-    }, 1000); // 模拟 1 秒延迟
-  });
-}
+import type { ApiResponse, PaginatedResponse } from './types/auth.types';
 
 /**
  * 创建项目
- * @param data 项目信息
- * @returns 创建响应，包含项目信息
  */
-export async function createProject(data: CreateProjectRequest): Promise<ApiResponse<Project>> {
-  // Mock 模式下返回模拟数据
-  if (USE_MOCK) {
-    return mockCreateProject(data);
-  }
-
-  return post<ApiResponse<Project>>('/api/projects', data);
+export async function createProject(data: CreateProjectRequest): Promise<ApiResponse<CreateProjectResponse>> {
+  return post<ApiResponse<CreateProjectResponse>>('/api/projects', data);
 }
 
 /**
- * 修订/接受脚本
+ * AI 重新生成大纲（修改剧本）
  * @param projectId 项目ID
- * @param data 修订参数
+ * @param data 修改意见和当前大纲
  * @returns 修订响应
  */
 export async function reviseScript(
   projectId: string,
   data: ReviseScriptRequest
-): Promise<ApiResponse<ReviseScriptResponse>> {
-  return post<ApiResponse<ReviseScriptResponse>>(`/api/projects/${projectId}/revise-script`, data);
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/script/revise`, data);
 }
 
 /**
@@ -79,7 +44,7 @@ export async function reviseScript(
  * @returns 生成响应
  */
 export async function generateScript(projectId: string): Promise<ApiResponse<GenerateScriptResponse>> {
-  return post<ApiResponse<GenerateScriptResponse>>(`/api/projects/${projectId}/generate-script`);
+  return post<ApiResponse<GenerateScriptResponse>>(`/api/projects/${projectId}/script/generate`);
 }
 
 /**
@@ -101,7 +66,7 @@ export async function generateEpisodes(
   projectId: string,
   data: GenerateEpisodesRequest
 ): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(`/api/projects/${projectId}/generate-episodes`, data);
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/script/episodes/generate`, data);
 }
 
 /**
@@ -110,7 +75,7 @@ export async function generateEpisodes(
  * @returns 确认响应
  */
 export async function confirmScript(projectId: string): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(`/api/projects/${projectId}/confirm-script`);
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/script/confirm`);
 }
 
 /**
@@ -122,7 +87,7 @@ export async function updateScriptOutline(
   projectId: string,
   outline: string
 ): Promise<ApiResponse<void>> {
-  return patch<ApiResponse<void>>(`/api/projects/${projectId}/script-outline`, { outline });
+  return patch<ApiResponse<void>>(`/api/projects/${projectId}/script/outline`, { outline });
 }
 
 /**
@@ -132,15 +97,22 @@ export async function updateScriptOutline(
 export async function generateAllEpisodes(
   projectId: string
 ): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(`/api/projects/${projectId}/generate-all-episodes`);
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/script/episodes/generate-all`);
 }
 
 /**
- * 获取项目列表
- * @returns 项目列表
+ * 获取项目列表（分页）
  */
-export async function getProjects(): Promise<ApiResponse<ProjectListItem[]>> {
-  return get<ApiResponse<ProjectListItem[]>>('/api/projects');
+export interface GetProjectsParams {
+  status?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  page?: number;
+  size?: number;
+}
+
+export async function getProjects(params?: GetProjectsParams): Promise<ApiResponse<PaginatedResponse<ProjectListItem>>> {
+  return get<ApiResponse<PaginatedResponse<ProjectListItem>>>('/api/projects', { params });
 }
 
 /**
@@ -167,11 +139,12 @@ export async function getProjectStatus(projectId: string): Promise<ApiResponse<P
  * @param event 事件名称
  * @returns 推进响应
  */
-export async function advancePipeline(
+export async function advanceStatus(
   projectId: string,
-  event: string
+  direction: 'forward' | 'backward',
+  event?: string
 ): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(`/api/projects/${projectId}/advance`, { event });
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/status/advance`, { direction, event });
 }
 
 // ================= 分镜流程 API =================

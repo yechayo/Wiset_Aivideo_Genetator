@@ -2,15 +2,24 @@
  * 角色相关 API 服务
  */
 
-import { get, post, put } from './apiClient';
-import type { ApiResponse } from './types/auth.types';
-import type { CharacterDraft, CharacterStatus } from './types/project.types';
+import { get, post, put, del } from './apiClient';
+import type { ApiResponse, PaginatedResponse } from './types/auth.types';
+import type { CharacterDraft, CharacterListItem, CharacterStatus } from './types/project.types';
+
+export interface GetCharactersParams {
+  page?: number;
+  size?: number;
+  role?: string;
+  name?: string;
+}
 
 /**
- * 获取项目角色列表
+ * 获取项目角色列表（分页）
  */
-export async function getCharacters(projectId: string): Promise<ApiResponse<CharacterDraft[]>> {
-  return get<ApiResponse<CharacterDraft[]>>(`/api/characters?projectId=${projectId}`);
+export async function getCharacters(projectId: string, params?: GetCharactersParams): Promise<ApiResponse<PaginatedResponse<CharacterListItem>>> {
+  return get<ApiResponse<PaginatedResponse<CharacterListItem>>>(`/api/projects/${projectId}/characters`, {
+    params: { page: 1, size: 10, ...params },
+  });
 }
 
 /**
@@ -24,42 +33,69 @@ export async function extractCharacters(projectId: string): Promise<ApiResponse<
  * 编辑角色信息
  */
 export async function updateCharacter(
+  projectId: string,
   charId: string,
-  data: Partial<CharacterDraft>
+  data: Partial<CharacterListItem>
 ): Promise<ApiResponse<void>> {
-  return put<ApiResponse<void>>(`/api/characters/${charId}`, data);
+  return put<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}`, data);
+}
+
+/**
+ * 删除角色（逻辑删除）
+ */
+export async function deleteCharacter(
+  projectId: string,
+  charId: string,
+): Promise<ApiResponse<void>> {
+  return del<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}`);
 }
 
 /**
  * 确认所有角色
  */
 export async function confirmCharacters(projectId: string): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>('/api/characters/confirm', { projectId });
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/confirm`);
 }
 
 /**
- * 获取角色生成状态
+ * 获取角色生成状态详情
  */
-export async function getCharacterStatus(charId: string): Promise<ApiResponse<CharacterStatus>> {
-  return get<ApiResponse<CharacterStatus>>(`/api/characters/${charId}/status`);
+export async function getCharacterStatus(projectId: string, charId: string): Promise<ApiResponse<CharacterStatus>> {
+  return get<ApiResponse<CharacterStatus>>(`/api/projects/${projectId}/characters/${charId}`);
 }
 
 /**
  * 一键生成角色图片（表情 + 三视图）
  */
-export async function generateAllImages(charId: string): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(`/api/characters/${charId}/generate-all`);
+export async function generateAllImages(projectId: string, charId: string): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}/generate/all`);
+}
+
+/**
+ * 生成单项图片（表情 或 三视图）
+ */
+export async function generateImage(
+  projectId: string,
+  charId: string,
+  type: 'expression' | 'threeView'
+): Promise<ApiResponse<void>> {
+  const path = type === 'expression'
+    ? `/api/projects/${projectId}/characters/${charId}/generate/expression`
+    : `/api/projects/${projectId}/characters/${charId}/generate/three-view`;
+  return post<ApiResponse<void>>(path);
 }
 
 /**
  * 重试生成
- * @param type 'expression' 或 'threeView'
+ * @param type 'expression' 或 'threeview'
  */
 export async function retryGeneration(
+  projectId: string,
   charId: string,
   type: 'expression' | 'threeView'
 ): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(`/api/characters/${charId}/retry/${type}`);
+  const apiType = type === 'expression' ? 'expression' : 'threeview';
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}/retry/${apiType}`);
 }
 
 /**
