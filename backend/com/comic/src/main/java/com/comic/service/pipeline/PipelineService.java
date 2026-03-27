@@ -59,6 +59,10 @@ public class PipelineService implements StageCompletionCallback {
     @Autowired
     private PanelGenerationService panelGenerationService;
 
+    @Lazy
+    @Autowired
+    private com.comic.service.production.PanelProductionService panelProductionService;
+
     /** 自引用，用于异步线程中调用 advancePipeline（绕过 Spring 代理） */
     @Lazy
     @Autowired
@@ -180,6 +184,18 @@ public class PipelineService implements StageCompletionCallback {
         if (next == null) {
             log.warn("Illegal transition rejected: projectId={}, current={}, event={}", projectId, current, event);
             throw new BusinessException("非法状态转换: " + current.getCode() + " + " + event);
+        }
+
+        // Gate: verify project has producible panels before entering PRODUCING
+        if ("all_panels_confirmed".equals(event)) {
+            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+            int totalPanels = 0;
+            for (Episode ep : episodes) {
+                totalPanels += panelRepository.findByEpisodeId(ep.getId()).size();
+            }
+            if (totalPanels == 0) {
+                throw new BusinessException("没有可生产的分镜，请先完成分镜生成");
+            }
         }
 
         String oldStatus = project.getStatus();
@@ -446,10 +462,10 @@ public class PipelineService implements StageCompletionCallback {
                 return;
             }
 
-            // 所有 Panel 完成 → 项目自动完成
+            // 所有 Panel 完成 → 等待编排器触发 production_completed 持久化
             if (completedPanels == totalPanels) {
-                dto.setStatusCode(ProjectStatus.COMPLETED.getCode());
-                dto.setStatusDescription("Completed");
+                dto.setStatusCode("PRODUCING");
+                dto.setStatusDescription("All panels completed, finalizing...");
                 dto.setGenerating(false);
                 dto.setProductionProgress(100);
                 return;
@@ -674,6 +690,12 @@ public class PipelineService implements StageCompletionCallback {
                 break;
 
             case PRODUCING:
+                // Auto-start strict-serial production orchestrator
+                try {
+                    panelProductionService.startOrResume(projectId);
+                } catch (Exception e) {
+                    log.error("Failed to start production orchestrator: projectId={}", projectId, e);
+                }
                 break;
 
             default:
