@@ -174,8 +174,8 @@ class PanelProductionOrchestratorTest {
         panelProductionService.startOrResume("proj-dbl");
         verify(pipelineService, times(1)).advancePipeline("proj-dbl", "production_completed");
 
-        // Second call: project status is now COMPLETED (not PRODUCING), so startOrResume returns early
-        project.setStatus(ProjectStatus.COMPLETED.getCode());
+        // Second call: project status is now VIDEO_ASSEMBLING (not PRODUCING), so startOrResume returns early
+        project.setStatus(ProjectStatus.VIDEO_ASSEMBLING.getCode());
         panelProductionService.startOrResume("proj-dbl");
         // Should still be only 1 call (idempotent)
         verify(pipelineService, times(1)).advancePipeline("proj-dbl", "production_completed");

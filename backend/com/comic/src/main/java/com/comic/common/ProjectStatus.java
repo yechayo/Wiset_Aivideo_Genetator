@@ -46,8 +46,12 @@ public enum ProjectStatus {
     PANEL_REVIEW("PANEL_REVIEW", "分镜审核", 5),
     PANEL_GENERATING_FAILED("PANEL_GENERATING_FAILED", "分镜生成失败", 5),
 
-    // 生产阶段
-    PRODUCING("PRODUCING", "生产中", 6),
+    // 生产阶段（逐 Panel 视频生产，属于分镜阶段的一部分）
+    PRODUCING("PRODUCING", "生产中", 5),
+
+    // 拼接剪辑阶段
+    VIDEO_ASSEMBLING("VIDEO_ASSEMBLING", "拼接剪辑中", 6),
+
     COMPLETED("COMPLETED", "已完成", 6);
 
     /** 状态码 */
@@ -143,8 +147,11 @@ public enum ProjectStatus {
         put(map, PANEL_REVIEW, "revise_panels", PANEL_GENERATING);
         put(map, PANEL_GENERATING_FAILED, "retry", ASSET_LOCKED);
 
-        // 生产 → 完成
-        put(map, PRODUCING, "production_completed", COMPLETED);
+        // 生产 → 拼接剪辑
+        put(map, PRODUCING, "production_completed", VIDEO_ASSEMBLING);
+
+        // 拼接剪辑 → 完成
+        put(map, VIDEO_ASSEMBLING, "assembly_completed", COMPLETED);
 
         ALLOWED_TRANSITIONS = Collections.unmodifiableMap(map);
     }
@@ -196,7 +203,7 @@ public enum ProjectStatus {
         }
         // 当前步骤处于确认态时，当前步骤也算完成
         if (this == SCRIPT_CONFIRMED || this == CHARACTER_CONFIRMED || this == ASSET_LOCKED
-                || this == COMPLETED || this == PANEL_REVIEW) {
+                || this == COMPLETED || this == PANEL_REVIEW || this == VIDEO_ASSEMBLING) {
             steps.add(current);
         }
         return steps;
@@ -236,6 +243,8 @@ public enum ProjectStatus {
             case PANEL_REVIEW:
                 return Arrays.asList("confirm_panels", "revise_panels");
             case PRODUCING:
+                return Arrays.asList();
+            case VIDEO_ASSEMBLING:
                 return Arrays.asList();
             case COMPLETED:
                 return Arrays.asList("view_result");

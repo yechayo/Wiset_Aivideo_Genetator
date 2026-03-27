@@ -266,8 +266,10 @@ public class PipelineService implements StageCompletionCallback {
                 return ProjectStatus.PANEL_GENERATING;
             case PRODUCING:
                 return ProjectStatus.PANEL_REVIEW;
-            case COMPLETED:
+            case VIDEO_ASSEMBLING:
                 return ProjectStatus.PRODUCING;
+            case COMPLETED:
+                return ProjectStatus.VIDEO_ASSEMBLING;
             default:
                 return null;
         }
@@ -317,8 +319,9 @@ public class PipelineService implements StageCompletionCallback {
             case PANEL_GENERATING:
             case PANEL_REVIEW:
             case PRODUCING:
-                // 回滚 PRODUCING 时释放生产锁
-                if (from == ProjectStatus.PRODUCING && stringRedisTemplate != null) {
+            case VIDEO_ASSEMBLING:
+                // 回滚 PRODUCING/VIDEO_ASSEMBLING 时释放生产锁
+                if ((from == ProjectStatus.PRODUCING || from == ProjectStatus.VIDEO_ASSEMBLING) && stringRedisTemplate != null) {
                     try {
                         stringRedisTemplate.delete("lock:production:" + projectId);
                     } catch (Exception e) {
@@ -388,6 +391,10 @@ public class PipelineService implements StageCompletionCallback {
 
         if (status == ProjectStatus.PRODUCING) {
             enrichProducingStatus(dto, projectId);
+        } else if (status == ProjectStatus.VIDEO_ASSEMBLING) {
+            dto.setStatusCode("VIDEO_ASSEMBLING");
+            dto.setStatusDescription("视频拼接剪辑中");
+            dto.setGenerating(true);
         } else if (status == ProjectStatus.PANEL_GENERATING
                 || status == ProjectStatus.PANEL_REVIEW
                 || status == ProjectStatus.PANEL_GENERATING_FAILED) {
@@ -788,6 +795,11 @@ public class PipelineService implements StageCompletionCallback {
                 } catch (Exception e) {
                     log.error("Failed to start production orchestrator: projectId={}", projectId, e);
                 }
+                break;
+
+            case VIDEO_ASSEMBLING:
+                // 自动开始拼接编排（预留，后续实现拼接服务后接入）
+                log.info("Video assembling started: projectId={}", projectId);
                 break;
 
             default:

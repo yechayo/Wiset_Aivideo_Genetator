@@ -5,10 +5,12 @@ import com.comic.dto.model.WorldConfigModel;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 分镜 prompt 构建器
  * 两步生成：Step1 规划 panel 列表 → Step2 逐个细化 panel 详情
+ * 生产阶段：背景图 / 四宫格漫画 / 视频的 prompt 构建
  */
 @Component
 public class PanelPromptBuilder {
@@ -197,5 +199,184 @@ public class PanelPromptBuilder {
                     + "不要省略必需嵌套字段。";
         }
         return systemPrompt;
+    }
+
+    // ================= 生产阶段：背景图 / 四宫格 / 视频 =================
+
+    /**
+     * 场景风格前缀（纯风格，不含具体场景内容）
+     */
+    public String buildSceneStylePrefix(CharacterPromptManager.VisualStyle style) {
+        switch (style) {
+            case REAL:
+                return "写实风格，电影级摄影质感，8K超高清分辨率，专业摄影级别，" +
+                       "自然光效，体积光，柔和阴影，景深效果，色彩真实。";
+            case D_3D:
+                return "3D渲染风格，Octane渲染，光线追踪，全局光照，8K超高清分辨率，" +
+                       "影棚灯光，HDRI环境光，环境光遮蔽，PBR材质质感。";
+            case ANIME:
+            case MANGA:
+                return "日系动漫风格，动漫背景艺术，高质量，杰作级别，精细插画，" +
+                       "柔光效果，轮廓光，色彩鲜艳丰富，干净线条，清晰轮廓。";
+            case INK:
+                return "中国水墨画风格，水墨写意，高质量，杰作级别，精细插画，" +
+                       "柔光效果，意境深远，墨色浓淡有致。";
+            case CYBERPUNK:
+                return "赛博朋克动漫风格，霓虹灯光，未来感，高质量，杰作级别，精细插画，" +
+                       "柔光效果，轮廓光，色彩鲜艳丰富，暗色调对比。";
+            default:
+                return "高质量，杰作级别，精细插画，柔光效果，色彩鲜艳。";
+        }
+    }
+
+    /**
+     * 构建背景图提示词（纯背景，无角色，中文）
+     * 结构：风格前缀 + 场景描述 + 背景专用指令
+     */
+    public String buildBackgroundPrompt(CharacterPromptManager.VisualStyle style, Map<String, Object> panelInfo) {
+        if (panelInfo == null) return "";
+
+        String stylePrefix = buildSceneStylePrefix(style);
+
+        // 场景内容
+        String sceneDesc = null;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> bg = (Map<String, Object>) panelInfo.get("background");
+        if (bg != null) {
+            sceneDesc = getStr(bg, "scene_desc");
+        }
+        String timeOfDay = bg != null ? getStr(bg, "time_of_day") : null;
+        String atmosphere = bg != null ? getStr(bg, "atmosphere") : null;
+
+        if (sceneDesc == null || sceneDesc.isEmpty()) {
+            sceneDesc = getStr(panelInfo, "sceneDescription");
+        }
+        if (sceneDesc == null || sceneDesc.isEmpty()) return "";
+
+        StringBuilder prompt = new StringBuilder();
+        prompt.append(stylePrefix);
+        prompt.append(sceneDesc);
+
+        if (atmosphere != null && !atmosphere.isEmpty()) {
+            prompt.append("，").append(atmosphere).append("的氛围");
+        }
+        if (timeOfDay != null && !timeOfDay.isEmpty()) {
+            prompt.append("，").append(timeOfDay).append("时分的自然光效");
+        }
+
+        prompt.append("。纯场景背景，不包含任何人物角色。广角横屏构图，电影级景深，画面层次分明。");
+
+        return prompt.toString();
+    }
+
+    /**
+     * 构建四宫格漫画提示词（参考图生图，中文）
+     */
+    public String buildComicPrompt(Map<String, Object> panelInfo) {
+        if (panelInfo == null) return "";
+
+        StringBuilder prompt = new StringBuilder();
+
+        String sceneDesc = getStr(panelInfo, "sceneDescription");
+        if (sceneDesc != null && !sceneDesc.isEmpty()) {
+            prompt.append(sceneDesc);
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> characters = (List<Map<String, Object>>) panelInfo.get("characters");
+        if (characters != null && !characters.isEmpty()) {
+            if (prompt.length() > 0) prompt.append("。");
+            prompt.append("画面中的角色：");
+            for (Map<String, Object> ch : characters) {
+                String pose = ch.get("pose") != null ? ch.get("pose").toString() : null;
+                String expression = ch.get("expression") != null ? ch.get("expression").toString() : null;
+                String position = ch.get("position") != null ? ch.get("position").toString() : null;
+                if (pose != null) prompt.append(pose);
+                if (position != null) prompt.append("，位于").append(position);
+                if (expression != null) prompt.append("，").append(expression).append("表情");
+                prompt.append("；");
+            }
+        }
+
+        prompt.append("保持参考图的背景风格和场景布局不变。");
+        prompt.append("生成2行2列四宫格漫画，共4个连续分镜画面，每个格子标注序号(1,2,3,4)。");
+        prompt.append("高质量动漫风格，画面精细。");
+
+        return prompt.toString();
+    }
+
+    /**
+     * 构建视频生成提示词（中文）
+     * 结构：风格前缀 + 画面内容 + 镜头语言 + 角色动作
+     */
+    public String buildVideoPrompt(CharacterPromptManager.VisualStyle style, Map<String, Object> panelInfo) {
+        if (panelInfo == null) return "";
+
+        String stylePrefix = buildSceneStylePrefix(style);
+        StringBuilder prompt = new StringBuilder();
+
+        String sceneDesc = getStr(panelInfo, "sceneDescription");
+        if (sceneDesc != null && !sceneDesc.isEmpty()) {
+            prompt.append(sceneDesc).append("。");
+        }
+
+        // 镜头语言
+        String shotType = getStr(panelInfo, "shot_type");
+        String cameraAngle = getStr(panelInfo, "camera_angle");
+        String pacing = getStr(panelInfo, "pacing");
+
+        if (shotType != null) {
+            switch (shotType) {
+                case "WIDE_SHOT": prompt.append("远景，展示完整场景。"); break;
+                case "MID_SHOT": prompt.append("中景，聚焦角色半身。"); break;
+                case "CLOSE_UP": prompt.append("特写，聚焦面部细节。"); break;
+                case "OVER_SHOULDER": prompt.append("过肩镜头。"); break;
+                default: break;
+            }
+        }
+
+        if (cameraAngle != null) {
+            switch (cameraAngle) {
+                case "eye_level": prompt.append("平视角度。"); break;
+                case "low_angle": prompt.append("低角度仰拍。"); break;
+                case "high_angle": prompt.append("高角度俯拍。"); break;
+                case "bird_eye": prompt.append("鸟瞰俯视视角。"); break;
+                default: break;
+            }
+        }
+
+        if (pacing != null) {
+            switch (pacing) {
+                case "slow": prompt.append("缓慢、从容的运动节奏。"); break;
+                case "fast": prompt.append("快速、充满动感的运动节奏。"); break;
+                default: prompt.append("自然平稳的运动节奏。"); break;
+            }
+        }
+
+        // 角色动作
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> characters = (List<Map<String, Object>>) panelInfo.get("characters");
+        if (characters != null && !characters.isEmpty()) {
+            prompt.append("角色动作：");
+            for (Map<String, Object> ch : characters) {
+                String pose = ch.get("pose") != null ? ch.get("pose").toString() : null;
+                String expression = ch.get("expression") != null ? ch.get("expression").toString() : null;
+                if (pose != null) prompt.append(pose);
+                if (expression != null) prompt.append("，").append(expression).append("表情");
+                prompt.append("；");
+            }
+        }
+
+        prompt.append(stylePrefix);
+        prompt.append("流畅的动画效果，自然的镜头运动。");
+
+        return prompt.toString();
+    }
+
+    // ================= 辅助方法 =================
+
+    private String getStr(Map<String, Object> info, String key) {
+        Object v = info.get(key);
+        return v != null ? v.toString() : null;
     }
 }

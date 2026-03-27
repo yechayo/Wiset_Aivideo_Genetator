@@ -1,5 +1,6 @@
 package com.comic.service.panel;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.comic.common.BusinessException;
 import com.comic.dto.request.PanelCreateRequest;
 import com.comic.dto.request.PanelUpdateRequest;
@@ -8,7 +9,10 @@ import com.comic.entity.Episode;
 import com.comic.entity.Panel;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,10 +22,12 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PanelService {
 
     private final PanelRepository panelRepository;
     private final EpisodeRepository episodeRepository;
+    private final ObjectMapper objectMapper;
 
     private Episode validateEpisodeOwnership(String projectId, Long episodeId) {
         Episode episode = episodeRepository.findByProjectIdAndId(projectId, episodeId);
@@ -88,6 +94,38 @@ public class PanelService {
             throw new BusinessException("分镜不存在");
         }
         panelRepository.deleteById(panelId);
+    }
+
+    @Transactional
+    public void savePanelsFromGeneration(Long episodeId, String panelJson) {
+        try {
+            Map<String, Object> root = objectMapper.readValue(panelJson, new TypeReference<Map<String, Object>>() {});
+            List<Map<String, Object>> panels = (List<Map<String, Object>>) root.get("panels");
+            if (panels == null || panels.isEmpty()) {
+                log.warn("Panel JSON has no panels: episodeId={}", episodeId);
+                return;
+            }
+
+            // 删除该 episode 下旧的 Panel（逻辑删除）
+            List<Panel> oldPanels = panelRepository.findByEpisodeId(episodeId);
+            for (Panel old : oldPanels) {
+                panelRepository.deleteById(old.getId());
+            }
+
+            // 批量创建新 Panel
+            for (Map<String, Object> panelData : panels) {
+                Panel panel = new Panel();
+                panel.setEpisodeId(episodeId);
+                panel.setStatus("CREATED");
+                panel.setPanelInfo(panelData);
+                panelRepository.insert(panel);
+            }
+
+            log.info("Saved {} panels from generation: episodeId={}", panels.size(), episodeId);
+        } catch (Exception e) {
+            log.error("Failed to save panels from generation: episodeId={}", episodeId, e);
+            throw new BusinessException("保存分镜数据失败: " + e.getMessage());
+        }
     }
 
     private PanelListItemResponse toListItemResponse(Panel panel) {

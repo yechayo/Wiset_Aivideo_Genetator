@@ -48,8 +48,8 @@ public class CharacterService {
     }
 
     @CacheEvict(value = "characterStates", key = "#projectId")
-    public void updateStatesFromStoryboard(String projectId, JsonNode storyboardJson) {
-        JsonNode panels = storyboardJson.get("panels");
+    public void updateStatesFromPanelJson(String projectId, JsonNode panelJson) {
+        JsonNode panels = panelJson.get("panels");
         if (panels == null || !panels.isArray() || panels.size() == 0) {
             return;
         }

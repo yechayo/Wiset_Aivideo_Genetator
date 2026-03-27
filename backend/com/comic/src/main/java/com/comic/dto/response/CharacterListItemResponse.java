@@ -15,6 +15,7 @@ public class CharacterListItemResponse {
     private String personality;
     private String voice;
     private String appearance;
+    private String background;
     private String visualStyle;
     private String expressionStatus;
     private String threeViewStatus;

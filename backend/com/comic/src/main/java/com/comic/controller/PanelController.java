@@ -321,8 +321,9 @@ public class PanelController {
      */
     private void guardPanelNotInProduction(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
-        if (project != null && ProjectStatus.PRODUCING.getCode().equals(project.getStatus())) {
-            throw new BusinessException("当前项目正在生产中，无法变更分镜");
+        if (project != null && (ProjectStatus.PRODUCING.getCode().equals(project.getStatus())
+                || ProjectStatus.VIDEO_ASSEMBLING.getCode().equals(project.getStatus()))) {
+            throw new BusinessException("当前项目正在生产或拼接中，无法变更分镜");
         }
     }
 }

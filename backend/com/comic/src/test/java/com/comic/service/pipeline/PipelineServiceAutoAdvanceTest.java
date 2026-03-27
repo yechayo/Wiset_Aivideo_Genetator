@@ -149,8 +149,12 @@ class PipelineServiceAutoAdvanceTest {
         // When: User confirms the images
         try {
             pipelineService.advancePipeline("test-project-3", "confirm_images");
+            // startPanelGeneration is invoked inside CompletableFuture.runAsync — wait for async thread
+            Thread.sleep(200);
         } catch (BusinessException e) {
             fail("Should not throw exception: " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
 
         // Then: Verify panel generation was auto-triggered
@@ -161,7 +165,7 @@ class PipelineServiceAutoAdvanceTest {
     }
 
     @Test
-    void production_completed_should_transition_to_completed() {
+    void production_completed_should_transition_to_video_assembling() {
         // Setup: Create a project in PRODUCING state
         Project project = createTestProject("test-project-4");
         project.setStatus(ProjectStatus.PRODUCING.getCode());
@@ -176,6 +180,34 @@ class PipelineServiceAutoAdvanceTest {
             fail("Should not throw exception: " + e.getMessage());
         }
 
+        // Then: Status should transition to VIDEO_ASSEMBLING
+        ArgumentCaptor<Project> projectCaptor = ArgumentCaptor.forClass(Project.class);
+        verify(projectRepository, times(1)).updateById(projectCaptor.capture());
+        Project updatedProject = projectCaptor.getValue();
+
+        assertEquals(
+            ProjectStatus.VIDEO_ASSEMBLING.getCode(),
+            updatedProject.getStatus(),
+            "After production completes, project should be in VIDEO_ASSEMBLING state"
+        );
+    }
+
+    @Test
+    void assembly_completed_should_transition_to_completed() {
+        // Setup: Create a project in VIDEO_ASSEMBLING state
+        Project project = createTestProject("test-project-6");
+        project.setStatus(ProjectStatus.VIDEO_ASSEMBLING.getCode());
+
+        when(projectRepository.findByProjectId("test-project-6")).thenReturn(project);
+        when(projectRepository.updateById(any(Project.class))).thenReturn(1);
+
+        // When: Assembly is completed
+        try {
+            pipelineService.advancePipeline("test-project-6", "assembly_completed");
+        } catch (BusinessException e) {
+            fail("Should not throw exception: " + e.getMessage());
+        }
+
         // Then: Status should transition to COMPLETED
         ArgumentCaptor<Project> projectCaptor = ArgumentCaptor.forClass(Project.class);
         verify(projectRepository, times(1)).updateById(projectCaptor.capture());
@@ -184,7 +216,7 @@ class PipelineServiceAutoAdvanceTest {
         assertEquals(
             ProjectStatus.COMPLETED.getCode(),
             updatedProject.getStatus(),
-            "After production completes, project should be in COMPLETED state"
+            "After assembly completes, project should be in COMPLETED state"
         );
     }
 

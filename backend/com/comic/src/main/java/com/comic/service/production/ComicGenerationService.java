@@ -1,5 +1,6 @@
 package com.comic.service.production;
 
+import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.dto.response.ComicStatusResponse;
@@ -20,6 +21,7 @@ import java.util.Map;
 public class ComicGenerationService {
 
     private final PanelRepository panelRepository;
+    private final PanelPromptBuilder panelPromptBuilder;
     private final ImageGenerationService imageGenerationService;
     private final ApplicationContext applicationContext;
 
@@ -45,6 +47,7 @@ public class ComicGenerationService {
     }
 
     public void generateComic(Long panelId) {
+        checkNotGenerating(panelId, "comicStatus", "四宫格漫画");
         self().doGenerateComic(panelId);
     }
 
@@ -59,9 +62,8 @@ public class ComicGenerationService {
             info.put("comicStatus", "generating");
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
-            String sceneDesc = getStr(info, "sceneDescription");
-            String prompt = buildComicPrompt(sceneDesc);
-            String comicUrl = imageGenerationService.generateWithReference(prompt, bgUrl, 1280, 720);
+            String prompt = panelPromptBuilder.buildComicPrompt(panel.getPanelInfo());
+            String comicUrl = imageGenerationService.generateWithReference(prompt, bgUrl, 2848, 1600);
             info.put("comicUrl", comicUrl);
             info.put("comicStatus", "pending_review");
             info.put("errorMessage", null);
@@ -94,6 +96,7 @@ public class ComicGenerationService {
     }
 
     public void reviseComic(Long panelId, String feedback) {
+        checkNotGenerating(panelId, "comicStatus", "四宫格漫画");
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo() != null ? panel.getPanelInfo() : new HashMap<>();
@@ -104,13 +107,14 @@ public class ComicGenerationService {
         self().doGenerateComic(panelId);
     }
 
-    private String buildComicPrompt(String sceneDesc) {
-        StringBuilder prompt = new StringBuilder();
-        if (sceneDesc != null && !sceneDesc.isEmpty()) prompt.append(sceneDesc);
-        prompt.append(". Create a 2x2 comic grid layout with 4 sequential scenes, ");
-        prompt.append("with sequence numbers (1,2,3,4) marked on each cell. ");
-        prompt.append("Anime style, high quality.");
-        return prompt.toString();
+    private void checkNotGenerating(Long panelId, String statusKey, String label) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
+        Map<String, Object> info = panel.getPanelInfo();
+        String status = info != null ? getStr(info, statusKey) : null;
+        if ("generating".equals(status)) {
+            throw new BusinessException(label + "正在生成中，请稍后");
+        }
     }
 
     private String getStr(Map<String, Object> info, String key) {

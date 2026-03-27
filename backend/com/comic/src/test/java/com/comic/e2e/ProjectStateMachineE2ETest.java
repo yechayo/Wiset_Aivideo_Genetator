@@ -141,13 +141,25 @@ class ProjectStateMachineE2ETest {
     }
 
     @Test
-    @DisplayName("PRODUCING -> production_completed -> COMPLETED (persisted)")
-    void full_lifecycle_producing_to_completed() {
+    @DisplayName("PRODUCING -> production_completed -> VIDEO_ASSEMBLING (persisted)")
+    void full_lifecycle_producing_to_video_assembling() {
         Project project = createProject("e2e-4", ProjectStatus.PRODUCING);
         when(projectRepository.findByProjectId("e2e-4")).thenReturn(project);
         when(projectRepository.updateById(any(Project.class))).thenReturn(1);
 
         pipelineService.advancePipeline("e2e-4", "production_completed");
+
+        assertEquals(ProjectStatus.VIDEO_ASSEMBLING.getCode(), project.getStatus());
+    }
+
+    @Test
+    @DisplayName("VIDEO_ASSEMBLING -> assembly_completed -> COMPLETED (persisted)")
+    void full_lifecycle_video_assembling_to_completed() {
+        Project project = createProject("e2e-4b", ProjectStatus.VIDEO_ASSEMBLING);
+        when(projectRepository.findByProjectId("e2e-4b")).thenReturn(project);
+        when(projectRepository.updateById(any(Project.class))).thenReturn(1);
+
+        pipelineService.advancePipeline("e2e-4b", "assembly_completed");
 
         assertEquals(ProjectStatus.COMPLETED.getCode(), project.getStatus());
     }
@@ -206,7 +218,7 @@ class ProjectStateMachineE2ETest {
             ProjectStatus.resolveTransition(ProjectStatus.CHARACTER_REVIEW, "confirm_characters"));
         assertEquals(ProjectStatus.ASSET_LOCKED,
             ProjectStatus.resolveTransition(ProjectStatus.IMAGE_REVIEW, "confirm_images"));
-        assertEquals(ProjectStatus.COMPLETED,
+        assertEquals(ProjectStatus.VIDEO_ASSEMBLING,
             ProjectStatus.resolveTransition(ProjectStatus.PRODUCING, "production_completed"));
     }
 
@@ -221,6 +233,8 @@ class ProjectStateMachineE2ETest {
             ProjectStatus.resolveTransition(ProjectStatus.ASSET_LOCKED, "start_panels"));
         assertEquals(ProjectStatus.PRODUCING,
             ProjectStatus.resolveTransition(ProjectStatus.PANEL_REVIEW, "all_panels_confirmed"));
+        assertEquals(ProjectStatus.COMPLETED,
+            ProjectStatus.resolveTransition(ProjectStatus.VIDEO_ASSEMBLING, "assembly_completed"));
     }
 
     @Test

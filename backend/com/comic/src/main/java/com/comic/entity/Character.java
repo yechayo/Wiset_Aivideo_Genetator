@@ -15,7 +15,6 @@ public class Character {
     private Long id;
 
     private String projectId;
-    private String status;
 
     @TableLogic
     private Boolean deleted = false;

@@ -17,6 +17,9 @@ public class Panel {
     private Long episodeId;
     private String status;
 
+    @TableLogic
+    private Boolean deleted = false;
+
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> panelInfo;
 

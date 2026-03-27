@@ -27,11 +27,20 @@ class ProjectStatusTransitionTest {
     }
 
     @Test
-    void should_resolve_production_completed_to_completed() {
+    void should_resolve_production_completed_to_video_assembling() {
+        assertEquals(
+            ProjectStatus.VIDEO_ASSEMBLING,
+            ProjectStatus.resolveTransition(ProjectStatus.PRODUCING, "production_completed"),
+            "Production completion should transition to VIDEO_ASSEMBLING state"
+        );
+    }
+
+    @Test
+    void should_resolve_assembly_completed_to_completed() {
         assertEquals(
             ProjectStatus.COMPLETED,
-            ProjectStatus.resolveTransition(ProjectStatus.PRODUCING, "production_completed"),
-            "Production completion should transition to COMPLETED state"
+            ProjectStatus.resolveTransition(ProjectStatus.VIDEO_ASSEMBLING, "assembly_completed"),
+            "Assembly completion should transition to COMPLETED state"
         );
     }
 

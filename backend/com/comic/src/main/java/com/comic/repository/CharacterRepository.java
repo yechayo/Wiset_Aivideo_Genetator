@@ -17,12 +17,6 @@ public interface CharacterRepository extends BaseMapper<Character> {
             .eq(Character::getProjectId, projectId));
     }
 
-    default List<Character> findByProjectIdAndStatus(String projectId, String status) {
-        return selectList(new LambdaQueryWrapper<Character>()
-            .eq(Character::getProjectId, projectId)
-            .eq(Character::getStatus, status));
-    }
-
     default Character findByCharId(String charId) {
         return selectOne(new LambdaQueryWrapper<Character>()
             .apply("JSON_EXTRACT(character_info, '$.charId') = {0}", charId));
