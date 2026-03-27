@@ -1,9 +1,11 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import styles from './Step2page.module.less';
 import type { Project, ScriptContentResponse } from '../../../services';
 import { getScript, generateEpisodes, confirmScript, reviseScript, updateScriptOutline, generateAllEpisodes, isApiSuccess } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useProjectStore } from '../../../stores';
+import { useCreateStore } from '../../../stores/createStore';
+import { useTransitionOverlay } from '../CreateLayout';
 import OutlineEditor from './components/OutlineEditor';
 import ChapterList from './components/ChapterList';
 import GenerateEpisodesDialog from './components/GenerateEpisodesDialog';
@@ -21,37 +23,47 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   const [error, setError] = useState<string | null>(null);
 
   // 轮询相关状态
-  const maxPollingCount = 10; // 最多轮询10次
+  const maxPollingCount = 45; // 最多轮询45次（90秒），覆盖 AI 生成耗时
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 生成剧集对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isRegenerateMode, setIsRegenerateMode] = useState(false); // 是否为重新生成模式
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
 
   const getProjectId = useProjectStore((state) => state.getProjectId);
 
-  useEffect(() => {
-    const fetchScript = async (attempt: number = 0) => {
-      // 获取项目 ID（优先使用 store 中的，回退到 props 中的）
-      const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
+  // Step2 mount 时通知 CreateLayout 隐藏过渡遮罩
+  const { hideTransitionOverlay } = useTransitionOverlay();
+  // 用 ref 持有最新的 hideTransitionOverlay，避免将其加入 effect 依赖导致重复触发
+  const hideOverlayRef = useRef(hideTransitionOverlay);
+  useEffect(() => { hideOverlayRef.current = hideTransitionOverlay; });
 
-      if (!projectId) {
+  // 稳定的项目 ID —— 只在首次 mount 时计算，避免 project 对象引用变化触发 effect
+  const projectIdRef = useRef<string | null>(
+    getProjectId() || project.projectId || (project.id ? String(project.id) : null)
+  );
+
+  useEffect(() => {
+    const pid = projectIdRef.current;
+
+    const fetchScript = async (attempt: number = 0) => {
+      if (!pid) {
         setError('无法获取项目 ID');
         setIsLoading(false);
+        hideOverlayRef.current();
         return;
       }
 
-      // 如果是第一次尝试或非轮询调用，设置loading
+      // 第一次尝试时设置 loading
       if (attempt === 0) {
         setIsLoading(true);
       }
       setError(null);
 
       try {
-        const result = await getScript(projectId);
+        const result = await getScript(pid);
         console.log('剧本数据:', result);
 
         if (isApiSuccess(result) && result.data) {
@@ -62,18 +74,21 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             pollingRef.current = null;
           }
           setIsLoading(false);
+          // 数据就绪后才隐藏过渡遮罩，避免显示空白加载状态
+          hideOverlayRef.current();
         } else {
           // 无数据，检查是否需要轮询
           if (attempt < maxPollingCount) {
             // 等待2秒后重试
             pollingRef.current = setTimeout(() => {
-              fetchScript(attempt + 1); // 递归调用
+              fetchScript(attempt + 1);
             }, 2000);
-            return; // 保持loading状态
+            return; // 保持 loading 状态（过渡遮罩继续显示）
           } else {
             // 超过最大轮询次数，显示空状态
             setScriptData(null);
             setIsLoading(false);
+            hideOverlayRef.current();
             console.warn('剧本数据为空或未生成，已达到最大轮询次数');
           }
         }
@@ -84,10 +99,11 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
           pollingRef.current = setTimeout(() => {
             fetchScript(attempt + 1);
           }, 2000);
-          return; // 保持loading状态
+          return; // 保持 loading 状态（过渡遮罩继续显示）
         } else {
           setError('获取剧本失败，请稍后重试');
           setIsLoading(false);
+          hideOverlayRef.current();
         }
       }
     };
@@ -101,19 +117,54 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
         pollingRef.current = null;
       }
     };
-  }, [project, getProjectId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 只在 mount 时执行一次，projectId 通过 ref 读取
+
+  // 监听后端生成状态：isGenerating 从 true → false 时，立即重新拉取剧本数据
+  const { statusInfo } = useCreateStore();
+  const prevGeneratingRef = useRef(statusInfo?.isGenerating ?? false);
+  useEffect(() => {
+    const wasGenerating = prevGeneratingRef.current;
+    const nowGenerating = statusInfo?.isGenerating ?? false;
+    prevGeneratingRef.current = nowGenerating;
+
+    // 仅在 从 true 变为 false 时触发
+    if (wasGenerating && !nowGenerating && !scriptData) {
+      const pid = projectIdRef.current;
+      if (!pid) return;
+      setIsLoading(true);
+      getScript(pid)
+        .then((result) => {
+          if (isApiSuccess(result) && result.data) {
+            setScriptData(result.data);
+          }
+        })
+        .catch((err) => {
+          console.error('生成完成后拉取剧本失败:', err);
+        })
+        .finally(() => {
+          setIsLoading(false);
+          hideOverlayRef.current();
+        });
+    }
+  }, [statusInfo?.isGenerating, scriptData]);
+
+  // 获取当前项目 ID（用于事件处理函数）
+  const getCurrentProjectId = useCallback(() => {
+    return projectIdRef.current;
+  }, []);
 
   // 直接保存用户编辑的大纲
   const handleOutlineSaveDirect = async (content: string) => {
-    const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
-    if (!projectId) {
+    const pid = getCurrentProjectId();
+    if (!pid) {
       setError('无法获取项目 ID');
       return;
     }
     setIsLoading(true);
     try {
-      await updateScriptOutline(projectId, content);
-      const result = await getScript(projectId);
+      await updateScriptOutline(pid, content);
+      const result = await getScript(pid);
       if (isApiSuccess(result) && result.data) {
         setScriptData(result.data);
       }
@@ -127,18 +178,18 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
 
   // AI 重新生成大纲
   const handleOutlineSaveWithAI = async (content: string, revisionNote: string) => {
-    const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
-    if (!projectId) {
+    const pid = getCurrentProjectId();
+    if (!pid) {
       setError('无法获取项目 ID');
       return;
     }
     setIsLoading(true);
     try {
-      await reviseScript(projectId, {
-        revisionNote,
+      await reviseScript(pid, {
+        revisionNote: revisionNote,
         currentOutline: content
       });
-      const result = await getScript(projectId);
+      const result = await getScript(pid);
       if (isApiSuccess(result) && result.data) {
         setScriptData(result.data);
       }
@@ -157,16 +208,16 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     );
     if (!confirmed) return;
 
-    const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
-    if (!projectId) {
+    const pid = getCurrentProjectId();
+    if (!pid) {
       setError('无法获取项目 ID');
       return;
     }
     setIsBatchGenerating(true);
     setIsLoading(true);
     try {
-      await generateAllEpisodes(projectId);
-      const result = await getScript(projectId);
+      await generateAllEpisodes(pid);
+      const result = await getScript(pid);
       if (isApiSuccess(result) && result.data) {
         setScriptData(result.data);
       }
@@ -182,14 +233,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   // 处理生成剧集点击
   const handleGenerateClick = (chapter: string) => {
     setSelectedChapter(chapter);
-    setIsRegenerateMode(false);
-    setDialogOpen(true);
-  };
-
-  // 处理重新生成剧集点击
-  const handleRegenerateClick = (chapter: string) => {
-    setSelectedChapter(chapter);
-    setIsRegenerateMode(true);
     setDialogOpen(true);
   };
 
@@ -197,38 +240,28 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   const handleGenerateConfirm = async (episodeCount: number, modificationSuggestion?: string) => {
     if (!selectedChapter) return;
 
-    const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
-    if (!projectId) {
+    const pid = getCurrentProjectId();
+    if (!pid) {
       setError('无法获取项目 ID');
       return;
     }
 
     setIsGenerating(true);
     try {
-      if (isRegenerateMode) {
-        // 重新生成模式：调用 reviseScript 接口
-        await reviseScript(projectId, {
-          chapter: selectedChapter,
-          episodeCount: String(episodeCount),
-          revisionNote: modificationSuggestion || '重新生成'
-        });
-      } else {
-        // 新生成模式：调用 generateEpisodes 接口
-        await generateEpisodes(projectId, {
-          chapter: selectedChapter,
-          episodeCount,
-          modificationSuggestion
-        });
-      }
+      await generateEpisodes(pid, {
+        chapter: parseInt(selectedChapter, 10),
+        episodeCount,
+        modificationSuggestion
+      });
       // 重新获取剧本数据
-      const result = await getScript(projectId);
+      const result = await getScript(pid);
       if (isApiSuccess(result) && result.data) {
         setScriptData(result.data);
       }
       setDialogOpen(false);
     } catch (err) {
-      console.error(`${isRegenerateMode ? '重新' : ''}生成剧集失败:`, err);
-      setError(`${isRegenerateMode ? '重新' : ''}生成剧集失败，请稍后重试`);
+      console.error('生成剧集失败:', err);
+      setError('生成剧集失败，请稍后重试');
     } finally {
       setIsGenerating(false);
     }
@@ -239,8 +272,8 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     console.log('确认项目:', project);
     console.log('当前剧本:', scriptData);
 
-    const projectId = getProjectId() || project.projectId || (project.id ? String(project.id) : null);
-    if (!projectId) {
+    const pid = getCurrentProjectId();
+    if (!pid) {
       setError('无法获取项目 ID');
       return;
     }
@@ -252,7 +285,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     setIsLoading(true);
     try {
       // 调用确认剧本接口
-      await confirmScript(projectId);
+      await confirmScript(pid);
       // 完成此步骤，进入下一步
       onComplete?.();
     } catch (err) {
@@ -267,12 +300,13 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   const getProjectInfo = () => {
     if (!scriptData?.project) return null;
     const p = scriptData.project;
-    // 从 outline 中提取剧名
-    const titleMatch = scriptData.outline.match(/^# (.+)$/m);
+    // 从 outline 中提取剧名（outline 可能为 null，需要做防御判断）
+    const outline = scriptData.outline ?? '';
+    const titleMatch = outline.match(/^# (.+)$/m);
     const title = titleMatch ? titleMatch[1] : '未命名剧集';
-    const genreMatch = scriptData.outline.match(/\*\*类型\*\*:\s*(.+?)\s*\|/);
-    const genre = genreMatch ? genreMatch[1] : p.genre || '未分类';
-    const episodes = p.totalEpisodes || scriptData.chapters.length || 0;
+    const genreMatch = outline.match(/\*\*类型\*\*:\s*(.+?)\s*\|/);
+    const genre = genreMatch ? genreMatch[1] : p.projectInfo?.genre || '未分类';
+    const episodes = p.projectInfo?.totalEpisodes || scriptData.chapters.length || 0;
 
     return { title, genre, episodes };
   };
@@ -296,7 +330,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   };
 
   const getDefaultEpisodeCount = (chapterTitle: string): number => {
-    if (scriptData?.isSingleEpisode || scriptData?.project?.totalEpisodes === 1) {
+    if (scriptData?.isSingleEpisode || scriptData?.project?.projectInfo?.totalEpisodes === 1) {
       return 1;
     }
 
@@ -305,7 +339,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       return fromChapter;
     }
 
-    const fallback = scriptData?.project?.episodesPerChapter;
+    const fallback = scriptData?.project?.projectInfo?.episodesPerChapter;
     if (fallback && fallback > 0) {
       return fallback;
     }
@@ -394,7 +428,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             pendingChapters={scriptData.pendingChapters}
             episodes={scriptData.episodes}
             onGenerateClick={handleGenerateClick}
-            onRegenerateClick={handleRegenerateClick}
           />
         </div>
       )}
