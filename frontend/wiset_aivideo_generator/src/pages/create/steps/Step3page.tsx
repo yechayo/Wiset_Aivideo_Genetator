@@ -1,11 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import styles from './Step3page.module.less';
 import type { Project, CharacterListItem } from '../../../services';
+import { getCharacters, isApiSuccess } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useCreateStore } from '../../../stores/createStore';
 import {
-  getCharacters,
   extractCharacters,
   updateCharacter,
   deleteCharacter,
@@ -55,7 +55,19 @@ const Step3page = ({ project }: Step3pageProps) => {
   const [confirming, setConfirming] = useState(false);
 
   // 数据轮询相关状态
-  const maxDataPollingCount = 10;
+  const maxDataPollingCount = 45; // 覆盖 AI 生成耗时
+
+  // 监听后端生成状态：isGenerating 从 true → false 时重新拉取
+  const { statusInfo } = useCreateStore();
+  const prevGeneratingRef = useRef(statusInfo?.isGenerating ?? false);
+  useEffect(() => {
+    const was = prevGeneratingRef.current;
+    const now = statusInfo?.isGenerating ?? false;
+    prevGeneratingRef.current = now;
+    if (was && !now && characters.length === 0) {
+      fetchCharacters();
+    }
+  }, [statusInfo?.isGenerating, characters.length, fetchCharacters]);
 
   // 判断是否可提取角色
   const canExtract = canPerformAction('extract_characters');
@@ -68,7 +80,7 @@ const Step3page = ({ project }: Step3pageProps) => {
     setError('');
     try {
       const res = await getCharacters(projectId);
-      if (res.code === 200 && res.data) {
+      if (isApiSuccess(res) && res.data) {
         const items: CharacterItem[] = res.data.items.map(char => ({ char }));
         setCharacters(items);
       }
@@ -87,7 +99,7 @@ const Step3page = ({ project }: Step3pageProps) => {
       setLoading(true);
       try {
         const res = await getCharacters(projectId);
-        if (res.code === 200 && res.data && res.data.items.length > 0) {
+        if (isApiSuccess(res) && res.data && res.data.items.length > 0) {
           const items: CharacterItem[] = res.data.items.map(char => ({ char }));
           setCharacters(items);
           setLoading(false);
@@ -197,7 +209,7 @@ const Step3page = ({ project }: Step3pageProps) => {
       };
     }));
     try {
-      await setVisualStyle(charId, style);
+      await setVisualStyle(projectId, charId, style);
     } catch {
       await fetchCharacters();
     }
