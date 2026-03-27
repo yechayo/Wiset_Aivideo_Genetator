@@ -394,11 +394,11 @@
   color: var(--color-text-muted);
 }
 
-// 图片展示行（展开后两列）
+// 图片展示行（展开后：表情1:1 + 三视图9:16）
 .imageRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
 }
 
 // 卡片内状态指示
@@ -534,14 +534,53 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+
+  &.expressionItem {
+    flex-shrink: 0;
+    width: 240px;
+  }
+
+  &.threeViewItem {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 .imageLabel {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+}
+
+.imageItemHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.imageStatusTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+
+  &.tagDone {
+    background: rgba(34, 197, 94, 0.1);
+    color: #4ade80;
+  }
+
+  &.tagGenerating {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+  }
+
+  &.tagFailed {
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+  }
 }
 
 .imagePreview {
@@ -555,7 +594,8 @@
   overflow: hidden;
 
   &.threeView {
-    aspect-ratio: 2 / 3;
+    aspect-ratio: 9 / 16;
+    max-height: 420px;
   }
 
   img {
@@ -607,20 +647,55 @@
   margin-top: 12px;
 }
 
-.generateBtn {
-  padding: 8px 20px;
-  background: rgba(247, 249, 252, 0.1);
-  color: var(--color-text-primary);
-  border: 1px solid rgba(247, 249, 252, 0.15);
+.generateHint {
+  width: 100%;
+  text-align: center;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  border: 1px dashed rgba(247, 249, 252, 0.1);
+  border-radius: 8px;
+}
+
+.retryBtn {
+  width: 100%;
+  padding: 8px 0;
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.15);
   border-radius: 8px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(239, 68, 68, 0.14);
+    border-color: rgba(239, 68, 68, 0.25);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(239, 68, 68, 0.5);
+    outline-offset: 2px;
+  }
+}
+
+.generateBtn {
+  width: 100%;
+  padding: 8px 0;
+  background: rgba(247, 249, 252, 0.08);
+  color: var(--color-text-secondary);
+  border: 1px solid rgba(247, 249, 252, 0.12);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
 
   &:hover:not(:disabled) {
-    background: rgba(247, 249, 252, 0.15);
-    border-color: rgba(247, 249, 252, 0.25);
+    background: rgba(247, 249, 252, 0.14);
+    color: var(--color-text-primary);
+    border-color: rgba(247, 249, 252, 0.22);
   }
 
   &:disabled {
@@ -769,7 +844,11 @@
   }
 
   .imageRow {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .expressionItem {
+    width: 100%;
   }
 
   .characterGrid {

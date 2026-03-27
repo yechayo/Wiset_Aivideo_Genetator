@@ -13,6 +13,13 @@ interface EpisodeCardProps {
   onSegmentApprove: (episodeId: number, segmentIndex: number) => void;
   onSegmentRegenerate: (episodeId: number, segmentIndex: number, feedback: string) => void;
   onSegmentGenerateVideo: (episodeId: number, segmentIndex: number) => void;
+  onGeneratePanels?: (episodeId: number) => void;
+  isGeneratingPanels?: boolean;
+  onRefreshPanels?: (episodeId: number) => void;
+  onGenerateBackground?: (episodeId: number, panelId: string) => void;
+  generatingBackgroundPanelId?: string | null;
+  onRevisePanel?: (episodeId: number) => void;
+  isRevisingPanel?: boolean;
 }
 
 /**
@@ -63,6 +70,13 @@ const EpisodeCard = ({
   onSegmentApprove,
   onSegmentRegenerate,
   onSegmentGenerateVideo,
+  onGeneratePanels,
+  isGeneratingPanels,
+  onRefreshPanels,
+  onGenerateBackground,
+  generatingBackgroundPanelId,
+  onRevisePanel,
+  isRevisingPanel,
 }: EpisodeCardProps) => {
   const episodeStatus = getEpisodeStatus(episode.segments);
 
@@ -81,6 +95,8 @@ const EpisodeCard = ({
         onApprove={() => onSegmentApprove(episode.episodeId, segment.segmentIndex)}
         onRegenerate={(feedback) => onSegmentRegenerate(episode.episodeId, segment.segmentIndex, feedback)}
         onGenerateVideo={() => onSegmentGenerateVideo(episode.episodeId, segment.segmentIndex)}
+        onGenerateBackground={onGenerateBackground ? (panelId) => onGenerateBackground(episode.episodeId, panelId) : undefined}
+        isGeneratingBackground={generatingBackgroundPanelId === segment.panelData?.panelId}
       />
     );
   });
@@ -101,6 +117,43 @@ const EpisodeCard = ({
             </h4>
             <span className={styles.segmentCount}>{episode.segments.length} 个片段</span>
           </div>
+
+          {/* 生成分镜按钮 */}
+          {onGeneratePanels && (
+            <button
+              className={styles.generatePanelsBtn}
+              onClick={(e) => { e.stopPropagation(); onGeneratePanels(episode.episodeId); }}
+              disabled={isGeneratingPanels}
+            >
+              {isGeneratingPanels ? '生成中...' : '生成分镜脚本'}
+            </button>
+          )}
+
+          {/* 修改分镜脚本按钮 */}
+          {onRevisePanel && (
+            <button
+              className={styles.generatePanelsBtn}
+              onClick={(e) => { e.stopPropagation(); onRevisePanel(episode.episodeId); }}
+              disabled={isRevisingPanel}
+            >
+              {isRevisingPanel ? '修改中...' : '修改分镜脚本'}
+            </button>
+          )}
+
+          {/* 刷新分镜按钮 */}
+          {onRefreshPanels && isExpanded && (
+            <button
+              className={styles.refreshPanelsBtn}
+              onClick={(e) => { e.stopPropagation(); onRefreshPanels(episode.episodeId); }}
+              aria-label="刷新分镜"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                <path d="M1 4v6h6" />
+                <path d="M23 20v-6h-6" />
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
+              </svg>
+            </button>
+          )}
         </div>
 
         <div className={styles.headerRight}>

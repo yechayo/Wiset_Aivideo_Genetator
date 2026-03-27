@@ -1,53 +1,96 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import styles from './Step5page.module.less';
-import type { StepContentProps } from '../types';
-import type { Project } from '../../../services/types/project.types';
 import type {
   ChapterState,
   EpisodeState,
   SegmentState,
   ExpansionState,
-  SegmentPipelineStep,
 } from './types';
-import { useCreateStore } from '../../../stores/createStore';
-import { getScript } from '../../../services/projectService';
-import { getPanelStates } from '../../../services/episodeService';
-import type { ScriptContentResponse } from '../../../services/types/project.types';
-import type { PanelState } from '../../../services/types/episode.types';
+import { getEpisodes, getPanels, generatePanels, getPanelGenerateStatus, generateBackground, revisePanel } from '../../../services/episodeService';
+import { getCharacterStatus } from '../../../services/characterService';
 import EpisodeCard from './components/EpisodeCard';
 
-const POLL_INTERVAL = 3000;
-
-interface Step5pageProps extends StepContentProps {
-  project: Project;
+interface Step5pageProps {
+  project: any;
 }
 
 /**
- * Step5page: Video Production Workstation
+ * Step5page: 视频生产工作台
  *
- * Displays a three-level expandable list (Chapter → Episode → Segment)
- * with a top stats bar showing completion status.
- *
- * This is a skeleton implementation - child components will be added in later tasks.
+ * 展示三级可展开列表（章节 → 集数 → 片段），
+ * 顶部显示完成进度统计栏。
  */
 const Step5page = ({ project }: Step5pageProps) => {
-  const { syncStatus } = useCreateStore();
-  const projectId = project.projectId;
+  const projectId = project?.projectId;
 
-  // Data state
+  // 数据状态
   const [chapters, setChapters] = useState<ChapterState[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generatingEpisodeId, setGeneratingEpisodeId] = useState<number | null>(null);
+  const [charAvatarMap, setCharAvatarMap] = useState<Record<string, string>>({});
+  const [generatingBackgroundPanelId, setGeneratingBackgroundPanelId] = useState<string | null>(null);
+  const [revisingEpisodeId, setRevisingEpisodeId] = useState<number | null>(null);
 
-  // UI state: which episode/segment is expanded (accordion mode)
+  // UI 状态：当前展开的集数/片段（手风琴模式）
   const [expansion, setExpansion] = useState<ExpansionState>({
     expandedEpisodeId: null,
     expandedSegmentKey: null,
   });
 
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /**
+   * 加载剧集列表
+   */
+  const loadEpisodes = useCallback(async () => {
+    if (!projectId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getEpisodes(projectId);
+      if ((res.code !== 0 && res.code !== 200) || !res.data) {
+        throw new Error(res.message || '加载失败');
+      }
+      const items = res.data.items || [];
 
-  // Calculate completion stats
+      // 按章节分组
+      const chapterMap = new Map<string, any[]>();
+      items.forEach(ep => {
+        const chapterTitle = ep.episodeInfo?.chapterTitle?.trim() || '未分章';
+        if (!chapterMap.has(chapterTitle)) {
+          chapterMap.set(chapterTitle, []);
+        }
+        chapterMap.get(chapterTitle)!.push(ep);
+      });
+
+      const builtChapters: ChapterState[] = [];
+      let chapterIndex = 0;
+      for (const [chapterTitle, chapterEpisodes] of chapterMap.entries()) {
+        chapterIndex++;
+        const episodeStates: EpisodeState[] = chapterEpisodes.map((ep, idx) => ({
+          episodeId: ep.id,
+          episodeIndex: ep.episodeInfo?.episodeNum || idx + 1,
+          title: ep.episodeInfo?.title,
+          segments: [],
+        }));
+        builtChapters.push({
+          chapterIndex,
+          title: chapterTitle,
+          episodes: episodeStates,
+        });
+      }
+      setChapters(builtChapters);
+    } catch (err: any) {
+      setError(err?.message || '加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    loadEpisodes();
+  }, [loadEpisodes]);
+
+  // 计算完成统计
   const totalSegments = chapters.reduce(
     (sum, ch) => sum + ch.episodes.reduce((s, ep) => s + ep.segments.length, 0),
     0
@@ -62,186 +105,248 @@ const Step5page = ({ project }: Step5pageProps) => {
     0
   );
 
-  /**
-   * Map panel states to segment pipeline step
-   */
-  const mapPanelsToPipelineStep = (panels: PanelState[]): SegmentPipelineStep => {
-    if (panels.length === 0) return 'pending';
-
-    const allFusionCompleted = panels.every(p => p.fusionStatus === 'completed');
-    const allVideoCompleted = panels.every(p => p.videoStatus === 'completed');
-    const anyVideoFailed = panels.some(p => p.videoStatus === 'failed');
-    const anyVideoGenerating = panels.some(p => p.videoStatus === 'generating');
-    const anyFusionUrlExists = panels.some(p => p.fusionUrl !== null);
-    const anySceneExists = panels.some(p => p.sceneDescription !== null);
-
-    if (allFusionCompleted && allVideoCompleted) return 'video_completed';
-    if (anyVideoFailed) return 'video_failed';
-    if (anyVideoGenerating) return 'video_generating';
-    if (allFusionCompleted && !anyVideoGenerating) return 'comic_approved';
-    if (anyFusionUrlExists) return 'comic_review';
-    if (anySceneExists) return 'scene_ready';
-    return 'pending';
-  };
+  // 记录已加载过分镜的集数，避免重复请求
+  const panelsLoadedRef = useRef<Set<number>>(new Set());
 
   /**
-   * Load project data and build chapter state tree
+   * 加载分镜中涉及的角色三视图
    */
-  const loadProjectData = useCallback(async () => {
-    if (!projectId) return;
-
-    setLoading(true);
-    setError(null);
-
+  const loadCharacterAvatars = useCallback(async (charIds: string[]) => {
+    const missing = charIds.filter(id => id && !charAvatarMap[id]);
+    if (missing.length === 0 || !projectId) return;
     try {
-      // Step 1: Load script data to get episodes
-      const scriptResponse = await getScript(projectId);
-      if (scriptResponse.code !== 0 || !scriptResponse.data) {
-        throw new Error(scriptResponse.message || 'Failed to load script');
-      }
-
-      const scriptData: ScriptContentResponse = scriptResponse.data;
-      const episodes = scriptData.episodes || [];
-
-      // Step 2: Group episodes by chapterTitle
-      const chapterMap = new Map<string, typeof episodes>();
-      episodes.forEach(ep => {
-        const chapterTitle = ep.chapterTitle && ep.chapterTitle.trim() !== '' ? ep.chapterTitle : '未分章';
-        if (!chapterMap.has(chapterTitle)) {
-          chapterMap.set(chapterTitle, []);
+      const results = await Promise.allSettled(
+        missing.map(charId => getCharacterStatus(projectId, charId))
+      );
+      const newMap: Record<string, string> = {};
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled' && r.value?.data) {
+          const d = r.value.data;
+          if (d.threeViewGridUrl) {
+            newMap[missing[i]] = d.threeViewGridUrl;
+          } else if (d.expressionGridUrl) {
+            newMap[missing[i]] = d.expressionGridUrl;
+          }
         }
-        chapterMap.get(chapterTitle)!.push(ep);
+      });
+      if (Object.keys(newMap).length > 0) {
+        setCharAvatarMap(prev => ({ ...prev, ...newMap }));
+      }
+    } catch {
+      // 静默失败
+    }
+  }, [projectId, charAvatarMap]);
+
+  /**
+   * 加载某集的分镜列表
+   */
+  const loadPanelsForEpisode = useCallback(async (episodeId: number) => {
+    if (!projectId || panelsLoadedRef.current.has(episodeId)) return;
+    panelsLoadedRef.current.add(episodeId);
+    let charIds: string[] = [];
+    try {
+      const res = await getPanels(projectId, episodeId);
+      if ((res.code !== 0 && res.code !== 200) || !res.data) return;
+      const panels = res.data || [];
+
+      // 收集涉及的角色 ID
+      charIds = [...new Set(
+        panels.flatMap((p: any) => (p.panelInfo?.characters || []).map((c: any) => c.char_id).filter(Boolean))
+      )];
+
+      // 将分镜转为 segments
+      const segments: SegmentState[] = panels.map((panel: any, idx: number) => {
+        const info = panel.panelInfo || {};
+        // 解析角色头像列表
+        const characterAvatars = (info.characters || []).map((c: any) => ({
+          name: c.char_id || '',
+          avatarUrl: charAvatarMap[c.char_id] || '',
+        }));
+        // 拼接台词
+        const dialogue = (info.dialogue || [])
+          .map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text)
+          .join('\n');
+
+        return {
+          segmentIndex: idx,
+          title: `分镜 ${idx + 1}`,
+          synopsis: info.composition || '',
+          sceneThumbnail: info.backgroundUrl || null,
+          characterAvatars,
+          pipelineStep: 'pending' as const,
+          comicUrl: null,
+          videoUrl: null,
+          feedback: '',
+          panelData: {
+            panelId: String(panel.id),
+            shotType: info.shot_type,
+            cameraAngle: info.camera_angle,
+            pacing: info.pacing,
+            dialogue,
+            characters: info.characters || [],
+            background: info.background || {},
+            imagePromptHint: info.image_prompt_hint,
+            sfx: info.sfx || [],
+          },
+        };
       });
 
-      // Step 3: Build ChapterState array
-      const builtChapters: ChapterState[] = [];
-      let chapterIndex = 0;
-
-      for (const [chapterTitle, chapterEpisodes] of chapterMap.entries()) {
-        chapterIndex++;
-        const episodeStates: EpisodeState[] = [];
-
-        for (const ep of chapterEpisodes) {
-          if (!ep.id) continue;
-
-          const episodeId = ep.id;
-          const episodeIndex = ep.episodeNum || chapterEpisodes.indexOf(ep) + 1;
-
-          // Step 4: Get panel states for each episode
-          let panels: PanelState[] = [];
-          try {
-            const panelsResponse = await getPanelStates(String(episodeId));
-            if (panelsResponse.code === 0 && panelsResponse.data) {
-              panels = panelsResponse.data;
-            }
-          } catch (err) {
-            console.warn(`Failed to load panels for episode ${episodeId}:`, err);
-          }
-
-          // Step 5: Aggregate panels into segments (4 panels per segment)
-          const segments: SegmentState[] = [];
-          const PANELS_PER_SEGMENT = 4;
-
-          for (let i = 0; i < panels.length; i += PANELS_PER_SEGMENT) {
-            const segmentPanels = panels.slice(i, i + PANELS_PER_SEGMENT);
-            const segmentIndex = Math.floor(i / PANELS_PER_SEGMENT);
-
-            // Build segment state from panels
-            const pipelineStep = mapPanelsToPipelineStep(segmentPanels);
-
-            // Use first panel's data as representative
-            const firstPanel = segmentPanels[0];
-            const sceneThumbnail = firstPanel?.fusionUrl || null;
-
-            // Build character avatars from dialogue (parse names from dialogue)
-            const characterAvatars: { name: string; avatarUrl: string }[] = [];
-            segmentPanels.forEach(panel => {
-              if (panel.dialogue) {
-                // Simple extraction: assume format "角色名: dialogue"
-                const match = panel.dialogue.match(/^([^:：]+)[:：]/);
-                if (match) {
-                  const name = match[1].trim();
-                  if (!characterAvatars.find(c => c.name === name)) {
-                    characterAvatars.push({ name, avatarUrl: '' });
-                  }
-                }
-              }
-            });
-
-            // Build comic URL from fusion URLs
-            const comicUrl = segmentPanels.every(p => p.fusionUrl)
-              ? segmentPanels.map(p => p.fusionUrl!).join(',')
-              : null;
-
-            // Build video URL
-            const videoUrl = segmentPanels.every(p => p.videoUrl)
-              ? segmentPanels.map(p => p.videoUrl!).join(',')
-              : null;
-
-            segments.push({
-              segmentIndex,
-              title: `片段 ${segmentIndex + 1}`,
-              synopsis: firstPanel?.sceneDescription || `片段 ${segmentIndex + 1}`,
-              sceneThumbnail,
-              characterAvatars,
-              pipelineStep,
-              comicUrl,
-              videoUrl,
-              feedback: '',
-            });
-          }
-
-          // If no segments, create a placeholder
-          if (segments.length === 0) {
-            segments.push({
-              segmentIndex: 0,
-              title: '片段 1',
-              synopsis: ep.content || '暂无简介',
-              sceneThumbnail: null,
-              characterAvatars: [],
-              pipelineStep: 'pending',
-              comicUrl: null,
-              videoUrl: null,
-              feedback: '',
-            });
-          }
-
-          episodeStates.push({
-            episodeId,
-            episodeIndex,
-            title: ep.title,
-            segments,
-          });
-        }
-
-        builtChapters.push({
-          chapterIndex,
-          title: chapterTitle,
-          episodes: episodeStates,
-        });
-      }
-
-      setChapters(builtChapters);
-    } catch (err: any) {
-      console.error('Failed to load project data:', err);
-      setError(err?.message || '加载失败');
-    } finally {
-      setLoading(false);
+      setChapters(prev =>
+        prev.map(ch => ({
+          ...ch,
+          episodes: ch.episodes.map(ep =>
+            ep.episodeId === episodeId ? { ...ep, segments } : ep
+          ),
+        }))
+      );
+    } catch (err) {
+      console.error(`加载集 ${episodeId} 分镜失败:`, err);
     }
-  }, [projectId]);
+
+    // 加载涉及的角色头像
+    if (charIds.length > 0) {
+      loadCharacterAvatars(charIds);
+    }
+  }, [projectId, charAvatarMap]);
 
   /**
-   * Toggle episode expansion (accordion mode)
+   * 手动刷新分镜（清除缓存重新加载）
+   */
+  const handleRefreshPanels = useCallback(async (episodeId: number) => {
+    panelsLoadedRef.current.delete(episodeId);
+    await loadPanelsForEpisode(episodeId);
+  }, [loadPanelsForEpisode]);
+
+  /**
+   * 切换集数展开/收起（手风琴模式）
    */
   const toggleEpisode = useCallback((episodeId: number) => {
-    setExpansion(prev => ({
-      expandedEpisodeId: prev.expandedEpisodeId === episodeId ? null : episodeId,
-      expandedSegmentKey: null, // Close segment when switching episodes
-    }));
+    setExpansion(prev => {
+      const willExpand = prev.expandedEpisodeId !== episodeId;
+      return {
+        expandedEpisodeId: willExpand ? episodeId : null,
+        expandedSegmentKey: null,
+      };
+    });
   }, []);
 
+  // charAvatarMap 更新后，刷新已有 segments 的角色头像
+  useEffect(() => {
+    if (Object.keys(charAvatarMap).length === 0) return;
+    setChapters(prev =>
+      prev.map(ch => ({
+        ...ch,
+        episodes: ch.episodes.map(ep => ({
+          ...ep,
+          segments: ep.segments.map(seg => ({
+            ...seg,
+            characterAvatars: seg.characterAvatars.map(a => ({
+              ...a,
+              avatarUrl: charAvatarMap[a.name] || a.avatarUrl,
+            })),
+          })),
+        })),
+      }))
+    );
+  }, [charAvatarMap]);
+
+  // 展开集数时自动加载分镜
+  useEffect(() => {
+    if (expansion.expandedEpisodeId !== null) {
+      loadPanelsForEpisode(expansion.expandedEpisodeId);
+    }
+  }, [expansion.expandedEpisodeId, loadPanelsForEpisode]);
+
   /**
-   * Toggle segment expansion
+   * 生成分镜（异步任务，轮询状态）
+   */
+  const handleGeneratePanels = useCallback(async (episodeId: number) => {
+    if (!projectId || generatingEpisodeId !== null) return;
+    setGeneratingEpisodeId(episodeId);
+    try {
+      const res = await generatePanels(projectId, episodeId);
+      // 400 且提示"已有任务在执行中"，视为成功，直接进入轮询
+      const isAlreadyRunning =
+        (res.code === 400 && res.message?.includes('已有分镜生成任务在执行中')) ||
+        (res.code === 400 && res.message?.includes('already'));
+
+      if (res.code !== 0 && res.code !== 200 && !isAlreadyRunning) {
+        alert(res.message || '生成分镜失败');
+        setGeneratingEpisodeId(null);
+        return;
+      }
+      // 从响应中获取 jobId
+      const jobId = res.data?.jobId || res.data?.id || String(res.data);
+      if (!jobId || jobId === 'null' || jobId === 'undefined') {
+        // 无 jobId，直接刷新分镜
+        panelsLoadedRef.current.delete(episodeId);
+        await loadPanelsForEpisode(episodeId);
+        setGeneratingEpisodeId(null);
+        return;
+      }
+      // 轮询任务状态
+      const poll = async () => {
+        const MAX_POLL = 60;
+        for (let i = 0; i < MAX_POLL; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          try {
+            const statusRes = await getPanelGenerateStatus(projectId, episodeId, jobId);
+            if (statusRes.code !== 0 && statusRes.code !== 200) continue;
+            const status = statusRes.data?.status || statusRes.data?.state;
+            if (status === 'completed' || status === 'COMPLETED' || status === 'SUCCESS') {
+              panelsLoadedRef.current.delete(episodeId);
+              await loadPanelsForEpisode(episodeId);
+              setGeneratingEpisodeId(null);
+              return;
+            }
+            if (status === 'failed' || status === 'FAILED' || status === 'ERROR') {
+              alert('分镜生成失败');
+              setGeneratingEpisodeId(null);
+              return;
+            }
+          } catch {
+            // 轮询失败继续重试
+          }
+        }
+        alert('生成超时，请稍后刷新');
+        setGeneratingEpisodeId(null);
+      };
+      poll();
+    } catch (err: any) {
+      // 400 "已有任务在执行中" 也会抛异常，同样进入轮询
+      const msg = err?.response?.data?.message || err?.message || '';
+      const isAlreadyRunning =
+        msg.includes('已有分镜生成任务在执行中') || msg.includes('already');
+      if (isAlreadyRunning) {
+        // 无法获取 jobId，直接定时刷新分镜
+        const poll = async () => {
+          const MAX_POLL = 60;
+          for (let i = 0; i < MAX_POLL; i++) {
+            await new Promise(r => setTimeout(r, 5000));
+            panelsLoadedRef.current.delete(episodeId);
+            await loadPanelsForEpisode(episodeId);
+            // 如果分镜数据不再是空，说明生成完成
+            const chaps = await new Promise<ChapterState[]>(resolve => {
+              setChapters(prev => { resolve(prev); return prev; });
+            });
+            const ep = chaps.flatMap(c => c.episodes).find(e => e.episodeId === episodeId);
+            if (ep && ep.segments.length > 0) {
+              setGeneratingEpisodeId(null);
+              return;
+            }
+          }
+          setGeneratingEpisodeId(null);
+        };
+        poll();
+        return;
+      }
+      alert(msg || '生成分镜失败');
+      setGeneratingEpisodeId(null);
+    }
+  }, [projectId, generatingEpisodeId, loadPanelsForEpisode]);
+
+  /**
+   * 切换片段展开/收起
    */
   const toggleSegment = useCallback((segmentKey: string | null) => {
     setExpansion(prev => ({
@@ -251,94 +356,45 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, []);
 
   /**
-   * Handle segment approve
+   * 生成背景图
    */
-  const handleSegmentApprove = useCallback((episodeId: number, segmentIndex: number) => {
-    setChapters(prevChapters =>
-      prevChapters.map(chapter => ({
-        ...chapter,
-        episodes: chapter.episodes.map(ep => {
-          if (ep.episodeId !== episodeId) return ep;
-          return {
-            ...ep,
-            segments: ep.segments.map(seg => {
-              if (seg.segmentIndex !== segmentIndex) return seg;
-              return { ...seg, pipelineStep: 'comic_approved' as SegmentPipelineStep };
-            }),
-          };
-        }),
-      }))
-    );
-  }, []);
-
-  /**
-   * Handle segment regenerate
-   */
-  const handleSegmentRegenerate = useCallback((episodeId: number, segmentIndex: number, feedback: string) => {
-    // For now, just log. In future, call API to regenerate
-    console.log('Regenerate segment:', episodeId, segmentIndex, feedback);
-    // TODO: Call API to regenerate scene/comic
-  }, []);
-
-  /**
-   * Handle segment generate video
-   */
-  const handleSegmentGenerateVideo = useCallback((episodeId: number, segmentIndex: number) => {
-    // For now, just update local state
-    setChapters(prevChapters =>
-      prevChapters.map(chapter => ({
-        ...chapter,
-        episodes: chapter.episodes.map(ep => {
-          if (ep.episodeId !== episodeId) return ep;
-          return {
-            ...ep,
-            segments: ep.segments.map(seg => {
-              if (seg.segmentIndex !== segmentIndex) return seg;
-              return { ...seg, pipelineStep: 'video_generating' as SegmentPipelineStep };
-            }),
-          };
-        }),
-      }))
-    );
-    // TODO: Call API to generate video
-  }, []);
-
-  /**
-   * Start polling for production updates
-   */
-  const startPolling = useCallback(() => {
-    if (!projectId) return;
-
-    stopPolling();
-    loadProjectData();
-
-    pollingRef.current = setInterval(() => {
-      // Sync status via existing store
-      if (projectId) {
-        syncStatus(projectId);
+  const handleGenerateBackground = useCallback(async (episodeId: number, panelId: string) => {
+    if (!projectId || !panelId) return;
+    setGeneratingBackgroundPanelId(panelId);
+    try {
+      const res = await generateBackground(projectId, episodeId, Number(panelId));
+      if (res.code !== 0 && res.code !== 200) {
+        alert(res.message || '生成背景图失败');
       }
-      // Reload data will be implemented in Task 8
-    }, POLL_INTERVAL);
-  }, [projectId, loadProjectData, syncStatus]);
-
-  /**
-   * Stop polling
-   */
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current !== null) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
+    } catch (err: any) {
+      alert(err?.message || '生成背景图失败');
+    } finally {
+      setGeneratingBackgroundPanelId(null);
     }
-  }, []);
-
-  // Initial load and polling setup
-  useEffect(() => {
-    startPolling();
-    return () => stopPolling();
-  }, [startPolling, stopPolling]);
+  }, [projectId]);
 
   /**
-   * Render episode card using EpisodeCard component
+   * 修改分镜脚本
+   */
+  const handleRevisePanel = useCallback(async (episodeId: number) => {
+    if (!projectId) return;
+    const feedback = prompt('请输入修改意见：');
+    if (!feedback?.trim()) return;
+    setRevisingEpisodeId(episodeId);
+    try {
+      const res = await revisePanel(projectId, episodeId, 0, feedback.trim());
+      if (res.code !== 0 && res.code !== 200) {
+        alert(res.message || '修改分镜失败');
+      }
+    } catch (err: any) {
+      alert(err?.message || '修改分镜失败');
+    } finally {
+      setRevisingEpisodeId(null);
+    }
+  }, [projectId]);
+
+  /**
+   * 渲染集数卡片
    */
   const renderEpisodeCard = (chapterIndex: number, episode: EpisodeState) => {
     const isExpanded = expansion.expandedEpisodeId === episode.episodeId;
@@ -352,15 +408,22 @@ const Step5page = ({ project }: Step5pageProps) => {
         onToggle={() => toggleEpisode(episode.episodeId)}
         expandedSegmentKey={expansion.expandedSegmentKey}
         onSegmentToggle={toggleSegment}
-        onSegmentApprove={handleSegmentApprove}
-        onSegmentRegenerate={handleSegmentRegenerate}
-        onSegmentGenerateVideo={handleSegmentGenerateVideo}
+        onSegmentApprove={() => {}}
+        onSegmentRegenerate={() => {}}
+        onSegmentGenerateVideo={() => {}}
+        onGeneratePanels={handleGeneratePanels}
+        isGeneratingPanels={generatingEpisodeId === episode.episodeId}
+        onRefreshPanels={handleRefreshPanels}
+        onGenerateBackground={handleGenerateBackground}
+        generatingBackgroundPanelId={generatingBackgroundPanelId}
+        onRevisePanel={handleRevisePanel}
+        isRevisingPanel={revisingEpisodeId === episode.episodeId}
       />
     );
   };
 
   /**
-   * Render completion dot for a segment
+   * 渲染片段完成状态圆点
    */
   const renderCompletionDot = (step: SegmentState['pipelineStep']) => {
     if (step === 'video_completed') {
@@ -372,7 +435,7 @@ const Step5page = ({ project }: Step5pageProps) => {
     return <span className={styles.dotPending} />;
   };
 
-  // Loading state
+  // 加载中状态
   if (loading) {
     return (
       <div className={styles.pageContainer}>
@@ -384,13 +447,13 @@ const Step5page = ({ project }: Step5pageProps) => {
     );
   }
 
-  // Error state
+  // 错误状态
   if (error) {
     return (
       <div className={styles.pageContainer}>
         <div className={styles.errorState}>
           <p>{error}</p>
-          <button onClick={loadProjectData} className={styles.retryButton}>
+          <button onClick={loadEpisodes} className={styles.retryButton}>
             重试
           </button>
         </div>
@@ -398,7 +461,7 @@ const Step5page = ({ project }: Step5pageProps) => {
     );
   }
 
-  // Empty state
+  // 空状态
   if (chapters.length === 0) {
     return (
       <div className={styles.pageContainer}>
@@ -411,7 +474,7 @@ const Step5page = ({ project }: Step5pageProps) => {
 
   return (
     <div className={styles.pageContainer}>
-      {/* Header with title and stats */}
+      {/* 顶部标题和统计栏 */}
       <div className={styles.pageHeader}>
         <div className={styles.titleSection}>
           <h1 className={styles.pageTitle}>视频生产</h1>
@@ -430,10 +493,9 @@ const Step5page = ({ project }: Step5pageProps) => {
         </div>
       </div>
 
-      {/* Chapter groups */}
+      {/* 章节列表 */}
       <div className={styles.chapterList}>
         {chapters.map(chapter => {
-          // Count segments in this chapter
           const chapterSegments = chapter.episodes.reduce(
             (sum, ep) => sum + ep.segments.length,
             0
@@ -446,7 +508,6 @@ const Step5page = ({ project }: Step5pageProps) => {
 
           return (
             <div key={chapter.chapterIndex} className={styles.chapterGroup}>
-              {/* Chapter header */}
               <div className={styles.chapterHeader}>
                 <div className={styles.chapterTitleRow}>
                   <span className={styles.chapterIcon}>📖</span>
@@ -471,7 +532,6 @@ const Step5page = ({ project }: Step5pageProps) => {
                 </div>
               </div>
 
-              {/* Episode cards */}
               <div className={styles.episodeList}>
                 {chapter.episodes.map(ep => renderEpisodeCard(chapter.chapterIndex, ep))}
               </div>

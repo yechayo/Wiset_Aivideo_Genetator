@@ -22,7 +22,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
+  padding: calc(var(--space-3) * 2) var(--space-4);
   cursor: pointer;
   user-select: none;
   transition: background-color var(--duration-fast) var(--easing-standard);
@@ -82,9 +82,9 @@
 .synopsis {
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.4;
 }
 
 // Header 右侧
@@ -97,8 +97,8 @@
 
 // 场景缩略图
 .sceneThumbnail {
-  width: 32px;
-  height: 32px;
+  width: 128px;
+  aspect-ratio: 16 / 9;
   border-radius: var(--radius-sm);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
@@ -112,8 +112,8 @@
 }
 
 .sceneIcon {
-  width: 32px;
-  height: 32px;
+  width: 128px;
+  aspect-ratio: 16 / 9;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border-subtle);
   display: flex;
@@ -122,6 +122,46 @@
   color: var(--color-text-muted);
   background-color: var(--color-bg-canvas);
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+
+  &.clickable {
+    cursor: pointer;
+    gap: 2px;
+
+    &:hover {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+    }
+  }
+
+  .clickIcon {
+    font-size: 12px;
+    opacity: 0.5;
+    flex-shrink: 0;
+    filter: grayscale(1);
+  }
+}
+
+.generatingOverlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scenePlaceholderText {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.generatingText {
+  font-size: 11px;
+  color: var(--color-accent);
 }
 
 // 角色头像列表
@@ -132,9 +172,9 @@
 }
 
 .avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  width: 128px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
   background: linear-gradient(135deg, var(--color-accent), var(--color-accent-strong));
   color: var(--color-text-primary);
   font-size: var(--font-size-xs);
@@ -145,9 +185,16 @@
   border: 2px solid var(--color-bg-surface);
   margin-left: -8px;
   flex-shrink: 0;
+  overflow: hidden;
 
   &:first-child {
     margin-left: 0;
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   &.avatarMore {

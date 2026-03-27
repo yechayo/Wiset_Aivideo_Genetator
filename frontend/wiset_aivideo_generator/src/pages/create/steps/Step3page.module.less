@@ -292,6 +292,33 @@
   margin: 0;
 }
 
+.editHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.deleteBtn {
+  padding: 6px 16px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.25);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(239, 68, 68, 0.5);
+    outline-offset: 2px;
+  }
+}
+
 .collapseBtn {
   padding: 6px 16px;
   background: rgba(247, 249, 252, 0.06);
@@ -734,7 +761,8 @@
   .imageGenBtn,
   .imageRetryBtn,
   .saveBtn,
-  .collapseBtn {
+  .collapseBtn,
+  .deleteBtn {
     transition: none;
   }
 }
