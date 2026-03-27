@@ -84,6 +84,13 @@ public class CharacterController {
         return Result.ok();
     }
 
+    @PostMapping("/images/confirm")
+    @Operation(summary = "确认图片", description = "确认项目的所有角色图片，锁定素材并进入分镜生成")
+    public Result<Void> confirmImages(@PathVariable String projectId) {
+        characterImageGenerationService.confirmImages(projectId);
+        return Result.ok();
+    }
+
     // ================= 图片生成接口 =================
 
     @PostMapping("/{charId}/generate/expression")

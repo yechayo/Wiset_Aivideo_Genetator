@@ -18,6 +18,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -255,6 +256,45 @@ public class CharacterImageGenerationService {
         dto.setExpressionGridUrl(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_GRID_URL));
         dto.setThreeViewGridUrl(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_GRID_URL));
         return dto;
+    }
+
+    // ==================== 图片确认 ====================
+
+    /**
+     * 确认项目所有角色图片，进入素材锁定阶段
+     */
+    @Transactional
+    public void confirmImages(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            throw new BusinessException("项目不存在");
+        }
+
+        ProjectStatus currentStatus = ProjectStatus.fromCode(project.getStatus());
+        if (currentStatus != ProjectStatus.IMAGE_REVIEW) {
+            throw new BusinessException("当前状态不允许确认图片: " + currentStatus.getDescription());
+        }
+
+        // Validate all characters have complete images
+        List<Character> characters = characterRepository.findByProjectId(projectId);
+        if (characters.isEmpty()) {
+            throw new BusinessException("项目没有角色，无法确认图片");
+        }
+
+        List<String> incompleteChars = new ArrayList<>();
+        for (Character c : characters) {
+            if (!isCharacterImageComplete(c)) {
+                String name = getCharInfoStr(c, CharacterInfoKeys.NAME);
+                incompleteChars.add(name != null ? name : String.valueOf(c.getId()));
+            }
+        }
+
+        if (!incompleteChars.isEmpty()) {
+            throw new BusinessException("以下角色图片未完成: " + String.join(", ", incompleteChars));
+        }
+
+        pipelineService.advancePipeline(projectId, "confirm_images");
+        log.info("图片确认完成，项目进入素材锁定: projectId={}", projectId);
     }
 
     // ==================== 状态推进 ====================
