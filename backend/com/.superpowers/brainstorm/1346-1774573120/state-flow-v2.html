@@ -1,0 +1,90 @@
+<h2>状态机设计草案 v2（按你已确认规则）</h2>
+<p class="subtitle">你已确认：确认即自动推进 / 严格串行 /失败即暂停 / COMPLETED 不等拼接</p>
+
+<div class="section">
+ <div class="mockup">
+ <div class="mockup-header">一、项目级状态（保持简洁）</div>
+ <div class="mockup-body">
+<pre>
+DRAFT
+ → OUTLINE_GENERATING → SCRIPT_REVIEW/SCRIPT_CONFIRMED
+ → CHARACTER_EXTRACTING → CHARACTER_REVIEW/CHARACTER_CONFIRMED
+ → IMAGE_GENERATING → IMAGE_REVIEW/ASSET_LOCKED
+ → PANEL_GENERATING → PANEL_REVIEW
+ → PRODUCING
+ → COMPLETED
+
+说明：项目级不拆 PRODUCING 子状态（你已选1）。
+</pre>
+ </div>
+ </div>
+</div>
+
+<div class="section">
+ <div class="mockup">
+ <div class="mockup-header">二、确认即自动推进（关键一致性规则）</div>
+ <div class="mockup-body">
+<pre>
+confirm_script 后自动触发 start_character_extraction
+confirm_characters 后自动触发 start_image_generation
+confirm_images 后自动触发 start_panels
+confirm_panels 后自动进入 PRODUCING（单panel串行生产）
+</pre>
+ </div>
+ </div>
+</div>
+
+<div class="section">
+ <div class="mockup">
+ <div class="mockup-header">三、PRODUCING 内部子流程（严格串行）</div>
+ <div class="mockup-body">
+<pre>
+currentPanelIndex =1..N
+
+for panel[i]:
+ background(auto)
+ -> comic(auto)
+ -> pending_review(等待人工 approve)
+ -> video(auto)
+
+规则：
+- 未 approve 不进入下一个 panel
+- 任一步失败 => 暂停在当前 panel（你选 A）
+- retry 成功后继续
+</pre>
+ </div>
+ </div>
+</div>
+
+<div class="section">
+ <div class="mockup">
+ <div class="mockup-header">四、完成判定</div>
+ <div class="mockup-body">
+<pre>
+当全部 panel.videoStatus = completed:
+ PRODUCING -> COMPLETED
+
+拼接剪辑是下一步独立流程，不阻塞 COMPLETED（你已确认）。
+</pre>
+ </div>
+ </div>
+</div>
+
+<h3>这个 v2设计你确认吗？</h3>
+<div class="options">
+ <div class="option" data-choice="a" onclick="toggleSelect(this)">
+ <div class="letter">A</div>
+ <div class="content">
+ <h3>确认，按这个落地</h3>
+ <p>状态与流转规则已统一。</p>
+ </div>
+ </div>
+
+ <div class="option" data-choice="b" onclick="toggleSelect(this)">
+ <div class="letter">B</div>
+ <div class="content">
+ <h3>需要微调</h3>
+ <p>我会根据你的点位再改 v3。</p>
+ </div>
+ </div>
+</div>

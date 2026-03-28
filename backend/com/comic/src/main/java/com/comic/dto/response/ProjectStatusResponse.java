@@ -36,11 +36,11 @@ public class ProjectStatusResponse {
 
     private String productionSubStage;
 
-    private Integer storyboardCurrentEpisode;
+    private Integer panelCurrentEpisode;
 
-    private Integer storyboardTotalEpisodes;
+    private Integer panelTotalEpisodes;
 
-    private String storyboardReviewEpisodeId;
+    private String panelReviewEpisodeId;
 
-    private boolean storyboardAllConfirmed;
+    private boolean panelAllConfirmed;
 }

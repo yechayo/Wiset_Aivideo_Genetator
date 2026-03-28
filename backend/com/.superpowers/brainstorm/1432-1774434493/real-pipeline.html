@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, sans-serif; padding: 24px; line-height: 1.7; }
+  h2 { color: #fff; font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+  .section { margin-bottom: 20px; }
+
+  .box { background: #16213e; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
+  .box .title { color: #fff; font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+  .box .desc { color: #999; font-size: 12px; }
+
+  .model { background: #0d1117; border-radius: 6px; padding: 12px 16px; margin: 12px 0; font-family: monospace; font-size: 13px; }
+  .model .arrow { color: #555; }
+  .model .entity { color: #79c0ff; font-weight: bold; }
+  .model .note { color: #555; font-style: italic; }
+
+  .pipeline { background: #16213e; border-radius: 8px; padding: 14px 16px; margin: 10px 0; }
+  .pipeline .step { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .pipeline .num { display: inline-block; background: #333; color: #aaa; width: 20px; height: 20px; border-radius: 50%; text-align: center; line-height: 20px; font-size: 11px; flex-shrink: 0; }
+  .pipeline .num.auto { background: #2d4a2d; color: #4ade80; }
+  .pipeline .num.review { background: #4a3d1d; color: #fbbf24; }
+  .pipeline .num.manual { background: #1d3a4a; color: #60a5fa; }
+  .pipeline .label { font-size: 13px; }
+  .pipeline .type { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
+  .pipeline .type.auto { background: #2d4a2d; color: #4ade80; }
+  .pipeline .type.review { background: #4a3d1d; color: #fbbf24; }
+  .pipeline .type.manual { background: #1d3a4a; color: #60a5fa; }
+
+  .gap { border-left: 2px solid #333; height: 8px; margin-left: 9px; }
+
+  .mismatch { background: #2a1520; border-left: 3px solid #e74c3c; padding: 12px 16px; border-radius: 8px; margin: 12px 0; }
+  .mismatch .title { color: #e74c3c; font-weight: bold; font-size: 14px; margin-bottom: 6px; }
+  .mismatch ul { padding-left: 16px; font-size: 13px; }
+  .mismatch li { margin: 4px 0; }
+
+  .question { background: #1a2540; border-left: 3px solid #fbbf24; padding: 12px 16px; border-radius: 8px; margin: 12px 0; }
+  .question .title { color: #fbbf24; font-weight: bold; font-size: 14px; margin-bottom: 6px; }
+  .question p { font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h2>前端真实生产逻辑 vs 后端现状</h2>
+<p class="sub">基于 Step5 重写设计文档分析</p>
+
+<div class="section">
+  <h3 style="color:#79c0ff">前端数据模型（新增 Segment 层）</h3>
+  <div class="model">
+    <span class="entity">Chapter</span> <span class="arrow">→</span> <span class="entity">Episode</span> <span class="arrow">→</span> <span class="entity" style="color:#fbbf24">Segment</span> <span class="arrow">→</span> <span class="entity">Panel</span><br><br>
+    <span class="note">Segment = 4 个 Panel 的聚合，是生产流水线的基本单位</span><br>
+    <span class="note">1 个 Segment → 1 张四宫格漫画 → 1 个 AI 视频片段</span>
+  </div>
+</div>
+
+<div class="section">
+  <h3 style="color:#4ade80">每个 Segment 的生产流水线</h3>
+  <div class="pipeline">
+    <div class="step">
+      <span class="num auto">1</span>
+      <span class="label">调用角色资产</span>
+      <span class="type auto">自动</span>
+    </div>
+    <div class="gap"></div>
+    <div class="step">
+      <span class="num auto">2</span>
+      <span class="label">生成场景图（背景）</span>
+      <span class="type auto">自动</span>
+    </div>
+    <div class="gap"></div>
+    <div class="step">
+      <span class="num review">3</span>
+      <span class="label">四宫格漫画（场景 + 角色 → 2×2 漫画）</span>
+      <span class="type review">审核点</span>
+    </div>
+    <div class="gap"></div>
+    <div class="step">
+      <span class="num manual">4</span>
+      <span class="label">AI 视频生成（四宫格 → 视频）</span>
+      <span class="type manual">手动触发</span>
+    </div>
+  </div>
+</div>
+
+<div class="mismatch">
+  <div class="title">前端 vs 后端的关键差异</div>
+  <ul>
+    <li><strong>Segment 概念缺失</strong> — 后端只有 Episode 和 Panel，没有 Segment 实体。前端目前手动把 4 个 Panel 聚合为 1 个 Segment</li>
+    <li><strong>生产粒度不匹配</strong> — 前端按 Segment（4 Panel）操作（审核/生成），后端 API 全部按单个 Panel 操作</li>
+    <li><strong>流水线步骤不同</strong> — 前端流程是 角色→场景→四宫格→视频，后端现有流程是 分镜生成→网格图→融合→视频</li>
+    <li><strong>四宫格概念不同</strong> — 前端的四宫格 = 4 个分镜画面合成的漫画（审核点），后端的九宫格 = 参考图切分工具</li>
+    <li><strong>融合方式不同</strong> — 前端没有手动融合步骤，四宫格由 AI 自动生成；后端有手动 Canvas 融合上传流程</li>
+  </ul>
+</div>
+
+<div class="question">
+  <div class="title">需要你决策的问题</div>
+  <p><strong>Q1:</strong> 后端是否要引入 Segment 实体？还是继续让前端做 4 Panel → 1 Segment 的映射？</p>
+  <p style="margin-top:8px"><strong>Q2:</strong> 生产流程是按前端新设计（角色→场景→四宫格→视频）来重构后端，还是保持后端现有流程只改接口路径？</p>
+  <p style="margin-top:8px"><strong>Q3:</strong> 手动融合（Canvas 上传）是否废弃？还是作为可选功能保留？</p>
+</div>
+
+</body>
+</html>

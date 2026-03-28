@@ -1,11 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import styles from './Step3page.module.less';
 import type { Project, CharacterListItem } from '../../../services';
+import { getCharacters, isApiSuccess } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useCreateStore } from '../../../stores/createStore';
 import {
-  getCharacters,
   extractCharacters,
   updateCharacter,
   deleteCharacter,
@@ -40,7 +40,7 @@ const VISUAL_STYLE_OPTIONS = [
 
 const Step3page = ({ project }: Step3pageProps) => {
   const { statusInfo, canPerformAction, isLoadingStatus } = useCreateStore();
-  const projectId = project.projectId;
+  const projectId = project.projectId!;
   const prefersReducedMotion = useReducedMotion();
 
   // 角色数据
@@ -55,7 +55,7 @@ const Step3page = ({ project }: Step3pageProps) => {
   const [confirming, setConfirming] = useState(false);
 
   // 数据轮询相关状态
-  const maxDataPollingCount = 10;
+  const maxDataPollingCount = 45; // 覆盖 AI 生成耗时
 
   // 判断是否可提取角色
   const canExtract = canPerformAction('extract_characters');
@@ -68,7 +68,7 @@ const Step3page = ({ project }: Step3pageProps) => {
     setError('');
     try {
       const res = await getCharacters(projectId);
-      if (res.code === 200 && res.data) {
+      if (isApiSuccess(res) && res.data) {
         const items: CharacterItem[] = res.data.items.map(char => ({ char }));
         setCharacters(items);
       }
@@ -79,6 +79,30 @@ const Step3page = ({ project }: Step3pageProps) => {
     }
   }, [projectId]);
 
+  // 监听后端生成状态：isGenerating 从 true → false 时重新拉取
+  const prevGeneratingRef = useRef(statusInfo?.isGenerating ?? false);
+  useEffect(() => {
+    const was = prevGeneratingRef.current;
+    const now = statusInfo?.isGenerating ?? false;
+    prevGeneratingRef.current = now;
+    if (was && !now && characters.length === 0) {
+      fetchCharacters();
+    }
+  }, [statusInfo?.isGenerating, characters.length, fetchCharacters]);
+
+  // 监听状态码变化：进入 CHARACTER_REVIEW 时重新加载角色
+  const prevStatusCodeRef = useRef(statusInfo?.statusCode ?? '');
+  useEffect(() => {
+    const prev = prevStatusCodeRef.current;
+    const curr = statusInfo?.statusCode ?? '';
+    prevStatusCodeRef.current = curr;
+
+    // 当从非 CHARACTER_REVIEW 变为 CHARACTER_REVIEW 时，重新加载角色
+    if (prev !== 'CHARACTER_REVIEW' && curr === 'CHARACTER_REVIEW') {
+      fetchCharacters();
+    }
+  }, [statusInfo?.statusCode, fetchCharacters]);
+
   // 进入角色审核状态时加载角色
   useEffect(() => {
     if (!projectId) return;
@@ -87,7 +111,7 @@ const Step3page = ({ project }: Step3pageProps) => {
       setLoading(true);
       try {
         const res = await getCharacters(projectId);
-        if (res.code === 200 && res.data && res.data.items.length > 0) {
+        if (isApiSuccess(res) && res.data && res.data.items.length > 0) {
           const items: CharacterItem[] = res.data.items.map(char => ({ char }));
           setCharacters(items);
           setLoading(false);
@@ -158,9 +182,10 @@ const Step3page = ({ project }: Step3pageProps) => {
 
   // 保存角色编辑
   const handleSave = async (charId: string) => {
+    if (!projectId) return;
     setSaving(true);
     try {
-      await updateCharacter(project.projectId!, charId, editForm);
+      await updateCharacter(projectId, charId, editForm);
       await fetchCharacters();
       setExpandedCharId(null);
       setEditForm({});
@@ -173,10 +198,11 @@ const Step3page = ({ project }: Step3pageProps) => {
 
   // 删除角色
   const handleDelete = async (charId: string) => {
+    if (!projectId) return;
     const confirmed = window.confirm('确定要删除该角色吗？删除后不可恢复。');
     if (!confirmed) return;
     try {
-      await deleteCharacter(project.projectId!, charId);
+      await deleteCharacter(projectId, charId);
       if (expandedCharId === charId) {
         setExpandedCharId(null);
         setEditForm({});
@@ -197,7 +223,7 @@ const Step3page = ({ project }: Step3pageProps) => {
       };
     }));
     try {
-      await setVisualStyle(charId, style);
+      await setVisualStyle(projectId, charId, style);
     } catch {
       await fetchCharacters();
     }

@@ -7,6 +7,8 @@ export interface ComicPanelProps {
   pipelineStep: SegmentPipelineStep;
   onApprove: () => void;
   onRegenerate: (feedback: string) => void;
+  onGenerateComic?: () => void;
+  isGeneratingComic?: boolean;
 }
 
 export const ComicPanel: React.FC<ComicPanelProps> = ({
@@ -14,6 +16,8 @@ export const ComicPanel: React.FC<ComicPanelProps> = ({
   pipelineStep,
   onApprove,
   onRegenerate,
+  onGenerateComic,
+  isGeneratingComic,
 }) => {
   const [feedback, setFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -101,7 +105,7 @@ export const ComicPanel: React.FC<ComicPanelProps> = ({
   };
 
   const renderActions = () => {
-    if (pipelineStep !== 'comic_review') return null;
+    if (pipelineStep !== 'comic_review' || !comicUrl) return null;
 
     return (
       <div className={styles.actionsContainer}>
@@ -124,7 +128,7 @@ export const ComicPanel: React.FC<ComicPanelProps> = ({
   };
 
   const renderFeedbackInput = () => {
-    if (pipelineStep !== 'comic_review') return null;
+    if (pipelineStep !== 'comic_review' || !comicUrl) return null;
 
     return (
       <div className={styles.feedbackContainer}>
@@ -148,8 +152,29 @@ export const ComicPanel: React.FC<ComicPanelProps> = ({
       </div>
 
       <div className={styles.content}>
-        {pipelineStep === 'pending' || pipelineStep === 'scene_ready' ? (
-          renderPlaceholder('生成场景和四宫格中...')
+        {pipelineStep === 'pending' ? (
+          renderPlaceholder('请先生成背景图')
+        ) : pipelineStep === 'scene_ready' ? (
+          <div className={styles.placeholder}>
+            <div className={styles.placeholderIcon}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M3 9h18" />
+                <path d="M9 21V9" />
+              </svg>
+            </div>
+            <p className={styles.placeholderText}>背景图已就绪，可以生成四宫格漫画</p>
+            {onGenerateComic && (
+              <button
+                className={styles.approveButton}
+                onClick={onGenerateComic}
+                disabled={isGeneratingComic}
+                style={{ marginTop: 12 }}
+              >
+                {isGeneratingComic ? '生成中...' : '生成四宫格'}
+              </button>
+            )}
+          </div>
         ) : pipelineStep === 'video_failed' && !comicUrl ? (
           renderPlaceholder('视频生成失败，请重新生成')
         ) : (

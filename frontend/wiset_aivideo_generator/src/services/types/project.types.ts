@@ -280,10 +280,15 @@ export interface CharacterStatus {
   charId: string;
   name: string;
   role: string;
-  expressionStatus: string;    // pending/generating/completed/failed
-  threeViewStatus: string;
-  expressionError?: string;
-  threeViewError?: string;
+  personality: string;          // 性格描述
+  voice: string;                // 声音描述
+  appearance: string;           // 外貌描述
+  background: string;           // 背景故事
+  confirmed: boolean;           // 是否已确认
+  expressionStatus: string;     // pending/generating/completed/failed
+  threeViewStatus: string;      // pending/generating/completed/failed
+  expressionError?: string;     // 表情生成错误信息
+  threeViewError?: string;      // 三视图生成错误信息
   isGeneratingExpression?: boolean;
   isGeneratingThreeView?: boolean;
   visualStyle?: string;         // 3D/ANIME/COMIC

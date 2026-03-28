@@ -13,6 +13,12 @@ interface EpisodeCardProps {
   onSegmentApprove: (episodeId: number, segmentIndex: number) => void;
   onSegmentRegenerate: (episodeId: number, segmentIndex: number, feedback: string) => void;
   onSegmentGenerateVideo: (episodeId: number, segmentIndex: number) => void;
+  onSegmentGenerateComic?: (episodeId: number, segmentIndex: number) => void;
+  generatingComicPanelId?: string | null;
+  onSegmentReviseSingle?: (episodeId: number, segmentIndex: number, feedback: string) => void;
+  isRevisingSinglePanelId?: string | null;
+  onSegmentUpdatePanel?: (episodeId: number, segmentIndex: number, fields: Record<string, any>) => void;
+  isUpdatingSinglePanelId?: string | null;
   onGeneratePanels?: (episodeId: number) => void;
   isGeneratingPanels?: boolean;
   onRefreshPanels?: (episodeId: number) => void;
@@ -70,6 +76,12 @@ const EpisodeCard = ({
   onSegmentApprove,
   onSegmentRegenerate,
   onSegmentGenerateVideo,
+  onSegmentGenerateComic,
+  generatingComicPanelId,
+  onSegmentReviseSingle,
+  isRevisingSinglePanelId,
+  onSegmentUpdatePanel,
+  isUpdatingSinglePanelId,
   onGeneratePanels,
   isGeneratingPanels,
   onRefreshPanels,
@@ -90,11 +102,18 @@ const EpisodeCard = ({
         key={segment.segmentIndex}
         episodeId={episode.episodeId}
         segment={segment}
+        sceneSummary={episode.sceneSummaryMap?.[segment.panelData?.planPanelId || '']}
         isExpanded={isSegmentExpanded}
         onToggle={() => onSegmentToggle(isSegmentExpanded ? null : segmentKey)}
         onApprove={() => onSegmentApprove(episode.episodeId, segment.segmentIndex)}
         onRegenerate={(feedback) => onSegmentRegenerate(episode.episodeId, segment.segmentIndex, feedback)}
         onGenerateVideo={() => onSegmentGenerateVideo(episode.episodeId, segment.segmentIndex)}
+        onGenerateComic={onSegmentGenerateComic ? () => onSegmentGenerateComic(episode.episodeId, segment.segmentIndex) : undefined}
+        isGeneratingComic={generatingComicPanelId === segment.panelData?.panelId}
+        onReviseSinglePanel={onSegmentReviseSingle ? (feedback) => onSegmentReviseSingle(episode.episodeId, segment.segmentIndex, feedback) : undefined}
+        isRevisingPanel={isRevisingSinglePanelId === segment.panelData?.panelId}
+        onUpdatePanel={onSegmentUpdatePanel ? (fields) => onSegmentUpdatePanel(episode.episodeId, segment.segmentIndex, fields) : undefined}
+        isUpdatingPanel={isUpdatingSinglePanelId === segment.panelData?.panelId}
         onGenerateBackground={onGenerateBackground ? (panelId) => onGenerateBackground(episode.episodeId, panelId) : undefined}
         isGeneratingBackground={generatingBackgroundPanelId === segment.panelData?.panelId}
       />

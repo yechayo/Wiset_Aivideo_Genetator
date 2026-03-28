@@ -1,0 +1,82 @@
+<h2>Episode & Panel API 设计方案</h2>
+<p class="subtitle">Panel 负责所有视频生产，Episode 只管 CRUD + 后期</p>
+
+<div class="section">
+  <h3>业务流程</h3>
+  <p>Script → Character → <strong style="color:#c0392b">Panel（分镜+生产）</strong> → <strong style="color:#8e44ad">Episode（后期合成）</strong></p>
+</div>
+
+<div class="section">
+  <h3 style="color:#c0392b">PanelController — 分镜 CRUD + 全部生产逻辑</h3>
+  <p class="subtitle">路径: /api/projects/{projectId}/episodes/{episodeId}/panels</p>
+
+  <div style="background:#fef5f5; border-left:3px solid #c0392b; padding:12px; margin:8px 0; font-family:monospace; font-size:13px;">
+    <strong>CRUD:</strong><br>
+    GET /panels — 分镜列表<br>
+    GET /panels/{panelId} — 分镜详情<br>
+    POST /panels — 创建分镜<br>
+    PUT /panels/{panelId} — 更新分镜<br>
+    DELETE /panels/{panelId} — 删除分镜
+  </div>
+
+  <div style="background:#fef5f5; border-left:3px solid #c0392b; padding:12px; margin:8px 0; font-family:monospace; font-size:13px;">
+    <strong>分镜生成流程（从 StoryController 迁入）:</strong><br>
+    POST /panels/generate — AI 生成分镜<br>
+    POST /panels/confirm — 确认分镜<br>
+    POST /panels/revise — 修改分镜<br>
+    POST /panels/retry — 重试生成
+  </div>
+
+  <div style="background:#fef5f5; border-left:3px solid #c0392b; padding:12px; margin:8px 0; font-family:monospace; font-size:13px;">
+    <strong>单格生产流程（从 EpisodeController 迁入）:</strong><br>
+    GET /panels/{id}/background — 背景状态<br>
+    POST /panels/{id}/background — 生成背景<br>
+    GET /panels/{id}/fusion — 融合状态<br>
+    POST /panels/{id}/fusion — 生成融合<br>
+    GET /panels/{id}/transition — 转场状态<br>
+    POST /panels/{id}/transition — 生成转场<br>
+    GET /panels/{id}/video-task — 视频任务状态<br>
+    POST /panels/{id}/produce — 一键生产单格<br>
+    GET /panels/{id}/production-status — 完整生产状态<br>
+    GET /panels/{id}/tail-frame — 尾帧信息
+  </div>
+
+  <div style="background:#fef5f5; border-left:3px solid #c0392b; padding:12px; margin:8px 0; font-family:monospace; font-size:13px;">
+    <strong>批量/集级操作（从 EpisodeController 迁入）:</strong><br>
+    GET /panels/grid-info — 网格信息<br>
+    POST /panels/fusion-image — 上传融合图<br>
+    POST /panels/submit-fusion-page — 提交融合页<br>
+    POST /panels/split-grid-page — 切分网格<br>
+    GET /panels/panel-states — 所有面板状态<br>
+    POST /panels/auto-produce-all — 批量生产<br>
+    POST /panels/synthesize — 合成最终视频<br>
+    GET /panels/video-segments — 视频片段列表
+  </div>
+</div>
+
+<div class="section">
+  <h3 style="color:#8e44ad">EpisodeController — CRUD + 后期合成</h3>
+  <p class="subtitle">路径: /api/projects/{projectId}/episodes</p>
+
+  <div style="background:#f5f0fa; border-left:3px solid #8e44ad; padding:12px; margin:8px 0; font-family:monospace; font-size:13px;">
+    <strong>CRUD:</strong><br>
+    GET /episodes — 剧集列表（分页）<br>
+    GET /episodes/{episodeId} — 剧集详情<br>
+    POST /episodes — 创建剧集<br>
+    PUT /episodes/{episodeId} — 更新剧集<br>
+    DELETE /episodes/{episodeId} — 删除剧集
+  </div>
+
+  <div style="background:#f5f0fa; border-left:3px solid #8e44ad; padding:12px; margin:8px 0; font-family:monospace; font-size:13px;">
+    <strong>后期（预留）:</strong><br>
+    POST /episodes/{episodeId}/production-status — 管线状态查询<br>
+    POST /episodes/{episodeId}/retry-production — 重试<br>
+    <em style="color:#999">（未来 FFmpeg 剪辑拼接接口预留）</em>
+  </div>
+</div>
+
+<div class="section">
+  <h3>废弃</h3>
+  <p><strong style="color:#999">StoryController</strong> — 职责拆分完毕后整体删除<br>
+  <strong style="color:#999">原 EpisodeController 的大量生产接口</strong> — 已迁移到 PanelController</p>
+</div>

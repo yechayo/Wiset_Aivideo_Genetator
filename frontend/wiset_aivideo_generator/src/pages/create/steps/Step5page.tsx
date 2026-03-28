@@ -5,13 +5,50 @@ import type {
   EpisodeState,
   SegmentState,
   ExpansionState,
+  SegmentPipelineStep,
 } from './types';
-import { getEpisodes, getPanels, generatePanels, getPanelGenerateStatus, generateBackground, revisePanel } from '../../../services/episodeService';
-import { getCharacterStatus } from '../../../services/characterService';
+import {
+  getEpisodes,
+  getPanels,
+  generatePanels,
+  getPanelGenerateStatus,
+  generateBackground,
+  revisePanel,
+  getBatchProductionStatuses,
+  approveComic,
+  reviseComic,
+  generateVideo,
+  generateComic,
+  reviseSinglePanel,
+  updatePanel,
+} from '../../../services/episodeService';
+import type { PanelProductionStatusResponse } from '../../../services/types/episode.types';
+import { getCharacterStatus, getCharacters } from '../../../services/characterService';
 import EpisodeCard from './components/EpisodeCard';
 
 interface Step5pageProps {
   project: any;
+}
+
+/**
+ * 将后端 PanelProductionStatusResponse 映射为前端 SegmentPipelineStep
+ */
+function mapProductionToPipelineStep(status: {
+  backgroundStatus: string;
+  backgroundUrl: string | null;
+  comicStatus: string;
+  videoStatus: string;
+}): SegmentPipelineStep {
+  if (status.videoStatus === 'completed') return 'video_completed';
+  if (status.videoStatus === 'failed') return 'video_failed';
+  if (status.videoStatus === 'generating') return 'video_generating';
+  if (status.comicStatus === 'approved') return 'comic_approved';
+  if (status.comicStatus === 'pending_review') return 'comic_review';
+  if (status.comicStatus === 'generating') return 'comic_review';
+  if (status.comicStatus === 'failed') return 'comic_review';
+  if (status.backgroundUrl) return 'scene_ready';
+  if (status.backgroundStatus === 'generating') return 'scene_ready';
+  return 'pending';
 }
 
 /**
@@ -29,7 +66,12 @@ const Step5page = ({ project }: Step5pageProps) => {
   const [error, setError] = useState<string | null>(null);
   const [generatingEpisodeId, setGeneratingEpisodeId] = useState<number | null>(null);
   const [charAvatarMap, setCharAvatarMap] = useState<Record<string, string>>({});
+  // 角色 name→ID 映射，用于修正 AI 把名字填进 char_id 的老数据
+  const [charNameToIdMap, setCharNameToIdMap] = useState<Record<string, string>>({});
   const [generatingBackgroundPanelId, setGeneratingBackgroundPanelId] = useState<string | null>(null);
+  const [generatingComicPanelId, setGeneratingComicPanelId] = useState<string | null>(null);
+  const [revisingPanelId, setRevisingPanelId] = useState<string | null>(null);
+  const [updatingPanelId, setUpdatingPanelId] = useState<string | null>(null);
   const [revisingEpisodeId, setRevisingEpisodeId] = useState<number | null>(null);
 
   // UI 状态：当前展开的集数/片段（手风琴模式）
@@ -66,12 +108,32 @@ const Step5page = ({ project }: Step5pageProps) => {
       let chapterIndex = 0;
       for (const [chapterTitle, chapterEpisodes] of chapterMap.entries()) {
         chapterIndex++;
-        const episodeStates: EpisodeState[] = chapterEpisodes.map((ep, idx) => ({
-          episodeId: ep.id,
-          episodeIndex: ep.episodeInfo?.episodeNum || idx + 1,
-          title: ep.episodeInfo?.title,
-          segments: [],
-        }));
+        const episodeStates: EpisodeState[] = chapterEpisodes.map((ep, idx) => {
+          // 从 panelPlan 解析 scene_summary 映射
+          let sceneSummaryMap: Record<string, string> = {};
+          try {
+            const planStr = ep.episodeInfo?.panelPlan;
+            if (planStr) {
+              const plan = JSON.parse(planStr);
+              if (Array.isArray(plan?.panels)) {
+                sceneSummaryMap = {};
+                plan.panels.forEach((p: any) => {
+                  if (p.panel_id && p.scene_summary) {
+                    sceneSummaryMap[p.panel_id] = p.scene_summary;
+                  }
+                });
+              }
+            }
+          } catch { /* ignore parse error */ }
+
+          return {
+            episodeId: ep.id,
+            episodeIndex: ep.episodeInfo?.episodeNum || idx + 1,
+            title: ep.episodeInfo?.title,
+            sceneSummaryMap,
+            segments: [],
+          };
+        });
         builtChapters.push({
           chapterIndex,
           title: chapterTitle,
@@ -89,6 +151,31 @@ const Step5page = ({ project }: Step5pageProps) => {
   useEffect(() => {
     loadEpisodes();
   }, [loadEpisodes]);
+
+  /**
+   * 加载项目角色列表，构建 name→ID 映射
+   * 用于修正老数据中 AI 把角色名字填进 char_id 的问题
+   */
+  useEffect(() => {
+    if (!projectId) return;
+    (async () => {
+      try {
+        const res = await getCharacters(projectId, { page: 1, size: 100 });
+        const items = res.data?.items || [];
+        const map: Record<string, string> = {};
+        items.forEach((c: any) => {
+          if (c.charId && c.name) {
+            map[c.name] = c.charId;
+          }
+        });
+        if (Object.keys(map).length > 0) {
+          setCharNameToIdMap(map);
+        }
+      } catch {
+        // 静默失败
+      }
+    })();
+  }, [projectId]);
 
   // 计算完成统计
   const totalSegments = chapters.reduce(
@@ -149,36 +236,63 @@ const Step5page = ({ project }: Step5pageProps) => {
       if ((res.code !== 0 && res.code !== 200) || !res.data) return;
       const panels = res.data || [];
 
-      // 收集涉及的角色 ID
+      // 收集涉及的角色 ID，修正无效 char_id（如 AI 把名字 "T-1" 填进了 char_id）
       charIds = [...new Set(
-        panels.flatMap((p: any) => (p.panelInfo?.characters || []).map((c: any) => c.char_id).filter(Boolean))
+        panels.flatMap((p: any) => (p.panelInfo?.characters || []).map((c: any) => {
+          const raw = c.char_id || '';
+          // 如果不是合法 ID，尝试通过 name→ID 映射修正
+          if (raw && !raw.startsWith('CHAR-') && charNameToIdMap[raw]) {
+            return charNameToIdMap[raw];
+          }
+          return raw.startsWith('CHAR-') ? raw : '';
+        }).filter(Boolean))
       )];
 
       // 将分镜转为 segments
       const segments: SegmentState[] = panels.map((panel: any, idx: number) => {
         const info = panel.panelInfo || {};
-        // 解析角色头像列表
-        const characterAvatars = (info.characters || []).map((c: any) => ({
-          name: c.char_id || '',
-          avatarUrl: charAvatarMap[c.char_id] || '',
-        }));
+        // 解析角色头像列表，修正无效 char_id
+        const characterAvatars = (info.characters || []).map((c: any) => {
+          const rawCharId = c.char_id || '';
+          const resolvedCharId = (rawCharId && !rawCharId.startsWith('CHAR-'))
+            ? (charNameToIdMap[rawCharId] || rawCharId)
+            : rawCharId;
+          return {
+            charId: resolvedCharId,
+            name: c.name || rawCharId || '',
+            avatarUrl: charAvatarMap[resolvedCharId] || '',
+          };
+        });
         // 拼接台词
         const dialogue = (info.dialogue || [])
           .map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text)
           .join('\n');
 
+        const bgUrl = info.backgroundUrl || null;
+        const comicUrl = info.comicUrl || null;
+        const comicStatus = info.comicStatus || null;
+        const videoUrl = info.videoUrl || null;
+        const videoStatus = info.videoStatus || null;
+
         return {
           segmentIndex: idx,
           title: `分镜 ${idx + 1}`,
           synopsis: info.composition || '',
-          sceneThumbnail: info.backgroundUrl || null,
+          sceneThumbnail: bgUrl,
           characterAvatars,
-          pipelineStep: 'pending' as const,
-          comicUrl: null,
-          videoUrl: null,
-          feedback: '',
+          pipelineStep: mapProductionToPipelineStep({
+            backgroundStatus: bgUrl ? 'completed' : (info.backgroundStatus || 'pending'),
+            backgroundUrl: bgUrl,
+            comicStatus: comicStatus || 'pending',
+            videoStatus: videoStatus || 'pending',
+          }),
+          comicUrl,
+          videoUrl,
+          feedback: info.revisionFeedback || '',
           panelData: {
             panelId: String(panel.id),
+            planPanelId: info.panel_id || '',
+            composition: info.composition || '',
             shotType: info.shot_type,
             cameraAngle: info.camera_angle,
             pacing: info.pacing,
@@ -187,6 +301,7 @@ const Step5page = ({ project }: Step5pageProps) => {
             background: info.background || {},
             imagePromptHint: info.image_prompt_hint,
             sfx: info.sfx || [],
+            duration: info.duration,
           },
         };
       });
@@ -207,7 +322,7 @@ const Step5page = ({ project }: Step5pageProps) => {
     if (charIds.length > 0) {
       loadCharacterAvatars(charIds);
     }
-  }, [projectId, charAvatarMap]);
+  }, [projectId, charAvatarMap, charNameToIdMap]);
 
   /**
    * 手动刷新分镜（清除缓存重新加载）
@@ -242,7 +357,7 @@ const Step5page = ({ project }: Step5pageProps) => {
             ...seg,
             characterAvatars: seg.characterAvatars.map(a => ({
               ...a,
-              avatarUrl: charAvatarMap[a.name] || a.avatarUrl,
+              avatarUrl: charAvatarMap[a.charId] || a.avatarUrl,
             })),
           })),
         })),
@@ -250,12 +365,55 @@ const Step5page = ({ project }: Step5pageProps) => {
     );
   }, [charAvatarMap]);
 
+  /**
+   * 刷新某集所有 Panel 的生产状态
+   */
+  const refreshProductionStatuses = useCallback(async (episodeId: number) => {
+    if (!projectId) return;
+    try {
+      const res = await getBatchProductionStatuses(projectId, episodeId);
+      if ((res.code !== 0 && res.code !== 200) || !res.data) return;
+
+      const statusMap = new Map<number, PanelProductionStatusResponse>();
+      res.data.forEach(s => statusMap.set(s.panelId, s));
+
+      setChapters(prev =>
+        prev.map(ch => ({
+          ...ch,
+          episodes: ch.episodes.map(ep =>
+            ep.episodeId === episodeId
+              ? {
+                  ...ep,
+                  segments: ep.segments.map(seg => {
+                    const panelId = Number(seg.panelData?.panelId);
+                    const status = statusMap.get(panelId);
+                    if (!status) return seg;
+
+                    return {
+                      ...seg,
+                      pipelineStep: mapProductionToPipelineStep(status),
+                      comicUrl: status.comicUrl ?? seg.comicUrl,
+                      videoUrl: status.videoUrl ?? seg.videoUrl,
+                      sceneThumbnail: status.backgroundUrl ?? seg.sceneThumbnail,
+                    };
+                  }),
+                }
+              : ep
+          ),
+        }))
+      );
+    } catch (err) {
+      console.error('刷新生产状态失败:', err);
+    }
+  }, [projectId]);
+
   // 展开集数时自动加载分镜
   useEffect(() => {
     if (expansion.expandedEpisodeId !== null) {
       loadPanelsForEpisode(expansion.expandedEpisodeId);
+      refreshProductionStatuses(expansion.expandedEpisodeId);
     }
-  }, [expansion.expandedEpisodeId, loadPanelsForEpisode]);
+  }, [expansion.expandedEpisodeId, loadPanelsForEpisode, refreshProductionStatuses]);
 
   /**
    * 生成分镜（异步任务，轮询状态）
@@ -366,12 +524,19 @@ const Step5page = ({ project }: Step5pageProps) => {
       if (res.code !== 0 && res.code !== 200) {
         alert(res.message || '生成背景图失败');
       }
+      const poll = async () => {
+        for (let i = 0; i < 40; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          await refreshProductionStatuses(episodeId);
+        }
+      };
+      poll();
     } catch (err: any) {
-      alert(err?.message || '生成背景图失败');
+      alert(err?.response?.data?.message || err?.message || '生成背景图失败');
     } finally {
       setGeneratingBackgroundPanelId(null);
     }
-  }, [projectId]);
+  }, [projectId, refreshProductionStatuses]);
 
   /**
    * 修改分镜脚本
@@ -394,6 +559,113 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [projectId]);
 
   /**
+   * 审核通过四宫格漫画
+   */
+  const handleApproveComic = useCallback(async (episodeId: number, panelId: string) => {
+    if (!projectId) return;
+    try {
+      await approveComic(projectId, episodeId, Number(panelId));
+      await refreshProductionStatuses(episodeId);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '审核失败');
+    }
+  }, [projectId, refreshProductionStatuses]);
+
+  /**
+   * 生成四宫格漫画
+   */
+  const handleGenerateComic = useCallback(async (episodeId: number, panelId: string) => {
+    if (!projectId) return;
+    setGeneratingComicPanelId(panelId);
+    try {
+      await generateComic(projectId, episodeId, Number(panelId));
+      const poll = async () => {
+        for (let i = 0; i < 60; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          await refreshProductionStatuses(episodeId);
+        }
+      };
+      poll();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '生成四宫格失败');
+    } finally {
+      setGeneratingComicPanelId(null);
+    }
+  }, [projectId, refreshProductionStatuses]);
+
+  /**
+   * 退回重生成四宫格漫画
+   */
+  const handleRegenerateComic = useCallback(async (episodeId: number, panelId: string, feedback: string) => {
+    if (!projectId) return;
+    try {
+      await reviseComic(projectId, episodeId, Number(panelId), feedback);
+      const poll = async () => {
+        for (let i = 0; i < 60; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          await refreshProductionStatuses(episodeId);
+        }
+      };
+      poll();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '重新生成失败');
+    }
+  }, [projectId, refreshProductionStatuses]);
+
+  /**
+   * 生成视频
+   */
+  const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string) => {
+    if (!projectId) return;
+    try {
+      await generateVideo(projectId, episodeId, Number(panelId));
+      const poll = async () => {
+        for (let i = 0; i < 120; i++) {
+          await new Promise(r => setTimeout(r, 5000));
+          await refreshProductionStatuses(episodeId);
+        }
+      };
+      poll();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '生成视频失败');
+    }
+  }, [projectId, refreshProductionStatuses]);
+
+  /**
+   * AI 修改单个分镜
+   */
+  const handleReviseSinglePanel = useCallback(async (episodeId: number, panelId: string, feedback: string) => {
+    if (!projectId) return;
+    setRevisingPanelId(panelId);
+    try {
+      await reviseSinglePanel(projectId, episodeId, Number(panelId), feedback);
+      panelsLoadedRef.current.delete(episodeId);
+      await loadPanelsForEpisode(episodeId);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '修改分镜失败');
+    } finally {
+      setRevisingPanelId(null);
+    }
+  }, [projectId, loadPanelsForEpisode]);
+
+  /**
+   * 手动更新分镜信息
+   */
+  const handleUpdatePanel = useCallback(async (episodeId: number, panelId: string, fields: Record<string, any>) => {
+    if (!projectId) return;
+    setUpdatingPanelId(panelId);
+    try {
+      await updatePanel(projectId, episodeId, Number(panelId), fields);
+      panelsLoadedRef.current.delete(episodeId);
+      await loadPanelsForEpisode(episodeId);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '保存分镜失败');
+    } finally {
+      setUpdatingPanelId(null);
+    }
+  }, [projectId, loadPanelsForEpisode]);
+
+  /**
    * 渲染集数卡片
    */
   const renderEpisodeCard = (chapterIndex: number, episode: EpisodeState) => {
@@ -408,14 +680,38 @@ const Step5page = ({ project }: Step5pageProps) => {
         onToggle={() => toggleEpisode(episode.episodeId)}
         expandedSegmentKey={expansion.expandedSegmentKey}
         onSegmentToggle={toggleSegment}
-        onSegmentApprove={() => {}}
-        onSegmentRegenerate={() => {}}
-        onSegmentGenerateVideo={() => {}}
+        onSegmentApprove={(epId, segIdx) => {
+          const panelId = episode.segments[segIdx]?.panelData?.panelId;
+          if (panelId) handleApproveComic(epId, panelId);
+        }}
+        onSegmentRegenerate={(epId, segIdx, feedback) => {
+          const panelId = episode.segments[segIdx]?.panelData?.panelId;
+          if (panelId) handleRegenerateComic(epId, panelId, feedback);
+        }}
+        onSegmentGenerateVideo={(epId, segIdx) => {
+          const panelId = episode.segments[segIdx]?.panelData?.panelId;
+          if (panelId) handleGenerateVideo(epId, panelId);
+        }}
         onGeneratePanels={handleGeneratePanels}
         isGeneratingPanels={generatingEpisodeId === episode.episodeId}
         onRefreshPanels={handleRefreshPanels}
         onGenerateBackground={handleGenerateBackground}
         generatingBackgroundPanelId={generatingBackgroundPanelId}
+        onSegmentGenerateComic={(epId, segIdx) => {
+          const panelId = episode.segments[segIdx]?.panelData?.panelId;
+          if (panelId) handleGenerateComic(epId, panelId);
+        }}
+        generatingComicPanelId={generatingComicPanelId}
+        onSegmentReviseSingle={(epId, segIdx, feedback) => {
+          const panelId = episode.segments[segIdx]?.panelData?.panelId;
+          if (panelId) handleReviseSinglePanel(epId, panelId, feedback);
+        }}
+        isRevisingSinglePanelId={revisingPanelId}
+        onSegmentUpdatePanel={(epId, segIdx, fields) => {
+          const panelId = episode.segments[segIdx]?.panelData?.panelId;
+          if (panelId) handleUpdatePanel(epId, panelId, fields);
+        }}
+        isUpdatingSinglePanelId={updatingPanelId}
         onRevisePanel={handleRevisePanel}
         isRevisingPanel={revisingEpisodeId === episode.episodeId}
       />
