@@ -20,8 +20,8 @@
 // Header - 折叠/展开都显示
 .header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: var(--space-2);
   padding: calc(var(--space-3) * 2) var(--space-4);
   cursor: pointer;
   user-select: none;
@@ -32,13 +32,23 @@
   }
 }
 
+// Header 顶部行（左侧内容 + 右侧内容并排，必要时换行）
+.headerTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  width: 100%;
+}
+
 // Header 左侧
 .headerLeft {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  flex: 1;
-  min-width: 0; // 允许文本截断
+  flex: 1 1 400px; // 增加基础宽度，优先保持横向布局
+  min-width: 300px; // 提高最小宽度，确保文本不会被过度挤压
 }
 
 .statusIcon {
@@ -92,12 +102,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  flex-shrink: 0;
+  flex-wrap: wrap; // 允许内部元素换行
+  flex: 0 0 auto; // 不伸缩，保持内容宽度
+  margin-left: auto; // 靠右对齐
 }
 
 // 场景缩略图
 .sceneThumbnail {
-  width: 128px;
+  width: 96px;
   aspect-ratio: 16 / 9;
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -112,7 +124,7 @@
 }
 
 .sceneIcon {
-  width: 128px;
+  width: 96px;
   aspect-ratio: 16 / 9;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border-subtle);
@@ -162,6 +174,23 @@
 .generatingText {
   font-size: 11px;
   color: var(--color-accent);
+  display: flex;
+  align-items: center;
+}
+
+.miniSpinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(247, 249, 252, 0.3);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 // 角色头像列表
@@ -172,7 +201,7 @@
 }
 
 .avatar {
-  width: 128px;
+  width: 96px;
   aspect-ratio: 16 / 9;
   border-radius: var(--radius-sm);
   background: linear-gradient(135deg, var(--color-accent), var(--color-accent-strong));
@@ -371,13 +400,11 @@
 
   .sceneThumbnail,
   .sceneIcon {
-    width: 28px;
-    height: 28px;
+    width: 64px;
   }
 
   .avatar {
-    width: 24px;
-    height: 24px;
+    width: 64px;
     margin-left: -6px;
     font-size: 10px;
   }

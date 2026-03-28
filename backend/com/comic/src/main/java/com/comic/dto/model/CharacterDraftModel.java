@@ -15,4 +15,5 @@ public class CharacterDraftModel {
     private String appearance;        // 外貌描述
     private String background;        // 背景故事
     private Boolean confirmed;        // 是否已确认
+    private String species;           // 物种类型: HUMAN/ANTHRO_ANIMAL/CREATURE/ANIMAL
 }

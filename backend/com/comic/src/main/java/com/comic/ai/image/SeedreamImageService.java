@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
 
@@ -127,6 +128,63 @@ public class SeedreamImageService implements ImageGenerationService {
         } catch (Exception e) {
             log.error("Seedream 参考图生成异常", e);
             throw new RuntimeException("Seedream 参考图生成失败: " + e.getMessage(), e);
+        } finally {
+            semaphore.release();
+        }
+    }
+
+    @Override
+    public String generateWithMultipleReferences(String prompt, List<String> referenceImages, int width, int height) {
+        if (referenceImages == null || referenceImages.isEmpty()) {
+            throw new IllegalArgumentException("参考图列表不能为空");
+        }
+        if (referenceImages.size() > 14) {
+            throw new IllegalArgumentException("参考图数量不能超过14张，当前: " + referenceImages.size());
+        }
+        try {
+            semaphore.acquire();
+            log.info("Seedream 多参考图生成: 并发槽位 {}/{}, 参考图数量: {}", semaphore.availablePermits(), semaphore.getQueueLength(), referenceImages.size());
+
+            String size = getSizeString(width, height);
+
+            Map<String, Object> requestBody = buildRequestBody(prompt, size);
+            // 多图输入：image 字段传 List<String>
+            requestBody.put("image", referenceImages);
+
+            String jsonBody = objectMapper.writeValueAsString(requestBody);
+            log.info("Seedream 多参考图请求参数: {}", jsonBody);
+
+            Request request = new Request.Builder()
+                    .url(arkProperties.getBaseUrl() + "/images/generations")
+                    .addHeader("Authorization", "Bearer " + arkProperties.getApiKey())
+                    .addHeader("Content-Type", "application/json")
+                    .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
+                    .build();
+
+            try (Response response = httpClient.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    String errorBody = response.body() != null ? response.body().string() : "无响应体";
+                    log.error("Seedream 多参考图 API 调用失败: {} - {}", response.code(), errorBody);
+                    throw new RuntimeException("Seedream 多参考图生成失败: " + response.code() + " - " + errorBody);
+                }
+
+                String responseBody = response.body().string();
+                String tempUrl = parseResponse(responseBody);
+
+                String ossUrl = ossService.uploadFromUrl(tempUrl, null);
+                log.info("Seedream 多参考图生成完成，已转存 OSS: {}", ossUrl);
+                return ossUrl;
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Seedream 多参考图生成被中断", e);
+        } catch (IOException e) {
+            log.error("Seedream 多参考图生成 IO 异常", e);
+            throw new RuntimeException("Seedream 多参考图生成失败: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Seedream 多参考图生成异常", e);
+            throw new RuntimeException("Seedream 多参考图生成失败: " + e.getMessage(), e);
         } finally {
             semaphore.release();
         }

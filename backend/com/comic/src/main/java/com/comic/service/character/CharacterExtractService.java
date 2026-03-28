@@ -76,10 +76,12 @@ public class CharacterExtractService {
                     + "要求：\n"
                     + "1. 只返回纯JSON数组，不要有任何其他文字说明\n"
                     + "2. 不要使用markdown代码块标记\n"
-                    + "3. 每个角色必须包含：name(姓名), role(角色定位), personality(性格), appearance(外貌), background(背景), voice(声音特点)\n"
+                    + "3. 每个角色必须包含：name(姓名), role(角色定位), species(物种类型), personality(性格), appearance(外貌), background(背景), voice(声音特点)\n"
                     + "4. 所有字段都必须有值，不能为null\n"
                     + "5. role只能是：主角、反派、配角\n"
-                    + "6. 返回格式示例：[{\"name\":\"张三\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\",\"voice\":\"沉稳男声\"}]\n\n"
+                    + "6. species只能是以下值之一：HUMAN（人类）、ANTHRO_ANIMAL（拟人化动物，有人形身体但保留动物特征如猫耳狐尾）、CREATURE（奇幻/科幻种族，如精灵、机器人、恶魔）、ANIMAL（真实动物形态，如宠物、坐骑、灵兽，无人类形态）\n"
+                    + "7. 判断species的规则：如果角色描述中提到动物特征+人形身体（如猫耳、狐尾、龙鳞），则为ANTHRO_ANIMAL；如果提到非人类种族（精灵、机器人、恶魔、外星人），则为CREATURE；如果是纯动物形态无人类特征（灵兽、宠物、坐骑），则为ANIMAL；其余为HUMAN\n"
+                    + "8. 返回格式示例：[{\"name\":\"张三\",\"species\":\"HUMAN\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\",\"voice\":\"沉稳男声\"}]\n\n"
                     + "请直接返回JSON数组：";
 
             String result = textGenerationService.generate(systemPrompt, userPrompt);
@@ -149,6 +151,11 @@ public class CharacterExtractService {
         if (dto.getBackground() != null) {
             info.put(CharacterInfoKeys.BACKGROUND, dto.getBackground());
         }
+        if (dto.getSpecies() != null) {
+            if (isValidSpecies(dto.getSpecies())) {
+                info.put(CharacterInfoKeys.SPECIES, dto.getSpecies());
+            }
+        }
         character.setCharacterInfo(info);
         characterRepository.updateById(character);
         log.info("角色已更新: charId={}", charId);
@@ -201,6 +208,8 @@ public class CharacterExtractService {
                 dto.setAppearance(getStringValue(data, "appearance"));
                 dto.setBackground(getStringValue(data, "background"));
                 dto.setVoice(getStringValue(data, "voice"));
+                String species = getStringValue(data, "species");
+                dto.setSpecies(isValidSpecies(species) ? species : "HUMAN");
                 dto.setConfirmed(false);
                 result.add(dto);
             }
@@ -271,6 +280,7 @@ public class CharacterExtractService {
             info.put(CharacterInfoKeys.BACKGROUND, dto.getBackground());
             info.put(CharacterInfoKeys.CONFIRMED, false);
             info.put(CharacterInfoKeys.VISUAL_STYLE, visualStyle);
+            info.put(CharacterInfoKeys.SPECIES, dto.getSpecies() != null ? dto.getSpecies() : "HUMAN");
             character.setCharacterInfo(info);
 
             characterRepository.insert(character);
@@ -291,6 +301,7 @@ public class CharacterExtractService {
         resp.setVisualStyle(getInfoStr(info, CharacterInfoKeys.VISUAL_STYLE));
         resp.setExpressionStatus(getInfoStr(info, CharacterInfoKeys.EXPRESSION_STATUS));
         resp.setThreeViewStatus(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_STATUS));
+        resp.setSpecies(getInfoStr(info, CharacterInfoKeys.SPECIES));
         resp.setConfirmed(getInfoBool(info, CharacterInfoKeys.CONFIRMED));
         resp.setCreatedAt(character.getCreatedAt());
         return resp;
@@ -314,6 +325,10 @@ public class CharacterExtractService {
     private Boolean getInfoBool(Map<String, Object> info, String key) {
         Object v = info != null ? info.get(key) : null;
         return v != null ? Boolean.valueOf(v.toString()) : null;
+    }
+
+    private boolean isValidSpecies(String species) {
+        return species != null && ("HUMAN".equals(species) || "ANTHRO_ANIMAL".equals(species) || "CREATURE".equals(species) || "ANIMAL".equals(species));
     }
 
     @SuppressWarnings("unchecked")

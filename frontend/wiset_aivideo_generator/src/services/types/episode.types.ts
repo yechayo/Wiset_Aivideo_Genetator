@@ -157,6 +157,8 @@ export interface PanelProductionStatusResponse {
   videoStatus: string;
   videoUrl: string | null;
   videoDuration: number | null;
+  videoTaskId?: string | null;
+  offPeak?: boolean | null;
   errorMessage: string | null;
 }
 

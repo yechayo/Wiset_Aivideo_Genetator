@@ -25,6 +25,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   // 轮询相关状态
   const maxPollingCount = 45; // 最多轮询45次（90秒），覆盖 AI 生成耗时
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingCountRef = useRef(0);
 
   // 生成剧集对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -45,61 +46,50 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     getProjectId() || project.projectId || (project.id ? String(project.id) : null)
   );
 
-  useEffect(() => {
+  const fetchScriptWithPolling = useCallback((attempt: number = 0) => {
     const pid = projectIdRef.current;
 
-    const fetchScript = async (attempt: number = 0) => {
-      if (!pid) {
-        setError('无法获取项目 ID');
-        setIsLoading(false);
-        hideOverlayRef.current();
-        return;
-      }
+    if (!pid) {
+      setError('无法获取项目 ID');
+      setIsLoading(false);
+      hideOverlayRef.current();
+      return;
+    }
 
-      // 第一次尝试时设置 loading
-      if (attempt === 0) {
-        setIsLoading(true);
-      }
-      setError(null);
+    if (attempt === 0) {
+      setIsLoading(true);
+      pollingCountRef.current = 0;
+    }
+    setError(null);
 
+    const doFetch = async () => {
       try {
         const result = await getScript(pid);
-        console.log('剧本数据:', result);
 
         if (isApiSuccess(result) && result.data) {
-          // 有数据，清除轮询
           setScriptData(result.data);
           if (pollingRef.current) {
             clearTimeout(pollingRef.current);
             pollingRef.current = null;
           }
           setIsLoading(false);
-          // 数据就绪后才隐藏过渡遮罩，避免显示空白加载状态
           hideOverlayRef.current();
         } else {
-          // 无数据，检查是否需要轮询
-          if (attempt < maxPollingCount) {
-            // 等待2秒后重试
-            pollingRef.current = setTimeout(() => {
-              fetchScript(attempt + 1);
-            }, 2000);
-            return; // 保持 loading 状态（过渡遮罩继续显示）
+          if (pollingCountRef.current < maxPollingCount) {
+            pollingCountRef.current++;
+            pollingRef.current = setTimeout(() => doFetch(), 2000);
+            return;
           } else {
-            // 超过最大轮询次数，显示空状态
             setScriptData(null);
             setIsLoading(false);
             hideOverlayRef.current();
-            console.warn('剧本数据为空或未生成，已达到最大轮询次数');
           }
         }
       } catch (err) {
-        console.error('获取剧本失败:', err);
-        if (attempt < maxPollingCount) {
-          // 网络错误时也重试
-          pollingRef.current = setTimeout(() => {
-            fetchScript(attempt + 1);
-          }, 2000);
-          return; // 保持 loading 状态（过渡遮罩继续显示）
+        if (pollingCountRef.current < maxPollingCount) {
+          pollingCountRef.current++;
+          pollingRef.current = setTimeout(() => doFetch(), 2000);
+          return;
         } else {
           setError('获取剧本失败，请稍后重试');
           setIsLoading(false);
@@ -108,9 +98,11 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       }
     };
 
-    fetchScript();
+    doFetch();
+  }, []);
 
-    // 清理函数
+  useEffect(() => {
+    fetchScriptWithPolling();
     return () => {
       if (pollingRef.current) {
         clearTimeout(pollingRef.current);
@@ -118,7 +110,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 只在 mount 时执行一次，projectId 通过 ref 读取
+  }, []);
 
   // 监听后端生成状态：isGenerating 从 true → false 时，立即重新拉取剧本数据
   const { statusInfo } = useCreateStore();
@@ -373,7 +365,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
           <p>{error}</p>
           <button
             className={styles.retryButton}
-            onClick={() => window.location.reload()}
+            onClick={() => fetchScriptWithPolling()}
           >
             重试
           </button>
@@ -436,7 +428,13 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       {!isLoading && !error && !scriptData && (
         <div className={styles.emptyState}>
           <p>暂无剧本数据</p>
-          <p className={styles.emptyHint}>剧本可能还在生成中，请稍后刷新</p>
+          <p className={styles.emptyHint}>剧本可能还在生成中</p>
+          <button
+            className={styles.retryButton}
+            onClick={() => fetchScriptWithPolling()}
+          >
+            重新加载
+          </button>
         </div>
       )}
 

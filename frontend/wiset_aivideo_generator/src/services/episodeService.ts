@@ -182,9 +182,11 @@ export async function generateVideo(
   projectId: string,
   episodeId: number,
   panelId: number,
+  offPeak: boolean = false,
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video`,
+    { offPeak },
   );
 }
 

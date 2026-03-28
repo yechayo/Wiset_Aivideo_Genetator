@@ -55,7 +55,9 @@ public class PanelGenerationService {
     private final PanelPromptBuilder panelPromptBuilder;
 
     private static final Set<String> ALLOWED_SHOT_TYPES = new HashSet<>(Arrays.asList(
-            "WIDE_SHOT", "MID_SHOT", "CLOSE_UP", "OVER_SHOULDER"
+            "WIDE_SHOT", "MID_SHOT", "CLOSE_UP", "OVER_SHOULDER",
+            "EXTREME_CLOSE_UP", "FULL_SHOT", "LONG_SHOT", "TWO_SHOT",
+            "POV", "ESTABLISHING_SHOT"
     ));
     private static final Set<String> ALLOWED_CAMERA_ANGLES = new HashSet<>(Arrays.asList(
             "eye_level", "low_angle", "high_angle", "bird_eye"
@@ -160,7 +162,7 @@ public class PanelGenerationService {
             for (int i = 0; i < panelsPlan.size(); i++) {
                 JsonNode panelPlan = panelsPlan.get(i);
                 if (!panelPlan.has("duration") || !panelPlan.get("duration").isInt()) {
-                    int defaultDuration = Math.min(16, Math.max(1,
+                    int defaultDuration = Math.min(16, Math.max(10,
                             (int) Math.round((double) episodeDuration / panelsPlan.size())));
                     ((ObjectNode) panelPlan).put("duration", defaultDuration);
                     log.warn("Panel {} missing duration, assigned default: {}", i, defaultDuration);
@@ -173,6 +175,49 @@ public class PanelGenerationService {
 
             String detailSystemPrompt = panelPromptBuilder.buildPanelDetailSystemPrompt(world, charStates);
 
+            // 先删除该 episode 下旧的 Panel（逻辑删除），再逐个生成
+            List<Panel> oldPanels = panelRepository.findByEpisodeId(episodeId);
+            for (Panel old : oldPanels) {
+                panelRepository.deleteById(old.getId());
+            }
+
+            // ===== 预先创建骨架 Panel 记录，让前端能知道总共有多少个 panels =====
+            List<Panel> skeletonPanels = new java.util.ArrayList<>();
+            for (int i = 0; i < panelsPlan.size(); i++) {
+                JsonNode panelPlan = panelsPlan.get(i);
+                String panelId = panelPlan.has("panel_id") ? panelPlan.get("panel_id").asText() : "p" + (i + 1);
+
+                // 创建骨架 Panel，只包含基本信息
+                Panel skeletonPanel = new Panel();
+                skeletonPanel.setEpisodeId(episodeId);
+                skeletonPanel.setStatus("GENERATING"); // 标记为生成中
+
+                // 构建 skeleton panelInfo（只包含 Step1 的基本信息）
+                Map<String, Object> skeletonInfo = new java.util.LinkedHashMap<>();
+                skeletonInfo.put("panel_id", panelId);
+                skeletonInfo.put("planPanelId", panelId); // 用于匹配 panelPlan
+                if (panelPlan.has("scene_summary")) {
+                    skeletonInfo.put("scene_summary", panelPlan.get("scene_summary").asText());
+                }
+                if (panelPlan.has("characters")) {
+                    skeletonInfo.put("characters", objectMapper.convertValue(panelPlan.get("characters"), List.class));
+                }
+                if (panelPlan.has("mood")) {
+                    skeletonInfo.put("mood", panelPlan.get("mood").asText());
+                }
+                if (panelPlan.has("time_of_day")) {
+                    skeletonInfo.put("time_of_day", panelPlan.get("time_of_day").asText());
+                }
+                if (panelPlan.has("duration")) {
+                    skeletonInfo.put("duration", panelPlan.get("duration").asInt());
+                }
+                skeletonPanel.setPanelInfo(skeletonInfo);
+
+                panelRepository.insert(skeletonPanel);
+                skeletonPanels.add(skeletonPanel);
+            }
+            log.info("Created {} skeleton panels: episodeId={}", skeletonPanels.size(), episodeId);
+
             int confirmedDurationTotal = 0;
             for (int i = 0; i < panelsPlan.size(); i++) {
                 JsonNode panelPlan = panelsPlan.get(i);
@@ -180,7 +225,7 @@ public class PanelGenerationService {
 
                 log.info("Panel generation Step2 (detail): episodeId={}, panel {}/{}", episodeId, i + 1, panelsPlan.size());
 
-                int plannedDuration = panelPlan.has("duration") ? panelPlan.get("duration").asInt() : 5;
+                int plannedDuration = panelPlan.has("duration") ? panelPlan.get("duration").asInt() : 10;
                 int remainingPanels = panelsPlan.size() - i;
                 int remainingBudget = episodeDuration - confirmedDurationTotal;
 
@@ -202,6 +247,58 @@ public class PanelGenerationService {
                 confirmedDurationTotal += actualDuration;
 
                 detailedPanels.add(detailJson);
+
+                // ===== 增量保存：更新骨架 Panel 为完整详情 =====
+                String targetPanelId = detailJson.has("panel_id") ? detailJson.get("panel_id").asText() : "p" + (i + 1);
+                Panel skeletonPanel = skeletonPanels.stream()
+                        .filter(p -> {
+                            Map<String, Object> info = p.getPanelInfo();
+                            String panelId = info != null ? (String) info.get("panel_id") : null;
+                            return targetPanelId.equals(panelId);
+                        })
+                        .findFirst()
+                        .orElse(null);
+
+                if (skeletonPanel != null) {
+                    // 保留骨架Panel中的scene_summary（Step1的剧情摘要）
+                    Map<String, Object> skeletonInfo = skeletonPanel.getPanelInfo();
+                    String sceneSummary = (String) skeletonInfo.get("scene_summary");
+
+                    // 更新骨架Panel为完整详情
+                    skeletonPanel.setStatus("CREATED");
+                    Map<String, Object> detailInfo = objectMapper.convertValue(detailJson, Map.class);
+
+                    // 如果Step2的detail没有scene_summary，但骨架Panel有，则保留
+                    if (sceneSummary != null && !detailInfo.containsKey("scene_summary")) {
+                        detailInfo.put("scene_summary", sceneSummary);
+                    }
+
+                    skeletonPanel.setPanelInfo(detailInfo);
+                    panelRepository.updateById(skeletonPanel);
+                    log.info("Panel updated progressively: episodeId={}, panel {}/{}, panelId={}",
+                            episodeId, i + 1, panelsPlan.size(), targetPanelId);
+                } else {
+                    // 兜底：如果找不到骨架Panel，创建新的（理论上不应该发生）
+                    // 从panelPlan中获取scene_summary
+                    JsonNode currentPanelPlan = panelsPlan.get(i);
+                    String sceneSummaryFromPlan = currentPanelPlan.has("scene_summary")
+                            ? currentPanelPlan.get("scene_summary").asText() : null;
+
+                    Panel panelEntity = new Panel();
+                    panelEntity.setEpisodeId(episodeId);
+                    panelEntity.setStatus("CREATED");
+                    Map<String, Object> detailInfo = objectMapper.convertValue(detailJson, Map.class);
+
+                    // 保留scene_summary
+                    if (sceneSummaryFromPlan != null && !detailInfo.containsKey("scene_summary")) {
+                        detailInfo.put("scene_summary", sceneSummaryFromPlan);
+                    }
+
+                    panelEntity.setPanelInfo(detailInfo);
+                    panelRepository.insert(panelEntity);
+                    log.warn("Panel created (fallback): episodeId={}, panel {}/{}, panelId={}",
+                            episodeId, i + 1, panelsPlan.size(), targetPanelId);
+                }
 
                 // 用当前 panel 的概要作为下一个 panel 的上下文
                 previousPanelSummary = buildPanelSummary(detailJson);
@@ -649,6 +746,7 @@ public class PanelGenerationService {
 
         normalizePanelId(panel, episode, panelIndex);
         normalizeCharacterIds(panel, buildCharacterLookup(charStates));
+        normalizeShotType(panel);
         normalizeDialogue(panel);
         normalizeSfx(panel);
     }
@@ -675,6 +773,7 @@ public class PanelGenerationService {
             ObjectNode panel = (ObjectNode) panelNode;
             normalizePanelId(panel, episode, i);
             normalizeCharacterIds(panel, characterLookup);
+            normalizeShotType(panel);
             normalizeDialogue(panel);
             normalizeSfx(panel);
         }
@@ -690,6 +789,42 @@ public class PanelGenerationService {
         JsonNode panelId = panel.get("panel_id");
         if (panelId != null && !panelId.isTextual()) {
             panel.put("panel_id", buildPanelId(getEpInfoInt(episode, EpisodeInfoKeys.EPISODE_NUM), panelIndex));
+        }
+    }
+
+    private static final Map<String, String> SHOT_TYPE_ALIAS_MAP = new HashMap<>();
+    static {
+        // 常见 AI 生成的 shot_type 别名映射到标准值
+        SHOT_TYPE_ALIAS_MAP.put("EXTREME_CLOSE_UP", "CLOSE_UP");
+        SHOT_TYPE_ALIAS_MAP.put("ECU", "CLOSE_UP");
+        SHOT_TYPE_ALIAS_MAP.put("FULL_SHOT", "WIDE_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("LONG_SHOT", "WIDE_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("WIDE", "WIDE_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("LONG", "WIDE_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("FULL", "WIDE_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("TWO_SHOT", "MID_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("OTS", "OVER_SHOULDER");
+        SHOT_TYPE_ALIAS_MAP.put("OVER_THE_SHOULDER", "OVER_SHOULDER");
+        SHOT_TYPE_ALIAS_MAP.put("POV", "CLOSE_UP");
+        SHOT_TYPE_ALIAS_MAP.put("ESTABLISHING_SHOT", "WIDE_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("INSERT", "CLOSE_UP");
+        SHOT_TYPE_ALIAS_MAP.put("CUTAWAY", "WIDE_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("MEDIUM_SHOT", "MID_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("MEDIUM", "MID_SHOT");
+        SHOT_TYPE_ALIAS_MAP.put("CLOSE", "CLOSE_UP");
+        SHOT_TYPE_ALIAS_MAP.put("MACRO", "CLOSE_UP");
+    }
+
+    private void normalizeShotType(ObjectNode panel) {
+        JsonNode shotTypeNode = panel.get("shot_type");
+        if (shotTypeNode == null || !shotTypeNode.isTextual()) return;
+        String shotType = shotTypeNode.asText().trim().toUpperCase();
+        if (ALLOWED_SHOT_TYPES.contains(shotType)) return;
+        String mapped = SHOT_TYPE_ALIAS_MAP.get(shotType);
+        if (mapped != null) {
+            panel.put("shot_type", mapped);
+        } else {
+            panel.put("shot_type", "MID_SHOT");
         }
     }
 
@@ -872,6 +1007,15 @@ public class PanelGenerationService {
         requireEnumField(json, "camera_angle", panelPath, ALLOWED_CAMERA_ANGLES);
         requireTextField(json, "composition", panelPath);
         requireEnumField(json, "pacing", panelPath, ALLOWED_PACING);
+        // 验证 duration 字段：必须是整数，范围 10-16
+        JsonNode durationNode = json.get("duration");
+        if (durationNode == null || !durationNode.isInt()) {
+            throw new IllegalStateException(panelPath + ".duration must be an integer between 10 and 16");
+        }
+        int duration = durationNode.asInt();
+        if (duration < 10 || duration > 16) {
+            throw new IllegalStateException(panelPath + ".duration must be between 10 and 16, got: " + duration);
+        }
         requireTextField(json, "image_prompt_hint", panelPath);
 
         JsonNode background = requireObjectField(json, "background", panelPath);
@@ -1029,10 +1173,19 @@ public class PanelGenerationService {
 
     private String requireEnumField(JsonNode node, String field, String path, Set<String> allowedValues) {
         String value = requireTextField(node, field, path);
-        if (!allowedValues.contains(value)) {
-            throw new IllegalStateException("Field " + path + "." + field + " has invalid value: " + value);
+        if (allowedValues.contains(value)) {
+            return value;
         }
-        return value;
+        // Case-insensitive fallback
+        for (String allowed : allowedValues) {
+            if (allowed.equalsIgnoreCase(value)) {
+                if (node.isObject()) {
+                    ((ObjectNode) node).put(field, allowed);
+                }
+                return allowed;
+            }
+        }
+        throw new IllegalStateException("Field " + path + "." + field + " has invalid value: " + value);
     }
 
     private String buildPanelId(Integer episodeNum, int panelIndex) {
@@ -1172,13 +1325,13 @@ public class PanelGenerationService {
         log.info("Calibrating durations: total={} target={}[{},{}]", totalActual, targetDuration, minTarget, maxTarget);
         double ratio = (double) targetDuration / totalActual;
 
-        // Proportional scaling + clamp to [1, 16]
+        // Proportional scaling + clamp to [10, 16]
         for (int i = 0; i < detailedPanels.size(); i++) {
             JsonNode panel = detailedPanels.get(i);
             if (panel.isObject() && panel.has("duration")) {
                 int original = panel.get("duration").asInt();
                 int calibrated = (int) Math.round(original * ratio);
-                calibrated = Math.max(1, Math.min(16, calibrated));
+                calibrated = Math.max(10, Math.min(16, calibrated));
                 ((ObjectNode) panel).put("duration", calibrated);
             }
         }
@@ -1204,7 +1357,7 @@ public class PanelGenerationService {
                     if (newTotal < minTarget && durations[i] < 16) {
                         maxDeviation = deviation;
                         maxDeviationIndex = i;
-                    } else if (newTotal > maxTarget && durations[i] > 1) {
+                    } else if (newTotal > maxTarget && durations[i] > 10) {
                         maxDeviation = deviation;
                         maxDeviationIndex = i;
                     }
@@ -1214,7 +1367,7 @@ public class PanelGenerationService {
             if (newTotal < minTarget && durations[maxDeviationIndex] < 16) {
                 durations[maxDeviationIndex]++;
                 newTotal++;
-            } else if (newTotal > maxTarget && durations[maxDeviationIndex] > 1) {
+            } else if (newTotal > maxTarget && durations[maxDeviationIndex] > 10) {
                 durations[maxDeviationIndex]--;
                 newTotal--;
             } else {

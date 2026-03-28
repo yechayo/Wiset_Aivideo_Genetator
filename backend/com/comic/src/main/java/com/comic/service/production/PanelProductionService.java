@@ -92,6 +92,18 @@ public class PanelProductionService {
         String videoStatus = getStr(info, "videoStatus");
         response.setVideoUrl(videoUrl);
         response.setVideoStatus(videoStatus != null ? videoStatus : (videoUrl != null ? "completed" : "pending"));
+
+        // 视频元数据
+        String videoTaskId = getStr(info, "videoTaskId");
+        response.setVideoTaskId(videoTaskId);
+        Boolean offPeak = info.containsKey("offPeak") ? (Boolean) info.get("offPeak") : null;
+        response.setOffPeak(offPeak);
+        Integer videoDuration = getInt(info, "videoDuration");
+        if (videoDuration == null && info.containsKey("duration")) {
+            videoDuration = info.get("duration") instanceof Number ? ((Number) info.get("duration")).intValue() : null;
+        }
+        response.setVideoDuration(videoDuration);
+
         response.setOverallStatus(determineOverallStatus(response));
         response.setCurrentStage(determineCurrentStage(response));
         return response;
@@ -185,12 +197,16 @@ public class PanelProductionService {
      * 生成视频（异步）
      */
     public void generateVideoByPanelId(Long panelId) {
+        generateVideoByPanelId(panelId, false);
+    }
+
+    public void generateVideoByPanelId(Long panelId, boolean offPeak) {
         checkNotGenerating(panelId, "videoStatus", "视频");
-        self().doGenerateVideoByPanelId(panelId);
+        self().doGenerateVideoByPanelId(panelId, offPeak);
     }
 
     @Async
-    public void doGenerateVideoByPanelId(Long panelId) {
+    public void doGenerateVideoByPanelId(Long panelId, boolean offPeak) {
         try {
             Panel panel = panelRepository.selectById(panelId);
             if (panel == null) throw new BusinessException("分镜不存在");
@@ -206,12 +222,13 @@ public class PanelProductionService {
             CharacterPromptManager.VisualStyle style = getProjectStyle(panel);
             String prompt = panelPromptBuilder.buildVideoPrompt(style, panel.getPanelInfo());
             int panelDuration = info.containsKey("duration") ? ((Number) info.get("duration")).intValue() : 5;
-            String taskId = videoGenerationService.generateAsync(prompt, panelDuration, "16:9", comicUrl);
+            String taskId = videoGenerationService.generateAsync(prompt, panelDuration, "16:9", comicUrl, offPeak);
             info.put("videoTaskId", taskId);
+            info.put("offPeak", offPeak);
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
-            self().pollNewVideoTask(panelId, taskId);
-            log.info("视频生成已提交: panelId={}, taskId={}", panelId, taskId);
+            self().pollNewVideoTask(panelId, taskId, offPeak);
+            log.info("视频生成已提交: panelId={}, taskId={}, offPeak={}", panelId, taskId, offPeak);
         } catch (Exception e) {
             log.error("视频生成失败: panelId={}", panelId, e);
             updatePanelState(panelId, "videoStatus", "failed", e.getMessage());
@@ -220,11 +237,14 @@ public class PanelProductionService {
     }
 
     @Async
-    public void pollNewVideoTask(Long panelId, String taskId) {
+    public void pollNewVideoTask(Long panelId, String taskId, boolean offPeak) {
+        // 错峰模式：48小时内生成，轮询间隔60秒，最多2880次(48h)；即时模式：5秒间隔，最多720次(1h)
+        int intervalSeconds = offPeak ? 60 : 5;
+        int maxPolls = offPeak ? 2880 : 120;
         try {
-            for (int i = 0; i < 120; i++) {
+            for (int i = 0; i < maxPolls; i++) {
                 VideoGenerationService.TaskStatus status = videoGenerationService.getTaskStatus(taskId);
-                if (status == null) { Thread.sleep(5000); continue; }
+                if (status == null) { Thread.sleep(intervalSeconds * 1000L); continue; }
                 switch (status.getStatus()) {
                     case "completed":
                         String videoUrl = status.getVideoUrl();
@@ -248,7 +268,7 @@ public class PanelProductionService {
                         updatePanelState(panelId, "videoStatus", "failed", status.getErrorMessage());
                         return;
                     default:
-                        Thread.sleep(5000);
+                        Thread.sleep(intervalSeconds * 1000L);
                         break;
                 }
             }
@@ -283,6 +303,19 @@ public class PanelProductionService {
     private String getStr(Map<String, Object> info, String key) {
         Object v = info.get(key);
         return v != null ? v.toString() : null;
+    }
+
+    private Integer getInt(Map<String, Object> info, String key) {
+        Object v = info.get(key);
+        if (v == null) return null;
+        if (v instanceof Number) {
+            return ((Number) v).intValue();
+        }
+        try {
+            return Integer.parseInt(v.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

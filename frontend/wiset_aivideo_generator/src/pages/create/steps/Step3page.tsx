@@ -38,6 +38,14 @@ const VISUAL_STYLE_OPTIONS = [
   { value: 'CYBERPUNK', label: '赛博朋克' },
 ];
 
+// 物种类型选项
+const SPECIES_OPTIONS = [
+  { value: 'HUMAN', label: '人类' },
+  { value: 'ANTHRO_ANIMAL', label: '拟人化动物' },
+  { value: 'CREATURE', label: '奇幻/科幻种族' },
+  { value: 'ANIMAL', label: '真实动物' },
+];
+
 const Step3page = ({ project }: Step3pageProps) => {
   const { statusInfo, canPerformAction, isLoadingStatus } = useCreateStore();
   const projectId = project.projectId!;
@@ -170,6 +178,7 @@ const Step3page = ({ project }: Step3pageProps) => {
           appearance: char.char.appearance,
           voice: char.char.voice,
           background: char.char.background,
+          species: char.char.species,
         });
       }
     }
@@ -396,6 +405,19 @@ const Step3page = ({ project }: Step3pageProps) => {
                                 onChange={(e) => handleStyleChange(char.char.charId, e.target.value)}
                               >
                                 {VISUAL_STYLE_OPTIONS.map(opt => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className={styles.formGroup}>
+                              <label className={styles.formLabel} htmlFor={`species-${char.char.charId}`}>物种类型</label>
+                              <select
+                                id={`species-${char.char.charId}`}
+                                className={styles.formSelect}
+                                value={editForm.species || 'HUMAN'}
+                                onChange={(e) => handleFormChange('species', e.target.value)}
+                              >
+                                {SPECIES_OPTIONS.map(opt => (
                                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                                 ))}
                               </select>

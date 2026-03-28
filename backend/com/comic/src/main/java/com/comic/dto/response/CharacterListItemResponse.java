@@ -20,5 +20,6 @@ public class CharacterListItemResponse {
     private String expressionStatus;
     private String threeViewStatus;
     private Boolean confirmed;
+    private String species;           // 物种类型
     private LocalDateTime createdAt;
 }

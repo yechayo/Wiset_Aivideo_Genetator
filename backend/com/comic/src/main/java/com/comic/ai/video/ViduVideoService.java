@@ -48,6 +48,11 @@ public class ViduVideoService implements VideoGenerationService {
 
     @Override
     public String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage) {
+        return generateAsync(prompt, duration, aspectRatio, referenceImage, viduProperties.isOffPeak());
+    }
+
+    @Override
+    public String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage, boolean offPeak) {
         boolean acquired = false;
         try {
             semaphore.acquire();
@@ -61,6 +66,7 @@ public class ViduVideoService implements VideoGenerationService {
             requestBody.put("prompt", prompt);
             requestBody.put("duration", duration);
             requestBody.put("watermark", false);
+            requestBody.put("off_peak", offPeak);
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             log.debug("Vidu 请求体: {}", jsonBody);

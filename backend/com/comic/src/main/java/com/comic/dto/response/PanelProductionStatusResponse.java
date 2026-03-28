@@ -17,6 +17,8 @@ public class PanelProductionStatusResponse {
     private String videoStatus;
     private String videoUrl;
     private Integer videoDuration;
+    private String videoTaskId;
+    private Boolean offPeak;
 
     private String errorMessage;
 }

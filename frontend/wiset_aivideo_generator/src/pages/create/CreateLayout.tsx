@@ -140,7 +140,7 @@ const CreateLayout = () => {
         );
       case 2:
         return currentProject ? (
-          <Step2page project={currentProject} />
+          <Step2page project={currentProject} onComplete={() => navigate(getStepUrl(3), { replace: true })} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 3:
         return currentProject ? (
@@ -164,7 +164,10 @@ const CreateLayout = () => {
   };
 
   const showLoadingOverlay =
-    ((statusInfo?.isGenerating ?? false) && statusInfo?.statusCode !== 'PANEL_GENERATING')
+    ((statusInfo?.isGenerating ?? false)
+      && statusInfo?.statusCode !== 'PANEL_GENERATING'
+      && statusInfo?.statusCode !== 'IMAGE_GENERATING'
+      && statusInfo?.statusCode !== 'CHARACTER_EXTRACTING')
     || isStepTransitioning;
 
   // 用 useCallback 稳定函数引用，避免每次渲染都创建新函数导致 Step2page 的 effect 重复触发

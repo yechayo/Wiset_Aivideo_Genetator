@@ -123,6 +123,7 @@ comic:
     api-key: vda_933899833004011520_0BfkVZcAn5cRhe3Llzr0mxhKwEBl8uOJ
     base-url: https://api.vidu.cn/ent/v2
     model: viduq3-turbo
+    off-peak: false              # 错峰模式（积分更低，48h内生成）
 
   # ========== DeepSeek API 配置（思考模式） ==========
   deepseek:
@@ -134,7 +135,8 @@ comic:
 
   # ========== 阿里�?OSS 配置 ==========
   oss:
-
+    access-key-id: REDACTED_OSS_KEY_ID
+    access-key-secret: REDACTED_OSS_KEY_SECRET
     bucket-name: zhiqiantong-test
     endpoint: oss-cn-beijing.aliyuncs.com
     dir: comic/images/

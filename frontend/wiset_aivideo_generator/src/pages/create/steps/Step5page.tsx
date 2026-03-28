@@ -70,6 +70,7 @@ const Step5page = ({ project }: Step5pageProps) => {
   const [charNameToIdMap, setCharNameToIdMap] = useState<Record<string, string>>({});
   const [generatingBackgroundPanelId, setGeneratingBackgroundPanelId] = useState<string | null>(null);
   const [generatingComicPanelId, setGeneratingComicPanelId] = useState<string | null>(null);
+  const [generatingVideoPanelId, setGeneratingVideoPanelId] = useState<string | null>(null);
   const [revisingPanelId, setRevisingPanelId] = useState<string | null>(null);
   const [updatingPanelId, setUpdatingPanelId] = useState<string | null>(null);
   const [revisingEpisodeId, setRevisingEpisodeId] = useState<number | null>(null);
@@ -79,6 +80,19 @@ const Step5page = ({ project }: Step5pageProps) => {
     expandedEpisodeId: null,
     expandedSegmentKey: null,
   });
+
+  // 错峰模式开关（localStorage 持久化）
+  const [offPeak, setOffPeak] = useState(() => {
+    const saved = localStorage.getItem('video_off_peak');
+    return saved === 'true';
+  });
+  const toggleOffPeak = useCallback(() => {
+    setOffPeak(prev => {
+      const next = !prev;
+      localStorage.setItem('video_off_peak', String(next));
+      return next;
+    });
+  }, []);
 
   /**
    * 加载剧集列表
@@ -141,6 +155,13 @@ const Step5page = ({ project }: Step5pageProps) => {
         });
       }
       setChapters(builtChapters);
+
+      // 自动加载所有剧集的 panels 和生产状态
+      const allIds = builtChapters.flatMap(ch => ch.episodes.map(ep => ep.episodeId));
+      allIds.forEach(eid => {
+        loadPanelsForEpisode(eid);
+        refreshProductionStatuses(eid);
+      });
     } catch (err: any) {
       setError(err?.message || '加载失败');
     } finally {
@@ -151,6 +172,58 @@ const Step5page = ({ project }: Step5pageProps) => {
   useEffect(() => {
     loadEpisodes();
   }, [loadEpisodes]);
+
+  /**
+   * 页面加载恢复：检测正在生成中的 episode，自动恢复轮询
+   * 解决刷新页面后丢失 loading 状态的问题
+   */
+  useEffect(() => {
+    if (chapters.length === 0 || generatingEpisodeId !== null) return;
+    const allEpisodes = chapters.flatMap(ch => ch.episodes);
+    const generatingEp = allEpisodes.find(ep =>
+      ep.episodeInfo?.status === 'PANEL_GENERATING' ||
+      ep.episodeInfo?.panelPlan
+    );
+    if (!generatingEp) return;
+
+    const epId = generatingEp.episodeId;
+    log.info('检测到正在生成中的 episode, 恢复轮询: epId={}', epId);
+    setGeneratingEpisodeId(epId);
+
+    // 恢复轮询：每 5 秒刷新 panels，直到生成完成（基于状态，无次数限制）
+    const poll = async () => {
+      while (true) {
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          // 刷新 panels
+          panelsLoadedRef.current.delete(epId);
+          await loadPanelsForEpisode(epId);
+
+          // 检查 episode 状态是否已更新
+          const res = await getEpisodes(projectId!);
+          if (res.code !== 0 && res.code !== 200) continue;
+          const items = res.data?.items || [];
+          const currentEp = items.find((e: any) => e.id === epId);
+          if (!currentEp) continue;
+
+          const epStatus = currentEp.episodeInfo?.status;
+          if (epStatus === 'PANEL_DONE' || epStatus === 'PANEL_CONFIRMED') {
+            setGeneratingEpisodeId(null);
+            return;
+          }
+          if (epStatus === 'PANEL_FAILED') {
+            const errMsg = currentEp.episodeInfo?.errorMsg || '分镜生成失败';
+            alert(errMsg);
+            setGeneratingEpisodeId(null);
+            return;
+          }
+        } catch {
+          // 轮询失败继续重试
+        }
+      }
+    };
+    poll();
+  }, [chapters.length, generatingEpisodeId]);
 
   /**
    * 加载项目角色列表，构建 name→ID 映射
@@ -176,6 +249,21 @@ const Step5page = ({ project }: Step5pageProps) => {
       }
     })();
   }, [projectId]);
+
+  // 当 charNameToIdMap 就绪后，重新加载已展开集的分镜（此时 map 已有数据，可正确修正 char_id）
+  useEffect(() => {
+    if (Object.keys(charNameToIdMap).length === 0) return;
+    // 已有 panels 缓存，清除后让 loadPanelsForEpisode 重新走一遍（map 已生效）
+    const loadedEpisodes = panelsLoadedRef.current;
+    if (loadedEpisodes.size === 0) return;
+    // 短暂延迟确保 loadPanelsForEpisode 的 useCallback 已用新 map 重建
+    const timer = setTimeout(() => {
+      const episodeIds = [...loadedEpisodes];
+      loadedEpisodes.clear();
+      episodeIds.forEach(eid => loadPanelsForEpisode(eid));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [charNameToIdMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 计算完成统计
   const totalSegments = chapters.reduce(
@@ -248,9 +336,21 @@ const Step5page = ({ project }: Step5pageProps) => {
         }).filter(Boolean))
       )];
 
+      // 获取对应 episode 的 sceneSummaryMap，用于后备获取剧情摘要
+      const currentEpisode = await new Promise<EpisodeState | undefined>(resolve => {
+        setChapters(prev => {
+          const ep = prev.flatMap(ch => ch.episodes).find(e => e.episodeId === episodeId);
+          resolve(ep);
+          return prev;
+        });
+      });
+      const sceneSummaryMap = currentEpisode?.sceneSummaryMap || {};
+
       // 将分镜转为 segments
       const segments: SegmentState[] = panels.map((panel: any, idx: number) => {
         const info = panel.panelInfo || {};
+        const planPanelId = info.panel_id || info.planPanelId || '';
+
         // 解析角色头像列表，修正无效 char_id
         const characterAvatars = (info.characters || []).map((c: any) => {
           const rawCharId = c.char_id || '';
@@ -277,7 +377,8 @@ const Step5page = ({ project }: Step5pageProps) => {
         return {
           segmentIndex: idx,
           title: `分镜 ${idx + 1}`,
-          synopsis: info.composition || '',
+          // 优先级: scene_summary > sceneSummaryMap[planPanelId] > composition
+          synopsis: info.scene_summary || (planPanelId ? sceneSummaryMap[planPanelId] : '') || info.composition || '',
           sceneThumbnail: bgUrl,
           characterAvatars,
           pipelineStep: mapProductionToPipelineStep({
@@ -395,6 +496,8 @@ const Step5page = ({ project }: Step5pageProps) => {
                       comicUrl: status.comicUrl ?? seg.comicUrl,
                       videoUrl: status.videoUrl ?? seg.videoUrl,
                       sceneThumbnail: status.backgroundUrl ?? seg.sceneThumbnail,
+                      videoTaskId: status.videoTaskId ?? seg.videoTaskId,
+                      videoOffPeak: status.offPeak ?? seg.videoOffPeak,
                     };
                   }),
                 }
@@ -442,12 +545,15 @@ const Step5page = ({ project }: Step5pageProps) => {
         setGeneratingEpisodeId(null);
         return;
       }
-      // 轮询任务状态
+      // 轮询任务状态（同时逐步加载已生成的 panel，基于状态无次数限制）
       const poll = async () => {
-        const MAX_POLL = 60;
-        for (let i = 0; i < MAX_POLL; i++) {
+        while (true) {
           await new Promise(r => setTimeout(r, 3000));
           try {
+            // 增量加载：刷新已生成的 panel，让用户看到逐步生成的过程
+            panelsLoadedRef.current.delete(episodeId);
+            await loadPanelsForEpisode(episodeId);
+
             const statusRes = await getPanelGenerateStatus(projectId, episodeId, jobId);
             if (statusRes.code !== 0 && statusRes.code !== 200) continue;
             const status = statusRes.data?.status || statusRes.data?.state;
@@ -458,7 +564,8 @@ const Step5page = ({ project }: Step5pageProps) => {
               return;
             }
             if (status === 'failed' || status === 'FAILED' || status === 'ERROR') {
-              alert('分镜生成失败');
+              const errMsg = statusRes.data?.errorMessage || statusRes.data?.message || '';
+              alert('分镜生成失败' + (errMsg ? '：' + errMsg : ''));
               setGeneratingEpisodeId(null);
               return;
             }
@@ -466,8 +573,6 @@ const Step5page = ({ project }: Step5pageProps) => {
             // 轮询失败继续重试
           }
         }
-        alert('生成超时，请稍后刷新');
-        setGeneratingEpisodeId(null);
       };
       poll();
     } catch (err: any) {
@@ -476,10 +581,9 @@ const Step5page = ({ project }: Step5pageProps) => {
       const isAlreadyRunning =
         msg.includes('已有分镜生成任务在执行中') || msg.includes('already');
       if (isAlreadyRunning) {
-        // 无法获取 jobId，直接定时刷新分镜
+        // 无法获取 jobId，直接定时刷新分镜（基于状态无次数限制）
         const poll = async () => {
-          const MAX_POLL = 60;
-          for (let i = 0; i < MAX_POLL; i++) {
+          while (true) {
             await new Promise(r => setTimeout(r, 5000));
             panelsLoadedRef.current.delete(episodeId);
             await loadPanelsForEpisode(episodeId);
@@ -493,7 +597,6 @@ const Step5page = ({ project }: Step5pageProps) => {
               return;
             }
           }
-          setGeneratingEpisodeId(null);
         };
         poll();
         return;
@@ -523,17 +626,19 @@ const Step5page = ({ project }: Step5pageProps) => {
       const res = await generateBackground(projectId, episodeId, Number(panelId));
       if (res.code !== 0 && res.code !== 200) {
         alert(res.message || '生成背景图失败');
+        setGeneratingBackgroundPanelId(null);
+        return;
       }
       const poll = async () => {
         for (let i = 0; i < 40; i++) {
           await new Promise(r => setTimeout(r, 3000));
           await refreshProductionStatuses(episodeId);
         }
+        setGeneratingBackgroundPanelId(null);
       };
       poll();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '生成背景图失败');
-    } finally {
       setGeneratingBackgroundPanelId(null);
     }
   }, [projectId, refreshProductionStatuses]);
@@ -579,16 +684,40 @@ const Step5page = ({ project }: Step5pageProps) => {
     setGeneratingComicPanelId(panelId);
     try {
       await generateComic(projectId, episodeId, Number(panelId));
+      // 基于状态的轮询，检查是否生成完成或失败
       const poll = async () => {
-        for (let i = 0; i < 60; i++) {
+        while (true) {
           await new Promise(r => setTimeout(r, 3000));
-          await refreshProductionStatuses(episodeId);
+          try {
+            // 获取该panel的生产状态
+            const res = await getBatchProductionStatuses(projectId, episodeId);
+            if ((res.code !== 0 && res.code !== 200) || !res.data) continue;
+
+            const panelStatus = res.data.find((s: any) => s.panelId === Number(panelId));
+            if (panelStatus) {
+              const comicStatus = panelStatus.comicStatus;
+              // 检查状态
+              if (comicStatus === 'approved' || comicStatus === 'pending_review') {
+                // 生成成功
+                await refreshProductionStatuses(episodeId);
+                setGeneratingComicPanelId(null);
+                return;
+              }
+              if (comicStatus === 'failed') {
+                // 生成失败
+                alert('四宫格生成失败');
+                setGeneratingComicPanelId(null);
+                return;
+              }
+            }
+          } catch {
+            // 继续轮询
+          }
         }
       };
       poll();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '生成四宫格失败');
-    } finally {
       setGeneratingComicPanelId(null);
     }
   }, [projectId, refreshProductionStatuses]);
@@ -598,17 +727,44 @@ const Step5page = ({ project }: Step5pageProps) => {
    */
   const handleRegenerateComic = useCallback(async (episodeId: number, panelId: string, feedback: string) => {
     if (!projectId) return;
+    setGeneratingComicPanelId(panelId);
     try {
       await reviseComic(projectId, episodeId, Number(panelId), feedback);
+      // 基于状态的轮询，检查是否生成完成或失败
       const poll = async () => {
-        for (let i = 0; i < 60; i++) {
+        while (true) {
           await new Promise(r => setTimeout(r, 3000));
-          await refreshProductionStatuses(episodeId);
+          try {
+            // 获取该panel的生产状态
+            const res = await getBatchProductionStatuses(projectId, episodeId);
+            if ((res.code !== 0 && res.code !== 200) || !res.data) continue;
+
+            const panelStatus = res.data.find((s: any) => s.panelId === Number(panelId));
+            if (panelStatus) {
+              const comicStatus = panelStatus.comicStatus;
+              // 检查状态
+              if (comicStatus === 'approved' || comicStatus === 'pending_review') {
+                // 生成成功
+                await refreshProductionStatuses(episodeId);
+                setGeneratingComicPanelId(null);
+                return;
+              }
+              if (comicStatus === 'failed') {
+                // 生成失败
+                alert('四宫格重新生成失败');
+                setGeneratingComicPanelId(null);
+                return;
+              }
+            }
+          } catch {
+            // 继续轮询
+          }
         }
       };
       poll();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '重新生成失败');
+      setGeneratingComicPanelId(null);
     }
   }, [projectId, refreshProductionStatuses]);
 
@@ -617,17 +773,44 @@ const Step5page = ({ project }: Step5pageProps) => {
    */
   const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string) => {
     if (!projectId) return;
+    setGeneratingVideoPanelId(panelId);
     try {
-      await generateVideo(projectId, episodeId, Number(panelId));
+      await generateVideo(projectId, episodeId, Number(panelId), offPeak);
+      // 基于状态的轮询，检查是否生成完成或失败
       const poll = async () => {
-        for (let i = 0; i < 120; i++) {
-          await new Promise(r => setTimeout(r, 5000));
-          await refreshProductionStatuses(episodeId);
+        while (true) {
+          await new Promise(r => setTimeout(r, 3000));
+          try {
+            // 获取该panel的生产状态
+            const res = await getBatchProductionStatuses(projectId, episodeId);
+            if ((res.code !== 0 && res.code !== 200) || !res.data) continue;
+
+            const panelStatus = res.data.find((s: any) => s.panelId === Number(panelId));
+            if (panelStatus) {
+              const videoStatus = panelStatus.videoStatus;
+              // 检查状态
+              if (videoStatus === 'completed') {
+                // 生成成功
+                await refreshProductionStatuses(episodeId);
+                setGeneratingVideoPanelId(null);
+                return;
+              }
+              if (videoStatus === 'failed') {
+                // 生成失败
+                alert('视频生成失败');
+                setGeneratingVideoPanelId(null);
+                return;
+              }
+            }
+          } catch {
+            // 继续轮询
+          }
         }
       };
       poll();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '生成视频失败');
+      setGeneratingVideoPanelId(null);
     }
   }, [projectId, refreshProductionStatuses]);
 
@@ -702,6 +885,7 @@ const Step5page = ({ project }: Step5pageProps) => {
           if (panelId) handleGenerateComic(epId, panelId);
         }}
         generatingComicPanelId={generatingComicPanelId}
+        generatingVideoPanelId={generatingVideoPanelId}
         onSegmentReviseSingle={(epId, segIdx, feedback) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
           if (panelId) handleReviseSinglePanel(epId, panelId, feedback);
@@ -785,6 +969,16 @@ const Step5page = ({ project }: Step5pageProps) => {
           </div>
           <button className={styles.generateAllButton} disabled>
             一键生成
+          </button>
+          <button
+            className={`${styles.offPeakToggle} ${offPeak ? styles.offPeakActive : ''}`}
+            onClick={toggleOffPeak}
+            title={offPeak ? '错峰模式已开启：积分更低，48小时内生成' : '错峰模式已关闭：即时生成'}
+          >
+            <span className={styles.toggleTrack}>
+              <span className={styles.toggleThumb} />
+            </span>
+            <span className={styles.toggleLabel}>错峰</span>
           </button>
         </div>
       </div>

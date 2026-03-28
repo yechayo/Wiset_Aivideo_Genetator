@@ -15,6 +15,7 @@ interface EpisodeCardProps {
   onSegmentGenerateVideo: (episodeId: number, segmentIndex: number) => void;
   onSegmentGenerateComic?: (episodeId: number, segmentIndex: number) => void;
   generatingComicPanelId?: string | null;
+  generatingVideoPanelId?: string | null;
   onSegmentReviseSingle?: (episodeId: number, segmentIndex: number, feedback: string) => void;
   isRevisingSinglePanelId?: string | null;
   onSegmentUpdatePanel?: (episodeId: number, segmentIndex: number, fields: Record<string, any>) => void;
@@ -78,6 +79,7 @@ const EpisodeCard = ({
   onSegmentGenerateVideo,
   onSegmentGenerateComic,
   generatingComicPanelId,
+  generatingVideoPanelId,
   onSegmentReviseSingle,
   isRevisingSinglePanelId,
   onSegmentUpdatePanel,
@@ -91,6 +93,9 @@ const EpisodeCard = ({
   isRevisingPanel,
 }: EpisodeCardProps) => {
   const episodeStatus = getEpisodeStatus(episode.segments);
+
+  // 只要有一个 panel 进入了生产流程（非 pending），就禁止修改分镜脚本
+  const hasProductionStarted = episode.segments.some(s => s.pipelineStep !== 'pending');
 
   // Render segment cards using SegmentCard component
   const segmentCards = episode.segments.map((segment) => {
@@ -110,6 +115,7 @@ const EpisodeCard = ({
         onGenerateVideo={() => onSegmentGenerateVideo(episode.episodeId, segment.segmentIndex)}
         onGenerateComic={onSegmentGenerateComic ? () => onSegmentGenerateComic(episode.episodeId, segment.segmentIndex) : undefined}
         isGeneratingComic={generatingComicPanelId === segment.panelData?.panelId}
+        isGeneratingVideo={generatingVideoPanelId === segment.panelData?.panelId}
         onReviseSinglePanel={onSegmentReviseSingle ? (feedback) => onSegmentReviseSingle(episode.episodeId, segment.segmentIndex, feedback) : undefined}
         isRevisingPanel={isRevisingSinglePanelId === segment.panelData?.panelId}
         onUpdatePanel={onSegmentUpdatePanel ? (fields) => onSegmentUpdatePanel(episode.episodeId, segment.segmentIndex, fields) : undefined}
@@ -142,9 +148,10 @@ const EpisodeCard = ({
             <button
               className={styles.generatePanelsBtn}
               onClick={(e) => { e.stopPropagation(); onGeneratePanels(episode.episodeId); }}
-              disabled={isGeneratingPanels}
+              disabled={isGeneratingPanels || hasProductionStarted}
+              title={hasProductionStarted ? '已有分镜进入生产流程，无法重新生成脚本' : ''}
             >
-              {isGeneratingPanels ? '生成中...' : '生成分镜脚本'}
+              {isGeneratingPanels ? <><span className={styles.miniSpinner} />生成中...</> : '生成分镜脚本'}
             </button>
           )}
 
@@ -153,9 +160,10 @@ const EpisodeCard = ({
             <button
               className={styles.generatePanelsBtn}
               onClick={(e) => { e.stopPropagation(); onRevisePanel(episode.episodeId); }}
-              disabled={isRevisingPanel}
+              disabled={isRevisingPanel || hasProductionStarted}
+              title={hasProductionStarted ? '已有分镜进入生产流程，无法修改脚本' : ''}
             >
-              {isRevisingPanel ? '修改中...' : '修改分镜脚本'}
+              {isRevisingPanel ? <><span className={styles.miniSpinner} />修改中...</> : '修改分镜脚本'}
             </button>
           )}
 

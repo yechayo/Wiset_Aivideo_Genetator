@@ -15,6 +15,7 @@ export interface SegmentCardProps {
   onGenerateVideo: () => void;
   onGenerateComic?: () => void;
   isGeneratingComic?: boolean;
+  isGeneratingVideo?: boolean;
   onReviseSinglePanel?: (feedback: string) => void;
   isRevisingPanel?: boolean;
   onUpdatePanel?: (fields: Record<string, any>) => void;
@@ -99,55 +100,57 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
     <div className={`${styles.segmentCard} ${isExpanded ? styles.expanded : ''}`}>
       {/* Header - 折叠/展开都显示 */}
       <div className={styles.header} onClick={onToggle}>
-        {/* 左侧：状态图标 + 片段编号 + 摘要 */}
-        <div className={styles.headerLeft}>
-          {/* 状态图标 */}
-          <div className={styles.statusIcon}>
-            {segment.pipelineStep === 'video_completed' && (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
-                <path
-                  d="M5 8L7 10L11 6"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            )}
-            {segment.pipelineStep === 'video_failed' && (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
-                <path
-                  d="M5.5 5.5L10.5 10.5M10.5 5.5L5.5 10.5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            )}
-            {segment.pipelineStep === 'video_generating' && (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.3" />
-                <path
-                  d="M8 1V3M8 13V15M15 8H13M3 8H1M12.95 12.95L11.54 11.54M4.46 4.46L3.05 3.05M12.95 3.05L11.54 4.46M4.46 11.54L3.05 12.95"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            )}
+        {/* 顶部行：左侧 + 右侧并排，必要时换行 */}
+        <div className={styles.headerTopRow}>
+          {/* 左侧：状态图标 + 片段编号 + 摘要 */}
+          <div className={styles.headerLeft}>
+            {/* 状态图标 */}
+            <div className={styles.statusIcon}>
+              {segment.pipelineStep === 'video_completed' && (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
+                  <path
+                    d="M5 8L7 10L11 6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+              {segment.pipelineStep === 'video_failed' && (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
+                  <path
+                    d="M5.5 5.5L10.5 10.5M10.5 5.5L5.5 10.5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              )}
+              {segment.pipelineStep === 'video_generating' && (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.3" />
+                  <path
+                    d="M8 1V3M8 13V15M15 8H13M3 8H1M12.95 12.95L11.54 11.54M4.46 4.46L3.05 3.05M12.95 3.05L11.54 4.46M4.46 11.54L3.05 12.95"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              )}
+            </div>
+
+            {/* 片段编号 */}
+            <span className={styles.segmentIndex}>#{segment.segmentIndex + 1}</span>
+
+            {/* 摘要 */}
+            <span className={styles.synopsis}>{segment.synopsis}</span>
           </div>
 
-          {/* 片段编号 */}
-          <span className={styles.segmentIndex}>#{segment.segmentIndex + 1}</span>
-
-          {/* 摘要 */}
-          <span className={styles.synopsis}>{segment.synopsis}</span>
-        </div>
-
-        {/* 右侧：场景缩略图 + 角色头像 + 进度指示器 + 展开箭头 */}
-        <div className={styles.headerRight}>
+          {/* 右侧：场景缩略图 + 角色头像 + 进度指示器 + 展开箭头 */}
+          <div className={styles.headerRight}>
           {/* 场景缩略图 */}
           {segment.sceneThumbnail ? (
             <div className={styles.sceneThumbnail}>
@@ -163,7 +166,7 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
               title={onGenerateBackground ? '生成背景图' : undefined}
             >
               {isGeneratingBackground ? (
-                <span className={styles.generatingText}>生成中...</span>
+                <span className={styles.generatingText}><span className={styles.miniSpinner} />生成中...</span>
               ) : (
                 <>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -296,6 +299,7 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
             </svg>
           </div>
         </div>
+        </div>
       </div>
 
       {/* 展开内容区 */}
@@ -319,6 +323,9 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
               videoUrl={segment.videoUrl}
               pipelineStep={segment.pipelineStep}
               onGenerateVideo={onGenerateVideo}
+              isGenerating={isGeneratingVideo}
+              videoTaskId={segment.videoTaskId}
+              videoOffPeak={segment.videoOffPeak}
             />
           </div>
 

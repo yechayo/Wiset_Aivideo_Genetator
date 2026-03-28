@@ -96,6 +96,64 @@
   }
 }
 
+// Off-peak toggle
+.offPeakToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  transition: all var(--duration-fast) var(--easing-standard);
+
+  &:hover {
+    border-color: var(--color-accent);
+  }
+}
+
+.offPeakActive {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-faint, rgba(99, 102, 241, 0.08));
+
+  .toggleTrack {
+    background: var(--color-accent);
+  }
+
+  .toggleThumb {
+    transform: translateX(14px);
+  }
+}
+
+.toggleTrack {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background: var(--color-border-subtle);
+  border-radius: 9px;
+  transition: background var(--duration-fast) var(--easing-standard);
+}
+
+.toggleThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform var(--duration-fast) var(--easing-standard);
+}
+
+.toggleLabel {
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
 // Chapter list
 .chapterList {
   display: flex;

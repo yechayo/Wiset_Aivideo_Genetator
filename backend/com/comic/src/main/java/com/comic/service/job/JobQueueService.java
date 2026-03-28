@@ -174,9 +174,7 @@ public class JobQueueService {
 
             String result = panelGenerationService.generatePanels(episodeId);
 
-            updateJobStatus(job, "RUNNING", 80, "正在保存分镜数据...");
-
-            panelService.savePanelsFromGeneration(episodeId, result);
+            updateJobStatus(job, "RUNNING", 80, "分镜已增量保存");
 
             updateJobStatus(job, "RUNNING", 90, "保存结果...");
 

@@ -30,6 +30,8 @@ export interface SegmentState {
   videoUrl: string | null;
   feedback: string;
   panelData?: PanelData;
+  videoTaskId?: string | null;
+  videoOffPeak?: boolean | null;
 }
 
 /** 剧集状态 */
