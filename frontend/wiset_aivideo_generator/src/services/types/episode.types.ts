@@ -142,3 +142,48 @@ export interface SceneImageState {
   failed: boolean;
   prompt: string | null;  // 来自分镜 JSON 的 background.scene_desc
 }
+
+// ================= Panel 生产状态 DTO（对应后端 DTO） =================
+
+/** 单 Panel 完整生产状态（对应后端 PanelProductionStatusResponse） */
+export interface PanelProductionStatusResponse {
+  panelId: number;
+  overallStatus: string;
+  currentStage: string;
+  backgroundStatus: string;
+  backgroundUrl: string | null;
+  comicStatus: string;
+  comicUrl: string | null;
+  videoStatus: string;
+  videoUrl: string | null;
+  videoDuration: number | null;
+  errorMessage: string | null;
+}
+
+/** 四宫格漫画状态（对应后端 ComicStatusResponse） */
+export interface ComicStatusResponse {
+  panelId: number;
+  status: string;
+  comicUrl: string | null;
+  backgroundUrl: string | null;
+  errorMessage: string | null;
+}
+
+/** 视频状态（对应后端 VideoStatusResponse） */
+export interface VideoStatusResponse {
+  panelId: number;
+  status: string;
+  videoUrl: string | null;
+  taskId: string | null;
+  errorMessage: string | null;
+  duration: number | null;
+}
+
+/** 背景图状态（对应后端 PanelBackgroundResponse） */
+export interface PanelBackgroundResponse {
+  panelId: number;
+  panelIndex: number;
+  backgroundUrl: string | null;
+  status: string;
+  prompt: string | null;
+}

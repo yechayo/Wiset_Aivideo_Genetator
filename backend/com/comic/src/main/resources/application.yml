@@ -1,6 +1,6 @@
 # ============================================================
-#  本地开发配置（application.yml）
-#  上服务器时新建 application-prod.yml 覆盖对应项即可
+#  本地开发配置（application.yml�?
+#  上服务器时新�?application-prod.yml 覆盖对应项即�?
 # ============================================================
 
 server:
@@ -18,23 +18,41 @@ spring:
   config:
     import: optional:file:./.env[.properties]
 
-  # 缓存配置（本地用Caffeine内存缓存）
+  # ---------- Redis ----------
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: 0
+    timeout: 5000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 4
+        min-idle: 0
+
+  # 缓存配置（本地用Caffeine内存缓存�?
   cache:
     type: caffeine
     caffeine:
       spec: maximumSize=500,expireAfterWrite=10m
 
-  # ---------- 数据源：本地用 SQLite，上服务器换 PostgreSQL ----------
+  # ---------- 数据源：MySQL ----------
   datasource:
-    url: jdbc:sqlite:./comic.db?journal_mode=WAL&foreign_keys=true&busy_timeout=30000
-    driver-class-name: org.sqlite.JDBC
+    url: jdbc:mysql://localhost:3306/comic?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
 
-  # ---------- 自动建表 ----------
+  # ---------- 关闭自动建表（使用已有MySQL表） ----------
   sql:
     init:
-      mode: always          # 每次启动执行 schema.sql（已用 IF NOT EXISTS 保证幂等）
+      mode: never
 
-  # ---------- 关闭 Security 自动生成密码的日志 ----------
+  # ---------- 关闭 Security 自动生成密码的日�?----------
   security:
     user:
       name: ignored
@@ -45,16 +63,6 @@ spring:
       max-file-size: 100MB
       max-request-size: 100MB
 
-#  # Spring AI - Anthropic Claude 配置
-#  ai:
-#    anthropic:
-#      api-key: ${CLAUDE_API_KEY:请设置CLAUDE_API_KEY环境变量}
-#      chat:
-#        options:
-#          model: claude-opus-4-5
-#          max-tokens: 4096
-#          temperature: 0.7
-
 # ---------- MyBatis-Plus ----------
 mybatis-plus:
   configuration:
@@ -63,7 +71,7 @@ mybatis-plus:
     jdbc-type-for-null: NULL
   global-config:
     db-config:
-      id-type: assign_id           # 使用雪花算法生成主键，解决 SQLite 兼容性问题
+      id-type: auto
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
@@ -71,44 +79,50 @@ mybatis-plus:
 # ---------- 业务配置 ----------
 comic:
   jwt:
-    # 密钥至少 32 位；生产环境务必改成环境变量：${JWT_SECRET}
+    # 密钥至少 32 位；生产环境务必改成环境变量�?{JWT_SECRET}
     secret: comic-secret-key-please-change-in-production!!
     access-token-expiration: 7200000      # AccessToken  2 小时（毫秒）
-    refresh-token-expiration: 604800000   # RefreshToken 7 天（毫秒）
+    refresh-token-expiration: 604800000   # RefreshToken 7 天（毫秒�?
   blacklist:
-    max-size: 10000   # 黑名单最大缓存条数
-  # ========== AI 配置（按功能分类） ==========
+    max-size: 10000   # 黑名单最大缓存条�?
+  # ========== AI 配置（按功能分类�?==========
   ai:
-    # 文本生成配置（剧本、对话等）
+    # 文本生成配置（剧本、对话等�?
     text:
-      provider: deepseek           # 文本用 DeepSeek（思考模式）
+      provider: deepseek           # 文本�?DeepSeek（思考模式）
       max-concurrent: 5           # 最大并发数
       timeout-seconds: 120        # 超时时间
       retry-times: 3              # 重试次数
 
     # 图片生成配置（角色立绘、分镜图等）
     image:
-      provider: seedream          # 图片用 Seedream（火山引擎）
+      provider: seedream          # 图片�?Seedream（火山引擎）
       max-concurrent: 2           # 并发数限制（图片生成资源占用大）
       timeout-seconds: 180        # 超时时间
       default-style: anime        # 默认风格
       default-width: 1024
       default-height: 1024
 
-    # 视频生成配置（分镜视频等）
+    # 视频生成配置（分镜视频等�?
     video:
-      provider: seedance          # 视频用 Seedance（火山引擎）
+      provider: vidu          # 视频�?Seedance（火山引擎）
       max-concurrent: 1           # 视频生成资源占用极大，限制为1
-      timeout-seconds: 600        # 超时时间（10分钟）
-      default-duration: 5         # 默认时长（秒）
+      timeout-seconds: 600        # 超时时间�?0分钟�?
+      default-duration: 5         # 默认时长（秒�?
       default-aspect-ratio: "16:9"
 
-  # ========== 火山引擎 Ark SDK 配置（用于 Seedream/Seedance） ==========
+  # ========== 火山引擎 Ark SDK 配置（用�?Seedream/Seedance�?==========
   ark:
     api-key: 167746d0-87be-4d4a-ab21-2022c6822ad7
     base-url: https://ark.cn-beijing.volces.com/api/v3
-    seedream-model: doubao-seedream-4-0-250828  # Seedream 图片模型
+    seedream-model: doubao-seedream-5-0-lite-260128  # Seedream 图片模型
     seedance-model: doubao-seedance-1-5-pro-251215  # Seedance 视频模型
+
+  # ========== Vidu 视频生成配置 ==========
+  vidu:
+    api-key: vda_933899833004011520_0BfkVZcAn5cRhe3Llzr0mxhKwEBl8uOJ
+    base-url: https://api.vidu.cn/ent/v2
+    model: viduq3-turbo
 
   # ========== DeepSeek API 配置（思考模式） ==========
   deepseek:
@@ -118,21 +132,20 @@ comic:
     max-tokens: 8192
 
 
-  # ========== 阿里云 OSS 配置 ==========
+  # ========== 阿里�?OSS 配置 ==========
   oss:
-    access-key-id: ${OSS_ACCESS_KEY_ID}
-    access-key-secret: ${OSS_ACCESS_KEY_SECRET}
+
     bucket-name: zhiqiantong-test
     endpoint: oss-cn-beijing.aliyuncs.com
     dir: comic/images/
 
   job:
     buffer-size: 3           # 预生成集数缓冲量
-    worker-threads: 3        # 任务处理线程数
+    worker-threads: 3        # 任务处理线程�?
   file:
     upload-dir: ./uploads    # 文件上传目录
     base-url: http://localhost:8080/files  # 文件访问基础URL
-    max-size: 100MB          # 最大文件大小
+    max-size: 100MB          # 最大文件大�?
 
 # 日志配置
 logging:

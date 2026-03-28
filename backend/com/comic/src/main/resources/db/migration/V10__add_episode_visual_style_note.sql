@@ -1,1 +1,0 @@
-ALTER TABLE episode ADD COLUMN visual_style_note TEXT;

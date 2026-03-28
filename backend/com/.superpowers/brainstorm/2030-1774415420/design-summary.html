@@ -1,0 +1,68 @@
+<h2>设计总结</h2>
+<p class="subtitle">Project Controller 重构 — 完整设计方案</p>
+
+<h3>核心决策</h3>
+<div class="section" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+  <div style="background: #1e293b; padding: 10px 14px; border-radius: 6px;">
+    <div class="label">实体结构</div>
+    <div style="color: #e2e8f0;">Project / Episode / Character 统一 Map<String,Object>，重写所有 Service</div>
+  </div>
+  <div style="background: #1e293b; padding: 10px 14px; border-radius: 6px;">
+    <div class="label">逻辑删除</div>
+    <div style="color: #e2e8f0;">Project 新增 deleted 字段，Repository 自动过滤</div>
+  </div>
+  <div style="background: #1e293b; padding: 10px 14px; border-radius: 6px;">
+    <div class="label">剧本大纲</div>
+    <div style="color: #e2e8f0;">AI 输出扁平 JSON（characters + items + episodes），存 projectInfo["script"]</div>
+  </div>
+  <div style="background: #1e293b; padding: 10px 14px; border-radius: 6px;">
+    <div class="label">剧集生成</div>
+    <div style="color: #e2e8f0;">确认大纲后自动分批生成，用户无感知章节概念</div>
+  </div>
+  <div style="background: #1e293b; padding: 10px 14px; border-radius: 6px;">
+    <div class="label">状态回退</div>
+    <div style="color: #e2e8f0;">advance 支持 backward，精确清理对应阶段数据</div>
+  </div>
+  <div style="background: #1e293b; padding: 10px 14px; border-radius: 6px;">
+    <div class="label">Controller 拆分</div>
+    <div style="color: #e2e8f0;">ProjectController = CRUD + 状态，ScriptController = 剧本操作</div>
+  </div>
+</div>
+
+<h3 style="margin-top: 24px;">4 阶段实施计划</h3>
+
+<div style="margin-top: 12px;">
+  <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px;">
+    <div style="background: #22c55e; color: white; min-width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">1</div>
+    <div>
+      <div style="color: #e2e8f0; font-weight: bold;">Entity + deleted + Repository</div>
+      <div style="color: #64748b; font-size: 13px;">Project 新增 deleted 字段，ProjectRepository 所有查询加 deleted=false 过滤，新增分页查询方法。定义 projectInfo / episodeInfo / characterInfo 的 key 常量。</div>
+    </div>
+  </div>
+  <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px;">
+    <div style="background: #3b82f6; color: white; min-width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">2</div>
+    <div>
+      <div style="color: #e2e8f0; font-weight: bold;">ProjectStatus 枚举 + DTO 更新</div>
+      <div style="color: #64748b; font-size: 13px;">枚举新增 getPreviousStatus/getNextStatus/canGoBack/canAdvance/getStepHistory。ProjectStatusResponse 新增 5 个字段。新增 AdvanceRequest、ProjectUpdateRequest、StepHistoryItem DTO。</div>
+    </div>
+  </div>
+  <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px;">
+    <div style="background: #f59e0b; color: white; min-width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">3</div>
+    <div>
+      <div style="color: #e2e8f0; font-weight: bold;">Service 层重写（核心）</div>
+      <div style="color: #64748b; font-size: 13px;">PipelineService / ScriptService / CharacterExtractService / CharacterImageGenerationService / StoryboardService / EpisodeProductionService / EpisodeController — 全部从字段访问改为 Map 访问。PromptBuilder 大纲生成改为输出结构化 JSON。ScriptService 确认逻辑改为自动分批生成。</div>
+    </div>
+  </div>
+  <div style="display: flex; align-items: flex-start; gap: 12px;">
+    <div style="background: #8b5cf6; color: white; min-width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">4</div>
+    <div>
+      <div style="color: #e2e8f0; font-weight: bold;">Controller 重构</div>
+      <div style="color: #64748b; font-size: 13px;">重构 ProjectController（CRUD + 分页 + 状态 + 回退）。新建 ScriptController（5 个接口）。删除 ProjectController 中的脚本相关接口。</div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top: 24px;">不变更的组件</h3>
+<div class="section" style="color: #64748b; font-size: 13px;">
+  StoryController、FileController、AuthController、ConfigController、JobController、TaskController — 保持不变。
+</div>

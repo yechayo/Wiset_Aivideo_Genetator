@@ -1,5 +1,9 @@
 # Changelog
 
+## [2026-03-25]
+
+- feat: 分镜生产页重构为步骤导航模式并优化交互体验
+
 ## [2026-03-23]
 
 - docs: update changelog with 2026-03-23 entries

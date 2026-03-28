@@ -1,0 +1,66 @@
+<h2>状态机草案（已按你的口径）</h2>
+<p class="subtitle">项目级状态 + PRODUCING 内部串行子流程（可点击下方选项）</p>
+
+<div class="section">
+ <div class="mockup">
+ <div class="mockup-header">项目级状态（ProjectStatus）</div>
+ <div class="mockup-body">
+ <pre>
+... → PANEL_REVIEW
+ └─ confirm_panels（一次）
+ ↓
+ PRODUCING
+ ↓ (全部 panel.videoStatus = completed)
+ COMPLETED
+
+说明：COMPLETED 不等待拼接剪辑；拼接是下一步独立流程。
+ </pre>
+ </div>
+ </div>
+</div>
+
+<div class="section">
+ <div class="mockup">
+ <div class="mockup-header">PRODUCING 内部子流程（严格串行）</div>
+ <div class="mockup-body">
+ <pre>
+currentPanelIndex =1
+
+Panel[1]: 背景生成 → 四宫格生成 → 人审 approve → 视频生成
+ │
+ └── 未 approve 前，不进入下一 panel
+
+Panel[1] 完成后自动进入 Panel[2] ...直到全部完成
+ </pre>
+ </div>
+ </div>
+</div>
+
+<h3>还差一个关键规则：失败策略</h3>
+<p class="subtitle">当当前 panel 在任一步失败时，流程怎么处理？</p>
+
+<div class="options">
+ <div class="option" data-choice="a" onclick="toggleSelect(this)">
+ <div class="letter">A</div>
+ <div class="content">
+ <h3>失败即暂停（Recommended）</h3>
+ <p>停在当前 panel，等待人工重试成功后再继续下一个。</p>
+ </div>
+ </div>
+
+ <div class="option" data-choice="b" onclick="toggleSelect(this)">
+ <div class="letter">B</div>
+ <div class="content">
+ <h3>跳过失败继续后续</h3>
+ <p>当前 panel 标记 failed，流程继续下一个 panel。</p>
+ </div>
+ </div>
+
+ <div class="option" data-choice="c" onclick="toggleSelect(this)">
+ <div class="letter">C</div>
+ <div class="content">
+ <h3>允许二选一</h3>
+ <p>默认暂停，但提供“跳过继续”开关给用户手动选择。</p>
+ </div>
+ </div>
+</div>

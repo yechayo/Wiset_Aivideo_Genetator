@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { SegmentState, SegmentPipelineStep } from '../types';
 import styles from './SegmentCard.module.less';
 import { ComicPanel } from './ComicPanel';
@@ -7,11 +7,18 @@ import VideoPanel from './VideoPanel';
 export interface SegmentCardProps {
   episodeId: number;
   segment: SegmentState;
+  sceneSummary?: string;
   isExpanded: boolean;
   onToggle: () => void;
   onApprove: () => void;
   onRegenerate: (feedback: string) => void;
   onGenerateVideo: () => void;
+  onGenerateComic?: () => void;
+  isGeneratingComic?: boolean;
+  onReviseSinglePanel?: (feedback: string) => void;
+  isRevisingPanel?: boolean;
+  onUpdatePanel?: (fields: Record<string, any>) => void;
+  isUpdatingPanel?: boolean;
   onGenerateBackground?: (panelId: string) => void;
   isGeneratingBackground?: boolean;
 }
@@ -52,15 +59,40 @@ const getPipelineStepStatus = (step: SegmentPipelineStep): {
 export const SegmentCard: React.FC<SegmentCardProps> = ({
   episodeId: _episodeId, // eslint-disable-line @typescript-eslint/no-unused-vars
   segment,
+  sceneSummary,
   isExpanded,
   onToggle,
   onApprove,
   onRegenerate,
   onGenerateVideo,
+  onGenerateComic,
+  isGeneratingComic,
+  onReviseSinglePanel,
+  isRevisingPanel,
+  onUpdatePanel,
+  isUpdatingPanel,
   onGenerateBackground,
   isGeneratingBackground,
 }) => {
   const stepStatus = getPipelineStepStatus(segment.pipelineStep);
+  const [showManualEdit, setShowManualEdit] = useState(false);
+  const [showPromptDetail, setShowPromptDetail] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['plot', 'fields', 'comic', 'video']));
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  const [revisionFeedback, setRevisionFeedback] = useState('');
+  const [editFields, setEditFields] = useState({
+    composition: segment.panelData?.dialogue || '',
+    dialogue: Array.isArray(segment.panelData?.dialogue)
+      ? segment.panelData.dialogue.map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text).join('\n')
+      : '',
+    image_prompt_hint: segment.panelData?.imagePromptHint || '',
+  });
 
   return (
     <div className={`${styles.segmentCard} ${isExpanded ? styles.expanded : ''}`}>
@@ -275,6 +307,8 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
               pipelineStep={segment.pipelineStep}
               onApprove={onApprove}
               onRegenerate={onRegenerate}
+              onGenerateComic={onGenerateComic}
+              isGeneratingComic={isGeneratingComic}
             />
           </div>
 
@@ -286,6 +320,214 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
               onGenerateVideo={onGenerateVideo}
             />
           </div>
+
+          {/* 提示词详情 */}
+          {segment.panelData && (
+            <div className={styles.promptDetailSection}>
+              <div
+                className={styles.promptDetailToggle}
+                onClick={() => setShowPromptDetail(v => !v)}
+              >
+                <span>生成提示词</span>
+                <span className={`${styles.promptDetailArrow} ${showPromptDetail ? styles.expanded : ''}`}>▶</span>
+              </div>
+              {showPromptDetail && (() => {
+                const d = segment.panelData;
+                // 拼接四宫格提示词（与后端 buildComicPrompt 逻辑一致）
+                const comicParts: string[] = [];
+                if (d.background?.scene_desc) comicParts.push(`场景：${d.background.scene_desc}。`);
+                if (d.composition) comicParts.push(`构图：${d.composition}。`);
+                const shotMap: Record<string, string> = { WIDE_SHOT: '远景镜头。', MID_SHOT: '中景镜头。', CLOSE_UP: '特写镜头。', OVER_SHOULDER: '过肩镜头。' };
+                if (d.shotType && shotMap[d.shotType]) comicParts.push(shotMap[d.shotType]);
+                const angleMap: Record<string, string> = { eye_level: '平视角度。', low_angle: '低角度仰拍。', high_angle: '高角度俯拍。', bird_eye: '鸟瞰视角。' };
+                if (d.cameraAngle && angleMap[d.cameraAngle]) comicParts.push(angleMap[d.cameraAngle]);
+                if (d.characters?.length > 0) {
+                  comicParts.push('画面中的角色：');
+                  d.characters.forEach((c: any) => comicParts.push(`${c.name || c.char_id}，${c.pose || ''}${c.expression ? '，' + c.expression + '表情' : ''}${c.position ? '，位置：' + c.position : ''}；`));
+                }
+                if (d.dialogue) {
+                  comicParts.push(`台词：${d.dialogue}；`);
+                }
+                if (d.imagePromptHint) comicParts.push(`画面细节参考：${d.imagePromptHint}`);
+                comicParts.push('保持参考图的背景风格和场景布局不变。生成2行2列四宫格漫画，共4个连续分镜画面，每个格子标注序号(1,2,3,4)。高质量动漫风格，画面精细。');
+                const comicPrompt = comicParts.join('');
+
+                // 拼接视频提示词（与后端 buildVideoPrompt 逻辑一致）
+                const videoParts: string[] = [];
+                videoParts.push('你是一个专业的视频导演，请根据以下分镜描述生成高质量的视频。');
+                if (d.composition) videoParts.push(`【构图描述】${d.composition}。`);
+                if (d.background?.scene_desc) videoParts.push(`【场景描述】${d.background.scene_desc}。`);
+                if (d.background?.atmosphere) videoParts.push(`【氛围】${d.background.atmosphere}。`);
+                if (d.background?.time_of_day) videoParts.push(`【时间】${d.background.time_of_day}。`);
+                const videoShotMap: Record<string, string> = { WIDE_SHOT: '【镜头类型】远景，展示完整场景。', MID_SHOT: '【镜头类型】中景，聚焦角色半身。', CLOSE_UP: '【镜头类型】特写，聚焦面部细节。', OVER_SHOULDER: '【镜头类型】过肩镜头。' };
+                if (d.shotType && videoShotMap[d.shotType]) videoParts.push(videoShotMap[d.shotType]);
+                const videoAngleMap: Record<string, string> = { eye_level: '【镜头角度】平视角度。', low_angle: '【镜头角度】低角度仰拍。', high_angle: '【镜头角度】高角度俯拍。', bird_eye: '【镜头角度】鸟瞰俯视视角。' };
+                if (d.cameraAngle && videoAngleMap[d.cameraAngle]) videoParts.push(videoAngleMap[d.cameraAngle]);
+                const pacingMap: Record<string, string> = { slow: '【运动节奏】缓慢、从容的运动节奏。', fast: '【运动节奏】快速、充满动感的运动节奏。' };
+                if (d.pacing) videoParts.push(pacingMap[d.pacing] || '【运动节奏】自然平稳的运动节奏。');
+                if (d.characters?.length > 0) {
+                  videoParts.push('【角色表演】');
+                  d.characters.forEach((c: any) => {
+                    let part = '';
+                    if (c.pose) part += c.pose;
+                    if (c.expression) part += `，${c.expression}表情`;
+                    if (c.position) part += `，位置：${c.position}`;
+                    videoParts.push(part + '；');
+                  });
+                }
+                if (d.dialogue) videoParts.push(`【对话台词】${d.dialogue}；`);
+                if (d.sfx?.length > 0) videoParts.push(`【音效设计】${d.sfx.join('、')}。`);
+                if (d.imagePromptHint) videoParts.push(`【画面细节参考】${d.imagePromptHint}`);
+                videoParts.push('[风格前缀]');
+                videoParts.push('流畅的动画效果，自然的镜头运动。');
+                const videoPrompt = videoParts.join('');
+
+                return (
+                  <div className={styles.promptDetailContent}>
+                    {sceneSummary && (
+                      <div className={styles.promptGroup}>
+                        <div className={styles.promptGroupTitle} onClick={() => toggleGroup('plot')}>
+                          <span className={styles.promptGroupArrow}>{expandedGroups.has('plot') ? '▼' : '▶'}</span>
+                          剧情摘要
+                        </div>
+                        {expandedGroups.has('plot') && <div className={styles.promptGroupBody}>{sceneSummary}</div>}
+                      </div>
+                    )}
+                    {/* 原始字段 */}
+                    <div className={styles.promptGroup}>
+                      <div className={styles.promptGroupTitle} onClick={() => toggleGroup('fields')}>
+                        <span className={styles.promptGroupArrow}>{expandedGroups.has('fields') ? '▼' : '▶'}</span>
+                        分镜字段
+                      </div>
+                      {expandedGroups.has('fields') && (
+                      <div className={styles.promptFieldGrid}>
+                        {d.composition && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>构图描述</span><span className={styles.pfValue}>{d.composition}</span></div>}
+                        {(d.shotType || d.cameraAngle) && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>镜头</span><span className={styles.pfValue}>{d.shotType}{d.cameraAngle ? ` / ${d.cameraAngle}` : ''}</span></div>}
+                        {d.pacing && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>节奏</span><span className={styles.pfValue}>{d.pacing}</span></div>}
+                        {d.duration && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>时长</span><span className={styles.pfValue}>{d.duration}s</span></div>}
+                        {d.background?.scene_desc && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>场景描述</span><span className={styles.pfValue}>{d.background.scene_desc}</span></div>}
+                        {d.background?.atmosphere && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>氛围</span><span className={styles.pfValue}>{d.background.atmosphere}</span></div>}
+                        {d.background?.time_of_day && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>时间</span><span className={styles.pfValue}>{d.background.time_of_day}</span></div>}
+                        {d.characters?.length > 0 && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>角色</span><span className={styles.pfValue}>{d.characters.map((c: any) => `${c.name || c.char_id}${c.expression ? `(${c.expression})` : ''}${c.pose ? `[${c.pose}]` : ''}`).join('、')}</span></div>}
+                        {d.dialogue && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>对话</span><span className={styles.pfValue}>{d.dialogue}</span></div>}
+                        {d.sfx?.length > 0 && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>音效</span><span className={styles.pfValue}>{d.sfx.join('、')}</span></div>}
+                        {d.imagePromptHint && <div className={`${styles.promptFieldItem} ${styles.promptFieldItemFull}`}><span className={styles.pfLabel}>画面提示词</span><span className={styles.pfValue}>{d.imagePromptHint}</span></div>}
+                      </div>
+                      )}
+                    </div>
+                    {/* 图片生成提示词 */}
+                    <div className={styles.promptGroup}>
+                      <div className={styles.promptGroupTitle} onClick={() => toggleGroup('comic')}>
+                        <span className={styles.promptGroupArrow}>{expandedGroups.has('comic') ? '▼' : '▶'}</span>
+                        <span className={styles.promptTagImage}>图片</span> 四宫格生成提示词
+                      </div>
+                      {expandedGroups.has('comic') && <div className={styles.promptGroupBody}>{comicPrompt}</div>}
+                    </div>
+                    {/* 视频生成提示词 */}
+                    <div className={styles.promptGroup}>
+                      <div className={styles.promptGroupTitle} onClick={() => toggleGroup('video')}>
+                        <span className={styles.promptGroupArrow}>{expandedGroups.has('video') ? '▼' : '▶'}</span>
+                        <span className={styles.promptTagVideo}>视频</span> 视频生成提示词
+                      </div>
+                      {expandedGroups.has('video') && <div className={styles.promptGroupBody}>{videoPrompt}</div>}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* 分镜修改区域 - 四宫格已生成后不再需要 */}
+          {!segment.comicUrl && (
+          <div className={styles.revisionSection}>
+            <div className={styles.revisionHeader}>
+              <span className={styles.revisionTitle}>分镜修改</span>
+              <div className={styles.revisionTabs}>
+                <button
+                  className={`${styles.revisionTab} ${!showManualEdit ? styles.activeTab : ''}`}
+                  onClick={() => setShowManualEdit(false)}
+                >
+                  AI修改
+                </button>
+                <button
+                  className={`${styles.revisionTab} ${showManualEdit ? styles.activeTab : ''}`}
+                  onClick={() => setShowManualEdit(true)}
+                >
+                  手动编辑
+                </button>
+              </div>
+            </div>
+
+            {!showManualEdit ? (
+              <div className={styles.revisionContent}>
+                <textarea
+                  className={styles.revisionTextarea}
+                  placeholder="请输入修改建议，例如：把角色表情改为愤怒，增加更多对话..."
+                  value={revisionFeedback}
+                  onChange={(e) => setRevisionFeedback(e.target.value)}
+                  disabled={isRevisingPanel}
+                  rows={3}
+                />
+                <button
+                  className={styles.revisionButton}
+                  onClick={() => {
+                    if (revisionFeedback.trim() && onReviseSinglePanel) {
+                      onReviseSinglePanel(revisionFeedback.trim());
+                      setRevisionFeedback('');
+                    }
+                  }}
+                  disabled={isRevisingPanel || !revisionFeedback.trim()}
+                >
+                  {isRevisingPanel ? '修改中...' : '提交修改'}
+                </button>
+              </div>
+            ) : (
+              <div className={styles.revisionContent}>
+                <label className={styles.editLabel}>
+                  构图描述
+                  <textarea
+                    className={styles.editTextarea}
+                    value={editFields.composition || ''}
+                    onChange={(e) => setEditFields(f => ({ ...f, composition: e.target.value }))}
+                    disabled={isUpdatingPanel}
+                    rows={3}
+                  />
+                </label>
+                <label className={styles.editLabel}>
+                  对话内容
+                  <textarea
+                    className={styles.editTextarea}
+                    value={editFields.dialogue || ''}
+                    onChange={(e) => setEditFields(f => ({ ...f, dialogue: e.target.value }))}
+                    disabled={isUpdatingPanel}
+                    rows={3}
+                  />
+                </label>
+                <label className={styles.editLabel}>
+                  画面提示词
+                  <textarea
+                    className={styles.editTextarea}
+                    value={editFields.image_prompt_hint || ''}
+                    onChange={(e) => setEditFields(f => ({ ...f, image_prompt_hint: e.target.value }))}
+                    disabled={isUpdatingPanel}
+                    rows={3}
+                  />
+                </label>
+                <button
+                  className={styles.revisionButton}
+                  onClick={() => {
+                    if (onUpdatePanel) {
+                      onUpdatePanel(editFields);
+                    }
+                  }}
+                  disabled={isUpdatingPanel}
+                >
+                  {isUpdatingPanel ? '保存中...' : '保存修改'}
+                </button>
+              </div>
+            )}
+          </div>
+          )}
         </div>
       )}
     </div>
