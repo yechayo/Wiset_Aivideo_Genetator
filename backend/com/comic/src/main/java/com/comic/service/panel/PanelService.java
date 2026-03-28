@@ -128,6 +128,24 @@ public class PanelService {
         }
     }
 
+    /**
+     * Find the panel immediately before the given panel within the same episode.
+     * Panels are ordered by ID ascending.
+     *
+     * @param episodeId      the episode ID
+     * @param currentPanelId the current panel ID
+     * @return the previous panel, or null if this is the first panel
+     */
+    public Panel findPreviousPanel(Long episodeId, Long currentPanelId) {
+        List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
+        for (int i = 0; i < panels.size(); i++) {
+            if (panels.get(i).getId().equals(currentPanelId)) {
+                return i > 0 ? panels.get(i - 1) : null;
+            }
+        }
+        return null;
+    }
+
     private PanelListItemResponse toListItemResponse(Panel panel) {
         PanelListItemResponse response = new PanelListItemResponse();
         response.setId(panel.getId());
