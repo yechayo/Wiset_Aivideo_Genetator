@@ -143,17 +143,15 @@ public class ComicGenerationService {
 
             // 构建参考图列表：[尾帧(如有), 背景图, 角色A合成图(如有), 角色B合成图(如有), ...]
             List<String> referenceImages = new ArrayList<>();
-            // 如果有尾帧参考，放在最前面作为图1
-            int tailFrameIndex = 0;
+            // 如果有尾帧参考，放在最前面作为图1，背景图变为图2
             if (prevTailFrameUrl != null && !prevTailFrameUrl.isEmpty()) {
                 referenceImages.add(prevTailFrameUrl);
-                tailFrameIndex = 1;
                 log.info("漫画图生成加入上一面板尾帧参考: 尾帧作为图1");
             }
             referenceImages.add(bgUrl);
-            // 记录每个角色对应的参考图索引（从1开始，0是背景）
+            // 记录每个角色对应的参考图索引（从1开始；有尾帧时背景为图2，否则背景为图1）
             Map<String, String> characterImageIndices = new HashMap<>();
-            int bgIndex = tailFrameIndex + 1; // 背景图的图号
+            int bgIndex = (prevTailFrameUrl != null && !prevTailFrameUrl.isEmpty()) ? 2 : 1;
             int imageIndex = bgIndex + 1; // 角色从背景图之后开始
             for (Map.Entry<String, Map<String, String>> entry : charDescriptions.entrySet()) {
                 String charId = entry.getKey();
@@ -190,9 +188,12 @@ public class ComicGenerationService {
             }
 
             String prompt = panelPromptBuilder.buildComicPrompt(panel.getPanelInfo(), charDescriptions, episodeSynopsis);
-            // 如果有尾帧参考，在prompt中标注
+            // 如果有尾帧参考，在prompt中标注，并修正图片编号（背景图从图1变为图2）
             if (prevTailFrameUrl != null && !prevTailFrameUrl.isEmpty()) {
                 prompt = "图1是上一个画面的结尾状态，请保持角色位置和动作的连贯性，画面应从上一场景自然过渡。\n\n" + prompt;
+                // Fix image numbering: background was 图1, now needs to be 图2
+                prompt = prompt.replace("图1：场景背景参考图", "图2：场景背景参考图");
+                prompt = prompt.replace("图1：背景参考图", "图2：背景参考图");
             }
             String comicUrl;
             if (referenceImages.size() == 1) {
