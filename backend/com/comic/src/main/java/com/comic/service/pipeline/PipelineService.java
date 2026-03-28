@@ -735,6 +735,13 @@ public class PipelineService implements StageCompletionCallback {
             ProjectStatus projectStatus = ProjectStatus.fromCode(project.getStatus());
             if (failedEpisode != null && projectStatus == ProjectStatus.PANEL_GENERATING) {
                 projectStatus = ProjectStatus.PANEL_GENERATING_FAILED;
+            } else if (failedEpisode == null && projectStatus == ProjectStatus.PANEL_GENERATING_FAILED) {
+                // 失败已恢复：有完成/审核中的 episode 则恢复到 PANEL_REVIEW，否则回到 PANEL_GENERATING
+                projectStatus = (completedCount > 0 || reviewEpisode != null)
+                        ? ProjectStatus.PANEL_REVIEW : ProjectStatus.PANEL_GENERATING;
+                project.setStatus(projectStatus.getCode());
+                projectRepository.updateById(project);
+                log.info("Panel status recovered: projectId={}, PANEL_GENERATING_FAILED -> {}", projectId, projectStatus.getCode());
             }
 
             dto.setStatusCode(projectStatus.getCode());

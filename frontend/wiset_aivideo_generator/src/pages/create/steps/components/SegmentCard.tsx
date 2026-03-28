@@ -85,6 +85,7 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
       return next;
     });
   };
+  const [durationValue, setDurationValue] = useState(segment.panelData?.duration || 5);
   const [revisionFeedback, setRevisionFeedback] = useState('');
   const [editFields, setEditFields] = useState({
     composition: segment.panelData?.dialogue || '',
@@ -404,7 +405,7 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
                         {d.composition && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>构图描述</span><span className={styles.pfValue}>{d.composition}</span></div>}
                         {(d.shotType || d.cameraAngle) && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>镜头</span><span className={styles.pfValue}>{d.shotType}{d.cameraAngle ? ` / ${d.cameraAngle}` : ''}</span></div>}
                         {d.pacing && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>节奏</span><span className={styles.pfValue}>{d.pacing}</span></div>}
-                        {d.duration && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>时长</span><span className={styles.pfValue}>{d.duration}s</span></div>}
+                        <div className={styles.promptFieldItem}><span className={styles.pfLabel}>时长</span><span className={styles.pfValue}><input type="number" value={durationValue} min={1} max={16} onChange={e => setDurationValue(Number(e.target.value))} onBlur={() => { const v = Math.max(1, Math.min(16, Math.round(durationValue || 5))); setDurationValue(v); if (v !== d.duration && onUpdatePanel) { onUpdatePanel({ duration: v }); } }} style={{ width: 48, padding: '2px 6px', border: '1px solid #d9d9d9', borderRadius: 4, textAlign: 'center', fontSize: 13, outline: 'none' }} />s</span></div>
                         {d.background?.scene_desc && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>场景描述</span><span className={styles.pfValue}>{d.background.scene_desc}</span></div>}
                         {d.background?.atmosphere && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>氛围</span><span className={styles.pfValue}>{d.background.atmosphere}</span></div>}
                         {d.background?.time_of_day && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>时间</span><span className={styles.pfValue}>{d.background.time_of_day}</span></div>}

@@ -205,7 +205,8 @@ public class PanelProductionService {
             panelRepository.updateById(panel);
             CharacterPromptManager.VisualStyle style = getProjectStyle(panel);
             String prompt = panelPromptBuilder.buildVideoPrompt(style, panel.getPanelInfo());
-            String taskId = videoGenerationService.generateAsync(prompt, 5, "16:9", comicUrl);
+            int panelDuration = info.containsKey("duration") ? ((Number) info.get("duration")).intValue() : 5;
+            String taskId = videoGenerationService.generateAsync(prompt, panelDuration, "16:9", comicUrl);
             info.put("videoTaskId", taskId);
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
