@@ -22,6 +22,12 @@ public interface CharacterRepository extends BaseMapper<Character> {
             .apply("JSON_EXTRACT(character_info, '$.charId') = {0}", charId));
     }
 
+    default Character findByNameAndProjectId(String projectId, String name) {
+        return selectOne(new LambdaQueryWrapper<Character>()
+            .eq(Character::getProjectId, projectId)
+            .apply("JSON_EXTRACT(character_info, '$.name') = {0}", name));
+    }
+
     default void deleteByProjectId(String projectId) {
         delete(new LambdaQueryWrapper<Character>()
             .eq(Character::getProjectId, projectId));

@@ -31,8 +31,8 @@
 
 .cardHeader {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: var(--space-2);
   padding: var(--space-4);
   cursor: pointer;
   user-select: none;
@@ -41,6 +41,13 @@
   &:hover {
     background-color: rgba(247, 249, 252, 0.04);
   }
+}
+
+.headerTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
 }
 
 .headerLeft {
@@ -113,6 +120,22 @@
   }
 }
 
+.miniSpinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(247, 249, 252, 0.3);
+  border-top-color: var(--color-text-secondary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .refreshPanelsBtn {
   display: flex;
   align-items: center;
@@ -153,6 +176,14 @@
   align-items: center;
   gap: var(--space-3);
   flex-shrink: 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  width: 100%;
 }
 
 .statusIcon {

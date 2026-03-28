@@ -20,6 +20,13 @@ public interface VideoGenerationService {
     String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage);
 
     /**
+     * 生成视频（异步任务，指定错峰模式）
+     */
+    default String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage, boolean offPeak) {
+        return generateAsync(prompt, duration, aspectRatio, referenceImage);
+    }
+
+    /**
      * 查询视频生成任务状态
      *
      * @param taskId 任务ID

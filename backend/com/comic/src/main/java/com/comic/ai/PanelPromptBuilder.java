@@ -48,7 +48,7 @@ public class PanelPromptBuilder {
         sb.append("      \"characters\": [\"角色名1\", \"角色名2\"],\n");
         sb.append("      \"mood\": \"情绪基调（紧张/温馨/悲伤/激烈等）\",\n");
         sb.append("      \"time_of_day\": \"时间（day/night/dusk/dawn）\",\n");
-        sb.append("      \"duration\": 5\n");
+        sb.append("      \"duration\": 10\n");
         sb.append("    }\n");
         sb.append("  ]\n");
         sb.append("}\n\n");
@@ -58,7 +58,7 @@ public class PanelPromptBuilder {
 
         sb.append("## 时长规划\n");
         sb.append("目标总时长：").append(episodeDuration).append(" 秒（可接受范围：").append(minDuration).append("~").append(maxDuration).append(" 秒）\n");
-        sb.append("- 每个 panel 必须包含 duration 字段（整数秒，范围 1~16）\n");
+        sb.append("- 每个 panel 必须包含 duration 字段（整数秒，范围 10~16）\n");
         sb.append("- 所有 panel 的 duration 之和必须在 ").append(minDuration).append("~").append(maxDuration).append(" 秒之间\n");
         sb.append("- 根据内容重要性合理分配时长，重要场景分配更多时间\n");
         sb.append("- 规划完成后，请自行验证总和是否在范围内\n");
@@ -74,7 +74,7 @@ public class PanelPromptBuilder {
 
         sb.append("## 时长约束\n");
         sb.append("- 目标总时长：").append(episodeDuration).append(" 秒\n");
-        sb.append("- 单 panel 时长范围：1~16 秒\n");
+        sb.append("- 单 panel 时长范围：10~16 秒\n");
         sb.append("- 所有 panel 时长之和必须在 ").append(minDuration).append("~").append(maxDuration).append(" 秒之间\n\n");
         sb.append("## 剧集内容\n").append(episodeContent != null ? episodeContent : "").append("\n\n");
         sb.append("## 前情提要\n").append(recentMemory != null ? recentMemory : "无").append("\n");
@@ -109,7 +109,7 @@ public class PanelPromptBuilder {
         sb.append("  \"camera_angle\": \"eye_level|low_angle|high_angle|bird_eye\",\n");
         sb.append("  \"composition\": \"构图描述（详细，50字以上）\",\n");
         sb.append("  \"pacing\": \"slow|normal|fast\",\n");
-        sb.append("  \"duration\": 5,\n");
+        sb.append("  \"duration\": 10,\n");
         sb.append("  \"image_prompt_hint\": \"用于 AI 图片生成的详细英文提示词（包含画面构图、角色外观、动作、表情、光影、氛围等，100字以上）\",\n");
         sb.append("  \"background\": {\n");
         sb.append("    \"scene_desc\": \"场景描述\",\n");
@@ -149,7 +149,7 @@ public class PanelPromptBuilder {
             sb.append("## 前一个 Panel 摘要\n").append(previousPanelSummary).append("\n\n");
         }
 
-        int minAdjusted = Math.max(1, plannedDuration - 2);
+        int minAdjusted = Math.max(10, plannedDuration - 2);
         int maxAdjusted = Math.min(16, plannedDuration + 2);
 
         sb.append("## 时长信息\n");
@@ -274,68 +274,114 @@ public class PanelPromptBuilder {
      * 构建四宫格漫画提示词（向后兼容，无角色信息）
      */
     public String buildComicPrompt(Map<String, Object> panelInfo) {
-        return buildComicPrompt(panelInfo, new HashMap<>());
+        return buildComicPrompt(panelInfo, new HashMap<>(), null);
     }
 
     /**
-     * 构建四宫格漫画提示词（参考图生图，中文）
-     * 包含：场景描述、构图、角色（名称+外貌+姿态+位置+表情）、台词、image_prompt_hint
-     *
-     * @param panelInfo        分镜信息
-     * @param charDescriptions 角色描述 Map&lt;charId, Map&lt;"name","appearance"&gt;&gt;
+     * 构建四宫格漫画提示词（无剧情简介）
      */
     public String buildComicPrompt(Map<String, Object> panelInfo, Map<String, Map<String, String>> charDescriptions) {
+        return buildComicPrompt(panelInfo, charDescriptions, null);
+    }
+
+    /**
+     * 构建四宫格漫画提示词（增强版：剧情上下文 + 角色参考图映射）
+     *
+     * @param panelInfo        分镜信息
+     * @param charDescriptions 角色描述 Map<charId, Map<"name"|"appearance"|"imageIndex"|"role", ...>>
+     * @param episodeSynopsis  剧情简介（可为 null）
+     */
+    public String buildComicPrompt(Map<String, Object> panelInfo, Map<String, Map<String, String>> charDescriptions, String episodeSynopsis) {
         if (panelInfo == null) return "";
+        if (charDescriptions == null) charDescriptions = new HashMap<>();
 
         StringBuilder prompt = new StringBuilder();
 
-        // 1. 场景描述 — 从 background.scene_desc 读取（与 buildBackgroundPrompt 保持一致）
-        String sceneDesc = null;
+        // 专业角色前缀
+        prompt.append("你是一个专业的漫画家，请根据以下分镜描述生成高质量的四宫格漫画。");
+
+        // 0. 剧情背景（可选）
+        if (episodeSynopsis != null && !episodeSynopsis.isEmpty()) {
+            prompt.append("【剧情背景】").append(episodeSynopsis);
+        }
+
+        // 0.5 参考图说明（仅在有角色参考图时添加）
+        boolean hasCharImages = charDescriptions.values().stream()
+                .anyMatch(d -> d.get("imageIndex") != null);
+        if (hasCharImages) {
+            prompt.append("【参考图说明】");
+            prompt.append("图1：场景背景参考图。");
+            for (Map.Entry<String, Map<String, String>> entry : charDescriptions.entrySet()) {
+                Map<String, String> desc = entry.getValue();
+                String imageIndex = desc.get("imageIndex");
+                String name = desc.get("name");
+                String role = desc.get("role");
+                if (imageIndex != null && name != null) {
+                    prompt.append("图").append(imageIndex).append("：角色\"").append(name).append("\"的参考图");
+                    if (role != null && !role.isEmpty()) {
+                        prompt.append("（").append(role).append("）");
+                    }
+                    prompt.append("，请严格按照该参考图中的角色外貌来绘制该角色。");
+                }
+            }
+        }
+
+        // 1. 构图描述
+        String composition = getStr(panelInfo, "composition");
+        if (composition != null && !composition.isEmpty()) {
+            prompt.append("【构图描述】").append(composition).append("。");
+        }
+
+        // 2. 场景描述 + 氛围 + 时间
         @SuppressWarnings("unchecked")
         Map<String, Object> bg = (Map<String, Object>) panelInfo.get("background");
         if (bg != null) {
-            sceneDesc = getStr(bg, "scene_desc");
-        }
-        if (sceneDesc == null || sceneDesc.isEmpty()) {
-            sceneDesc = getStr(panelInfo, "sceneDescription");
-        }
-        if (sceneDesc != null && !sceneDesc.isEmpty()) {
-            prompt.append("场景：").append(sceneDesc).append("。");
+            String sceneDesc = getStr(bg, "scene_desc");
+            if (sceneDesc == null || sceneDesc.isEmpty()) {
+                sceneDesc = getStr(panelInfo, "sceneDescription");
+            }
+            if (sceneDesc != null && !sceneDesc.isEmpty()) {
+                prompt.append("【场景描述】").append(sceneDesc).append("。");
+            }
+            String atmosphere = getStr(bg, "atmosphere");
+            if (atmosphere != null && !atmosphere.isEmpty()) {
+                prompt.append("【氛围】").append(atmosphere).append("。");
+            }
+            String timeOfDay = getStr(bg, "time_of_day");
+            if (timeOfDay != null && !timeOfDay.isEmpty()) {
+                prompt.append("【时间】").append(timeOfDay).append("。");
+            }
         }
 
-        // 2. 构图描述
-        String composition = getStr(panelInfo, "composition");
-        if (composition != null && !composition.isEmpty()) {
-            prompt.append("构图：").append(composition).append("。");
-        }
-
-        // 3. 镜头信息
+        // 3. 镜头语言
         String shotType = getStr(panelInfo, "shot_type");
+        String cameraAngle = getStr(panelInfo, "camera_angle");
+
         if (shotType != null) {
             switch (shotType) {
-                case "WIDE_SHOT": prompt.append("远景镜头。"); break;
-                case "MID_SHOT": prompt.append("中景镜头。"); break;
-                case "CLOSE_UP": prompt.append("特写镜头。"); break;
-                case "OVER_SHOULDER": prompt.append("过肩镜头。"); break;
-                default: break;
-            }
-        }
-        String cameraAngle = getStr(panelInfo, "camera_angle");
-        if (cameraAngle != null) {
-            switch (cameraAngle) {
-                case "eye_level": prompt.append("平视角度。"); break;
-                case "low_angle": prompt.append("低角度仰拍。"); break;
-                case "high_angle": prompt.append("高角度俯拍。"); break;
-                case "bird_eye": prompt.append("鸟瞰视角。"); break;
+                case "WIDE_SHOT": prompt.append("【镜头类型】远景，展示完整场景。"); break;
+                case "MID_SHOT": prompt.append("【镜头类型】中景，聚焦角色半身。"); break;
+                case "CLOSE_UP": prompt.append("【镜头类型】特写，聚焦面部细节。"); break;
+                case "OVER_SHOULDER": prompt.append("【镜头类型】过肩镜头。"); break;
                 default: break;
             }
         }
 
-        // 4. 角色信息（名称 + 外貌 + 姿态 + 位置 + 表情）
+        if (cameraAngle != null) {
+            switch (cameraAngle) {
+                case "eye_level": prompt.append("【镜头角度】平视角度。"); break;
+                case "low_angle": prompt.append("【镜头角度】低角度仰拍。"); break;
+                case "high_angle": prompt.append("【镜头角度】高角度俯拍。"); break;
+                case "bird_eye": prompt.append("【镜头角度】鸟瞰俯视视角。"); break;
+                default: break;
+            }
+        }
+
+        // 4. 角色表演（名称 + 外貌 + 姿态 + 位置 + 表情）
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> characters = (List<Map<String, Object>>) panelInfo.get("characters");
         if (characters != null && !characters.isEmpty()) {
-            prompt.append("画面中的角色：");
+            prompt.append("【角色表演】");
             for (Map<String, Object> ch : characters) {
                 String charId = ch.get("char_id") != null ? ch.get("char_id").toString() : null;
 
@@ -358,7 +404,7 @@ public class PanelPromptBuilder {
                 if (name != null) prompt.append(name);
                 if (appearance != null) prompt.append("（").append(appearance).append("）");
                 if (pose != null) prompt.append("，").append(pose);
-                if (position != null) prompt.append("，位于画面").append(position);
+                if (position != null) prompt.append("，位置：").append(position);
                 if (expression != null) prompt.append("，").append(expression).append("表情");
                 if (costumeState != null && !"normal".equals(costumeState)) {
                     prompt.append("，服装状态：").append(costumeState);
@@ -367,32 +413,33 @@ public class PanelPromptBuilder {
             }
         }
 
-        // 5. 台词内容
+        // 5. 对话台词
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> dialogue = (List<Map<String, Object>>) panelInfo.get("dialogue");
         if (dialogue != null && !dialogue.isEmpty()) {
-            prompt.append("台词：");
+            prompt.append("【对话台词】");
             for (Map<String, Object> d : dialogue) {
                 String speaker = d.get("speaker") != null ? d.get("speaker").toString() : null;
                 String text = d.get("text") != null ? d.get("text").toString() : null;
                 if (speaker != null && text != null) {
-                    prompt.append(speaker).append("说：\"").append(text).append("\"；");
+                    prompt.append(speaker).append("：\"").append(text).append("\"；");
                 } else if (text != null) {
                     prompt.append("\"").append(text).append("\"；");
                 }
             }
         }
 
-        // 6. image_prompt_hint（LLM 生成的详细英文提示词）
+        // 6. 画面细节参考（LLM 生成的详细英文提示词）
         String imagePromptHint = getStr(panelInfo, "image_prompt_hint");
         if (imagePromptHint != null && !imagePromptHint.isEmpty()) {
-            prompt.append("画面细节参考：").append(imagePromptHint);
+            prompt.append("【画面细节参考】").append(imagePromptHint);
         }
 
-        // 7. 四宫格布局指令 + 风格指令
+        // 7. 四宫格布局指令 + 风格指令 + 无文字说明
         prompt.append("保持参考图的背景风格和场景布局不变。");
         prompt.append("生成2行2列四宫格漫画，共4个连续分镜画面，每个格子标注序号(1,2,3,4)。");
         prompt.append("高质量动漫风格，画面精细。");
+        prompt.append("图片中不要有任何文字或字幕。");
 
         return prompt.toString();
     }

@@ -12,7 +12,13 @@ import okhttp3.Response;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
+import javax.imageio.ImageIO;
+import java.awt.Graphics;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -33,14 +39,16 @@ public class OssService {
 
     private OSS ossClient;
 
+    @PostConstruct
+    public void init() {
+        ossClient = new OSSClientBuilder().build(
+                ossProperties.getEndpoint(),
+                ossProperties.getAccessKeyId(),
+                ossProperties.getAccessKeySecret()
+        );
+    }
+
     private OSS getOssClient() {
-        if (ossClient == null) {
-            ossClient = new OSSClientBuilder().build(
-                    ossProperties.getEndpoint(),
-                    ossProperties.getAccessKeyId(),
-                    ossProperties.getAccessKeySecret()
-            );
-        }
         return ossClient;
     }
 
@@ -160,6 +168,86 @@ public class OssService {
             log.error("上传文件到 OSS 失败: {}", objectKey, e);
             throw new RuntimeException("上传文件到 OSS 失败: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 将两张图片水平拼合成一张，上传到 OSS
+     * 布局：[图1 | 图2]
+     *
+     * @param url1 左侧图片 URL
+     * @param url2 右侧图片 URL
+     * @return 合并后图片的 OSS URL
+     */
+    public String combineImagesHorizontal(String url1, String url2) {
+        try {
+            log.info("开始合并图片: left={}, right={}", url1, url2);
+            BufferedImage img1 = downloadImage(url1);
+            BufferedImage img2 = downloadImage(url2);
+
+            // 统一高度为两者最大值，但限制最大高度不超过1024以控制文件大小
+            int targetHeight = Math.min(Math.max(img1.getHeight(), img2.getHeight()), 1024);
+            // 按比例缩放
+            BufferedImage scaled1 = scaleToHeight(img1, targetHeight);
+            BufferedImage scaled2 = scaleToHeight(img2, targetHeight);
+
+            int totalWidth = scaled1.getWidth() + scaled2.getWidth();
+            BufferedImage combined = new BufferedImage(totalWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics g = combined.getGraphics();
+            g.setColor(java.awt.Color.WHITE);
+            g.fillRect(0, 0, totalWidth, targetHeight);
+            g.drawImage(scaled1, 0, 0, null);
+            g.drawImage(scaled2, scaled1.getWidth(), 0, null);
+            g.dispose();
+
+            // 使用 JPEG 压缩，控制文件大小不超过 Seedream 的 10 MiB 限制
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            javax.imageio.ImageWriteParam param = ImageIO.getImageWritersByFormatName("jpeg").next().getDefaultWriteParam();
+            param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+            param.setCompressionQuality(0.85f);
+            javax.imageio.ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
+            try (javax.imageio.stream.ImageOutputStream ios = ImageIO.createImageOutputStream(baos)) {
+                writer.setOutput(ios);
+                writer.write(null, new javax.imageio.IIOImage(combined, null, null), param);
+            }
+            writer.dispose();
+            byte[] bytes = baos.toByteArray();
+            log.info("合并图片 JPEG 压缩后大小: {} KiB ({}x{})", bytes.length / 1024, totalWidth, targetHeight);
+
+            // 上传到 OSS
+            String fileName = UUID.randomUUID().toString().replace("-", "") + ".jpg";
+            String objectKey = ossProperties.getDir() + "combined/" + fileName;
+            ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+            String ossUrl = uploadFromInputStream(bais, objectKey, "image/jpeg", bytes.length);
+            log.info("图片合并完成，已上传 OSS: {} ({}x{})", ossUrl, totalWidth, targetHeight);
+            return ossUrl;
+        } catch (Exception e) {
+            log.error("合并图片失败: url1={}, url2={}", url1, url2, e);
+            throw new RuntimeException("合并图片失败: " + e.getMessage(), e);
+        }
+    }
+
+    private BufferedImage downloadImage(String url) throws Exception {
+        Request request = new Request.Builder().url(url).build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                throw new RuntimeException("下载图片失败: " + response.code());
+            }
+            byte[] bytes = response.body().bytes();
+            return ImageIO.read(new ByteArrayInputStream(bytes));
+        }
+    }
+
+    private BufferedImage scaleToHeight(BufferedImage src, int targetHeight) {
+        if (src.getHeight() == targetHeight) return src;
+        double scale = (double) targetHeight / src.getHeight();
+        int targetWidth = (int) Math.round(src.getWidth() * scale);
+        BufferedImage scaled = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+        Graphics g = scaled.getGraphics();
+        g.setColor(java.awt.Color.WHITE);
+        g.fillRect(0, 0, targetWidth, targetHeight);
+        g.drawImage(src.getScaledInstance(targetWidth, targetHeight, java.awt.Image.SCALE_SMOOTH), 0, 0, null);
+        g.dispose();
+        return scaled;
     }
 
     /**

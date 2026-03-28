@@ -308,8 +308,10 @@ public class PanelController {
     public Result<Void> generateVideo(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
-            @PathVariable Long panelId) {
-        panelProductionService.generateVideoByPanelId(panelId);
+            @PathVariable Long panelId,
+            @RequestBody(required = false) Map<String, Object> body) {
+        boolean offPeak = body != null && Boolean.TRUE.equals(body.get("offPeak"));
+        panelProductionService.generateVideoByPanelId(panelId, offPeak);
         return Result.ok();
     }
 

@@ -9,4 +9,5 @@ public class CharacterUpdateRequest {
     private String voice;
     private String appearance;
     private String background;
+    private String species;           // 物种类型: HUMAN/ANTHRO_ANIMAL/CREATURE/ANIMAL
 }

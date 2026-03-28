@@ -12,6 +12,7 @@ import {
   generateImage,
   retryGeneration,
   confirmImages,
+  confirmCharacters,
 } from '../../../services/characterService';
 import { advanceStatus } from '../../../services/projectService';
 
@@ -58,7 +59,7 @@ const Step4page = ({ project }: Step4pageProps) => {
         items.forEach((char, i) => {
           const st = statuses[i];
           if (st?.isGeneratingExpression || st?.isGeneratingThreeView
-            || char.expressionStatus === 'generating' || char.threeViewStatus === 'generating') {
+            || char.expressionStatus === 'GENERATING' || char.threeViewStatus === 'GENERATING') {
             nextGeneratingIds.add(char.charId);
           }
         });
@@ -173,7 +174,7 @@ const Step4page = ({ project }: Step4pageProps) => {
     const ids = new Set<string>();
     for (const char of characters) {
       const isSupporting = char.role === '配角';
-      const allDone = char.threeViewStatus === 'completed' && (isSupporting || char.expressionStatus === 'completed');
+      const allDone = char.threeViewStatus === 'COMPLETED' && (isSupporting || char.expressionStatus === 'COMPLETED');
       if (allDone) continue; // 跳过已完成的角色
 
       ids.add(char.charId);
@@ -239,9 +240,9 @@ const Step4page = ({ project }: Step4pageProps) => {
     const isGenerating = generatingIds.has(char.charId);
 
     // 根据角色自身状态判断
-    const charAllDone = char.threeViewStatus === 'completed' && (isSupporting || char.expressionStatus === 'completed');
-    const charAnyFailed = char.threeViewStatus === 'failed' || char.expressionStatus === 'failed';
-    const charAnyGenerating = char.threeViewStatus === 'generating' || char.expressionStatus === 'generating';
+    const charAllDone = char.threeViewStatus === 'COMPLETED' && (isSupporting || char.expressionStatus === 'COMPLETED');
+    const charAnyFailed = char.threeViewStatus === 'FAILED' || char.expressionStatus === 'FAILED';
+    const charAnyGenerating = char.threeViewStatus === 'GENERATING' || char.expressionStatus === 'GENERATING';
 
     const cardClass = [
       styles.characterCard,
@@ -273,14 +274,14 @@ const Step4page = ({ project }: Step4pageProps) => {
       <div className={`${styles.imageItem} ${type === 'threeView' ? styles.threeViewItem : styles.expressionItem}`}>
         <div className={styles.imageItemHeader}>
           <span className={styles.imageLabel}>{label}</span>
-          {status === 'completed' && <span className={`${styles.imageStatusTag} ${styles.tagDone}`}>已完成</span>}
-          {status === 'generating' && <span className={`${styles.imageStatusTag} ${styles.tagGenerating}`}><span className={`${styles.statusDot} ${styles.generating}`} />生成中</span>}
-          {status === 'failed' && <span className={`${styles.imageStatusTag} ${styles.tagFailed}`}>失败</span>}
+          {status === 'COMPLETED' && <span className={`${styles.imageStatusTag} ${styles.tagDone}`}>已完成</span>}
+          {status === 'GENERATING' && <span className={`${styles.imageStatusTag} ${styles.tagGenerating}`}><span className={`${styles.statusDot} ${styles.generating}`} />生成中</span>}
+          {status === 'FAILED' && <span className={`${styles.imageStatusTag} ${styles.tagFailed}`}>失败</span>}
         </div>
         <div className={type === 'threeView' ? `${styles.imagePreview} ${styles.threeView}` : styles.imagePreview}>
           {imageUrl ? (
             <img src={imageUrl} alt={label} />
-          ) : status === 'failed' ? (
+          ) : status === 'FAILED' ? (
             <div className={styles.imagePlaceholder}>
               <span>生成失败</span>
               {error && <span className={styles.imageError}>{error}</span>}
@@ -292,14 +293,14 @@ const Step4page = ({ project }: Step4pageProps) => {
           )}
         </div>
         {!isGenerating && mode !== 'locked' && (
-          status === 'generating' ? null : status === 'completed' ? (
+          status === 'GENERATING' ? null : status === 'COMPLETED' ? (
             <button
               className={styles.retryBtn}
               onClick={() => handleRetryChar(char.charId, type!)}
             >
               重新生成
             </button>
-          ) : status === 'failed' ? (
+          ) : status === 'FAILED' ? (
             <button
               className={styles.retryBtn}
               onClick={() => handleRetryChar(char.charId, type!)}
@@ -333,9 +334,9 @@ const Step4page = ({ project }: Step4pageProps) => {
             {!isSupporting && (
               <div className={styles.statusItem}>
                 <span className={`${styles.statusDot} ${
-                  char.expressionStatus === 'completed' ? styles.completed :
-                  char.expressionStatus === 'failed' ? styles.failed :
-                  char.expressionStatus === 'generating' ? styles.generating : styles.pending
+                  char.expressionStatus === 'COMPLETED' ? styles.completed :
+                  char.expressionStatus === 'FAILED' ? styles.failed :
+                  char.expressionStatus === 'GENERATING' ? styles.generating : styles.pending
                 }`} />
                 {getGenStatusText(char.expressionStatus ?? undefined, '表情')}
                 {st?.expressionError && <span className={styles.imageError}>({st?.expressionError})</span>}
@@ -343,9 +344,9 @@ const Step4page = ({ project }: Step4pageProps) => {
             )}
             <div className={styles.statusItem}>
               <span className={`${styles.statusDot} ${
-                char.threeViewStatus === 'completed' ? styles.completed :
-                char.threeViewStatus === 'failed' ? styles.failed :
-                char.threeViewStatus === 'generating' ? styles.generating : styles.pending
+                char.threeViewStatus === 'COMPLETED' ? styles.completed :
+                char.threeViewStatus === 'FAILED' ? styles.failed :
+                char.threeViewStatus === 'GENERATING' ? styles.generating : styles.pending
               }`} />
               {getGenStatusText(char.threeViewStatus ?? undefined, '三视图')}
               {st?.threeViewError && <span className={styles.imageError}>({st?.threeViewError})</span>}

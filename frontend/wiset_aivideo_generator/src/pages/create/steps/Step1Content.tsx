@@ -8,6 +8,19 @@ import ScriptGeneratingOverlay from '../components/ScriptGeneratingOverlay';
 import { useProjectStore } from '../../../stores';
 import { useTransitionOverlay } from '../CreateLayout';
 
+// 题材类型选项
+const genreOptions = [
+  { value: '热血玄幻', label: '热血玄幻' },
+  { value: '都市异能', label: '都市异能' },
+  { value: '科幻机甲', label: '科幻机甲' },
+  { value: '悬疑推理', label: '悬疑推理' },
+  { value: '都市言情', label: '都市言情' },
+  { value: '古风仙侠', label: '古风仙侠' },
+  { value: '恐怖灵异', label: '恐怖灵异' },
+  { value: '青春校园', label: '青春校园' },
+  { value: '搞笑日常', label: '搞笑日常' },
+];
+
 // 画面风格选项（与后端 visualStyle 保持一致）
 const visualStyleOptions = [
   { value: '3D', label: '3D 写实渲染' },
@@ -71,6 +84,7 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
   // 表单状态
   const [storyIdea, setStoryIdea] = useState('');
   const [generateMode, setGenerateMode] = useState<'single' | 'series'>('single');
+  const [genre, setGenre] = useState('');
   const [visualStyle, setVisualStyle] = useState<VisualStyle | ''>('');
   const [targetAudience, setTargetAudience] = useState('');
   const [totalEpisodes, setTotalEpisodes] = useState(10);
@@ -98,6 +112,7 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
       // 映射表单字段到 API 字段
       const requestData: CreateProjectRequest = {
         storyPrompt: storyIdea,
+        genre: genre || undefined,
         visualStyle: visualStyle || undefined,
         targetAudience,
         totalEpisodes: generateMode === 'series' ? totalEpisodes : 1,
@@ -221,6 +236,31 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
               </span>
               <span>系列漫剧</span>
             </div>
+          </div>
+        </div>
+
+        {/* 题材类型 */}
+        <div className={styles.configSection}>
+          <label className={styles.configLabel} htmlFor="genre">
+            题材类型
+          </label>
+          <div className={styles.selectWrapper}>
+            <select
+              id="genre"
+              className={styles.select}
+              value={genre}
+              onChange={(e) => setGenre(e.target.value)}
+            >
+              <option value="" disabled>
+                选择题材
+              </option>
+              {genreOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDownIcon className={styles.selectArrow} />
           </div>
         </div>
 

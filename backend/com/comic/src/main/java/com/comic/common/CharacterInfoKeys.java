@@ -22,6 +22,7 @@ public final class CharacterInfoKeys {
     public static final String THREE_VIEW_GRID_URL = "threeViewGridUrl";
     public static final String EXPRESSION_GRID_PROMPT = "expressionGridPrompt";
     public static final String THREE_VIEW_GRID_PROMPT = "threeViewGridPrompt";
+    public static final String SPECIES = "species";
 
     private CharacterInfoKeys() {}
 }

@@ -18,6 +18,33 @@ public class CharacterPromptManager {
         return v != null ? v.toString() : null;
     }
 
+    private boolean isNonHuman(Character character) {
+        String species = getCharInfoStr(character, "species");
+        return "ANTHRO_ANIMAL".equals(species) || "CREATURE".equals(species) || "ANIMAL".equals(species);
+    }
+
+    private String getSpeciesAwareBodyDescription(Character character) {
+        String species = getCharInfoStr(character, "species");
+        if (species == null) species = "HUMAN";
+        switch (species) {
+            case "ANTHRO_ANIMAL": return "正确的拟人化身体结构，保留动物特征（耳朵、尾巴、爪等）";
+            case "CREATURE": return "正确的种族身体结构，展现该种族特有的体型和特征";
+            case "ANIMAL": return "自然的动物形态，四足或飞行姿态，无衣物配饰";
+            default: return "正确的人体结构";
+        }
+    }
+
+    private String getSpeciesAwareExpressionFraming(Character character) {
+        String species = getCharInfoStr(character, "species");
+        if (species == null) species = "HUMAN";
+        switch (species) {
+            case "ANTHRO_ANIMAL": return "特写肖像镜头（头部和肩部），表情通过面部、耳朵、尾巴动态体现";
+            case "CREATURE": return "特写肖像镜头，表情通过该种族特征部位体现";
+            case "ANIMAL": return "特写镜头（头部），表情通过耳朵、眼睛、尾巴姿态体现，不要肩部以下";
+            default: return "仅限特写肖像镜头（头部和肩部）";
+        }
+    }
+
     /**
      * 视觉风格枚举
      */
@@ -79,6 +106,7 @@ public class CharacterPromptManager {
         String personality = getCharInfoStr(character, "personality");
         String stylePrefix = buildCharacterStylePrefix(style);
         String negativePrompt = buildExpressionNegativePrompt(style);
+        String expressionFraming = getSpeciesAwareExpressionFraming(character);
 
         return stylePrefix +
                 "角色面部表情参考图，3行3列网格布局，展示9种不同的面部表情" +
@@ -88,7 +116,7 @@ public class CharacterPromptManager {
                 "角色面部描述：" + appearance + "\n" +
                 "性格特征：" + personality + "\n\n" +
                 "关键约束：\n" +
-                "- 仅限特写肖像镜头（头部和肩部）\n" +
+                "- **" + expressionFraming + "**\n" +
                 "- 不要全身，不要下半身，不要腿部\n" +
                 "- 聚焦面部特征、表情和头部\n" +
                 "- 纯色平铺背景（白色、浅灰色或黑色），不要图案、渐变、环境元素\n" +
@@ -105,6 +133,11 @@ public class CharacterPromptManager {
         String personality = getCharInfoStr(character, "personality");
         String stylePrefix = buildCharacterStylePrefix(style);
         String negativePrompt = buildThreeViewNegativePrompt(style);
+        String bodyDesc = getSpeciesAwareBodyDescription(character);
+
+        String postureReq = "ANIMAL".equals(getCharInfoStr(character, "species"))
+                ? "- 自然姿态（站立、四足或飞行），表情平静\n"
+                : "- 全身站立姿势，表情平静\n";
 
         return stylePrefix +
                 "角色三视图参考图，生成角色三视图（正面、侧面、背面视图）。\n\n" +
@@ -112,13 +145,13 @@ public class CharacterPromptManager {
                 "属性特征：" + personality + "\n\n" +
                 "构图要求：\n" +
                 "- 纵向布局，包含3个视图：正面视图、侧面视图（侧面轮廓）、背面视图\n" +
-                "- 全身站立姿势，表情平静\n" +
+                postureReq +
                 "- 纯色平铺背景（白色、浅灰色或黑色），不要图案、渐变、环境元素\n" +
                 "- 每个视图应清晰展示角色在指定角度下的外观\n\n" +
                 "关键要求：\n" +
                 "1. 角色设计一致——三个视图必须展示同一个角色\n" +
                 "2. 不要文字、不要标签——纯图像\n" +
-                "3. 正确的人体结构——身体比例正确、姿态自然\n" +
+                "3. **" + bodyDesc + "**——身体比例正确、姿态自然\n" +
                 "4. 平静表情——所有视图使用中性面部表情\n" +
                 "5. 清晰对齐——正面、侧面和背面视图纵向对齐，比例一致\n\n" +
                 "负面提示词：" + negativePrompt;

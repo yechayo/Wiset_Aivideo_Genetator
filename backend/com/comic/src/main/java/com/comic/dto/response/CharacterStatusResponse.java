@@ -22,6 +22,7 @@ public class CharacterStatusResponse {
     private Boolean isGeneratingExpression;  // 正在生成表情
     private Boolean isGeneratingThreeView;   // 正在生成三视图
     private String visualStyle;              // 视觉风格: 3D/REAL/ANIME
+    private String species;              // 物种类型: HUMAN/ANTHRO_ANIMAL/CREATURE/ANIMAL
     private String expressionGridUrl;        // 九宫格大全图URL
     private String threeViewGridUrl;         // 三视图大全图URL
 }

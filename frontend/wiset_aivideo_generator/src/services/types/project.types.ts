@@ -257,6 +257,7 @@ export interface CharacterListItem {
   expressionStatus: string | null;
   threeViewStatus: string | null;
   confirmed: boolean;
+  species?: string;            // 物种类型: HUMAN/ANTHRO_ANIMAL/CREATURE/ANIMAL
   createdAt: string;
 }
 
@@ -271,6 +272,7 @@ export interface CharacterDraft {
   appearance: string;
   background: string;
   confirmed: boolean;
+  species?: string;            // 物种类型
 }
 
 /**
@@ -292,6 +294,7 @@ export interface CharacterStatus {
   isGeneratingExpression?: boolean;
   isGeneratingThreeView?: boolean;
   visualStyle?: string;         // 3D/ANIME/COMIC
+  species?: string;            // 物种类型: HUMAN/ANTHRO_ANIMAL/CREATURE/ANIMAL
   expressionGridUrl?: string;
   threeViewGridUrl?: string;
 }
