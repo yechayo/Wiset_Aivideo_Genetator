@@ -102,6 +102,11 @@ public class PanelPromptBuilder {
         sb.append("\n## 任务\n");
         sb.append("根据 panel 概要，生成该 panel 的完整分镜描述。\n\n");
 
+        sb.append("## 面板衔接规则\n");
+        sb.append("- 你必须确保每个面板的画面从上一个面板的结尾状态自然延续\n");
+        sb.append("- 角色位置、动作、表情必须与上一面板的结尾状态保持一致\n");
+        sb.append("- 场景转换必须有合理的过渡（如角色移动到新位置需要中间过程）\n\n");
+
         sb.append("## 输出格式（仅返回单个 panel 的 JSON 对象）\n");
         sb.append("{\n");
         sb.append("  \"panel_id\": \"p1\",\n");
@@ -146,7 +151,8 @@ public class PanelPromptBuilder {
         sb.append("## 该 Panel 概要\n").append(panelPlan).append("\n\n");
         sb.append("## 剧集内容（参考上下文）\n").append(episodeContent != null ? episodeContent : "").append("\n\n");
         if (previousPanelSummary != null && !previousPanelSummary.isEmpty()) {
-            sb.append("## 前一个 Panel 摘要\n").append(previousPanelSummary).append("\n\n");
+            sb.append("## 前一个 Panel 摘要\n").append(previousPanelSummary).append("\n");
+            sb.append("请基于上一面板的结尾状态设计本面板的起始画面，确保画面连贯\n\n");
         }
 
         int minAdjusted = Math.max(10, plannedDuration - 2);
