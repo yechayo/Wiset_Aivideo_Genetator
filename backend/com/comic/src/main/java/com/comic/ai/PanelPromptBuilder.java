@@ -573,6 +573,11 @@ public class PanelPromptBuilder {
             prompt.append("【画面细节参考】").append(imagePromptHint);
         }
 
+        // 添加画面衔接提示
+        prompt.append("\n\n## 画面衔接\n");
+        prompt.append("视频动画应从参考图（首帧）自然展开，保持角色位置和动作的连贯性。");
+        prompt.append("动作过渡应平滑自然，避免突然跳切。");
+
         prompt.append(stylePrefix);
         prompt.append("流畅的动画效果，自然的镜头运动。");
 
