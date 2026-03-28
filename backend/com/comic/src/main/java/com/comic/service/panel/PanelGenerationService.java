@@ -29,6 +29,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -1276,6 +1277,8 @@ public class PanelGenerationService {
      * 包含场景、镜头、角色细节及结尾状态，确保面板间视觉连贯
      */
     private String buildPanelSummary(JsonNode detailJson) {
+        if (detailJson == null) return "";
+
         StringBuilder sb = new StringBuilder();
 
         // [panel_id] 前缀
@@ -1294,50 +1297,55 @@ public class PanelGenerationService {
         // 场景信息：background.scene_desc + time_of_day + atmosphere
         JsonNode bg = detailJson.get("background");
         if (bg != null) {
+            boolean hasScene = false;
             StringBuilder sceneLine = new StringBuilder();
             sceneLine.append("场景：");
             if (bg.has("scene_desc")) {
                 sceneLine.append(bg.get("scene_desc").asText());
+                hasScene = true;
             }
             if (bg.has("time_of_day")) {
                 sceneLine.append("，").append(bg.get("time_of_day").asText());
+                hasScene = true;
             }
             if (bg.has("atmosphere")) {
                 sceneLine.append("，").append(bg.get("atmosphere").asText());
+                hasScene = true;
             }
-            if (sceneLine.length() > 3) { // more than just "场景："
+            if (hasScene) {
                 sb.append(sceneLine).append("\n");
             }
         }
 
         // 镜头信息：shot_type + camera_angle
+        boolean hasShot = false;
         StringBuilder shotLine = new StringBuilder();
         shotLine.append("镜头：");
         if (detailJson.has("shot_type")) {
             shotLine.append(detailJson.get("shot_type").asText());
+            hasShot = true;
         }
         if (detailJson.has("camera_angle")) {
-            if (shotLine.length() > 3) shotLine.append(", ");
+            if (hasShot) shotLine.append(", ");
             shotLine.append(detailJson.get("camera_angle").asText());
+            hasShot = true;
         }
-        if (shotLine.length() > 3) {
+        if (hasShot) {
             sb.append(shotLine).append("\n");
         }
 
         // 角色详情：name(position, pose, expression, costume_state)
         if (detailJson.has("characters") && detailJson.get("characters").isArray()) {
             JsonNode chars = detailJson.get("characters");
-            if (chars.size() > 0) {
+            if (!chars.isEmpty()) {
                 sb.append("角色：");
                 for (int i = 0; i < chars.size(); i++) {
                     JsonNode c = chars.get(i);
                     if (i > 0) sb.append("；");
-                    // 角色名称（优先用 name，其次用 char_id）
-                    String charName = c.has("name") ? c.get("name").asText() :
-                                      (c.has("char_id") ? c.get("char_id").asText() : "未知");
+                    String charName = resolveCharName(c);
                     sb.append(charName);
                     sb.append("(");
-                    List<String> details = new java.util.ArrayList<>();
+                    List<String> details = new ArrayList<>();
                     if (c.has("position")) details.add(c.get("position").asText());
                     if (c.has("pose")) details.add(c.get("pose").asText());
                     if (c.has("expression")) details.add(c.get("expression").asText() + "表情");
@@ -1350,6 +1358,7 @@ public class PanelGenerationService {
         }
 
         // 结尾状态：基于 composition、character poses/expressions 和 image_prompt_hint 推断
+        boolean hasEnding = false;
         StringBuilder endingLine = new StringBuilder();
         endingLine.append("结尾状态：");
         // 优先使用 image_prompt_hint 作为推断基础
@@ -1358,25 +1367,41 @@ public class PanelGenerationService {
         // 从角色信息推断
         if (detailJson.has("characters") && detailJson.get("characters").isArray()) {
             JsonNode chars = detailJson.get("characters");
+            List<String> endingParts = new ArrayList<>();
             for (int i = 0; i < chars.size(); i++) {
                 JsonNode c = chars.get(i);
-                if (i > 0) endingLine.append("；");
-                String charName = c.has("name") ? c.get("name").asText() :
-                                  (c.has("char_id") ? c.get("char_id").asText() : "未知");
-                String pose = c.has("pose") ? c.get("pose").asText() : "";
-                String position = c.has("position") ? c.get("position").asText() : "";
-                String expression = c.has("expression") ? c.get("expression").asText() : "";
-                endingLine.append(charName).append("位于画面").append(position).append("，");
-                endingLine.append("正在").append(pose).append("，").append(expression).append("表情");
+                String charName = resolveCharName(c);
+                if (charName != null && !charName.isEmpty()) {
+                    String charPhrase = charName;
+                    String position = c.has("position") ? c.get("position").asText() : null;
+                    String pose = c.has("pose") ? c.get("pose").asText() : null;
+                    String expression = c.has("expression") ? c.get("expression").asText() : null;
+                    if (position != null && !position.isEmpty()) {
+                        charPhrase += "位于画面" + position;
+                    }
+                    if (pose != null && !pose.isEmpty()) {
+                        charPhrase += "，正在" + pose;
+                    }
+                    if (expression != null && !expression.isEmpty()) {
+                        charPhrase += "，表情" + expression;
+                    }
+                    endingParts.add(charPhrase);
+                }
+            }
+            if (!endingParts.isEmpty()) {
+                endingLine.append(String.join("；", endingParts));
+                hasEnding = true;
             }
         }
         if (composition != null && !composition.isEmpty()) {
             endingLine.append("。画面整体：").append(composition);
+            hasEnding = true;
         }
         if (hint != null && !hint.isEmpty()) {
             endingLine.append("。视觉参考：").append(hint);
+            hasEnding = true;
         }
-        if (endingLine.length() > 5) { // more than just "结尾状态："
+        if (hasEnding) {
             sb.append(endingLine).append("\n");
         }
 
@@ -1528,5 +1553,14 @@ public class PanelGenerationService {
         }
         String outlineNode = getEpInfoStr(episode, EpisodeInfoKeys.OUTLINE_NODE);
         return outlineNode != null ? outlineNode : "";
+    }
+
+    /**
+     * 解析角色名称：优先用 name，其次用 char_id，兜底返回"未知"
+     */
+    private String resolveCharName(JsonNode c) {
+        if (c.has("name")) return c.get("name").asText();
+        if (c.has("char_id")) return c.get("char_id").asText();
+        return "未知";
     }
 }
