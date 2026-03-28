@@ -8,6 +8,7 @@ import com.comic.dto.response.ComicStatusResponse;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
+import com.comic.service.panel.PanelService;
 import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import com.comic.service.oss.OssService;
 import com.comic.repository.CharacterRepository;
@@ -37,6 +38,8 @@ public class ComicGenerationService {
     private final CharacterRepository characterRepository;
     private final ProjectStatusBroadcaster broadcaster;
     private final OssService ossService;
+    private final VideoCompositionService videoCompositionService;
+    private final PanelService panelService;
 
     private ComicGenerationService self() {
         return applicationContext.getBean(ComicGenerationService.class);
@@ -106,12 +109,52 @@ public class ComicGenerationService {
                 log.warn("获取剧情简介失败: panelId={}", panelId, e);
             }
 
-            // 构建参考图列表：[背景图, 角色A合成图(如有), 角色B合成图(如有), ...]
+            // 提取上一面板视频的尾帧作为视觉衔接参考
+            String prevTailFrameUrl = null;
+            try {
+                Panel prevPanel = panelService.findPreviousPanel(panel.getEpisodeId(), panel.getId());
+                if (prevPanel != null) {
+                    Map<String, Object> prevInfo = prevPanel.getPanelInfo();
+                    // 检查上一面板是否有已完成的视频
+                    if (prevInfo != null) {
+                        String prevVideoUrl = getStr(prevInfo, "videoUrl");
+                        String prevVideoStatus = getStr(prevInfo, "videoStatus");
+                        if ("completed".equals(prevVideoStatus) && prevVideoUrl != null && !prevVideoUrl.isEmpty()) {
+                            // 优先使用缓存的尾帧URL
+                            prevTailFrameUrl = getStr(prevInfo, "tailFrameUrl");
+                            if (prevTailFrameUrl == null || prevTailFrameUrl.isEmpty()) {
+                                // 提取视频最后一帧
+                                prevTailFrameUrl = videoCompositionService.extractFrame(prevVideoUrl, -1);
+                                // 缓存到上一面板的panelInfo中
+                                prevInfo.put("tailFrameUrl", prevTailFrameUrl);
+                                prevPanel.setPanelInfo(prevInfo);
+                                panelRepository.updateById(prevPanel);
+                                log.info("提取并缓存上一面板尾帧: prevPanelId={}, tailFrameUrl={}", prevPanel.getId(), prevTailFrameUrl);
+                            } else {
+                                log.info("使用缓存的上一面板尾帧: prevPanelId={}", prevPanel.getId());
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("提取上一面板尾帧失败，跳过视觉衔接参考: panelId={}", panelId, e);
+                prevTailFrameUrl = null; // 确保失败时不影响后续流程
+            }
+
+            // 构建参考图列表：[尾帧(如有), 背景图, 角色A合成图(如有), 角色B合成图(如有), ...]
             List<String> referenceImages = new ArrayList<>();
+            // 如果有尾帧参考，放在最前面作为图1
+            int tailFrameIndex = 0;
+            if (prevTailFrameUrl != null && !prevTailFrameUrl.isEmpty()) {
+                referenceImages.add(prevTailFrameUrl);
+                tailFrameIndex = 1;
+                log.info("漫画图生成加入上一面板尾帧参考: 尾帧作为图1");
+            }
             referenceImages.add(bgUrl);
             // 记录每个角色对应的参考图索引（从1开始，0是背景）
             Map<String, String> characterImageIndices = new HashMap<>();
-            int imageIndex = 2; // 图1 是背景，角色从图2开始
+            int bgIndex = tailFrameIndex + 1; // 背景图的图号
+            int imageIndex = bgIndex + 1; // 角色从背景图之后开始
             for (Map.Entry<String, Map<String, String>> entry : charDescriptions.entrySet()) {
                 String charId = entry.getKey();
                 Map<String, String> desc = entry.getValue();
@@ -136,7 +179,7 @@ public class ComicGenerationService {
                     imageIndex++;
                 }
             }
-            log.info("漫画生成参考图列表: 共{}张(含背景图=图1)", referenceImages.size());
+            log.info("漫画生成参考图列表: 共{}张(含尾帧={}, 背景图, 角色图)", referenceImages.size(), prevTailFrameUrl != null ? "图1" : "无");
 
             // 将 characterImageIndices 注入 charDescriptions
             for (Map.Entry<String, Map<String, String>> entry : charDescriptions.entrySet()) {
@@ -147,6 +190,10 @@ public class ComicGenerationService {
             }
 
             String prompt = panelPromptBuilder.buildComicPrompt(panel.getPanelInfo(), charDescriptions, episodeSynopsis);
+            // 如果有尾帧参考，在prompt中标注
+            if (prevTailFrameUrl != null && !prevTailFrameUrl.isEmpty()) {
+                prompt = "图1是上一个画面的结尾状态，请保持角色位置和动作的连贯性，画面应从上一场景自然过渡。\n\n" + prompt;
+            }
             String comicUrl;
             if (referenceImages.size() == 1) {
                 // 只有背景图，走旧的单图参考逻辑
