@@ -4,6 +4,9 @@ export type SegmentPipelineStep = 'pending' | 'scene_ready' | 'comic_review' | '
 /** 分镜详细信息 */
 export interface PanelData {
   panelId: string;
+  /** panelInfo 中的 panel_id（如 "p1"、"p2"），用于匹配 panelPlan */
+  planPanelId: string;
+  composition: string;
   shotType: string;
   cameraAngle: string;
   pacing: string;
@@ -12,6 +15,7 @@ export interface PanelData {
   background: any;
   imagePromptHint: string;
   sfx: string[];
+  duration?: number;
 }
 
 /** 片段状态 */
@@ -20,7 +24,7 @@ export interface SegmentState {
   title: string;
   synopsis: string;
   sceneThumbnail: string | null;
-  characterAvatars: { name: string; avatarUrl: string }[];
+  characterAvatars: { charId: string; name: string; avatarUrl: string }[];
   pipelineStep: SegmentPipelineStep;
   comicUrl: string | null;
   videoUrl: string | null;
@@ -33,6 +37,8 @@ export interface EpisodeState {
   episodeId: number;
   episodeIndex: number;
   title: string;
+  /** panelPlan JSON 解析后的 scene_summary 映射：panel_id → scene_summary */
+  sceneSummaryMap: Record<string, string>;
   segments: SegmentState[];
 }
 

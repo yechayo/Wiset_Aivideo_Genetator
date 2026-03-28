@@ -10,6 +10,11 @@ public class CharacterStatusResponse {
     private String charId;
     private String name;
     private String role;                      // 角色（主角/反派/配角）
+    private String personality;               // 性格描述
+    private String voice;                     // 声音描述
+    private String appearance;                // 外貌描述
+    private String background;                // 背景故事
+    private Boolean confirmed;                // 是否已确认
     private String expressionStatus;         // 表情生成状态: pending/generating/completed/failed
     private String threeViewStatus;          // 三视图生成状态: pending/generating/completed/failed
     private String expressionError;          // 表情生成错误信息

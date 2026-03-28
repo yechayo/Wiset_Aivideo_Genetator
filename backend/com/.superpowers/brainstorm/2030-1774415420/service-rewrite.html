@@ -1,0 +1,94 @@
+<h2>Service 层重写影响分析</h2>
+<p class="subtitle">三个实体改为 Map 结构，所有依赖 Service 需要适配</p>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+  <div class="mockup">
+    <div class="mockup-header" style="background: #22c55e20;">需要重写的 Service</div>
+    <div class="mockup-body" style="font-size: 13px; padding: 12px;">
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b>PipelineService</b>
+        <div style="color: #64748b; font-size: 12px;">createProject、getProjectStatus、getProjectStatusDetail、advancePipeline、toListItemDTO — 大量使用 Project 字段</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b>ScriptService</b>
+        <div style="color: #64748b; font-size: 12px;">generateScriptOutline、generateScriptEpisodes、confirmScript、getScriptContent — 重度依赖 Project + Episode 字段</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b>CharacterExtractService</b>
+        <div style="color: #64748b; font-size: 12px;">extractCharacters — 使用 Character + Episode 字段</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b>CharacterImageGenerationService</b>
+        <div style="color: #64748b; font-size: 12px;">generateAll — 使用 Character 字段</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b>StoryboardService</b>
+        <div style="color: #64748b; font-size: 12px;">分镜生成/审核 — 重度依赖 Episode 字段</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b>EpisodeProductionService</b>
+        <div style="color: #64748b; font-size: 12px;">生产流程 — 依赖 Episode + EpisodeProduction</div>
+      </div>
+      <div style="padding: 4px 0;">
+        <b>EpisodeController</b>
+        <div style="color: #64748b; font-size: 12px;">分镜/生产接口 — 依赖 Episode 字段</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header" style="background: #3b82f620;">新增/修改的组件</div>
+    <div class="mockup-body" style="font-size: 13px; padding: 12px;">
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b style="color: #22c55e;">新增</b> ScriptController
+        <div style="color: #64748b; font-size: 12px;">从 ProjectController 拆出的脚本接口</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b style="color: #22c55e;">新增</b> ProjectUpdateRequest DTO
+        <div style="color: #64748b; font-size: 12px;">PUT/PATCH 请求体</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b style="color: #22c55e;">新增</b> AdvanceRequest DTO
+        <div style="color: #64748b; font-size: 12px;">{ direction, event }</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b style="color: #22c55e;">新增</b> StepHistoryItem DTO
+        <div style="color: #64748b; font-size: 12px;">stepHistory 数组元素</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b style="color: #f59e0b;">修改</b> ProjectStatusResponse
+        <div style="color: #64748b; font-size: 12px;">新增 previousStatus, nextStatus, canGoBack, canAdvance, stepHistory</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b style="color: #f59e0b;">修改</b> ProjectStatus 枚举
+        <div style="color: #64748b; font-size: 12px;">新增 getPreviousStatus, getNextStatus, canGoBack, canAdvance, getStepHistory</div>
+      </div>
+      <div style="padding: 4px 0; border-bottom: 1px solid #334155;">
+        <b style="color: #f59e0b;">修改</b> ProjectRepository
+        <div style="color: #64748b; font-size: 12px;">所有查询加 deleted=false，新增分页方法</div>
+      </div>
+      <div style="padding: 4px 0;">
+        <b style="color: #f59e0b;">修改</b> PromptBuilder
+        <div style="color: #64748b; font-size: 12px;">大纲生成改为输出结构化 JSON</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top: 24px;">建议分阶段实施</h3>
+<div class="options">
+  <div class="option" data-choice="phase" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>分 4 阶段（推荐）</h3>
+      <p>① Entity + deleted ② ProjectStatus + DTO ③ Service 重写 ④ Controller 重构。每阶段可独立验证。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="all" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>一次性完成</h3>
+      <p>全部改完再验证。风险高但无中间状态兼容问题。</p>
+    </div>
+  </div>
+</div>

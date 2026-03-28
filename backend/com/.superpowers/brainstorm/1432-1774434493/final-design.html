@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, sans-serif; padding: 24px; line-height: 1.7; }
+  h2 { color: #fff; font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+
+  .section { margin-bottom: 20px; }
+  h3 { font-size: 15px; margin-bottom: 8px; }
+
+  .ctrl-box { border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .ctrl-episode { background: #1a1530; border-left: 3px solid #9b59b6; }
+  .ctrl-panel { background: #1a2520; border-left: 3px solid #27ae60; }
+  .ctrl-box .ctrl-title { color: #fff; font-weight: bold; font-size: 14px; margin-bottom: 2px; }
+  .ctrl-box .ctrl-path { color: #888; font-size: 12px; margin-bottom: 10px; font-family: monospace; }
+
+  .api-row { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #1a1a2e; }
+  .api-row:last-child { border-bottom: none; }
+  .method { font-weight: bold; font-size: 11px; padding: 2px 6px; border-radius: 3px; min-width: 40px; text-align: center; }
+  .method.get { background: #1d3a4a; color: #60a5fa; }
+  .method.post { background: #2d4a2d; color: #4ade80; }
+  .method.put { background: #4a3d1d; color: #fbbf24; }
+  .method.delete { background: #4a1d1d; color: #ef4444; }
+  .api-path { color: #79c0ff; font-family: monospace; font-size: 12px; flex: 1; }
+  .api-desc { color: #999; font-size: 12px; }
+
+  .api-group { background: #0d1117; border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+  .api-group-title { color: #888; font-size: 11px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .summary { background: #16213e; border-radius: 8px; padding: 16px; margin-top: 16px; }
+  .summary h3 { color: #fff; font-size: 14px; margin-bottom: 8px; }
+  .summary ul { padding-left: 16px; font-size: 13px; }
+  .summary li { margin: 4px 0; color: #bbb; }
+
+  .pipeline-mini { display: flex; align-items: center; gap: 4px; margin: 8px 0; font-size: 12px; flex-wrap: wrap; }
+  .pipeline-mini .step { background: #2d4a2d; color: #4ade80; padding: 2px 8px; border-radius: 4px; }
+  .pipeline-mini .review { background: #4a3d1d; color: #fbbf24; padding: 2px 8px; border-radius: 4px; }
+  .pipeline-mini .manual { background: #1d3a4a; color: #60a5fa; padding: 2px 8px; border-radius: 4px; }
+  .pipeline-mini .arr { color: #555; }
+</style>
+</head>
+<body>
+
+<h2>Episode & Panel API 最终设计</h2>
+<p class="sub">范围：Step5 视频生产（Step6 拼接下载后续再做）</p>
+
+<!-- ========== EPISODE ========== -->
+<div class="section">
+  <h3 style="color:#9b59b6">EpisodeController — 剧集 CRUD</h3>
+  <div class="ctrl-box ctrl-episode">
+    <div class="ctrl-title">剧集管理</div>
+    <div class="ctrl-path">/api/projects/{projectId}/episodes</div>
+
+    <div class="api-group">
+      <div class="api-group-title">CRUD</div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/</span><span class="api-desc">剧集列表（分页）</span></div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/{episodeId}</span><span class="api-desc">剧集详情</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/</span><span class="api-desc">创建剧集</span></div>
+      <div class="api-row"><span class="method put">PUT</span><span class="api-path">/{episodeId}</span><span class="api-desc">更新剧集</span></div>
+      <div class="api-row"><span class="method delete">DEL</span><span class="api-path">/{episodeId}</span><span class="api-desc">删除剧集（逻辑删除）</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== PANEL ========== -->
+<div class="section">
+  <h3 style="color:#27ae60">PanelController — 分镜 CRUD + 生产</h3>
+  <div class="ctrl-box ctrl-panel">
+    <div class="ctrl-title">分镜管理 + 生产流程</div>
+    <div class="ctrl-path">/api/projects/{projectId}/episodes/{episodeId}/panels</div>
+
+    <div class="api-group">
+      <div class="api-group-title">分镜 CRUD</div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/</span><span class="api-desc">分镜列表</span></div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/{panelId}</span><span class="api-desc">分镜详情</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/</span><span class="api-desc">创建分镜</span></div>
+      <div class="api-row"><span class="method put">PUT</span><span class="api-path">/{panelId}</span><span class="api-desc">更新分镜</span></div>
+      <div class="api-row"><span class="method delete">DEL</span><span class="api-path">/{panelId}</span><span class="api-desc">删除分镜</span></div>
+    </div>
+
+    <div class="api-group">
+      <div class="api-group-title">分镜生成流程（从 StoryController 迁入）</div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/generate</span><span class="api-desc">AI 生成分镜（LLM 生成 + 镜头增强）</span></div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/generate/{jobId}/status</span><span class="api-desc">分镜生成任务状态</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/confirm</span><span class="api-desc">确认分镜内容</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/revise</span><span class="api-desc">修改分镜（带修改建议）</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/retry</span><span class="api-desc">重试失败的生成</span></div>
+    </div>
+
+    <div class="api-group">
+      <div class="api-group-title">单 Panel 生产流程</div>
+      <div class="pipeline-mini">
+        <span class="step">背景图</span><span class="arr">→</span>
+        <span class="step">匹配角色</span><span class="arr">→</span>
+        <span class="review">四宫格漫画</span><span class="arr">→</span>
+        <span class="manual">AI 视频</span>
+      </div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/{panelId}/production-status</span><span class="api-desc">完整生产状态（背景/四宫格/视频）</span></div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/production-statuses</span><span class="api-desc">批量获取所有 Panel 生产状态</span></div>
+    </div>
+
+    <div class="api-group">
+      <div class="api-group-title">Step 1: 背景图生成</div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/{panelId}/background</span><span class="api-desc">获取背景图状态 + URL</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/background</span><span class="api-desc">生成背景图（自动匹配角色）</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/background/regenerate</span><span class="api-desc">重新生成背景图</span></div>
+    </div>
+
+    <div class="api-group">
+      <div class="api-group-title">Step 2: 四宫格漫画（AI 融合，审核点）</div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/{panelId}/comic</span><span class="api-desc">获取四宫格状态 + URL</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/comic</span><span class="api-desc">生成四宫格漫画（背景+角色→AI 融合）</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/comic/approve</span><span class="api-desc">审核通过四宫格</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/comic/revise</span><span class="api-desc">退回重生成（带修改建议）</span></div>
+    </div>
+
+    <div class="api-group">
+      <div class="api-group-title">Step 3: AI 视频生成</div>
+      <div class="api-row"><span class="method get">GET</span><span class="api-path">/{panelId}/video</span><span class="api-desc">获取视频状态 + URL</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/video</span><span class="api-desc">生成视频（四宫格→视频大模型）</span></div>
+      <div class="api-row"><span class="method post">POST</span><span class="api-path">/{panelId}/video/retry</span><span class="api-desc">重试失败的视频生成</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== SUMMARY ========== -->
+<div class="summary">
+  <h3>设计总结</h3>
+  <ul>
+    <li><strong>EpisodeController</strong>：5 个接口，纯 CRUD，与 CharacterController 风格统一</li>
+    <li><strong>PanelController</strong>：5 CRUD + 5 分镜生成 + 3 状态查询 + 3 背景图 + 4 四宫格 + 3 视频 = <strong>23 个接口</strong></li>
+    <li><strong>废弃</strong>：StoryController（整体删除）、EpisodeController 的生产接口（迁移完毕后删除）</li>
+    <li><strong>新 Service</strong>：ComicGenerationService（四宫格 AI 融合），改造现有 PanelProductionService</li>
+    <li><strong>删除旧 Service</strong>：GridSplitService（九宫格切分）、融合上传相关逻辑</li>
+    <li><strong>范围</strong>：本次只做 Step5，Step6（拼接下载）后续迭代</li>
+  </ul>
+</div>
+
+</body>
+</html>

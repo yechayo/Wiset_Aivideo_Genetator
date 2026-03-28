@@ -230,4 +230,62 @@ public class VideoCompositionService {
             log.warn("清理临时文件失败", e);
         }
     }
+
+    /**
+     * 从视频中截取指定时间点的帧
+     *
+     * @param videoUrl   视频URL
+     * @param timePosition 时间点（秒），-1表示最后一帧
+     * @return 截取的帧图片URL（上传到OSS）
+     */
+    public String extractFrame(String videoUrl, float timePosition) {
+        if (videoUrl == null || videoUrl.isEmpty()) {
+            throw new IllegalArgumentException("视频URL不能为空");
+        }
+
+        try {
+            // 1. 下载视频到临时文件
+            Path videoPath = Files.createTempFile(Paths.get(tempDir), "frame-extract-", ".mp4");
+            downloadToFile(videoUrl, videoPath);
+
+            // 2. 准备输出路径
+            Path framePath = Files.createTempFile(Paths.get(tempDir), "frame-", ".png");
+
+            // 3. 构建FFmpeg命令
+            List<String> command = new ArrayList<>();
+            command.add(ffmpegPath);
+
+            if (timePosition < 0) {
+                // 截取最后一帧：先获取视频时长，再 seek 到末尾
+                command.add("-sseof");
+                command.add("-0.1");
+            } else {
+                command.add("-ss");
+                command.add(String.valueOf(timePosition));
+            }
+
+            command.add("-i");
+            command.add(videoPath.toString());
+            command.add("-frames:v");
+            command.add("1");
+            command.add("-y");
+            command.add(framePath.toString());
+
+            executeFFmpeg(command);
+
+            // 4. 上传到OSS
+            String frameUrl = ossService.uploadFromFile(framePath.toString(), "frames");
+
+            // 5. 清理临时文件
+            Files.deleteIfExists(videoPath);
+            Files.deleteIfExists(framePath);
+
+            log.info("帧截取完成: videoUrl={}, timePosition={}, frameUrl={}", videoUrl, timePosition, frameUrl);
+            return frameUrl;
+
+        } catch (Exception e) {
+            log.error("帧截取失败: videoUrl={}, timePosition={}", videoUrl, timePosition, e);
+            throw new RuntimeException("帧截取失败: " + e.getMessage(), e);
+        }
+    }
 }

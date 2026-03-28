@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, sans-serif; padding: 24px; line-height: 1.7; }
+  h2 { color: #fff; font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+
+  .concept { background: #16213e; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+  .concept .title { color: #fff; font-weight: bold; font-size: 14px; margin-bottom: 6px; }
+  .concept p { font-size: 13px; color: #bbb; }
+
+  .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
+  .flow-item { padding: 6px 12px; border-radius: 6px; font-size: 12px; color: #fff; text-align: center; }
+  .flow-arrow { color: #555; font-size: 16px; }
+
+  .pipeline { background: #16213e; border-radius: 8px; padding: 16px; margin: 12px 0; }
+  .pipeline .stage { display: flex; align-items: flex-start; gap: 12px; margin: 10px 0; }
+  .pipeline .icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+  .pipeline .content { flex: 1; }
+  .pipeline .content .name { color: #fff; font-weight: bold; font-size: 13px; }
+  .pipeline .content .detail { color: #999; font-size: 12px; margin-top: 2px; }
+  .pipeline .connector { border-left: 2px solid #333; height: 8px; margin-left: 17px; }
+
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-left: 6px; }
+  .tag.auto { background: #2d4a2d; color: #4ade80; }
+  .tag.review { background: #4a3d1d; color: #fbbf24; }
+  .tag.manual { background: #1d3a4a; color: #60a5fa; }
+
+  .comic-example { background: #0d1117; border-radius: 8px; padding: 16px; margin: 12px 0; text-align: center; }
+  .comic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; max-width: 300px; margin: 0 auto 8px; }
+  .comic-cell { aspect-ratio: 16/9; background: #222; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #555; border: 1px solid #333; }
+  .comic-label { font-size: 11px; color: #666; }
+
+  .vs { background: #1a2540; border-radius: 8px; padding: 14px 16px; margin: 12px 0; }
+  .vs .old { color: #e74c3c; font-size: 13px; }
+  .vs .new { color: #4ade80; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h2>每个 Panel（分镜）的生产管线</h2>
+<p class="sub">Panel = 分镜 = 视频生成的最小单位（前端文档中的 Segment = 后端的 Panel）</p>
+
+<div class="concept">
+  <div class="title">核心概念</div>
+  <p>前端 Segment = 后端 Panel，概念统一。一个 Panel 就是一个分镜，是生产的最小单位。</p>
+</div>
+
+<h3 style="font-size:14px; margin-bottom:8px;">单 Panel 生产流程</h3>
+
+<div class="pipeline">
+  <div class="stage">
+    <div class="icon" style="background:#2d4a2d;">BG</div>
+    <div class="content">
+      <div class="name">生成背景图 <span class="tag auto">自动</span></div>
+      <div class="detail">根据分镜的 scene_description 调用图像生成 API，生成一张场景背景图</div>
+    </div>
+  </div>
+  <div class="connector"></div>
+  <div class="stage">
+    <div class="icon" style="background:#2d4a2d;">C</div>
+    <div class="content">
+      <div class="name">匹配角色资产 <span class="tag auto">自动</span></div>
+      <div class="detail">从 Step4 生成的角色素材中自动匹配该分镜涉及的角色参考图</div>
+    </div>
+  </div>
+  <div class="connector"></div>
+  <div class="stage">
+    <div class="icon" style="background:#4a3d1d;">4G</div>
+    <div class="content">
+      <div class="name">AI 生成四宫格漫画 <span class="tag review">审核点</span></div>
+      <div class="detail">背景图 + 角色参考图 → 调用大模型一键生成四宫格漫画（2×2），带序号标注</div>
+    </div>
+  </div>
+  <div class="connector"></div>
+  <div class="stage">
+    <div class="icon" style="background:#1d3a4a;">V</div>
+    <div class="content">
+      <div class="name">AI 视频生成 <span class="tag manual">手动触发</span></div>
+      <div class="detail">四宫格漫画 → 作为参考图上传给视频大模型 → 生成视频片段</div>
+    </div>
+  </div>
+</div>
+
+<div class="comic-example">
+  <div class="comic-grid">
+    <div class="comic-cell">场景1 <small style="color:#888">+ 角色</small></div>
+    <div class="comic-cell">场景2 <small style="color:#888">+ 角色</small></div>
+    <div class="comic-cell">场景3 <small style="color:#888">+ 角色</small></div>
+    <div class="comic-cell">场景4 <small style="color:#888">+ 角色</small></div>
+  </div>
+  <div class="comic-label">四宫格漫画 = AI 一键生成（背景 + 角色 → 融合图，2×2 布局，带序号）</div>
+</div>
+
+<div class="vs">
+  <div class="old"><strong>旧流程（废弃）：</strong>九宫格参考图 → 前端 Canvas 手动融合 → 上传融合图 → 视频生成</div>
+  <div class="new" style="margin-top:6px;"><strong>新流程：</strong>背景图 + 角色资产 → AI 一键生成四宫格漫画 → 用户审核 → 视频生成</div>
+</div>
+
+<div class="concept" style="margin-top:16px;">
+  <div class="title">数据模型关系</div>
+  <p style="font-family:monospace; font-size:13px;">
+    <span style="color:#79c0ff">Chapter</span> → <span style="color:#79c0ff">Episode</span> → <span style="color:#fbbf24">Panel (分镜)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ 1 背景图<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ N 角色参考图<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ 1 四宫格漫画（AI 融合，审核点）<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ 1 视频片段
+  </p>
+</div>
+
+</body>
+</html>

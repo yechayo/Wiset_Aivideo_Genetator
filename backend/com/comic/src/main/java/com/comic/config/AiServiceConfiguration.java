@@ -4,7 +4,7 @@ import com.comic.ai.image.SeedreamImageService;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.ai.text.TextGenerationService;
-import com.comic.ai.video.SeedanceVideoService;
+import com.comic.ai.video.ViduVideoService;
 import com.comic.ai.video.VideoGenerationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,13 +65,13 @@ public class AiServiceConfiguration {
 
     // ========== 视频生成服务配置 ==========
 
-    @Value("${comic.ai.video.provider:seedance}")
+    @Value("${comic.ai.video.provider:vidu}")
     private String videoProvider;
 
     @Bean
     @Primary
     public VideoGenerationService videoGenerationService(
-            SeedanceVideoService seedanceVideoService
+            ViduVideoService viduVideoService
     ) {
         log.info("=================================================");
         log.info("🎬 视频生成服务配置");
@@ -80,13 +80,13 @@ public class AiServiceConfiguration {
 
         VideoGenerationService service;
         switch (videoProvider.toLowerCase()) {
-            case "seedance":
-                log.info("✅ 使用 Seedance 进行视频生成（分镜视频等）");
-                service = seedanceVideoService;
+            case "vidu":
+                log.info("✅ 使用 Vidu 进行视频生成（图生视频）");
+                service = viduVideoService;
                 break;
             default:
-                log.warn("⚠️  未知的视频提供商: {}，使用默认的 Seedance", videoProvider);
-                service = seedanceVideoService;
+                log.warn("⚠️  未知的视频提供商: {}，使用默认的 Vidu", videoProvider);
+                service = viduVideoService;
                 break;
         }
         return service;

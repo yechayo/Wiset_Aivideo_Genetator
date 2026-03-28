@@ -3,162 +3,161 @@ package com.comic.service.character;
 import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.common.BusinessException;
+import com.comic.common.CharacterInfoKeys;
+import com.comic.common.ProjectStatus;
+import com.comic.dto.response.CharacterStatusResponse;
 import com.comic.entity.Character;
+import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
+import com.comic.repository.ProjectRepository;
+import com.comic.service.pipeline.PipelineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 角色图片生成服务
- * 负责生成角色的九宫格表情图和三视图（均为 grid 大全图模式）
- */
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class CharacterImageGenerationService {
 
     private final CharacterRepository characterRepository;
+    private final ProjectRepository projectRepository;
     private final ImageGenerationService imageGenerationService;
     private final CharacterPromptManager characterPromptManager;
 
-    /**
-     * 生成九宫格表情大全图
-     * 注意：不加 @Transactional，避免 AI 生图耗时期间锁住数据库
-     */
+    @Lazy
+    @Autowired
+    private PipelineService pipelineService;
+
     public void generateExpressionSheet(String charId) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
             throw new BusinessException("角色不存在: " + charId);
         }
 
-        // 配角跳过表情生成
-        if ("配角".equals(character.getRole())) {
-            log.info("配角跳过表情生成: charId={}, name={}", charId, character.getName());
+        if ("配角".equals(getCharInfoStr(character, CharacterInfoKeys.ROLE))) {
+            log.info("配角跳过表情生成: charId={}, name={}", charId, getCharInfoStr(character, CharacterInfoKeys.NAME));
             throw new BusinessException("配角不需要生成表情图");
         }
 
-        // 检查是否已在生成中
-        if (Boolean.TRUE.equals(character.getIsGeneratingExpression())) {
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_EXPRESSION))) {
             throw new BusinessException("表情图正在生成中，请勿重复提交");
         }
 
-        // 更新状态为生成中
-        character.setExpressionStatus("GENERATING");
-        character.setIsGeneratingExpression(true);
-        character.setExpressionError(null);
+        Map<String, Object> info = ensureCharInfo(character);
+        info.put(CharacterInfoKeys.EXPRESSION_STATUS, "GENERATING");
+        info.put(CharacterInfoKeys.IS_GENERATING_EXPRESSION, true);
+        info.remove(CharacterInfoKeys.EXPRESSION_ERROR);
         characterRepository.updateById(character);
 
         try {
             log.info("开始生成九宫格大全图: charId={}, name={}, visualStyle={}",
-                     charId, character.getName(), character.getVisualStyle());
+                     charId, getCharInfoStr(character, CharacterInfoKeys.NAME), getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE));
 
-            // 获取视觉风格
             CharacterPromptManager.VisualStyle visualStyle = CharacterPromptManager.VisualStyle.D_3D;
-            if (character.getVisualStyle() != null) {
-                visualStyle = CharacterPromptManager.VisualStyle.fromCode(character.getVisualStyle());
+            String vsCode = getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE);
+            if (vsCode != null) {
+                visualStyle = CharacterPromptManager.VisualStyle.fromCode(vsCode);
             }
 
-            // 构建提示词并生成大全图
             String prompt = characterPromptManager.buildExpressionGridPrompt(character, visualStyle);
             log.info("九宫格提示词长度: {} char", prompt.length());
 
-            // 优先使用三视图作为参考图生成表情
             String imageUrl;
-            if (character.getThreeViewGridUrl() != null && !character.getThreeViewGridUrl().isEmpty()) {
-                log.info("使用三视图作为参考图生成表情: {}", character.getThreeViewGridUrl());
+            String threeViewGridUrl = getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_GRID_URL);
+            if (threeViewGridUrl != null && !threeViewGridUrl.isEmpty()) {
+                log.info("使用三视图作为参考图生成表情: {}", threeViewGridUrl);
                 imageUrl = imageGenerationService.generateWithReference(
-                    prompt, character.getThreeViewGridUrl(), 2048, 2048);
+                    prompt, threeViewGridUrl, 2048, 2048);
             } else {
                 imageUrl = imageGenerationService.generate(prompt, 2048, 2048, visualStyle.getCode().toLowerCase());
             }
             log.info("九宫格大全图生成完成: {}", imageUrl);
 
-            // 保存结果
-            character.setExpressionGridUrl(imageUrl);
-            character.setExpressionGridPrompt(prompt);
-            character.setExpressionStatus("COMPLETED");
-            character.setIsGeneratingExpression(false);
+            info.put(CharacterInfoKeys.EXPRESSION_GRID_URL, imageUrl);
+            info.put(CharacterInfoKeys.EXPRESSION_GRID_PROMPT, prompt);
+            info.put(CharacterInfoKeys.EXPRESSION_STATUS, "COMPLETED");
+            info.put(CharacterInfoKeys.IS_GENERATING_EXPRESSION, false);
             characterRepository.updateById(character);
 
             log.info("九宫格大全图生成完成: charId={}", charId);
+
+            checkAndAdvanceProjectStatus(character);
 
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             log.error("九宫格大全图生成失败: charId={}", charId, e);
-            character.setExpressionStatus("FAILED");
-            character.setExpressionError(e.getMessage());
-            character.setIsGeneratingExpression(false);
+            info.put(CharacterInfoKeys.EXPRESSION_STATUS, "FAILED");
+            info.put(CharacterInfoKeys.EXPRESSION_ERROR, e.getMessage());
+            info.put(CharacterInfoKeys.IS_GENERATING_EXPRESSION, false);
             characterRepository.updateById(character);
             throw new BusinessException("九宫格大全图生成失败: " + e.getMessage());
         }
     }
 
-    /**
-     * 生成三视图大全图
-     * 注意：不加 @Transactional，避免 AI 生图耗时期间锁住数据库
-     */
     public void generateThreeViewSheet(String charId) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
             throw new BusinessException("角色不存在: " + charId);
         }
 
-        // 检查是否已在生成中
-        if (Boolean.TRUE.equals(character.getIsGeneratingThreeView())) {
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_THREE_VIEW))) {
             throw new BusinessException("三视图正在生成中，请勿重复提交");
         }
 
-        // 更新状态为生成中
-        character.setThreeViewStatus("GENERATING");
-        character.setIsGeneratingThreeView(true);
-        character.setThreeViewError(null);
+        Map<String, Object> info = ensureCharInfo(character);
+        info.put(CharacterInfoKeys.THREE_VIEW_STATUS, "GENERATING");
+        info.put(CharacterInfoKeys.IS_GENERATING_THREE_VIEW, true);
+        info.remove(CharacterInfoKeys.THREE_VIEW_ERROR);
         characterRepository.updateById(character);
 
         try {
             log.info("开始生成三视图大全图: charId={}, name={}, visualStyle={}",
-                     charId, character.getName(), character.getVisualStyle());
+                     charId, getCharInfoStr(character, CharacterInfoKeys.NAME), getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE));
 
-            // 获取视觉风格
             CharacterPromptManager.VisualStyle visualStyle = CharacterPromptManager.VisualStyle.D_3D;
-            if (character.getVisualStyle() != null) {
-                visualStyle = CharacterPromptManager.VisualStyle.fromCode(character.getVisualStyle());
+            String vsCode = getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE);
+            if (vsCode != null) {
+                visualStyle = CharacterPromptManager.VisualStyle.fromCode(vsCode);
             }
 
-            // 构建提示词并生成大全图
             String prompt = characterPromptManager.buildThreeViewGridPrompt(character, visualStyle);
             log.info("三视图提示词长度: {} char", prompt.length());
 
-            String imageUrl = imageGenerationService.generate(prompt, 1024, 1536, visualStyle.getCode().toLowerCase());
+            String imageUrl = imageGenerationService.generate(prompt, 2848, 1600, visualStyle.getCode().toLowerCase());
             log.info("三视图大全图生成完成: {}", imageUrl);
 
-            // 保存结果
-            character.setThreeViewGridUrl(imageUrl);
-            character.setThreeViewGridPrompt(prompt);
-            character.setThreeViewStatus("COMPLETED");
-            character.setIsGeneratingThreeView(false);
+            info.put(CharacterInfoKeys.THREE_VIEW_GRID_URL, imageUrl);
+            info.put(CharacterInfoKeys.THREE_VIEW_GRID_PROMPT, prompt);
+            info.put(CharacterInfoKeys.THREE_VIEW_STATUS, "COMPLETED");
+            info.put(CharacterInfoKeys.IS_GENERATING_THREE_VIEW, false);
             characterRepository.updateById(character);
 
             log.info("三视图大全图生成完成: charId={}", charId);
+
+            checkAndAdvanceProjectStatus(character);
 
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             log.error("三视图大全图生成失败: charId={}", charId, e);
-            character.setThreeViewStatus("FAILED");
-            character.setThreeViewError(e.getMessage());
-            character.setIsGeneratingThreeView(false);
+            info.put(CharacterInfoKeys.THREE_VIEW_STATUS, "FAILED");
+            info.put(CharacterInfoKeys.THREE_VIEW_ERROR, e.getMessage());
+            info.put(CharacterInfoKeys.IS_GENERATING_THREE_VIEW, false);
             characterRepository.updateById(character);
             throw new BusinessException("三视图大全图生成失败: " + e.getMessage());
         }
     }
 
-    /**
-     * 一键生成全部（表情+三视图）
-     * 注意：不加 @Transactional，避免 AI 生图耗时期间锁住数据库
-     */
     public void generateAll(String charId) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
@@ -166,14 +165,12 @@ public class CharacterImageGenerationService {
         }
 
         log.info("开始一键生成: charId={}, name={}, role={}",
-                 charId, character.getName(), character.getRole());
+                 charId, getCharInfoStr(character, CharacterInfoKeys.NAME), getCharInfoStr(character, CharacterInfoKeys.ROLE));
 
-        // 配角只生成三视图
-        if ("配角".equals(character.getRole())) {
+        if ("配角".equals(getCharInfoStr(character, CharacterInfoKeys.ROLE))) {
             log.info("配角跳过表情，直接生成三视图: charId={}", charId);
             generateThreeViewSheet(charId);
         } else {
-            // 先生成三视图，再生成表情（表情以三视图为参考）
             generateThreeViewSheet(charId);
             generateExpressionSheet(charId);
         }
@@ -181,9 +178,6 @@ public class CharacterImageGenerationService {
         log.info("一键生成完成: charId={}", charId);
     }
 
-    /**
-     * 重试生成
-     */
     public void retryGeneration(String charId, String type) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
@@ -192,33 +186,32 @@ public class CharacterImageGenerationService {
 
         log.info("重试生成: charId={}, type={}", charId, type);
 
-        if ("expression".equalsIgnoreCase(type)) {
-            character.setExpressionStatus(null);
-            character.setExpressionError(null);
-            character.setExpressionGridUrl(null);
-            character.setExpressionGridPrompt(null);
-            characterRepository.updateById(character);
-            generateExpressionSheet(charId);
-        } else if ("threeView".equalsIgnoreCase(type)) {
-            // 重置三视图时，同时清除表情相关字段（旧表情已失去参考基础）
-            character.setThreeViewStatus(null);
-            character.setThreeViewError(null);
-            character.setThreeViewGridUrl(null);
-            character.setThreeViewGridPrompt(null);
-            character.setExpressionGridUrl(null);
-            character.setExpressionGridPrompt(null);
-            character.setExpressionStatus(null);
-            character.setExpressionError(null);
-            characterRepository.updateById(character);
-            generateThreeViewSheet(charId);
-        } else {
-            throw new BusinessException("无效的生成类型: " + type);
+        Map<String, Object> info = character.getCharacterInfo();
+        if (info != null) {
+            if ("expression".equalsIgnoreCase(type)) {
+                info.remove(CharacterInfoKeys.EXPRESSION_STATUS);
+                info.remove(CharacterInfoKeys.EXPRESSION_ERROR);
+                info.remove(CharacterInfoKeys.EXPRESSION_GRID_URL);
+                info.remove(CharacterInfoKeys.EXPRESSION_GRID_PROMPT);
+                characterRepository.updateById(character);
+                generateExpressionSheet(charId);
+            } else if ("threeView".equalsIgnoreCase(type)) {
+                info.remove(CharacterInfoKeys.THREE_VIEW_STATUS);
+                info.remove(CharacterInfoKeys.THREE_VIEW_ERROR);
+                info.remove(CharacterInfoKeys.THREE_VIEW_GRID_URL);
+                info.remove(CharacterInfoKeys.THREE_VIEW_GRID_PROMPT);
+                info.remove(CharacterInfoKeys.EXPRESSION_GRID_URL);
+                info.remove(CharacterInfoKeys.EXPRESSION_GRID_PROMPT);
+                info.remove(CharacterInfoKeys.EXPRESSION_STATUS);
+                info.remove(CharacterInfoKeys.EXPRESSION_ERROR);
+                characterRepository.updateById(character);
+                generateThreeViewSheet(charId);
+            } else {
+                throw new BusinessException("无效的生成类型: " + type);
+            }
         }
     }
 
-    /**
-     * 设置角色的视觉风格
-     */
     @Transactional
     public void setVisualStyle(String charId, String visualStyle) {
         Character character = characterRepository.findByCharId(charId);
@@ -232,8 +225,137 @@ public class CharacterImageGenerationService {
             throw new BusinessException("无效的视觉风格: " + visualStyle);
         }
 
-        character.setVisualStyle(visualStyle);
+        Map<String, Object> info = ensureCharInfo(character);
+        info.put(CharacterInfoKeys.VISUAL_STYLE, visualStyle);
+        character.setCharacterInfo(info);
         characterRepository.updateById(character);
         log.info("设置视觉风格: charId={}, visualStyle={}", charId, visualStyle);
+    }
+
+    public CharacterStatusResponse getGenerationStatus(String charId) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在");
+        }
+        CharacterStatusResponse dto = new CharacterStatusResponse();
+        dto.setCharId(getCharInfoStr(character, CharacterInfoKeys.CHAR_ID));
+        dto.setName(getCharInfoStr(character, CharacterInfoKeys.NAME));
+        dto.setRole(getCharInfoStr(character, CharacterInfoKeys.ROLE));
+        dto.setPersonality(getCharInfoStr(character, CharacterInfoKeys.PERSONALITY));
+        dto.setVoice(getCharInfoStr(character, CharacterInfoKeys.VOICE));
+        dto.setAppearance(getCharInfoStr(character, CharacterInfoKeys.APPEARANCE));
+        dto.setBackground(getCharInfoStr(character, CharacterInfoKeys.BACKGROUND));
+        dto.setConfirmed(getCharInfoBool(character, CharacterInfoKeys.CONFIRMED));
+        dto.setExpressionStatus(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_STATUS));
+        dto.setThreeViewStatus(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_STATUS));
+        dto.setExpressionError(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_ERROR));
+        dto.setThreeViewError(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_ERROR));
+        dto.setIsGeneratingExpression(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_EXPRESSION));
+        dto.setIsGeneratingThreeView(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_THREE_VIEW));
+        dto.setVisualStyle(getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE));
+        dto.setExpressionGridUrl(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_GRID_URL));
+        dto.setThreeViewGridUrl(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_GRID_URL));
+        return dto;
+    }
+
+    // ==================== 图片确认 ====================
+
+    /**
+     * 确认项目所有角色图片，进入素材锁定阶段
+     */
+    @Transactional
+    public void confirmImages(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            throw new BusinessException("项目不存在");
+        }
+
+        ProjectStatus currentStatus = ProjectStatus.fromCode(project.getStatus());
+        if (currentStatus != ProjectStatus.IMAGE_REVIEW) {
+            throw new BusinessException("当前状态不允许确认图片: " + currentStatus.getDescription());
+        }
+
+        // Validate all characters have complete images
+        List<Character> characters = characterRepository.findByProjectId(projectId);
+        if (characters.isEmpty()) {
+            throw new BusinessException("项目没有角色，无法确认图片");
+        }
+
+        List<String> incompleteChars = new ArrayList<>();
+        for (Character c : characters) {
+            if (!isCharacterImageComplete(c)) {
+                String name = getCharInfoStr(c, CharacterInfoKeys.NAME);
+                incompleteChars.add(name != null ? name : String.valueOf(c.getId()));
+            }
+        }
+
+        if (!incompleteChars.isEmpty()) {
+            throw new BusinessException("以下角色图片未完成: " + String.join(", ", incompleteChars));
+        }
+
+        pipelineService.advancePipeline(projectId, "confirm_images");
+        log.info("图片确认完成，项目进入素材锁定: projectId={}", projectId);
+    }
+
+    // ==================== 状态推进 ====================
+
+    private void checkAndAdvanceProjectStatus(Character character) {
+        String projectId = character.getProjectId();
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null || !ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
+            return;
+        }
+
+        List<Character> allCharacters = characterRepository.findByProjectId(projectId);
+        boolean allDone = allCharacters.stream().allMatch(c -> isCharacterImageComplete(c));
+
+        if (allDone) {
+            log.info("所有角色图片生成完成: projectId={}", projectId);
+            pipelineService.advancePipeline(projectId, "images_generated");
+        }
+    }
+
+    private boolean isCharacterImageComplete(Character character) {
+        Map<String, Object> info = character.getCharacterInfo();
+        if (info == null) return false;
+
+        String threeViewStatus = info.get(CharacterInfoKeys.THREE_VIEW_STATUS) != null
+                ? info.get(CharacterInfoKeys.THREE_VIEW_STATUS).toString() : null;
+        if (!"COMPLETED".equals(threeViewStatus)) return false;
+
+        // 配角只需要三视图
+        String role = info.get(CharacterInfoKeys.ROLE) != null
+                ? info.get(CharacterInfoKeys.ROLE).toString() : null;
+        if ("配角".equals(role)) return true;
+
+        // 主角/反派还需要九宫格
+        String expressionStatus = info.get(CharacterInfoKeys.EXPRESSION_STATUS) != null
+                ? info.get(CharacterInfoKeys.EXPRESSION_STATUS).toString() : null;
+        return "COMPLETED".equals(expressionStatus);
+    }
+
+    // ==================== 辅助方法 ====================
+
+    private String getCharInfoStr(Character character, String key) {
+        Map<String, Object> info = character.getCharacterInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
+
+    private Boolean getCharInfoBool(Character character, String key) {
+        Map<String, Object> info = character.getCharacterInfo();
+        Object v = info != null ? info.get(key) : null;
+        if (v == null) return null;
+        if (v instanceof Boolean) return (Boolean) v;
+        return Boolean.valueOf(v.toString());
+    }
+
+    private Map<String, Object> ensureCharInfo(Character character) {
+        Map<String, Object> info = character.getCharacterInfo();
+        if (info == null) {
+            info = new HashMap<>();
+            character.setCharacterInfo(info);
+        }
+        return info;
     }
 }

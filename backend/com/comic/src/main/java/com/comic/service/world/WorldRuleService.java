@@ -9,6 +9,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.Map;
 
 /**
  * 世界观规则服务
@@ -20,6 +21,12 @@ import java.util.Arrays;
 public class WorldRuleService {
 
     private final ProjectRepository projectRepository;
+
+    private String getProjectInfoStr(Project project, String key) {
+        Map<String, Object> info = project.getProjectInfo();
+        Object v = info != null ? info.get(key) : null;
+        return v != null ? v.toString() : null;
+    }
 
     /**
      * 获取世界观配置
@@ -37,10 +44,10 @@ public class WorldRuleService {
         WorldConfigModel config = new WorldConfigModel();
 
         // 根据项目类型生成基础世界观规则
-        config.setSeriesName(generateSeriesName(project.getStoryPrompt()));
-        config.setGenre(project.getGenre());
-        config.setTargetAudience(project.getTargetAudience());
-        config.setRules(generateGenreRules(project.getGenre()));
+        config.setSeriesName(generateSeriesName(getProjectInfoStr(project, "storyPrompt")));
+        config.setGenre(getProjectInfoStr(project, "genre"));
+        config.setTargetAudience(getProjectInfoStr(project, "targetAudience"));
+        config.setRules(generateGenreRules(getProjectInfoStr(project, "genre")));
 
         return config;
     }

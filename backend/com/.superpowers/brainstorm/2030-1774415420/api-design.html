@@ -1,0 +1,82 @@
+<h2>API 路由设计</h2>
+<p class="subtitle">ProjectController 只管 CRUD + 状态，ScriptController 管剧本</p>
+
+<div class="mockup">
+  <div class="mockup-header">ProjectController — /api/projects</div>
+  <div class="mockup-body" style="font-family: monospace; font-size: 13px;">
+    <div style="padding: 4px 8px;"><span style="color: #22c55e;">POST</span>   /api/projects                        创建项目</div>
+    <div style="padding: 4px 8px;"><span style="color: #3b82f6;">GET</span>    /api/projects?page&size&status&sortBy  项目列表（分页）</div>
+    <div style="padding: 4px 8px;"><span style="color: #3b82f6;">GET</span>    /api/projects/{id}                    项目详情</div>
+    <div style="padding: 4px 8px;"><span style="color: #f59e0b;">PUT</span>    /api/projects/{id}                    全量更新</div>
+    <div style="padding: 4px 8px;"><span style="color: #f59e0b;">PATCH</span>  /api/projects/{id}                    部分更新</div>
+    <div style="padding: 4px 8px; color: #ef4444;"><span style="color: #ef4444;">DELETE</span> /api/projects/{id}                    逻辑删除</div>
+    <div style="padding: 4px 8px; border-top: 1px solid #334155; margin-top: 8px; padding-top: 12px;"><span style="color: #3b82f6;">GET</span>    /api/projects/{id}/status            状态详情（含导航）</div>
+    <div style="padding: 4px 8px;"><span style="color: #22c55e;">POST</span>   /api/projects/{id}/status/advance     推进/回退</div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top: 12px;">
+  <div class="mockup-header">ScriptController — /api/projects/{id}/script</div>
+  <div class="mockup-body" style="font-family: monospace; font-size: 13px;">
+    <div style="padding: 4px 8px;"><span style="color: #3b82f6;">GET</span>    /script                          获取剧本</div>
+    <div style="padding: 4px 8px;"><span style="color: #22c55e;">POST</span>   /script/generate                 生成大纲</div>
+    <div style="padding: 4px 8px;"><span style="color: #22c55e;">POST</span>   /script/confirm                 确认剧本（自动批量生成剧集）</div>
+    <div style="padding: 4px 8px;"><span style="color: #22c55e;">POST</span>   /script/revise                  修改剧本</div>
+    <div style="padding: 4px 8px;"><span style="color: #f59e0b;">PATCH</span>  /script/outline                 手动保存大纲</div>
+  </div>
+  <div style="padding: 8px; color: #64748b; font-size: 12px;">
+    已移除：generate-episodes、generate-all-episodes（确认时自动批量生成）
+  </div>
+</div>
+
+<h3 style="margin-top: 24px;">Advance 接口设计</h3>
+<div class="mockup">
+  <div class="mockup-header">POST /api/projects/{id}/status/advance</div>
+  <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 16px; white-space: pre; overflow-x: auto;">
+<b style="color: #22c55e;">// 前进</b>
+{ "direction": "forward", "event": "characters_confirmed" }
+
+<b style="color: #f59e0b;">// 回退</b>
+{ "direction": "backward" }
+
+<b style="color: #22c55e;">// 回退规则 — 精确清理</b>
+┌─────────────────┬──────────────────────────────┐
+│ 回退目标阶段     │ 清理的数据                    │
+├─────────────────┼──────────────────────────────┤
+│ OUTLINE_REVIEW   │ Episode 全部删除              │
+│ SCRIPT_CONFIRMED │ Character 全部删除            │
+│ CHARACTER_REVIEW │ CharacterImage 全部删除       │
+│ IMAGE_REVIEW     │ Storyboard 全部删除           │
+│ ASSET_LOCKED     │ Production 全部删除           │
+│ STORYBOARD_REVIEW│ Production 全部删除           │
+└─────────────────┴──────────────────────────────┘
+  </div>
+</div>
+
+<h3 style="margin-top: 24px;">Status 响应新增字段</h3>
+<div class="mockup">
+  <div class="mockup-header">GET /api/projects/{id}/status 响应</div>
+  <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 16px; white-space: pre; overflow-x: auto;">
+{
+  "projectId": "PROJ-xxx",
+  "currentStep": 4,
+  "currentStatus": "CHARACTER_REVIEW",
+  "previousStatus": "SCRIPT_CONFIRMED",    <span style="color: #f59e0b;">← 新增</span>
+  "nextStatus": "CHARACTER_CONFIRMED",     <span style="color: #f59e0b;">← 新增</span>
+  "canGoBack": true,                       <span style="color: #f59e0b;">← 新增</span>
+  "canAdvance": true,                      <span style="color: #f59e0b;">← 新增</span>
+  "stepHistory": [                         <span style="color: #f59e0b;">← 新增</span>
+    { "step": 1, "status": "OUTLINE_GENERATED", "label": "剧本大纲", "confirmed": true },
+    { "step": 2, "status": "SCRIPT_CONFIRMED",   "label": "剧本确认", "confirmed": true },
+    { "step": 3, "status": "CHARACTER_EXTRACTED","label": "角色提取", "confirmed": true },
+    { "step": 4, "status": "CHARACTER_REVIEW",   "label": "角色审核", "confirmed": false }
+  ],
+  <span style="color: #888;">// 原有字段保留</span>
+  "isGenerating": false,
+  "isFailed": false,
+  "isReview": true,
+  "productionProgress": null,
+  "storyboardProgress": null
+}
+  </div>
+</div>

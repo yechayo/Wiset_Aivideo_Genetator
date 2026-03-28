@@ -1,0 +1,84 @@
+<h2>Episode & Panel API 架构总览</h2>
+<p class="subtitle">基于前端现有交互逻辑，重新设计 Episode（剧集）和 Panel（分镜）接口</p>
+
+<div class="section">
+  <h3>设计原则</h3>
+  <ul>
+    <li><strong>Panel = 生产驱动者</strong> — 所有视频生产操作（背景、融合、转场、视频生成）全部挂在分镜层</li>
+    <li><strong>Episode = 容器 + 后期</strong> — 管理分镜集合，所有分镜视频生成完后做剪辑/拼接</li>
+    <li><strong>路径统一</strong> — 嵌套在 /api/projects/{projectId} 下，与 CharacterController 一致</li>
+    <li><strong>前端兼容</strong> — 保留前端已有的调用模式，只调整路径前缀</li>
+  </ul>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">业务流程 & API 归属</div>
+  <div class="mockup-body" style="padding: 20px;">
+    <div style="display: flex; gap: 8px; align-items: center; justify-content: center; margin-bottom: 20px;">
+      <div style="background: #4a6fa5; color: white; padding: 8px 16px; border-radius: 6px; font-size: 13px;">ScriptController<br><small>剧本</small></div>
+      <div style="color: #888;">→</div>
+      <div style="background: #6b8e4e; color: white; padding: 8px 16px; border-radius: 6px; font-size: 13px;">CharacterController<br><small>角色</small></div>
+      <div style="color: #888;">→</div>
+      <div style="background: #c0392b; color: white; padding: 8px 16px; border-radius: 6px; font-size: 13px;">PanelController<br><small>分镜 + 生产</small></div>
+      <div style="color: #888;">→</div>
+      <div style="background: #8e44ad; color: white; padding: 8px 16px; border-radius: 6px; font-size: 13px;">EpisodeController<br><small>剧集 + 后期</small></div>
+    </div>
+
+    <div style="background: #f8f9fa; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+      <div style="font-weight: bold; color: #c0392b; margin-bottom: 8px;">PanelController — 所有生产逻辑</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 12px; font-family: monospace;">
+        <div>GET    /panels — 分镜列表</div>
+        <div>GET    /panels/{panelId} — 分镜详情</div>
+        <div>POST   /panels/generate — AI生成分镜</div>
+        <div>POST   /panels/confirm — 确认分镜</div>
+        <div>POST   /panels/revise — 修改分镜</div>
+        <div>POST   /panels/retry — 重试生成</div>
+        <div style="border-top: 1px dashed #ddd; padding-top: 6px; grid-column: 1/3; color: #666;">—— 单格生产流程 ——</div>
+        <div>POST   /panels/{id}/background — 生成背景</div>
+        <div>POST   /panels/{id}/fusion — 生成融合</div>
+        <div>POST   /panels/{id}/transition — 生成转场</div>
+        <div>POST   /panels/{id}/produce — 一键生产</div>
+        <div>POST   /panels/auto-produce-all — 批量生产</div>
+        <div>POST   /panels/synthesize — 合成最终视频</div>
+      </div>
+    </div>
+
+    <div style="background: #f8f9fa; border-radius: 8px; padding: 16px;">
+      <div style="font-weight: bold; color: #8e44ad; margin-bottom: 8px;">EpisodeController — CRUD + 后期合成</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 12px; font-family: monospace;">
+        <div>GET    /episodes — 剧集列表（分页）</div>
+        <div>GET    /episodes/{id} — 剧集详情</div>
+        <div>POST   /episodes — 创建剧集</div>
+        <div>PUT    /episodes/{id} — 更新剧集</div>
+        <div>DELETE /episodes/{id} — 删除剧集</div>
+        <div style="color: #666;">（后期 FFmpeg 剪辑拼接预留）</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>关键变化点</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>从 EpisodeController 移出</h4>
+      <ul>
+        <li>所有 panel 级别的生产接口</li>
+        <li>融合图上传、提交融合页</li>
+        <li>网格切分、网格信息</li>
+        <li>单格操作（背景/融合/转场/视频）</li>
+        <li>auto-produce-all、synthesize</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>从 StoryController 移入</h4>
+      <ul>
+        <li>分镜生成 (generate)</li>
+        <li>分镜确认 (confirm)</li>
+        <li>分镜修改 (revise)</li>
+        <li>分镜重试 (retry)</li>
+        <li>StoryController 整体废弃</li>
+      </ul>
+    </div>
+  </div>
+</div>

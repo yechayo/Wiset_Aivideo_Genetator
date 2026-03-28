@@ -11,6 +11,7 @@ public class CharacterDraftModel {
     private String name;              // 角色名称
     private String role;              // 角色（主角/反派/配角）
     private String personality;       // 性格描述
+    private String voice;             // 声音描述
     private String appearance;        // 外貌描述
     private String background;        // 背景故事
     private Boolean confirmed;        // 是否已确认

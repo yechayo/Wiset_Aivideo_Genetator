@@ -1,0 +1,103 @@
+<h2>分章策略：内部保留，用户透明</h2>
+<p class="subtitle">分章解决 AI 生成质量问题，但用户无需感知</p>
+
+<div class="mockup">
+  <div class="mockup-header">用户视角的流程（无章节概念）</div>
+  <div class="mockup-body">
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px; flex-wrap: wrap;">
+      <div class="mock-button" style="background: #22c55e; color: white; border-radius: 6px;">生成大纲</div>
+      <div style="color: #888;">→</div>
+      <div class="mock-button" style="background: #3b82f6; color: white; border-radius: 6px;">审核大纲</div>
+      <div style="color: #888;">→</div>
+      <div class="mock-button" style="background: #3b82f6; color: white; border-radius: 6px;">确认剧本</div>
+      <div style="color: #888;">→</div>
+      <div class="mock-button" style="background: #8b5cf6; color: white; border-radius: 6px;">角色提取</div>
+      <div style="color: #888;">→</div>
+      <div style="color: #888;">...</div>
+    </div>
+    <p style="color: #64748b; font-size: 13px; padding: 8px;">用户只看到"确认剧本"一步，不知道内部是按章节分批生成的</p>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top: 16px;">
+  <div class="mockup-header">系统内部视角（自动分批生成）</div>
+  <div class="mockup-body">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 12px; flex-wrap: wrap;">
+      <div style="background: #1e293b; color: #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px;">用户确认</div>
+      <div style="color: #888;">→</div>
+      <div style="background: #1e293b; color: #f59e0b; padding: 6px 12px; border-radius: 4px; font-size: 12px;">批次1 (ep 1-3)</div>
+      <div style="color: #888;">→</div>
+      <div style="background: #1e293b; color: #f59e0b; padding: 6px 12px; border-radius: 4px; font-size: 12px;">批次2 (ep 4-6)</div>
+      <div style="color: #888;">→</div>
+      <div style="background: #1e293b; color: #f59e0b; padding: 6px 12px; border-radius: 4px; font-size: 12px;">批次3 (ep 7-10)</div>
+      <div style="color: #888;">→</div>
+      <div style="background: #1e293b; color: #22c55e; padding: 6px 12px; border-radius: 4px; font-size: 12px;">全部完成 → SCRIPT_CONFIRMED</div>
+    </div>
+    <p style="color: #64748b; font-size: 13px; padding: 8px;">后端自动按 episodesPerChapter 分批调用 AI，前端轮询进度</p>
+  </div>
+</div>
+
+<h3 style="margin-top: 24px;">分章原则</h3>
+<div class="section">
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+    <div style="background: #1e293b; padding: 12px; border-radius: 6px;">
+      <div class="label">总集数 ≤ 3</div>
+      <div style="color: #e2e8f0; margin-top: 4px;">不分批，一次性生成全部</div>
+    </div>
+    <div style="background: #1e293b; padding: 12px; border-radius: 6px;">
+      <div class="label">总集数 4-6</div>
+      <div style="color: #e2e8f0; margin-top: 4px;">每批 2 集</div>
+    </div>
+    <div style="background: #1e293b; padding: 12px; border-radius: 6px;">
+      <div class="label">总集数 7-12</div>
+      <div style="color: #e2e8f0; margin-top: 4px;">每批 3 集</div>
+    </div>
+    <div style="background: #1e293b; padding: 12px; border-radius: 6px;">
+      <div class="label">总集数 > 12</div>
+      <div style="color: #e2e8f0; margin-top: 4px;">每批 4 集</div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons" style="margin-top: 20px;">
+  <div class="pros">
+    <h4>优势</h4>
+    <ul>
+      <li>AI 每次只生成 2-4 集，质量可控</li>
+      <li>前端只需"确认"一个操作</li>
+      <li>失败时只需重试当前批次</li>
+      <li>大纲 JSON 中 episodes 是扁平数组，无章节嵌套</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>代价</h4>
+    <ul>
+      <li>确认后需要等待全部生成完成</li>
+      <li>需要进度反馈机制（已生成 N/M 批）</li>
+    </ul>
+  </div>
+</div>
+
+<div class="options" style="margin-top: 20px;">
+  <div class="option" data-choice="auto-batch" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>自动分批（推荐）</h3>
+      <p>确认后自动分批生成，前端轮询进度。用户无感。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="no-chapter" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>完全不分批</h3>
+      <p>一次性生成全部剧集。简单但 AI 输出可能不稳定。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="manual-batch" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>保留手动分批</h3>
+      <p>用户可逐批触发生成。灵活但流程繁琐。</p>
+    </div>
+  </div>
+</div>

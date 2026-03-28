@@ -1,0 +1,133 @@
+<h2>剧本大纲 JSON 结构设计</h2>
+<p class="subtitle">AI 输出结构化 JSON，直接存入 projectInfo["script"]</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">方案 A：扁平结构（推荐）</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 16px; white-space: pre; overflow-x: auto;">
+{
+  "script": {
+    "outline": "完整 Markdown 文本（保留可读性）",
+    "characters": [
+      {
+        "name": "林墨",
+        "role": "主角",
+        "personality": "冷静沉稳",
+        "appearance": "黑发、深色风衣",
+        "background": "前特工，隐退后经营书店"
+      }
+    ],
+    "items": [
+      {
+        "name": "暗影令牌",
+        "description": "控制暗影组织的信物"
+      }
+    ],
+    "episodes": [
+      {
+        "ep": 1,
+        "title": "暗夜书店",
+        "synopsis": "林墨的书店迎来神秘客人...",
+        "characters": ["林墨", "苏晴"],
+        "keyItems": ["暗影令牌"]
+      },
+      {
+        "ep": 2,
+        "title": "旧日阴影",
+        "synopsis": "令牌引发了连锁事件..."
+      }
+    ]
+  }
+}
+
+<span style="color: #888;">// projectInfo 其他 key 保持不变</span>
+{
+  "storyPrompt": "...",
+  "genre": "热血玄幻",
+  "targetAudience": "18-30",
+  "totalEpisodes": 10,
+  "episodeDuration": 60,
+  "visualStyle": "ANIME"
+}
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">方案 B：嵌套分组结构</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; padding: 16px; white-space: pre; overflow-x: auto;">
+{
+  "script": {
+    "meta": {
+      "generatedAt": "2026-03-25T10:00:00",
+      "revisionCount": 0
+    },
+    "outline": {
+      "text": "Markdown 文本",
+      "worldView": "世界观描述段落",
+      "mainConflict": "核心冲突"
+    },
+    "world": {
+      "characters": [ ... ],
+      "items": [ ... ],
+      "rules": "世界规则文本"
+    },
+    "structure": {
+      "chapters": [
+        {
+          "chapterTitle": "第一卷：觉醒",
+          "episodes": [ ... ]
+        }
+      ]
+    }
+  }
+}
+
+<span style="color: #f59e0b;">// 更结构化但层级更深</span>
+<span style="color: #f59e0b;">// 需要 AI 严格遵循嵌套格式</span>
+<span style="color: #f59e0b;">// 前端取值路径更长</span>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons" style="margin-top: 20px;">
+  <div class="pros">
+    <h4>方案 A 优势</h4>
+    <ul>
+      <li>AI prompt 简单，输出容错高</li>
+      <li>前端直接 script.characters 取值</li>
+      <li>outline 保留 Markdown 供展示</li>
+      <li>episodes 数组与 Episode 表一一对应</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>方案 A 不足</h4>
+    <ul>
+      <li>无 meta 信息（生成时间等）</li>
+      <li>无章节分组（扁平 episodes 列表）</li>
+    </ul>
+  </div>
+</div>
+
+<div class="options" style="margin-top: 20px;">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>扁平结构</h3>
+      <p>简单直接，AI 输出容错高，前端取值路径短</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>嵌套分组结构</h3>
+      <p>更结构化，但 AI 输出要求更严格，取值路径长</p>
+    </div>
+  </div>
+  <div class="option" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>A + meta 字段</h3>
+      <p>方案 A 基础上添加 meta（生成时间、修订次数），不加章节分组</p>
+    </div>
+  </div>
+</div>

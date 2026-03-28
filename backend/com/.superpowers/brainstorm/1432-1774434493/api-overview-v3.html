@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, sans-serif; padding: 24px; line-height: 1.6; }
+  h2 { color: #fff; margin-bottom: 4px; font-size: 22px; }
+  .subtitle { color: #888; margin-bottom: 20px; font-size: 14px; }
+  h3 { font-size: 16px; margin-bottom: 8px; }
+  .section { margin-bottom: 24px; }
+  .flow { display: flex; gap: 8px; align-items: center; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
+  .flow-item { padding: 6px 14px; border-radius: 6px; font-size: 13px; color: #fff; }
+  .flow-arrow { color: #555; }
+  .box { padding: 14px; margin: 8px 0; border-radius: 8px; font-family: monospace; font-size: 13px; }
+  .box strong { display: block; margin-bottom: 6px; font-family: sans-serif; }
+  .panel-box { background: #2a1525; border-left: 3px solid #e74c3c; }
+  .episode-box { background: #1f1a2e; border-left: 3px solid #9b59b6; }
+  .dead { color: #555; margin-top: 16px; }
+  .dead strong { color: #666; }
+  em { color: #666; font-style: normal; }
+  code { color: #6ec6ff; }
+</style>
+</head>
+<body>
+
+<h2>Episode & Panel API 设计方案</h2>
+<p class="subtitle">Panel 负责所有视频生产，Episode 只管 CRUD + 后期</p>
+
+<div class="flow">
+  <div class="flow-item" style="background:#4a6fa5">Script</div>
+  <span class="flow-arrow">→</span>
+  <div class="flow-item" style="background:#6b8e4e">Character</div>
+  <span class="flow-arrow">→</span>
+  <div class="flow-item" style="background:#c0392b">Panel（分镜+生产）</div>
+  <span class="flow-arrow">→</span>
+  <div class="flow-item" style="background:#8e44ad">Episode（后期合成）</div>
+</div>
+
+<div class="section">
+  <h3 style="color:#e74c3c">PanelController</h3>
+  <p class="subtitle" style="color:#666;margin-bottom:10px">/api/projects/{projectId}/episodes/{episodeId}/panels</p>
+
+  <div class="box panel-box">
+    <strong>CRUD</strong>
+    GET /panels — 分镜列表<br>
+    GET /panels/{panelId} — 分镜详情<br>
+    POST /panels — 创建分镜<br>
+    PUT /panels/{panelId} — 更新分镜<br>
+    DELETE /panels/{panelId} — 删除分镜
+  </div>
+
+  <div class="box panel-box">
+    <strong>分镜生成流程（从 StoryController 迁入）</strong>
+    POST /panels/generate — AI 生成分镜<br>
+    POST /panels/confirm — 确认分镜<br>
+    POST /panels/revise — 修改分镜<br>
+    POST /panels/retry — 重试生成
+  </div>
+
+  <div class="box panel-box">
+    <strong>单格生产（从 EpisodeController 迁入）</strong>
+    GET /panels/{id}/background — 背景状态 &nbsp;|&nbsp; POST /panels/{id}/background — 生成背景<br>
+    GET /panels/{id}/fusion — 融合状态 &nbsp;|&nbsp; POST /panels/{id}/fusion — 生成融合<br>
+    GET /panels/{id}/transition — 转场状态 &nbsp;|&nbsp; POST /panels/{id}/transition — 生成转场<br>
+    GET /panels/{id}/video-task — 视频任务状态<br>
+    POST /panels/{id}/produce — 一键生产单格<br>
+    GET /panels/{id}/production-status — 完整生产状态<br>
+    GET /panels/{id}/tail-frame — 尾帧信息
+  </div>
+
+  <div class="box panel-box">
+    <strong>批量/集级操作（从 EpisodeController 迁入）</strong>
+    GET /panels/grid-info — 网格信息<br>
+    POST /panels/fusion-image — 上传融合图<br>
+    POST /panels/submit-fusion-page — 提交融合页<br>
+    POST /panels/split-grid-page — 切分网格<br>
+    GET /panels/panel-states — 所有面板状态<br>
+    POST /panels/auto-produce-all — 批量生产<br>
+    POST /panels/synthesize — 合成最终视频<br>
+    GET /panels/video-segments — 视频片段列表
+  </div>
+</div>
+
+<div class="section">
+  <h3 style="color:#9b59b6">EpisodeController</h3>
+  <p class="subtitle" style="color:#666;margin-bottom:10px">/api/projects/{projectId}/episodes</p>
+
+  <div class="box episode-box">
+    <strong>CRUD</strong>
+    GET /episodes — 剧集列表（分页）<br>
+    GET /episodes/{episodeId} — 剧集详情<br>
+    POST /episodes — 创建剧集<br>
+    PUT /episodes/{episodeId} — 更新剧集<br>
+    DELETE /episodes/{episodeId} — 删除剧集
+  </div>
+
+  <div class="box episode-box">
+    <strong>后期（现有 + 预留）</strong>
+    GET /episodes/{episodeId}/production-status — 管线状态查询<br>
+    POST /episodes/{episodeId}/retry-production — 重试<br>
+    <em>（未来 FFmpeg 剪辑拼接接口预留）</em>
+  </div>
+</div>
+
+<div class="dead">
+  <strong>废弃:</strong> StoryController 整体删除 &nbsp;|&nbsp; 原 EpisodeController 大量生产接口迁移到 PanelController
+</div>
+
+</body>
+</html>

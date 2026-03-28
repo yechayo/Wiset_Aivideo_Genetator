@@ -1,43 +1,32 @@
 package com.comic.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
-import java.time.LocalDateTime;
 
-/**
- * 创作项目实体
- * 作为整个流水线的根节点，所有数据都挂在 projectId 下
- */
+import java.time.LocalDateTime;
+import java.util.Map;
+
 @Data
-@TableName("project")
+@TableName(value = "project", autoResultMap = true)
 public class Project {
-    @TableId(type = IdType.ASSIGN_ID)
+
+    @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String projectId;          // 项目唯一标识（UUID）
-    private String userId;             // 用户ID
-    private String storyPrompt;        // 故事提示词/大纲
-    private String genre;              // 类型（热血玄幻、都市异能等）
-    private String targetAudience;     // 目标受众
-    private Integer totalEpisodes;     // 总集数
-    private Integer episodeDuration;   // 单集时长（秒）
-    private String visualStyle;        // 视觉风格（如 3D、ANIME、COMIC 等）
-
-    // 项目状态机
-    // DRAFT → SCRIPT_GENERATING → SCRIPT_REVIEW → SCRIPT_CONFIRMED
-    // → CHARACTER_EXTRACTING → CHARACTER_REVIEW → CHARACTER_CONFIRMED
-    // → IMAGE_GENERATING → IMAGE_REVIEW → ASSET_LOCKED → PRODUCING → COMPLETED
+    private String projectId;
+    private String userId;
     private String status;
 
-    private String scriptRevisionNote; // 剧本修改意见
+    @TableField(fill = FieldFill.INSERT)
+    private Boolean deleted = false;
 
-    // 两级剧本生成新增字段
-    private String scriptOutline;        // 剧本大纲（Markdown格式）
-    private String selectedChapter;      // 当前选中的章节
-    private Integer episodesPerChapter;  // 每章集数（默认4）
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<String, Object> projectInfo;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
+
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 }
