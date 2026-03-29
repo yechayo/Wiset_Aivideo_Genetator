@@ -11,7 +11,6 @@ import com.comic.entity.Episode;
 import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.PipelineService;
 import com.comic.service.world.WorldRuleService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,10 +40,6 @@ public class ScriptService {
     private final ScriptPromptBuilder scriptPromptBuilder;
     private final WorldRuleService worldRuleService;
     private final ObjectMapper objectMapper;
-
-    @Lazy
-    @Autowired
-    private PipelineService pipelineService;
 
     // 状态常量（统一使用 ProjectStatus 枚举）
     private static final String STATUS_OUTLINE_REVIEW = ProjectStatus.OUTLINE_REVIEW.getCode();
@@ -110,7 +105,7 @@ public class ScriptService {
 
     /**
      * 生成剧本大纲
-     * 由 PipelineService 在异步线程中调用，使用独立事务确保数据落库
+     * 由状态机 Action 在异步线程中调用，使用独立事务确保数据落库
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void generateScriptOutline(String projectId) {
@@ -171,13 +166,10 @@ public class ScriptService {
             // 持久化大纲内容到数据库（方法无事务，必须显式 save）
             projectRepository.updateById(project);
 
-            pipelineService.advancePipeline(projectId, "script_generated");
-
             log.info("剧本大纲生成完成: projectId={}", projectId);
 
         } catch (Exception e) {
             log.error("剧本大纲生成失败: projectId={}", projectId, e);
-            pipelineService.advancePipeline(projectId, "script_failed");
             throw new BusinessException("剧本大纲生成失败: " + e.getMessage());
         }
     }
@@ -194,10 +186,13 @@ public class ScriptService {
             throw new BusinessException("项目不存在");
         }
 
-        // 验证状态
-        if (!STATUS_OUTLINE_REVIEW.equals(project.getStatus()) &&
-            !STATUS_SCRIPT_REVIEW.equals(project.getStatus())) {
-            throw new BusinessException("当前状态不能生成分集，请先生成并确认大纲");
+        String status = project.getStatus();
+        // 验证状态 - 允许从 OUTLINE_REVIEW、SCRIPT_REVIEW、EPISODE_GENERATING 或 EPISODE_GENERATING_FAILED 生成
+        if (!STATUS_OUTLINE_REVIEW.equals(status) &&
+            !STATUS_SCRIPT_REVIEW.equals(status) &&
+            !ProjectStatus.EPISODE_GENERATING.getCode().equals(status) &&
+            !STATUS_EPISODE_FAILED.equals(status)) {
+            throw new BusinessException("当前状态不能生成分集，请先生成并确认大纲。当前状态: " + status);
         }
 
         // 验证章节顺序（必须顺序生成，单集只有一个章节，验证天然通过）
@@ -209,9 +204,6 @@ public class ScriptService {
         Map<String, Object> info = ensureProjectInfo(project);
         info.put(ProjectInfoKeys.SELECTED_CHAPTER, chapter);
         projectRepository.updateById(project);
-
-        // 通过 Pipeline 转到 EPISODE_GENERATING 状态
-        pipelineService.advancePipeline(projectId, "generate_episodes");
 
         try {
             String outline = getScriptOutlineText(project);
@@ -244,15 +236,11 @@ public class ScriptService {
             // 解析并保存剧集
             List<Episode> episodes = parseAndSaveEpisodes(project, episodesJson, chapter);
 
-            // 更新状态
-            pipelineService.advancePipeline(projectId, "script_generated");
-
             log.info("分集生成完成: projectId={}, chapter={}, episodes={}",
                     projectId, chapter, episodes.size());
 
         } catch (Exception e) {
             log.error("分集生成失败: projectId={}, chapter={}", projectId, chapter, e);
-            pipelineService.advancePipeline(projectId, "script_failed");
             throw new BusinessException("分集生成失败: " + e.getMessage());
         }
     }
@@ -267,9 +255,16 @@ public class ScriptService {
             throw new BusinessException("项目不存在");
         }
 
-        if (!STATUS_OUTLINE_REVIEW.equals(project.getStatus()) &&
-            !STATUS_SCRIPT_REVIEW.equals(project.getStatus())) {
-            throw new BusinessException("当前状态不能生成分集，请先生成并确认大纲");
+        String status = project.getStatus();
+        log.info("generateAllEpisodes: projectId={}, status={}, expected={}",
+                 projectId, status, "OUTLINE_REVIEW/SCRIPT_REVIEW/EPISODE_GENERATING/EPISODE_GENERATING_FAILED");
+
+        // 允许从 OUTLINE_REVIEW、SCRIPT_REVIEW、EPISODE_GENERATING 或 EPISODE_GENERATING_FAILED 生成
+        if (!STATUS_OUTLINE_REVIEW.equals(status) &&
+            !STATUS_SCRIPT_REVIEW.equals(status) &&
+            !ProjectStatus.EPISODE_GENERATING.getCode().equals(status) &&
+            !STATUS_EPISODE_FAILED.equals(status)) {
+            throw new BusinessException("当前状态不能生成分集，请先生成并确认大纲。当前状态: " + status);
         }
 
         Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
@@ -357,8 +352,8 @@ public class ScriptService {
             throw new BusinessException("当前状态不能确认剧本");
         }
 
-        // 推进状态到 SCRIPT_CONFIRMED，然后自动触发角色提取
-        pipelineService.advancePipeline(projectId, "confirm_script");
+        // 状态转换由状态机 Action 处理
+        log.info("剧本确认完成: projectId={}", projectId);
     }
 
     /**
@@ -446,14 +441,38 @@ public class ScriptService {
             throw new BusinessException("项目不存在");
         }
 
+        log.info("getScriptContent: projectId={}, status={}", projectId, project.getStatus());
+
         List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        log.info("getScriptContent: episodesCount={}", episodes.size());
+
+        // 检查 episodeInfo 是否正确反序列化
+        for (Episode ep : episodes) {
+            log.info("Episode id={}, episodeInfo={}, episodeInfoSize={}",
+                     ep.getId(),
+                     ep.getEpisodeInfo() != null ? "not null" : "NULL",
+                     ep.getEpisodeInfo() != null ? ep.getEpisodeInfo().size() : 0);
+        }
+
+        // 如果 episodeInfo 为 null，读取原始数据进行调试
+        if (!episodes.isEmpty() && episodes.get(0).getEpisodeInfo() == null) {
+            log.warn("episodeInfo is null, reading raw data from DB");
+            List<java.util.Map<String, Object>> rawEpisodes = episodeRepository.getRawEpisodeInfo(projectId);
+            log.info("Raw episode data: {}", rawEpisodes);
+        }
 
         Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
         boolean isSingleEpisode = totalEpisodes != null && totalEpisodes == 1;
         String outline = getScriptOutlineText(project);
 
+        log.info("getScriptContent result: outlineLength={}, episodesCount={}",
+                 outline != null ? outline.length() : 0, episodes.size());
+
         Map<String, Object> result = new HashMap<>();
-        result.put("project", project);
+        // 不直接返回 project 对象，避免序列化问题
+        result.put("projectId", project.getProjectId());
+        result.put("status", project.getStatus());
+        result.put("projectInfo", project.getProjectInfo());  // 直接返回 projectInfo
         result.put("outline", outline);
         result.put("isSingleEpisode", isSingleEpisode);
         result.put("episodes", episodes);
@@ -498,11 +517,31 @@ public class ScriptService {
     // ================= 私有方法：解析与提取 =================
 
     private String getScriptOutlineText(Project project) {
-        Map<String, Object> scriptMap = getScriptMap(project);
-        if (scriptMap != null) {
+        Map<String, Object> info = project.getProjectInfo();
+        log.info("getScriptOutlineText: projectId={}, projectInfo={}", project.getProjectId(), info);
+
+        // 如果 projectInfo 为 null，尝试直接读取数据库原始 JSON
+        if (info == null) {
+            log.warn("projectInfo is null for projectId={}, reading raw JSON from DB", project.getProjectId());
+            String rawJson = projectRepository.getRawProjectInfo(project.getProjectId());
+            log.info("Raw project_info from DB: {}", rawJson);
+            return null;
+        }
+
+        Object script = info.get(ProjectInfoKeys.SCRIPT);
+        log.info("script object: {}", script);
+
+        if (script instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> scriptMap = (Map<String, Object>) script;
             Object outline = scriptMap.get(ProjectInfoKeys.SCRIPT_OUTLINE);
+            log.info("outline object: {}, type={}", outline,
+                     outline != null ? outline.getClass().getName() : "null");
             return outline != null ? outline.toString() : null;
         }
+
+        log.warn("script is not a Map, it's: {}",
+                 script != null ? script.getClass().getName() : "null");
         return null;
     }
 
@@ -760,7 +799,6 @@ public class ScriptService {
             for (JsonNode episodeNode : episodeNodes) {
                 Episode episode = new Episode();
                 episode.setProjectId(project.getProjectId());
-                episode.setStatus("DRAFT");
 
                 Map<String, Object> epInfo = new HashMap<>();
                 epInfo.put(EpisodeInfoKeys.EPISODE_NUM, episodeNum++);
@@ -814,8 +852,6 @@ public class ScriptService {
      * 重新生成大纲
      */
     private void regenerateOutline(Project project, String revisionNote, String currentOutline) {
-        pipelineService.advancePipeline(project.getProjectId(), "revise_outline");
-
         try {
             Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
             String genre = getProjectInfoStr(project, ProjectInfoKeys.GENRE);
@@ -855,8 +891,6 @@ public class ScriptService {
             scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
             projectRepository.updateById(currentProject);
 
-            pipelineService.advancePipeline(currentProject.getProjectId(), "script_generated");
-
             // 删除之前生成的所有剧集
             episodeRepository.deleteByProjectId(project.getProjectId());
 
@@ -864,7 +898,6 @@ public class ScriptService {
 
         } catch (Exception e) {
             log.error("大纲重新生成失败", e);
-            pipelineService.advancePipeline(project.getProjectId(), "script_failed");
             throw new BusinessException("大纲重新生成失败: " + e.getMessage());
         }
     }

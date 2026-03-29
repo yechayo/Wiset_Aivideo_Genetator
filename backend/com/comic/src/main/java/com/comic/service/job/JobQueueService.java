@@ -7,7 +7,6 @@ import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.JobRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.PipelineService;
 import com.comic.service.panel.PanelService;
 import com.comic.service.panel.PanelGenerationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,10 +36,6 @@ public class JobQueueService {
     private final EpisodeRepository episodeRepository;
     private final ProjectRepository projectRepository;
     private final PanelGenerationService panelGenerationService;
-
-    @Lazy
-    @Autowired
-    private PipelineService pipelineService;
     private final PanelService panelService;
     private final ObjectMapper objectMapper;
 
@@ -68,7 +63,7 @@ public class JobQueueService {
     public String submitPanelGenerationJob(Long episodeId) {
         // 防重复：检查 episode 状态
         Episode episode = episodeRepository.selectById(episodeId);
-        if (episode != null && "PANEL_GENERATING".equals(episode.getStatus())) {
+        if (episode != null && "PANEL_GENERATING".equals(getPanelStatus(episode))) {
             Map<String, Object> info = episode.getEpisodeInfo();
             String errorMsg = (info != null && info.get("errorMsg") != null)
                     ? info.get("errorMsg").toString().trim() : "";
@@ -92,7 +87,7 @@ public class JobQueueService {
 
         // 立即重置 episode 状态，避免状态接口返回旧错误
         if (episode != null) {
-            episode.setStatus("PANEL_GENERATING");
+            setPanelStatus(episode, "PANEL_GENERATING");
             Map<String, Object> info = episode.getEpisodeInfo();
             if (info != null) {
                 info.put("errorMsg", null);
@@ -180,8 +175,8 @@ public class JobQueueService {
 
             updateJobStatus(job, "RUNNING", 90, "保存结果...");
 
-            // 推进 project 状态：PANEL_GENERATING → PANEL_REVIEW
-            advanceProjectToPanelReview(episodeId);
+            // 推进 project 状态由状态机处理
+            log.info("Panels generated successfully: episodeId={}", episodeId);
 
             job.setStatus("SUCCESS");
             job.setProgress(100);
@@ -204,20 +199,6 @@ public class JobQueueService {
 
             sendProgress(jobId, -1, "❌ 失败: " + e.getMessage());
             closeSseEmitter(jobId);
-        }
-    }
-
-    private void advanceProjectToPanelReview(Long episodeId) {
-        try {
-            Episode episode = episodeRepository.selectById(episodeId);
-            if (episode == null) return;
-            Project project = projectRepository.findByProjectId(episode.getProjectId());
-            if (project == null) return;
-            if ("PANEL_GENERATING".equals(project.getStatus())) {
-                pipelineService.advancePipeline(project.getProjectId(), "panels_generated");
-            }
-        } catch (Exception e) {
-            log.error("推进 project 状态失败: episodeId={}", episodeId, e);
         }
     }
 
@@ -248,5 +229,28 @@ public class JobQueueService {
         if (emitter != null) {
             try { emitter.complete(); } catch (Exception ignored) {}
         }
+    }
+
+    // ==================== 辅助方法 ====================
+
+    private Map<String, Object> epInfo(Episode episode) {
+        Map<String, Object> info = episode.getEpisodeInfo();
+        if (info == null) {
+            info = new HashMap<>();
+            episode.setEpisodeInfo(info);
+        }
+        return info;
+    }
+
+    private String getPanelStatus(Episode episode) {
+        if (episode == null || episode.getEpisodeInfo() == null) {
+            return null;
+        }
+        Object status = episode.getEpisodeInfo().get("panelStatus");
+        return status != null ? status.toString() : null;
+    }
+
+    private void setPanelStatus(Episode episode, String status) {
+        epInfo(episode).put("panelStatus", status);
     }
 }

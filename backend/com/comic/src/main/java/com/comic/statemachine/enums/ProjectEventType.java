@@ -27,14 +27,14 @@ public enum ProjectEventType {
     CONFIRM_IMAGES,          // 确认图像
 
     // ===== 分镜阶段事件 =====
-    START_STORYBOARD,        // 开始分镜
-    STORYBOARD_GENERATED,    // 分镜生成完成
-    REVISE_STORYBOARD,       // 修改分镜
-    CONFIRM_STORYBOARD,      // 确认分镜
+    START_PANEL,             // 开始分镜（包含完整生产流程）
+    PANEL_GENERATED,         // 分镜生成完成
+    REVISE_PANEL,            // 修改分镜
+    CONFIRM_PANEL,           // 确认分镜
+    START_VIDEO_ASSEMBLY,    // 开始视频拼接
 
-    // ===== 生产阶段事件 =====
-    START_PRODUCTION,        // 开始生产
-    PRODUCTION_COMPLETED,    // 生产完成
+    // ===== 视频剪辑阶段事件 =====
+    VIDEO_ASSEMBLY_COMPLETED, // 视频拼接完成
 
     // ===== 通用事件 =====
     RETRY,                   // 重试（从失败状态恢复）
@@ -44,8 +44,8 @@ public enum ProjectEventType {
     _EPISODES_DONE,          // 剧集生成完成（内部）
     _CHARACTERS_DONE,        // 角色提取完成（内部）
     _IMAGES_DONE,            // 图像生成完成（内部）
-    _STORYBOARD_DONE,        // 分镜生成完成（内部）
-    _PRODUCTION_DONE,        // 生产完成（内部）
+    _PANEL_DONE,             // 分镜生产完成（内部，单集）
+    _VIDEO_ASSEMBLY_DONE,    // 视频拼接完成（内部）
     _TASK_FAILED;            // 任务失败（内部）
 
     /**

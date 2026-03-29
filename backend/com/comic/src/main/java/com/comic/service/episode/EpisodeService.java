@@ -44,7 +44,6 @@ public class EpisodeService {
     public EpisodeListItemResponse createEpisode(String projectId, EpisodeCreateRequest request) {
         Episode episode = new Episode();
         episode.setProjectId(projectId);
-        episode.setStatus(request.getStatus() != null ? request.getStatus() : "DRAFT");
         episode.setEpisodeInfo(request.getEpisodeInfo());
         episodeRepository.insert(episode);
         return toListItemResponse(episode);
@@ -55,9 +54,6 @@ public class EpisodeService {
         Episode episode = episodeRepository.findByProjectIdAndId(projectId, episodeId);
         if (episode == null) {
             throw new BusinessException("剧集不存在");
-        }
-        if (request.getStatus() != null) {
-            episode.setStatus(request.getStatus());
         }
         if (request.getEpisodeInfo() != null) {
             Map<String, Object> existingInfo = episode.getEpisodeInfo();
@@ -84,7 +80,6 @@ public class EpisodeService {
         EpisodeListItemResponse response = new EpisodeListItemResponse();
         response.setId(episode.getId());
         response.setProjectId(episode.getProjectId());
-        response.setStatus(episode.getStatus());
         response.setEpisodeInfo(episode.getEpisodeInfo());
         response.setCreatedAt(episode.getCreatedAt());
         response.setUpdatedAt(episode.getUpdatedAt());

@@ -15,7 +15,6 @@ import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.PipelineService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -37,12 +36,8 @@ public class CharacterExtractService {
     private final TextGenerationService textGenerationService;
     private final ObjectMapper objectMapper;
 
-    @Lazy
-    @Autowired
-    private PipelineService pipelineService;
-
     /**
-     * 注意：此方法由 PipelineService 在异步线程中调用，使用独立事务确保数据落库
+     * 注意：此方法由状态机 Action 在异步线程中调用，使用独立事务确保数据落库
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public List<CharacterDraftModel> extractCharacters(String projectId) {
@@ -88,14 +83,11 @@ public class CharacterExtractService {
 
             saveCharacters(projectId, characters);
 
-            pipelineService.advancePipeline(projectId, "characters_extracted");
-
             log.info("角色提取完成: projectId={}, 角色数={}", projectId, characters.size());
             return characters;
 
         } catch (Exception e) {
             log.error("角色提取失败: projectId={}", projectId, e);
-            pipelineService.advancePipeline(projectId, "characters_failed");
             throw new BusinessException("角色提取失败: " + e.getMessage());
         }
     }
@@ -118,7 +110,6 @@ public class CharacterExtractService {
                 characterRepository.updateById(character);
             }
         }
-        pipelineService.advancePipeline(projectId, "confirm_characters");
         log.info("角色已确认: projectId={}", projectId);
     }
 

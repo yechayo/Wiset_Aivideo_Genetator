@@ -50,12 +50,8 @@ public class ProjectStateMachineConfig extends StateMachineConfigurerAdapter<Pro
         return applicationContext.getBean(ImageGenerationAction.class);
     }
 
-    private StoryboardAction storyboardAction() {
-        return applicationContext.getBean(StoryboardAction.class);
-    }
-
-    private ProductionAction productionAction() {
-        return applicationContext.getBean(ProductionAction.class);
+    private PanelAction panelAction() {
+        return applicationContext.getBean(PanelAction.class);
     }
 
     @Override
@@ -75,6 +71,17 @@ public class ProjectStateMachineConfig extends StateMachineConfigurerAdapter<Pro
             // DRAFT -> OUTLINE_GENERATING
             .withExternal()
                 .source(ProjectState.DRAFT).target(ProjectState.OUTLINE_GENERATING)
+                .event(ProjectEventType.GENERATE_OUTLINE)
+                .guard(projectGuard.canGenerateOutline())
+                .action(context -> {
+                    String projectId = getHeader(context, "projectId");
+                    scriptAction().startOutlineGeneration(projectId);
+                })
+
+            // OUTLINE_GENERATING_FAILED -> OUTLINE_GENERATING (重试大纲生成)
+            .and()
+            .withExternal()
+                .source(ProjectState.OUTLINE_GENERATING_FAILED).target(ProjectState.OUTLINE_GENERATING)
                 .event(ProjectEventType.GENERATE_OUTLINE)
                 .guard(projectGuard.canGenerateOutline())
                 .action(context -> {
@@ -113,7 +120,24 @@ public class ProjectStateMachineConfig extends StateMachineConfigurerAdapter<Pro
                 .guard(projectGuard.canGenerateEpisodes())
                 .action(context -> {
                     String projectId = getHeader(context, "projectId");
-                    scriptAction().startEpisodeGeneration(projectId);
+                    String chapter = getHeader(context, "chapter");
+                    Integer episodeCount = getHeader(context, "episodeCount", Integer.class);
+                    String modificationSuggestion = getHeader(context, "modificationSuggestion");
+                    scriptAction().startEpisodeGeneration(projectId, chapter, episodeCount, modificationSuggestion);
+                })
+
+            // EPISODE_GENERATING_FAILED -> EPISODE_GENERATING (重试生成剧集)
+            .and()
+            .withExternal()
+                .source(ProjectState.EPISODE_GENERATING_FAILED).target(ProjectState.EPISODE_GENERATING)
+                .event(ProjectEventType.GENERATE_EPISODES)
+                .guard(projectGuard.canGenerateEpisodes())
+                .action(context -> {
+                    String projectId = getHeader(context, "projectId");
+                    String chapter = getHeader(context, "chapter");
+                    Integer episodeCount = getHeader(context, "episodeCount", Integer.class);
+                    String modificationSuggestion = getHeader(context, "modificationSuggestion");
+                    scriptAction().startEpisodeGeneration(projectId, chapter, episodeCount, modificationSuggestion);
                 })
 
             // EPISODE_GENERATING -> SCRIPT_REVIEW (内部事件)
@@ -142,6 +166,17 @@ public class ProjectStateMachineConfig extends StateMachineConfigurerAdapter<Pro
             .and()
             .withExternal()
                 .source(ProjectState.SCRIPT_CONFIRMED).target(ProjectState.CHARACTER_EXTRACTING)
+                .event(ProjectEventType.EXTRACT_CHARACTERS)
+                .guard(projectGuard.canExtractCharacters())
+                .action(context -> {
+                    String projectId = getHeader(context, "projectId");
+                    characterAction().startExtraction(projectId);
+                })
+
+            // CHARACTER_EXTRACTING_FAILED -> CHARACTER_EXTRACTING (重试角色提取)
+            .and()
+            .withExternal()
+                .source(ProjectState.CHARACTER_EXTRACTING_FAILED).target(ProjectState.CHARACTER_EXTRACTING)
                 .event(ProjectEventType.EXTRACT_CHARACTERS)
                 .guard(projectGuard.canExtractCharacters())
                 .action(context -> {
@@ -182,6 +217,17 @@ public class ProjectStateMachineConfig extends StateMachineConfigurerAdapter<Pro
                     imageAction().startGeneration(projectId);
                 })
 
+            // IMAGE_GENERATING_FAILED -> IMAGE_GENERATING (重试图像生成)
+            .and()
+            .withExternal()
+                .source(ProjectState.IMAGE_GENERATING_FAILED).target(ProjectState.IMAGE_GENERATING)
+                .event(ProjectEventType.GENERATE_IMAGES)
+                .guard(projectGuard.canGenerateImages())
+                .action(context -> {
+                    String projectId = getHeader(context, "projectId");
+                    imageAction().startGeneration(projectId);
+                })
+
             // IMAGE_GENERATING -> IMAGE_REVIEW (内部事件)
             .and()
             .withExternal()
@@ -203,61 +249,99 @@ public class ProjectStateMachineConfig extends StateMachineConfigurerAdapter<Pro
                     imageAction().confirmImages(projectId);
                 })
 
-            // ===== 分镜阶段转换 =====
-            // ASSET_LOCKED -> STORYBOARD_GENERATING
+            // ===== 分镜阶段转换（包含完整生产流程） =====
+            // ASSET_LOCKED -> PANEL_GENERATING
+            // PANEL_GENERATING 包含：分镜文本 → 背景图 → 融合图 → 视频
             .and()
             .withExternal()
-                .source(ProjectState.ASSET_LOCKED).target(ProjectState.STORYBOARD_GENERATING)
-                .event(ProjectEventType.START_STORYBOARD)
-                .guard(projectGuard.canStartStoryboard())
+                .source(ProjectState.ASSET_LOCKED).target(ProjectState.PANEL_GENERATING)
+                .event(ProjectEventType.START_PANEL)
+                .guard(projectGuard.canStartPanel())
                 .action(context -> {
                     String projectId = getHeader(context, "projectId");
-                    storyboardAction().startGeneration(projectId);
+                    Long episodeId = getHeader(context, "episodeId", Long.class);
+                    panelAction().startFullProduction(projectId, episodeId);
                 })
 
-            // STORYBOARD_GENERATING -> STORYBOARD_REVIEW (内部事件)
+            // PANEL_GENERATING_FAILED -> PANEL_GENERATING (重试分镜生成)
             .and()
             .withExternal()
-                .source(ProjectState.STORYBOARD_GENERATING).target(ProjectState.STORYBOARD_REVIEW)
-                .event(ProjectEventType._STORYBOARD_DONE)
+                .source(ProjectState.PANEL_GENERATING_FAILED).target(ProjectState.PANEL_GENERATING)
+                .event(ProjectEventType.START_PANEL)
+                .guard(projectGuard.canStartPanel())
                 .action(context -> {
                     String projectId = getHeader(context, "projectId");
-                    storyboardAction().onGenerationComplete(projectId);
+                    Long episodeId = getHeader(context, "episodeId", Long.class);
+                    panelAction().startFullProduction(projectId, episodeId);
                 })
 
-            // STORYBOARD_REVIEW -> STORYBOARD_GENERATING (修改分镜)
+            // PANEL_GENERATING -> PANEL_REVIEW (内部事件，单集分镜生产完成)
             .and()
             .withExternal()
-                .source(ProjectState.STORYBOARD_REVIEW).target(ProjectState.STORYBOARD_GENERATING)
-                .event(ProjectEventType.REVISE_STORYBOARD)
-                .guard(projectGuard.canReviseStoryboard())
+                .source(ProjectState.PANEL_GENERATING).target(ProjectState.PANEL_REVIEW)
+                .event(ProjectEventType._PANEL_DONE)
+                .action(context -> {
+                    String projectId = getHeader(context, "projectId");
+                    panelAction().onEpisodeProductionComplete(projectId);
+                })
+
+            // PANEL_REVIEW -> PANEL_GENERATING (修改分镜)
+            .and()
+            .withExternal()
+                .source(ProjectState.PANEL_REVIEW).target(ProjectState.PANEL_GENERATING)
+                .event(ProjectEventType.REVISE_PANEL)
+                .guard(projectGuard.canRevisePanel())
                 .action(context -> {
                     String projectId = getHeader(context, "projectId");
                     Long episodeId = getHeader(context, "episodeId", Long.class);
                     String feedback = getHeader(context, "feedback");
-                    storyboardAction().revise(projectId, episodeId, feedback);
+                    panelAction().reviseAndReproduce(projectId, episodeId, feedback);
                 })
 
-            // ===== 生产阶段转换 =====
-            // STORYBOARD_REVIEW -> PRODUCING
+            // PANEL_REVIEW -> PANEL_CONFIRMED (确认当前分镜，继续下一集)
             .and()
             .withExternal()
-                .source(ProjectState.STORYBOARD_REVIEW).target(ProjectState.PRODUCING)
-                .event(ProjectEventType.START_PRODUCTION)
-                .guard(projectGuard.canStartProduction())
+                .source(ProjectState.PANEL_REVIEW).target(ProjectState.PANEL_CONFIRMED)
+                .event(ProjectEventType.CONFIRM_PANEL)
+                .guard(projectGuard.canConfirmPanel())
                 .action(context -> {
                     String projectId = getHeader(context, "projectId");
-                    productionAction().startProduction(projectId);
+                    Long episodeId = getHeader(context, "episodeId", Long.class);
+                    panelAction().confirmAndContinue(projectId, episodeId);
                 })
 
-            // PRODUCING -> COMPLETED (内部事件)
+            // PANEL_CONFIRMED -> PANEL_GENERATING (继续生成下一集)
             .and()
             .withExternal()
-                .source(ProjectState.PRODUCING).target(ProjectState.COMPLETED)
-                .event(ProjectEventType._PRODUCTION_DONE)
+                .source(ProjectState.PANEL_CONFIRMED).target(ProjectState.PANEL_GENERATING)
+                .event(ProjectEventType.START_PANEL)
+                .guard(projectGuard.canStartPanel())
                 .action(context -> {
                     String projectId = getHeader(context, "projectId");
-                    productionAction().onProductionComplete(projectId);
+                    Long episodeId = getHeader(context, "episodeId", Long.class);
+                    panelAction().startFullProduction(projectId, episodeId);
+                })
+
+            // ===== 视频剪辑阶段转换 =====
+            // PANEL_CONFIRMED -> VIDEO_ASSEMBLING (所有分镜确认后)
+            .and()
+            .withExternal()
+                .source(ProjectState.PANEL_CONFIRMED).target(ProjectState.VIDEO_ASSEMBLING)
+                .event(ProjectEventType.START_VIDEO_ASSEMBLY)
+                .guard(projectGuard.canStartVideoAssembly())
+                .action(context -> {
+                    String projectId = getHeader(context, "projectId");
+                    panelAction().startVideoAssembly(projectId);
+                })
+
+            // VIDEO_ASSEMBLING -> COMPLETED (内部事件)
+            .and()
+            .withExternal()
+                .source(ProjectState.VIDEO_ASSEMBLING).target(ProjectState.COMPLETED)
+                .event(ProjectEventType._VIDEO_ASSEMBLY_DONE)
+                .action(context -> {
+                    String projectId = getHeader(context, "projectId");
+                    panelAction().onVideoAssemblyComplete(projectId);
                 })
 
         ;

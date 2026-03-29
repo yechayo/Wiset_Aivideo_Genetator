@@ -36,10 +36,17 @@ public class ImageGenerationAction {
         List<Character> characters = characterRepository.findByProjectId(projectId);
         List<String> charIds = new java.util.ArrayList<>();
         for (Character character : characters) {
-            charIds.add(character.getCharId());
+            if (character.getCharacterInfo() != null) {
+                Object charId = character.getCharacterInfo().get("charId");
+                if (charId != null) {
+                    charIds.add(charId.toString());
+                }
+            }
         }
 
         log.info("Action: Start image generation for project={}, count={}", projectId, charIds.size());
+        // 持久化状态到数据库
+        stateMachineService.persistState(projectId, ProjectState.IMAGE_GENERATING);
         eventPublisher.publishTaskStart(projectId, "image_generation");
 
         CompletableFuture.runAsync(() -> {
@@ -65,19 +72,27 @@ public class ImageGenerationAction {
                     }
                 }
 
-                // 全部完成后发送事件
-                stateMachineService.sendEvent(projectId, ProjectEventType._IMAGES_DONE);
-                eventPublisher.publishTaskComplete(projectId, "image_generation",
-                        String.format("成功: %d, 失败: %d", successCount, failCount));
-
+                // 必须全部成功才能进入审核状态
                 if (failCount > 0) {
-                    log.warn("Some images failed to generate: projectId={}, success={}, fail={}",
+                    // 有失败，转到失败状态
+                    log.error("Some image generations failed: projectId={}, success={}, fail={}",
                             projectId, successCount, failCount);
+                    eventPublisher.publishFailure(projectId,
+                            String.format("图像生成失败: 成功 %d, 失败 %d", successCount, failCount));
+                    stateMachineService.persistState(projectId, ProjectState.IMAGE_GENERATING_FAILED);
+                    stateMachineService.resetStateMachine(projectId, ProjectState.IMAGE_GENERATING_FAILED);
+                } else {
+                    // 全部成功，转到审核状态
+                    stateMachineService.sendEvent(projectId, ProjectEventType._IMAGES_DONE);
+                    eventPublisher.publishTaskComplete(projectId, "image_generation",
+                            String.format("成功: %d/%d", successCount, total));
                 }
 
             } catch (Exception e) {
                 log.error("Image generation failed: projectId={}", projectId, e);
                 eventPublisher.publishFailure(projectId, "图像生成失败: " + e.getMessage());
+                // 持久化失败状态到数据库
+                stateMachineService.persistState(projectId, ProjectState.IMAGE_GENERATING_FAILED);
                 stateMachineService.resetStateMachine(projectId, ProjectState.IMAGE_GENERATING_FAILED);
             }
         });
@@ -88,6 +103,8 @@ public class ImageGenerationAction {
      */
     public void onGenerationComplete(String projectId) {
         log.info("Action: Image generation completed for project={}", projectId);
+        // 持久化状态到数据库
+        stateMachineService.persistState(projectId, ProjectState.IMAGE_REVIEW);
     }
 
     /**
@@ -95,8 +112,8 @@ public class ImageGenerationAction {
      */
     public void confirmImages(String projectId) {
         log.info("Action: Confirm images for project={}", projectId);
-        // 图像确认后，素材被锁定
-        // 这里可以添加额外的确认逻辑
+        // 持久化状态到数据库
+        stateMachineService.persistState(projectId, ProjectState.ASSET_LOCKED);
         eventPublisher.publishTaskComplete(projectId, "image_confirmation", null);
     }
 }

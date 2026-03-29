@@ -6,22 +6,23 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.comic.entity.Episode;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
 @Mapper
 public interface EpisodeRepository extends BaseMapper<Episode> {
 
+    /**
+     * 获取原始的 episode_info JSON 字符串（用于调试）
+     */
+    @Select("SELECT id, episode_info FROM episode WHERE project_id = #{projectId} AND deleted = 0 ORDER BY id")
+    List<java.util.Map<String, Object>> getRawEpisodeInfo(String projectId);
+
     default List<Episode> findByProjectId(String projectId) {
         return selectList(new LambdaQueryWrapper<Episode>()
             .eq(Episode::getProjectId, projectId)
             .orderByAsc(Episode::getId));
-    }
-
-    default int countByProjectIdAndStatus(String projectId, String status) {
-        return Math.toIntExact(selectCount(new LambdaQueryWrapper<Episode>()
-            .eq(Episode::getProjectId, projectId)
-            .eq(Episode::getStatus, status)));
     }
 
     default void deleteByProjectId(String projectId) {

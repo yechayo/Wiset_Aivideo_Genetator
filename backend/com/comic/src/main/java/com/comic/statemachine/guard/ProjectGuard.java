@@ -46,9 +46,14 @@ public class ProjectGuard {
     public Guard<ProjectState, ProjectEventType> canGenerateOutline() {
         return context -> {
             String projectId = getProjectId(context);
+            log.info("Guard check: canGenerateOutline, projectId={}", projectId);
             return checkProject(projectId, () -> {
                 ProjectStatus status = getCurrentStatus(projectId);
-                return status == ProjectStatus.DRAFT || status == ProjectStatus.OUTLINE_REVIEW;
+                boolean allowed = status == ProjectStatus.DRAFT
+                    || status == ProjectStatus.OUTLINE_REVIEW
+                    || status == ProjectStatus.OUTLINE_GENERATING_FAILED;
+                log.info("Guard check result: projectId={}, status={}, allowed={}", projectId, status, allowed);
+                return allowed;
             });
         };
     }
@@ -68,7 +73,9 @@ public class ProjectGuard {
             String projectId = getProjectId(context);
             return checkProject(projectId, () -> {
                 ProjectStatus status = getCurrentStatus(projectId);
-                return status == ProjectStatus.OUTLINE_REVIEW;
+                // 允许从 OUTLINE_REVIEW 或 EPISODE_GENERATING_FAILED 重试
+                return status == ProjectStatus.OUTLINE_REVIEW
+                    || status == ProjectStatus.EPISODE_GENERATING_FAILED;
             });
         };
     }
@@ -90,7 +97,8 @@ public class ProjectGuard {
             String projectId = getProjectId(context);
             return checkProject(projectId, () -> {
                 ProjectStatus status = getCurrentStatus(projectId);
-                return status == ProjectStatus.SCRIPT_CONFIRMED;
+                return status == ProjectStatus.SCRIPT_CONFIRMED
+                    || status == ProjectStatus.CHARACTER_EXTRACTING_FAILED;
             });
         };
     }
@@ -112,7 +120,8 @@ public class ProjectGuard {
             String projectId = getProjectId(context);
             return checkProject(projectId, () -> {
                 ProjectStatus status = getCurrentStatus(projectId);
-                return status == ProjectStatus.CHARACTER_CONFIRMED;
+                return status == ProjectStatus.CHARACTER_CONFIRMED
+                    || status == ProjectStatus.IMAGE_GENERATING_FAILED;
             });
         };
     }
@@ -129,34 +138,46 @@ public class ProjectGuard {
 
     // ===== 分镜阶段守卫 =====
 
-    public Guard<ProjectState, ProjectEventType> canStartStoryboard() {
+    public Guard<ProjectState, ProjectEventType> canStartPanel() {
         return context -> {
             String projectId = getProjectId(context);
             return checkProject(projectId, () -> {
                 ProjectStatus status = getCurrentStatus(projectId);
-                return status == ProjectStatus.ASSET_LOCKED;
+                return status == ProjectStatus.ASSET_LOCKED
+                    || status == ProjectStatus.PANEL_CONFIRMED
+                    || status == ProjectStatus.PANEL_GENERATING_FAILED;
             });
         };
     }
 
-    public Guard<ProjectState, ProjectEventType> canReviseStoryboard() {
+    public Guard<ProjectState, ProjectEventType> canRevisePanel() {
         return context -> {
             String projectId = getProjectId(context);
             return checkProject(projectId, () -> {
                 ProjectStatus status = getCurrentStatus(projectId);
-                return status == ProjectStatus.STORYBOARD_REVIEW;
+                return status == ProjectStatus.PANEL_REVIEW;
             });
         };
     }
 
-    // ===== 生产阶段守卫 =====
-
-    public Guard<ProjectState, ProjectEventType> canStartProduction() {
+    public Guard<ProjectState, ProjectEventType> canConfirmPanel() {
         return context -> {
             String projectId = getProjectId(context);
             return checkProject(projectId, () -> {
                 ProjectStatus status = getCurrentStatus(projectId);
-                return status == ProjectStatus.STORYBOARD_REVIEW;
+                return status == ProjectStatus.PANEL_REVIEW;
+            });
+        };
+    }
+
+    // ===== 视频剪辑阶段守卫 =====
+
+    public Guard<ProjectState, ProjectEventType> canStartVideoAssembly() {
+        return context -> {
+            String projectId = getProjectId(context);
+            return checkProject(projectId, () -> {
+                ProjectStatus status = getCurrentStatus(projectId);
+                return status == ProjectStatus.PANEL_CONFIRMED;
             });
         };
     }
@@ -177,6 +198,9 @@ public class ProjectGuard {
             return extended.toString();
         }
 
+        log.warn("Could not extract projectId from StateContext, headers={}, extendedState={}",
+                context.getMessageHeaders(),
+                context.getExtendedState().getVariables());
         return null;
     }
 

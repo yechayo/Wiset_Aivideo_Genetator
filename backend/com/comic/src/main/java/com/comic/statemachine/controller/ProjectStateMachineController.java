@@ -7,6 +7,7 @@ import com.comic.repository.ProjectRepository;
 import com.comic.statemachine.enums.ProjectEventType;
 import com.comic.statemachine.enums.ProjectState;
 import com.comic.statemachine.service.ProjectStateMachineService;
+import com.comic.statemachine.service.StartupCheckService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +18,7 @@ import java.util.Map;
 
 /**
  * 项目状态机控制器
- * 处理项目状态转换，替代 PipelineService
+ * 处理项目状态转换
  */
 @RestController
 @RequestMapping("/api/projects")
@@ -27,6 +28,7 @@ public class ProjectStateMachineController {
 
     private final ProjectStateMachineService stateMachineService;
     private final ProjectRepository projectRepository;
+    private final StartupCheckService startupCheckService;
 
     /**
      * 发送事件到状态机
@@ -63,7 +65,8 @@ public class ProjectStateMachineController {
 
             Map<String, Object> result = new HashMap<>();
             result.put("accepted", accepted);
-            result.put("currentState", stateMachineService.getCurrentState(projectId).name());
+            ProjectState currentState = stateMachineService.getCurrentState(projectId);
+            result.put("currentState", currentState != null ? currentState.name() : null);
 
             if (!accepted) {
                 return Result.fail(400, "事件被拒绝，当前状态不允许该操作");
@@ -132,12 +135,30 @@ public class ProjectStateMachineController {
         }
 
         // TODO: 构建状态详情响应
-        // 这里需要复用 PipelineService 中的状态详情构建逻辑
+        // 可以参考 ProjectController.getProjectStatusDetail 的实现
         ProjectStatusResponse response = new ProjectStatusResponse();
         // response.setProjectId(projectId);
         // response.setCurrentStep(...);
         // ...
 
         return Result.ok(response);
+    }
+
+    /**
+     * 手动检查并修复卡死的任务（管理接口）
+     * POST /api/admin/check-stuck-tasks
+     */
+    @PostMapping("/admin/check-stuck-tasks")
+    @Operation(summary = "检查并修复卡死的任务", description = "扫描所有生成中的任务，修复超时的卡死状态")
+    public Result<Map<String, Object>> checkStuckTasks() {
+        int fixedCount = startupCheckService.checkAndFixStuckTasks();
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("fixedCount", fixedCount);
+        result.put("message", fixedCount > 0
+                ? "已修复 " + fixedCount + " 个卡死的任务"
+                : "没有发现卡死的任务");
+
+        return Result.ok(result);
     }
 }

@@ -1,6 +1,5 @@
 package com.comic.statemachine.action;
 
-import com.comic.dto.model.CharacterDraftModel;
 import com.comic.service.character.CharacterExtractService;
 import com.comic.statemachine.enums.ProjectEventType;
 import com.comic.statemachine.enums.ProjectState;
@@ -30,6 +29,8 @@ public class CharacterExtractionAction {
      */
     public void startExtraction(String projectId) {
         log.info("Action: Start character extraction for project={}", projectId);
+        // 持久化状态到数据库
+        stateMachineService.persistState(projectId, ProjectState.CHARACTER_EXTRACTING);
         eventPublisher.publishTaskStart(projectId, "character_extraction");
 
         CompletableFuture.runAsync(() -> {
@@ -42,6 +43,8 @@ public class CharacterExtractionAction {
             } catch (Exception e) {
                 log.error("Character extraction failed: projectId={}", projectId, e);
                 eventPublisher.publishFailure(projectId, "角色提取失败: " + e.getMessage());
+                // 持久化失败状态到数据库
+                stateMachineService.persistState(projectId, ProjectState.CHARACTER_EXTRACTING_FAILED);
                 stateMachineService.resetStateMachine(projectId, ProjectState.CHARACTER_EXTRACTING_FAILED);
             }
         });
@@ -52,6 +55,8 @@ public class CharacterExtractionAction {
      */
     public void onExtractionComplete(String projectId) {
         log.info("Action: Character extraction completed for project={}", projectId);
+        // 持久化状态到数据库
+        stateMachineService.persistState(projectId, ProjectState.CHARACTER_REVIEW);
     }
 
     /**
@@ -61,24 +66,12 @@ public class CharacterExtractionAction {
         log.info("Action: Confirm characters for project={}", projectId);
         try {
             characterExtractService.confirmCharacters(projectId);
+            // 持久化状态到数据库
+            stateMachineService.persistState(projectId, ProjectState.CHARACTER_CONFIRMED);
             eventPublisher.publishTaskComplete(projectId, "character_confirmation", null);
         } catch (Exception e) {
             log.error("Character confirmation failed: projectId={}", projectId, e);
             eventPublisher.publishFailure(projectId, "角色确认失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 更新角色
-     */
-    public void updateCharacter(String projectId, String charId, CharacterDraftModel dto) {
-        log.info("Action: Update character for project={}, charId={}", projectId, charId);
-        try {
-            characterExtractService.updateCharacter(charId, dto);
-            eventPublisher.publishTaskComplete(projectId, "character_update", null);
-        } catch (Exception e) {
-            log.error("Character update failed: projectId={}, charId={}", projectId, charId, e);
-            eventPublisher.publishFailure(projectId, "角色更新失败: " + e.getMessage());
         }
     }
 }

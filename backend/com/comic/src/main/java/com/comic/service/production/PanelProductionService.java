@@ -14,7 +14,7 @@ import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.ProjectStatusBroadcaster;
+import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,7 +47,7 @@ public class PanelProductionService {
 
     @Lazy
     @Autowired
-    private ProjectStatusBroadcaster broadcaster;
+    private StateChangeEventPublisher eventPublisher;
 
     private PanelProductionService self() {
         return applicationContext.getBean(PanelProductionService.class);
@@ -150,7 +150,7 @@ public class PanelProductionService {
             log.info("背景图生成完成: panelId={}", panelId);
             String projId = getProjectIdByPanelId(panelId);
             if (projId != null) {
-                broadcaster.broadcast(projId, "PRODUCING", "PRODUCING");
+                eventPublisher.publishProgress(projId, 0, "背景图生成完成");
             }
         } catch (Exception e) {
             log.error("背景图生成失败: panelId={}", panelId, e);
@@ -240,7 +240,7 @@ public class PanelProductionService {
                         log.info("视频生成完成: panelId={}", panelId);
                         String projId = getProjectIdByPanelId(panelId);
                         if (projId != null) {
-                            broadcaster.broadcast(projId, "PRODUCING", "PRODUCING");
+                            eventPublisher.publishProgress(projId, 0, "视频生成完成");
                         }
                         return;
                     case "failed":

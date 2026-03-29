@@ -24,16 +24,16 @@ import java.util.concurrent.Semaphore;
 @Slf4j
 public class DeepSeekTextService implements TextGenerationService {
 
-    @Value("${comic.deepseek.api-key}")
+    @Value("${comic.ai.text.deepseek.apiKey}")
     private String apiKey;
 
-    @Value("${comic.deepseek.base-url:https://api.deepseek.com}")
+    @Value("${comic.ai.text.deepseek.baseUrl:https://api.deepseek.com}")
     private String baseUrl;
 
-    @Value("${comic.deepseek.model:deepseek-chat}")
+    @Value("${comic.ai.text.deepseek.model:deepseek-chat}")
     private String model;
 
-    @Value("${comic.deepseek.max-tokens:16384}")
+    @Value("${comic.ai.text.deepseek.maxTokens:8192}")
     private int maxTokens;
 
     private final OkHttpClient httpClient;

@@ -31,13 +31,15 @@ public enum ProjectState {
     ASSET_LOCKED(ProjectPhase.IMAGE),
     IMAGE_GENERATING_FAILED(ProjectPhase.IMAGE),
 
-    // ===== 分镜阶段 =====
-    STORYBOARD_GENERATING(ProjectPhase.STORYBOARD),
-    STORYBOARD_REVIEW(ProjectPhase.STORYBOARD),
-    STORYBOARD_GENERATING_FAILED(ProjectPhase.STORYBOARD),
+    // ===== 分镜阶段（包含完整生产流程） =====
+    // PANEL_GENERATING 包含：分镜文本生成 → 背景图生成 → 融合图生成 → 视频生成
+    PANEL_GENERATING(ProjectPhase.PANEL),
+    PANEL_REVIEW(ProjectPhase.PANEL),              // 分镜视频审核
+    PANEL_CONFIRMED(ProjectPhase.PANEL),           // 所有分镜视频已确认
+    PANEL_GENERATING_FAILED(ProjectPhase.PANEL),
 
-    // ===== 生产阶段 =====
-    PRODUCING(ProjectPhase.PRODUCTION),
+    // ===== 视频剪辑阶段 =====
+    VIDEO_ASSEMBLING(ProjectPhase.PRODUCTION),     // 拼接分镜视频成剧集视频
     COMPLETED(ProjectPhase.PRODUCTION);
 
     private final ProjectPhase phase;
@@ -90,7 +92,7 @@ public enum ProjectState {
         SCRIPT,      // 剧本阶段
         CHARACTER,   // 角色阶段
         IMAGE,       // 图像阶段
-        STORYBOARD,  // 分镜阶段
+        PANEL,       // 分镜阶段
         PRODUCTION   // 生产阶段
     }
 }

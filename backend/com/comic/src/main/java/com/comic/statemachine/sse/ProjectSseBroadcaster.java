@@ -217,6 +217,13 @@ public class ProjectSseBroadcaster {
     // ===== 辅助方法 =====
 
     /**
+     * 获取所有活跃的 projectId（用于心跳）
+     */
+    public java.util.Set<String> getActiveProjectIds() {
+        return new java.util.HashSet<>(emittersByProject.keySet());
+    }
+
+    /**
      * 创建 Map（Java 8 兼容）
      */
     @SafeVarargs

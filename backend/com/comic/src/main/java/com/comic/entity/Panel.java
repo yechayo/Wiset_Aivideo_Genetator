@@ -1,7 +1,7 @@
 package com.comic.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
-import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.comic.config.JsonTypeHandler;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -20,7 +20,7 @@ public class Panel {
     @TableLogic
     private Boolean deleted = false;
 
-    @TableField(typeHandler = JacksonTypeHandler.class)
+    @TableField(typeHandler = JsonTypeHandler.class)
     private Map<String, Object> panelInfo;
 
     @TableField(fill = FieldFill.INSERT)

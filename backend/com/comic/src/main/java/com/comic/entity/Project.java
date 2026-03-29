@@ -1,7 +1,7 @@
 package com.comic.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
-import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.comic.config.JsonTypeHandler;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -21,7 +21,7 @@ public class Project {
     @TableField(fill = FieldFill.INSERT)
     private Boolean deleted = false;
 
-    @TableField(typeHandler = JacksonTypeHandler.class)
+    @TableField(typeHandler = JsonTypeHandler.class)
     private Map<String, Object> projectInfo;
 
     @TableField(fill = FieldFill.INSERT)

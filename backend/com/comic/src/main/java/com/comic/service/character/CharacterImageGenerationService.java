@@ -10,7 +10,6 @@ import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.PipelineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,10 +31,6 @@ public class CharacterImageGenerationService {
     private final ProjectRepository projectRepository;
     private final ImageGenerationService imageGenerationService;
     private final CharacterPromptManager characterPromptManager;
-
-    @Lazy
-    @Autowired
-    private PipelineService pipelineService;
 
     public void generateExpressionSheet(String charId) {
         Character character = characterRepository.findByCharId(charId);
@@ -59,14 +54,30 @@ public class CharacterImageGenerationService {
         characterRepository.updateById(character);
 
         try {
-            log.info("开始生成九宫格大全图: charId={}, name={}, visualStyle={}",
-                     charId, getCharInfoStr(character, CharacterInfoKeys.NAME), getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE));
+            // 获取视觉风格：优先角色级，回退到项目级，最后用默认值
+            String vsCode = getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE);
+            if (vsCode == null) {
+                // 回退到项目级视觉风格
+                Project project = projectRepository.findByProjectId(character.getProjectId());
+                if (project != null && project.getProjectInfo() != null) {
+                    Object projectVs = project.getProjectInfo().get(com.comic.common.ProjectInfoKeys.VISUAL_STYLE);
+                    if (projectVs != null) {
+                        vsCode = projectVs.toString();
+                    }
+                }
+            }
 
             CharacterPromptManager.VisualStyle visualStyle = CharacterPromptManager.VisualStyle.D_3D;
-            String vsCode = getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE);
             if (vsCode != null) {
-                visualStyle = CharacterPromptManager.VisualStyle.fromCode(vsCode);
+                try {
+                    visualStyle = CharacterPromptManager.VisualStyle.fromCode(vsCode);
+                } catch (IllegalArgumentException e) {
+                    log.warn("Invalid visualStyle code: {}, using default", vsCode);
+                }
             }
+
+            log.info("开始生成九宫格大全图: charId={}, name={}, visualStyle={}",
+                     charId, getCharInfoStr(character, CharacterInfoKeys.NAME), visualStyle);
 
             String prompt = characterPromptManager.buildExpressionGridPrompt(character, visualStyle);
             log.info("九宫格提示词长度: {} char", prompt.length());
@@ -121,14 +132,30 @@ public class CharacterImageGenerationService {
         characterRepository.updateById(character);
 
         try {
-            log.info("开始生成三视图大全图: charId={}, name={}, visualStyle={}",
-                     charId, getCharInfoStr(character, CharacterInfoKeys.NAME), getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE));
+            // 获取视觉风格：优先角色级，回退到项目级，最后用默认值
+            String vsCode = getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE);
+            if (vsCode == null) {
+                // 回退到项目级视觉风格
+                Project project = projectRepository.findByProjectId(character.getProjectId());
+                if (project != null && project.getProjectInfo() != null) {
+                    Object projectVs = project.getProjectInfo().get(com.comic.common.ProjectInfoKeys.VISUAL_STYLE);
+                    if (projectVs != null) {
+                        vsCode = projectVs.toString();
+                    }
+                }
+            }
 
             CharacterPromptManager.VisualStyle visualStyle = CharacterPromptManager.VisualStyle.D_3D;
-            String vsCode = getCharInfoStr(character, CharacterInfoKeys.VISUAL_STYLE);
             if (vsCode != null) {
-                visualStyle = CharacterPromptManager.VisualStyle.fromCode(vsCode);
+                try {
+                    visualStyle = CharacterPromptManager.VisualStyle.fromCode(vsCode);
+                } catch (IllegalArgumentException e) {
+                    log.warn("Invalid visualStyle code: {}, using default", vsCode);
+                }
             }
+
+            log.info("开始生成三视图大全图: charId={}, name={}, visualStyle={}",
+                     charId, getCharInfoStr(character, CharacterInfoKeys.NAME), visualStyle);
 
             String prompt = characterPromptManager.buildThreeViewGridPrompt(character, visualStyle);
             log.info("三视图提示词长度: {} char", prompt.length());
@@ -293,8 +320,7 @@ public class CharacterImageGenerationService {
             throw new BusinessException("以下角色图片未完成: " + String.join(", ", incompleteChars));
         }
 
-        pipelineService.advancePipeline(projectId, "confirm_images");
-        log.info("图片确认完成，项目进入素材锁定: projectId={}", projectId);
+        log.info("图片确认完成: projectId={}", projectId);
     }
 
     // ==================== 状态推进 ====================
@@ -311,7 +337,6 @@ public class CharacterImageGenerationService {
 
         if (allDone) {
             log.info("所有角色图片生成完成: projectId={}", projectId);
-            pipelineService.advancePipeline(projectId, "images_generated");
         }
     }
 

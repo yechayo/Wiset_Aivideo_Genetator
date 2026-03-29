@@ -74,8 +74,9 @@ public class StateChangeEventListener {
      */
     @Scheduled(fixedRate = 30000)
     public void sendHeartbeat() {
-        // 遍历所有活跃的 projectId 发送心跳
-        // ProjectSseBroadcaster 需要提供获取活跃 projectId 的方法
-        log.trace("Sending heartbeat to all active SSE connections");
+        for (String projectId : broadcaster.getActiveProjectIds()) {
+            broadcaster.sendHeartbeat(projectId);
+        }
+        log.trace("Heartbeat sent to {} active projects", broadcaster.getActiveProjectIds().size());
     }
 }

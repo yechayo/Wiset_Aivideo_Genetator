@@ -8,7 +8,6 @@ import java.util.Map;
 public class EpisodeListItemResponse {
     private Long id;
     private String projectId;
-    private String status;
     private Map<String, Object> episodeInfo;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -41,16 +41,14 @@ public enum ProjectStatus {
     ASSET_LOCKED("ASSET_LOCKED", "素材已锁定", 4),
     IMAGE_GENERATING_FAILED("IMAGE_GENERATING_FAILED", "图像生成失败", 4),
 
-    // 分镜阶段（逐集生成+逐集审核）
-    PANEL_GENERATING("PANEL_GENERATING", "分镜生成中", 5),
+    // 分镜阶段（包含完整生产流程：分镜文本 → 背景图 → 融合图 → 视频）
+    PANEL_GENERATING("PANEL_GENERATING", "分镜生产中", 5),
     PANEL_REVIEW("PANEL_REVIEW", "分镜审核", 5),
-    PANEL_GENERATING_FAILED("PANEL_GENERATING_FAILED", "分镜生成失败", 5),
+    PANEL_CONFIRMED("PANEL_CONFIRMED", "分镜已确认", 5),
+    PANEL_GENERATING_FAILED("PANEL_GENERATING_FAILED", "分镜生产失败", 5),
 
-    // 生产阶段（逐 Panel 视频生产，属于分镜阶段的一部分）
-    PRODUCING("PRODUCING", "生产中", 5),
-
-    // 拼接剪辑阶段
-    VIDEO_ASSEMBLING("VIDEO_ASSEMBLING", "拼接剪辑中", 6),
+    // 视频剪辑阶段
+    VIDEO_ASSEMBLING("VIDEO_ASSEMBLING", "视频拼接中", 6),
     COMPLETED("COMPLETED", "已完成", 6);
 
     /** 状态码 */
@@ -143,18 +141,20 @@ public enum ProjectStatus {
         // 素材 → 分镜
         put(map, ASSET_LOCKED, "start_panels", PANEL_GENERATING);
 
-        // 分镜阶段
+        // 分镜阶段（包含完整生产流程）
         put(map, PANEL_GENERATING, "panels_generated", PANEL_REVIEW);
         put(map, PANEL_GENERATING, "panels_failed", PANEL_GENERATING_FAILED);
-        put(map, PANEL_REVIEW, "confirm_panels", PANEL_REVIEW);
-        put(map, PANEL_REVIEW, "all_panels_confirmed", PRODUCING);
+        put(map, PANEL_REVIEW, "confirm_panel", PANEL_CONFIRMED);
         put(map, PANEL_REVIEW, "revise_panels", PANEL_GENERATING);
         put(map, PANEL_GENERATING_FAILED, "retry", ASSET_LOCKED);
 
-        // 生产 → 拼接剪辑
-        put(map, PRODUCING, "production_completed", VIDEO_ASSEMBLING);
+        // 分镜确认后可继续生成下一集
+        put(map, PANEL_CONFIRMED, "start_panels", PANEL_GENERATING);
 
-        // 拼接剪辑 → 完成
+        // 所有分镜确认 → 视频拼接
+        put(map, PANEL_CONFIRMED, "start_video_assembly", VIDEO_ASSEMBLING);
+
+        // 视频拼接 → 完成
         put(map, VIDEO_ASSEMBLING, "assembly_completed", COMPLETED);
 
         ALLOWED_TRANSITIONS = Collections.unmodifiableMap(map);
@@ -245,9 +245,9 @@ public enum ProjectStatus {
             case PANEL_GENERATING:
                 return Arrays.asList();
             case PANEL_REVIEW:
-                return Arrays.asList("confirm_panels", "revise_panels");
-            case PRODUCING:
-                return Arrays.asList();
+                return Arrays.asList("confirm_panel", "revise_panels");
+            case PANEL_CONFIRMED:
+                return Arrays.asList("start_video_assembly");
             case VIDEO_ASSEMBLING:
                 return Arrays.asList();
             case COMPLETED:

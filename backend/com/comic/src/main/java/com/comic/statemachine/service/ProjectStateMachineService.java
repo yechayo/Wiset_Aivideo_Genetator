@@ -15,6 +15,7 @@ import org.springframework.statemachine.support.DefaultStateMachineContext;
 import org.springframework.statemachine.state.State;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -66,8 +67,8 @@ public class ProjectStateMachineService {
             }
         }
 
-        // 启动状态机
-        stateMachine.startReactively();
+        // 启动状态机（阻塞等待完成）
+        stateMachine.startReactively().block();
 
         return stateMachine;
     }
@@ -86,20 +87,27 @@ public class ProjectStateMachineService {
         try {
             StateMachine<ProjectState, ProjectEventType> stateMachine = getStateMachine(projectId);
 
-            boolean accepted;
-            if (headers != null && !headers.isEmpty()) {
-                // 使用 MessageBuilder 构建消息
-                Message<ProjectEventType> message = MessageBuilder.withPayload(event)
-                        .copyHeaders(headers)
-                        .build();
-                accepted = stateMachine.sendEvent(message);
-            } else {
-                accepted = stateMachine.sendEvent(event);
+            // 确保 projectId 总是在 headers 中
+            Map<String, Object> finalHeaders = new HashMap<>();
+            if (headers != null) {
+                finalHeaders.putAll(headers);
             }
+            finalHeaders.put("projectId", projectId);
 
+            log.info("Sending event: projectId={}, event={}, headers={}", projectId, event, finalHeaders);
+
+            // 使用 MessageBuilder 构建消息
+            Message<ProjectEventType> message = MessageBuilder.withPayload(event)
+                    .copyHeaders(finalHeaders)
+                    .build();
+            boolean accepted = stateMachine.sendEvent(message);
+
+            State<ProjectState, ProjectEventType> currentState = stateMachine.getState();
             if (!accepted) {
-                State<ProjectState, ProjectEventType> currentState = stateMachine.getState();
-                log.warn("Event not accepted: projectId={}, event={}, currentState={}",
+                log.error("Event NOT ACCEPTED: projectId={}, event={}, currentState={}, guard=false",
+                        projectId, event, currentState != null ? currentState.getId() : null);
+            } else {
+                log.info("Event accepted: projectId={}, event={}, currentState={}",
                         projectId, event, currentState != null ? currentState.getId() : null);
             }
 
@@ -139,7 +147,7 @@ public class ProjectStateMachineService {
     public void destroyStateMachine(String projectId) {
         StateMachine<ProjectState, ProjectEventType> stateMachine = stateMachines.remove(projectId);
         if (stateMachine != null) {
-            stateMachine.stopReactively();
+            stateMachine.stopReactively().block();
             log.info("State machine destroyed: projectId={}", projectId);
         }
     }
@@ -169,5 +177,27 @@ public class ProjectStateMachineService {
         }
 
         return ProjectStatus.fromCode(state.name());
+    }
+
+    /**
+     * 持久化状态到数据库（供 Action 调用）
+     */
+    public void persistState(String projectId, ProjectState newState) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            log.warn("Project not found when persisting state: projectId={}", projectId);
+            return;
+        }
+
+        String oldStatus = project.getStatus();
+
+        // 只在状态真正改变时更新
+        if (!newState.name().equals(oldStatus)) {
+            project.setStatus(newState.name());
+            projectRepository.updateById(project);
+            log.info("State persisted: projectId={}, {} -> {}", projectId, oldStatus, newState);
+        } else {
+            log.debug("State unchanged, skipping persist: projectId={}, state={}", projectId, newState);
+        }
     }
 }

@@ -6,11 +6,18 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.comic.entity.Project;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
 @Mapper
 public interface ProjectRepository extends BaseMapper<Project> {
+
+    /**
+     * 获取原始的 project_info JSON 字符串（用于调试）
+     */
+    @Select("SELECT project_info FROM project WHERE project_id = #{projectId} AND deleted = 0")
+    String getRawProjectInfo(String projectId);
 
     default Project findByProjectId(String projectId) {
         return selectOne(new LambdaQueryWrapper<Project>()

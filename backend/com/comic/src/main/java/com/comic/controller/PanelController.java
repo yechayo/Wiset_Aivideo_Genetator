@@ -19,6 +19,8 @@ import com.comic.service.panel.PanelService;
 import com.comic.service.production.ComicGenerationService;
 import com.comic.service.production.PanelProductionService;
 import com.comic.service.panel.PanelGenerationService;
+import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.statemachine.service.ProjectStateMachineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -44,6 +46,7 @@ public class PanelController {
     private final PanelProductionService panelProductionService;
     private final ComicGenerationService comicGenerationService;
     private final ProjectRepository projectRepository;
+    private final ProjectStateMachineService stateMachineService;
 
     // ================= 分镜 CRUD =================
 
@@ -100,17 +103,18 @@ public class PanelController {
 
     @PostMapping("/generate")
     @Operation(summary = "AI 生成分镜", description = "LLM 生成 + 镜头增强")
-    public Result<Map<String, String>> generatePanels(
+    public Result<Void> generatePanels(
             @PathVariable String projectId,
             @PathVariable Long episodeId) {
         Episode episode = episodeRepository.findByProjectIdAndId(projectId, episodeId);
         if (episode == null) {
             return Result.fail(404, "剧集不存在");
         }
-        String jobId = jobQueueService.submitPanelGenerationJob(episodeId);
-        Map<String, String> result = new HashMap<>();
-        result.put("jobId", jobId);
-        return Result.ok(result);
+        // 通过状态机触发分镜生成
+        Map<String, Object> headers = new HashMap<>();
+        headers.put("episodeId", episodeId);
+        stateMachineService.sendEvent(projectId, ProjectEventType.START_PANEL, headers);
+        return Result.ok();
     }
 
 
@@ -159,12 +163,15 @@ public class PanelController {
     }
 
     @PostMapping("/{panelId}/confirm")
-    @Operation(summary = "确认分镜内容")
+    @Operation(summary = "确认分镜（单集确认后继续下一集）")
     public Result<Void> confirmPanel(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
-        panelGenerationService.confirmPanels(episodeId);
+        // 通过状态机触发分镜确认
+        Map<String, Object> headers = new HashMap<>();
+        headers.put("episodeId", episodeId);
+        stateMachineService.sendEvent(projectId, ProjectEventType.CONFIRM_PANEL, headers);
         return Result.ok();
     }
 
@@ -175,7 +182,11 @@ public class PanelController {
             @PathVariable Long episodeId,
             @PathVariable Long panelId,
             @RequestBody PanelReviseRequest request) {
-        panelGenerationService.revisePanels(episodeId, request.getFeedback());
+        // 通过状态机触发分镜修改
+        Map<String, Object> headers = new HashMap<>();
+        headers.put("episodeId", episodeId);
+        headers.put("feedback", request.getFeedback());
+        stateMachineService.sendEvent(projectId, ProjectEventType.REVISE_PANEL, headers);
         return Result.ok();
     }
 
@@ -330,7 +341,7 @@ public class PanelController {
      */
     private void guardPanelNotInProduction(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
-        if (project != null && (ProjectStatus.PRODUCING.getCode().equals(project.getStatus())
+        if (project != null && (ProjectStatus.PANEL_GENERATING.getCode().equals(project.getStatus())
                 || ProjectStatus.VIDEO_ASSEMBLING.getCode().equals(project.getStatus()))) {
             throw new BusinessException("当前项目正在生产或拼接中，无法变更分镜");
         }

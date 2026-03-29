@@ -44,6 +44,7 @@ public class SeedreamImageService implements ImageGenerationService {
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             log.info("Seedream 请求参数: {}", jsonBody);
+            log.info("Seedream API Key (last 8 chars): {}", arkProperties.getApiKey().substring(Math.max(0, arkProperties.getApiKey().length() - 8)));
 
             Request request = new Request.Builder()
                     .url(arkProperties.getBaseUrl() + "/images/generations")

@@ -8,10 +8,10 @@ import com.comic.dto.response.ComicStatusResponse;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
-import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
+import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationContext;
@@ -33,7 +33,7 @@ public class ComicGenerationService {
     private final ApplicationContext applicationContext;
     private final EpisodeRepository episodeRepository;
     private final CharacterRepository characterRepository;
-    private final ProjectStatusBroadcaster broadcaster;
+    private final StateChangeEventPublisher eventPublisher;
 
     private ComicGenerationService self() {
         return applicationContext.getBean(ComicGenerationService.class);
@@ -85,7 +85,7 @@ public class ComicGenerationService {
             try {
                 Episode episode = episodeRepository.selectById(panel.getEpisodeId());
                 if (episode != null) {
-                    broadcaster.broadcast(episode.getProjectId(), "PRODUCING", "PRODUCING");
+                    eventPublisher.publishProgress(episode.getProjectId(), 0, "四宫格漫画生成完成，待审核");
                 }
             } catch (Exception ex) {
                 log.warn("漫画 pending_review 推送失败: panelId={}", panelId, ex);

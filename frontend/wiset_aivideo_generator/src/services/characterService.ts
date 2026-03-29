@@ -116,3 +116,12 @@ export async function setVisualStyle(
 export async function confirmImages(projectId: string): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/images/confirm`);
 }
+
+/**
+ * 批量生成所有角色图片
+ * 触发状态推进：CHARACTER_CONFIRMED → IMAGE_GENERATING
+ * 后端会异步生成所有角色的图片（表情+三视图）
+ */
+export async function generateAllCharacterImages(projectId: string): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/images/generate-all`);
+}
