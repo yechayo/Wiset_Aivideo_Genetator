@@ -147,6 +147,13 @@ export async function advanceStatus(
   return post<ApiResponse<void>>(`/api/projects/${projectId}/status/advance`, { direction, event });
 }
 
+/**
+ * 开始视频拼接
+ */
+export async function startVideoAssembly(projectId: string): Promise<ApiResponse<Map<string, string>>> {
+  return post<ApiResponse<Map<string, string>>>(`/api/projects/${projectId}/video/assemble`);
+}
+
 // ================= 分镜流程 API =================
 
 /**

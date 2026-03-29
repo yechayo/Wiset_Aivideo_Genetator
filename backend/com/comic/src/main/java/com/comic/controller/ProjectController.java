@@ -103,16 +103,50 @@ public class ProjectController {
             dto.setStatusCode("VIDEO_ASSEMBLING");
             dto.setStatusDescription("视频拼接剪辑中");
             dto.setGenerating(true);
+            // 获取最终视频 URL
+            enrichFinalVideoUrl(dto, projectId);
         } else if (status == ProjectStatus.PANEL_REVIEW
                 || status == ProjectStatus.PANEL_GENERATING_FAILED) {
             enrichPanelStatus(dto, projectId);
+        } else if (status == ProjectStatus.COMPLETED) {
+            dto.setStatusCode(status.getCode());
+            dto.setStatusDescription(status.getDescription());
+            // 获取最终视频 URL
+            enrichFinalVideoUrl(dto, projectId);
         } else {
             dto.setStatusCode(status.getCode());
             dto.setStatusDescription(status.getDescription());
             dto.setGenerating(status.isGenerating());
         }
 
+        // PANEL_CONFIRMED 状态需要设置 panelTotalEpisodes
+        if (status == ProjectStatus.PANEL_CONFIRMED) {
+            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+            dto.setPanelTotalEpisodes(episodes.size());
+        }
+
         return Result.ok(dto);
+    }
+
+    /**
+     * 从 Episode 表中获取最终视频 URL
+     */
+    private void enrichFinalVideoUrl(ProjectStatusResponse dto, String projectId) {
+        try {
+            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+            for (Episode ep : episodes) {
+                Map<String, Object> epInfo = ep.getEpisodeInfo();
+                if (epInfo != null) {
+                    String finalVideoUrl = (String) epInfo.get("finalVideoUrl");
+                    if (finalVideoUrl != null && !finalVideoUrl.isEmpty()) {
+                        dto.setFinalVideoUrl(finalVideoUrl);
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // 忽略错误，不影响主流程
+        }
     }
 
     @GetMapping("/{projectId}/production/summary")
@@ -271,6 +305,107 @@ public class ProjectController {
         return Result.fail("未知的事件类型: " + request.getEvent());
     }
 
+    @PostMapping("/{projectId}/status/sync")
+    @Operation(summary = "同步项目状态", description = "根据实际分镜完成情况自动同步项目状态，用于数据库直接修改后修复状态")
+    public Result<Map<String, Object>> syncProjectStatus(@PathVariable String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            return Result.fail("项目不存在");
+        }
+
+        ProjectStatus currentStatus = ProjectStatus.fromCode(project.getStatus());
+
+        // 只在分镜相关阶段才需要同步
+        if (currentStatus != ProjectStatus.PANEL_GENERATING
+                && currentStatus != ProjectStatus.PANEL_REVIEW
+                && currentStatus != ProjectStatus.PANEL_GENERATING_FAILED) {
+            return Result.fail("当前状态无需同步: " + currentStatus.getCode());
+        }
+
+        // 检查所有分镜状态
+        List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        int totalPanels = 0;
+        int completedPanels = 0;
+        int failedPanels = 0;
+        int pendingPanels = 0;
+
+        for (Episode episode : episodes) {
+            List<Panel> panels = panelRepository.findByEpisodeId(episode.getId());
+            totalPanels += panels.size();
+            for (Panel p : panels) {
+                String status = getPanelStatus(p);
+                if ("completed".equals(status)) {
+                    completedPanels++;
+                } else if ("failed".equals(status)) {
+                    failedPanels++;
+                } else {
+                    pendingPanels++;
+                }
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("totalPanels", totalPanels);
+        result.put("completedPanels", completedPanels);
+        result.put("failedPanels", failedPanels);
+        result.put("pendingPanels", pendingPanels);
+
+        // 如果没有任何分镜，不更新状态
+        if (totalPanels == 0) {
+            result.put("message", "没有任何分镜，无需同步");
+            return Result.ok(result);
+        }
+
+        // 根据分镜状态决定项目状态
+        ProjectStatus newStatus;
+        if (completedPanels == totalPanels) {
+            newStatus = ProjectStatus.PANEL_REVIEW;
+            result.put("message", "所有分镜已完成，状态更新为 PANEL_REVIEW");
+        } else if (failedPanels > 0 && pendingPanels == 0) {
+            newStatus = ProjectStatus.PANEL_GENERATING_FAILED;
+            result.put("message", "存在失败分镜且无待处理分镜，状态更新为 PANEL_GENERATING_FAILED");
+        } else if (completedPanels > 0 || pendingPanels > 0) {
+            newStatus = ProjectStatus.PANEL_GENERATING;
+            result.put("message", "存在进行中或待处理的分镜，状态更新为 PANEL_GENERATING");
+        } else {
+            result.put("message", "状态无需更改");
+            return Result.ok(result);
+        }
+
+        if (!newStatus.getCode().equals(project.getStatus())) {
+            project.setStatus(newStatus.getCode());
+            projectRepository.updateById(project);
+            result.put("oldStatus", currentStatus.getCode());
+            result.put("newStatus", newStatus.getCode());
+            result.put("updated", true);
+        } else {
+            result.put("updated", false);
+        }
+
+        return Result.ok(result);
+    }
+
+    @PostMapping("/{projectId}/video/assemble")
+    @Operation(summary = "开始视频拼接", description = "将所有分镜视频按顺序拼接成完整视频")
+    public Result<Map<String, String>> startVideoAssembly(@PathVariable String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            return Result.fail("项目不存在");
+        }
+
+        ProjectStatus currentStatus = ProjectStatus.fromCode(project.getStatus());
+        if (currentStatus != ProjectStatus.PANEL_CONFIRMED) {
+            return Result.fail("当前状态不能开始视频拼接，需要 PANEL_CONFIRMED 状态");
+        }
+
+        stateMachineService.sendEvent(projectId, ProjectEventType.START_VIDEO_ASSEMBLY);
+
+        Map<String, String> result = new HashMap<>();
+        result.put("message", "视频拼接已开始");
+        result.put("projectId", projectId);
+        return Result.ok(result);
+    }
+
     // ==================== 私有辅助方法 ====================
 
     private ProjectEventType mapEventToStateMachineEvent(String event) {
@@ -351,6 +486,19 @@ public class ProjectController {
     private String strVal(Map<String, Object> map, String key) {
         Object v = map.get(key);
         return v != null ? v.toString() : null;
+    }
+
+    private String getPanelStatus(Panel panel) {
+        Map<String, Object> info = panel.getPanelInfo();
+        if (info == null) return "pending";
+
+        String videoStatus = strVal(info, "videoStatus");
+        String comicStatus = strVal(info, "comicStatus");
+        String bgStatus = strVal(info, "backgroundStatus");
+
+        if ("completed".equals(videoStatus)) return "completed";
+        if ("failed".equals(videoStatus) || "failed".equals(comicStatus) || "failed".equals(bgStatus)) return "failed";
+        return "pending";
     }
 
     private void enrichPanelProductionStatus(ProjectStatusResponse dto, String projectId) {

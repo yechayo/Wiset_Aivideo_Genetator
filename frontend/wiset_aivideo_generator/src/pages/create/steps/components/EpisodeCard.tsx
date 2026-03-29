@@ -26,6 +26,7 @@ interface EpisodeCardProps {
   generatingBackgroundPanelId?: string | null;
   onRevisePanel?: (episodeId: number) => void;
   isRevisingPanel?: boolean;
+  onConfirmPanel?: (episodeId: number, panelId: string) => void;
 }
 
 /**
@@ -89,6 +90,7 @@ const EpisodeCard = ({
   generatingBackgroundPanelId,
   onRevisePanel,
   isRevisingPanel,
+  onConfirmPanel,
 }: EpisodeCardProps) => {
   const episodeStatus = getEpisodeStatus(episode.segments);
 
@@ -156,6 +158,21 @@ const EpisodeCard = ({
               disabled={isRevisingPanel}
             >
               {isRevisingPanel ? '修改中...' : '修改分镜脚本'}
+            </button>
+          )}
+
+          {/* 确认分镜按钮 */}
+          {onConfirmPanel && episodeStatus === 'completed' && (
+            <button
+              className={styles.generatePanelsBtn}
+              style={{ backgroundColor: '#4ade80', color: '#000' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                const panelId = episode.segments[0]?.panelData?.panelId;
+                if (panelId) onConfirmPanel(episode.episodeId, panelId);
+              }}
+            >
+              确认本集
             </button>
           )}
 

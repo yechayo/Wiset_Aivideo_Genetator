@@ -214,6 +214,8 @@ export interface ProjectStatusInfo {
   panelTotalEpisodes?: number;
   panelReviewEpisodeId?: string;
   panelAllConfirmed?: boolean;
+  /** 最终视频 URL (VIDEO_ASSEMBLING/COMPLETED 状态时可用) */
+  finalVideoUrl?: string;
 }
 
 /**

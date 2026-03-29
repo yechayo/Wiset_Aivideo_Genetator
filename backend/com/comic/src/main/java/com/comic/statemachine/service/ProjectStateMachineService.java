@@ -104,8 +104,8 @@ public class ProjectStateMachineService {
 
             State<ProjectState, ProjectEventType> currentState = stateMachine.getState();
             if (!accepted) {
-                log.error("Event NOT ACCEPTED: projectId={}, event={}, currentState={}, guard=false",
-                        projectId, event, currentState != null ? currentState.getId() : null);
+                log.error("Event NOT ACCEPTED: projectId={}, event={}, currentState={}, guard=false - event not valid for current state. Hint: CONFIRM_IMAGES requires IMAGE_REVIEW state, but current state is {}",
+                        projectId, event, currentState != null ? currentState.getId() : null, currentState != null ? currentState.getId() : null);
             } else {
                 log.info("Event accepted: projectId={}, event={}, currentState={}",
                         projectId, event, currentState != null ? currentState.getId() : null);

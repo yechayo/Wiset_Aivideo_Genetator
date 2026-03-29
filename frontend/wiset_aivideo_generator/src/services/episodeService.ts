@@ -57,6 +57,17 @@ export async function revisePanel(
   );
 }
 
+/** 确认分镜（单集确认后继续下一集） */
+export async function confirmPanel(
+  projectId: string,
+  episodeId: number,
+  panelId: number,
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/confirm`,
+  );
+}
+
 // ================= Panel 生产状态 API =================
 
 /** 获取单 Panel 完整生产状态 */

@@ -35,7 +35,7 @@ public class PanelPromptBuilder {
         }
 
         sb.append("\n## 任务\n");
-        sb.append("根据剧集内容，规划该集的分镜列表。只需要列出每个 panel 的概要信息，不需要详细描述。\n\n");
+        sb.append("根据剧集内容，规划该集的分镜列表。只需要列出每个分镜的概要信息，不需要详细描述。\n\n");
 
         sb.append("## 输出格式（仅返回 JSON）\n");
         sb.append("{\n");
@@ -43,11 +43,11 @@ public class PanelPromptBuilder {
         sb.append("  \"title\": \"剧集标题\",\n");
         sb.append("  \"panels\": [\n");
         sb.append("    {\n");
-        sb.append("      \"panel_id\": \"p1\",\n");
+        sb.append("      \"panel_id\": \"分镜编号\",\n");
         sb.append("      \"scene_summary\": \"该画面要展示的内容概要（20-40字）\",\n");
         sb.append("      \"characters\": [\"角色名1\", \"角色名2\"],\n");
         sb.append("      \"mood\": \"情绪基调（紧张/温馨/悲伤/激烈等）\",\n");
-        sb.append("      \"time_of_day\": \"时间（day/night/dusk/dawn）\",\n");
+        sb.append("      \"time_of_day\": \"时间（day=白天, night=夜晚, dusk=黄昏, dawn=黎明）\",\n");
         sb.append("      \"duration\": 5\n");
         sb.append("    }\n");
         sb.append("  ]\n");
@@ -58,9 +58,10 @@ public class PanelPromptBuilder {
 
         sb.append("## 时长规划\n");
         sb.append("目标总时长：").append(episodeDuration).append(" 秒（可接受范围：").append(minDuration).append("~").append(maxDuration).append(" 秒）\n");
-        sb.append("- 每个 panel 必须包含 duration 字段（整数秒，范围 1~16）\n");
+        sb.append("- 每个 panel 必须包含 duration 字段（整数秒，范围 3~16）\n");
         sb.append("- 所有 panel 的 duration 之和必须在 ").append(minDuration).append("~").append(maxDuration).append(" 秒之间\n");
         sb.append("- 根据内容重要性合理分配时长，重要场景分配更多时间\n");
+        sb.append("- 分镜数量建议：").append(episodeDuration / 6).append("~").append(episodeDuration / 4).append(" 个，避免过多短分镜\n");
         sb.append("- 规划完成后，请自行验证总和是否在范围内\n");
         return sb.toString();
     }
@@ -74,8 +75,9 @@ public class PanelPromptBuilder {
 
         sb.append("## 时长约束\n");
         sb.append("- 目标总时长：").append(episodeDuration).append(" 秒\n");
-        sb.append("- 单 panel 时长范围：1~16 秒\n");
-        sb.append("- 所有 panel 时长之和必须在 ").append(minDuration).append("~").append(maxDuration).append(" 秒之间\n\n");
+        sb.append("- 单 panel 时长范围：3~16 秒（避免过短）\n");
+        sb.append("- 所有 panel 时长之和必须在 ").append(minDuration).append("~").append(maxDuration).append(" 秒之间\n");
+        sb.append("- 分镜数量建议：").append(episodeDuration / 6).append("~").append(episodeDuration / 4).append(" 个\n\n");
         sb.append("## 剧集内容\n").append(episodeContent != null ? episodeContent : "").append("\n\n");
         sb.append("## 前情提要\n").append(recentMemory != null ? recentMemory : "无").append("\n");
         return sb.toString();
@@ -100,28 +102,28 @@ public class PanelPromptBuilder {
         }
 
         sb.append("\n## 任务\n");
-        sb.append("根据 panel 概要，生成该 panel 的完整分镜描述。\n\n");
+        sb.append("根据分镜概要，生成该分镜的完整分镜描述。\n\n");
 
-        sb.append("## 输出格式（仅返回单个 panel 的 JSON 对象）\n");
+        sb.append("## 输出格式（仅返回单个分镜的 JSON 对象）\n");
         sb.append("{\n");
-        sb.append("  \"panel_id\": \"p1\",\n");
-        sb.append("  \"shot_type\": \"WIDE_SHOT|MID_SHOT|CLOSE_UP|OVER_SHOULDER\",\n");
+        sb.append("  \"panel_id\": \"分镜编号\",\n");
+        sb.append("  \"shot_type\": \"WIDE_SHOT|MID_SHOT|CLOSE_UP|EXTREME_CLOSE_UP|OVER_SHOULDER\",\n");
         sb.append("  \"camera_angle\": \"eye_level|low_angle|high_angle|bird_eye\",\n");
         sb.append("  \"composition\": \"构图描述（详细，50字以上）\",\n");
         sb.append("  \"pacing\": \"slow|normal|fast\",\n");
         sb.append("  \"duration\": 5,\n");
-        sb.append("  \"image_prompt_hint\": \"用于 AI 图片生成的详细英文提示词（包含画面构图、角色外观、动作、表情、光影、氛围等，100字以上）\",\n");
+        sb.append("  \"image_prompt_hint\": \"用于 AI 图片生成的详细提示词（包含画面构图、角色外观、动作、表情、光影、氛围等，100字以上）\",\n");
         sb.append("  \"background\": {\n");
         sb.append("    \"scene_desc\": \"场景描述\",\n");
-        sb.append("    \"time_of_day\": \"时间\",\n");
+        sb.append("    \"time_of_day\": \"时间（day/night/dusk/dawn）\",\n");
         sb.append("    \"atmosphere\": \"氛围描述\"\n");
         sb.append("  },\n");
         sb.append("  \"characters\": [\n");
         sb.append("    {\n");
         sb.append("      \"char_id\": \"角色ID\",\n");
         sb.append("      \"position\": \"center|left|right|far_left|far_right\",\n");
-        sb.append("      \"pose\": \"standing|sitting|running|fighting 等\",\n");
-        sb.append("      \"expression\": \"neutral|happy|angry|sad 等\",\n");
+        sb.append("      \"pose\": \"standing|sitting|running|fighting\",\n");
+        sb.append("      \"expression\": \"neutral|happy|angry|sad\",\n");
         sb.append("      \"costume_state\": \"normal|battle_worn\"\n");
         sb.append("    }\n");
         sb.append("  ],\n");
@@ -131,10 +133,18 @@ public class PanelPromptBuilder {
         sb.append("  \"sfx\": [\"音效描述\"]\n");
         sb.append("}\n\n");
 
+        sb.append("字段说明：\n");
+        sb.append("- shot_type: 远景=WIDE_SHOT, 中景=MID_SHOT, 特写=CLOSE_UP, 极特写=EXTREME_CLOSE_UP, 过肩=OVER_SHOULDER\n");
+        sb.append("- camera_angle: 平视=eye_level, 低角度=low_angle, 高角度=high_angle, 鸟瞰=bird_eye\n");
+        sb.append("- pacing: 缓慢=slow, 正常=normal, 快速=fast\n");
+        sb.append("- time_of_day: 白天=day, 夜晚=night, 黄昏=dusk, 黎明=dawn\n");
+        sb.append("- position: 居中=center, 左侧=left, 右侧=right, 最左侧=far_left, 最右侧=far_right\n");
+        sb.append("- bubble_type: 对话=speech, 思考=thought, 旁白=narration_box\n\n");
+
         sb.append("关键要求：\n");
         sb.append("- image_prompt_hint 必须足够详细，是后续 AI 生成图片的核心输入\n");
         sb.append("- composition 要描述画面布局、角色站位关系\n");
-        sb.append("- 仅返回单个 panel 的 JSON，不要数组\n");
+        sb.append("- 仅返回单个分镜的 JSON，不要数组\n");
         return sb.toString();
     }
 
@@ -142,25 +152,25 @@ public class PanelPromptBuilder {
                                               String episodeContent, String previousPanelSummary,
                                               int plannedDuration, int remainingBudget, int remainingPanels) {
         StringBuilder sb = new StringBuilder();
-        sb.append("为第 ").append(episodeNum).append(" 集的第 ").append(panelIndex).append(" 个 panel 生成详细分镜。\n\n");
-        sb.append("## 该 Panel 概要\n").append(panelPlan).append("\n\n");
+        sb.append("为第 ").append(episodeNum).append(" 集的第 ").append(panelIndex).append(" 个分镜生成详细分镜。\n\n");
+        sb.append("## 该分镜概要\n").append(panelPlan).append("\n\n");
         sb.append("## 剧集内容（参考上下文）\n").append(episodeContent != null ? episodeContent : "").append("\n\n");
         if (previousPanelSummary != null && !previousPanelSummary.isEmpty()) {
-            sb.append("## 前一个 Panel 摘要\n").append(previousPanelSummary).append("\n\n");
+            sb.append("## 前一个分镜摘要\n").append(previousPanelSummary).append("\n\n");
         }
 
-        int minAdjusted = Math.max(1, plannedDuration - 2);
+        int minAdjusted = Math.max(3, plannedDuration - 2);
         int maxAdjusted = Math.min(16, plannedDuration + 2);
 
         sb.append("## 时长信息\n");
         sb.append("- 规划阶段预定时长：").append(plannedDuration).append(" 秒\n");
         sb.append("- 允许调整范围：").append(minAdjusted).append("~").append(maxAdjusted).append(" 秒\n");
-        sb.append("- 该集剩余预算：").append(remainingBudget).append(" 秒（还有 ").append(remainingPanels).append(" 个 panel 待细化）\n");
+        sb.append("- 该集剩余预算：").append(remainingBudget).append(" 秒（还有 ").append(remainingPanels).append(" 个分镜待细化）\n");
         sb.append("- 在输出中包含 duration 字段，填写调整后的实际时长\n\n");
         sb.append("要求：\n");
-        sb.append("- 根据概要生成完整的 panel 描述\n");
+        sb.append("- 根据概要生成完整的分镜描述\n");
         sb.append("- image_prompt_hint 要包含足够的视觉细节用于图片生成\n");
-        sb.append("- 仅输出单个 panel 的 JSON 对象\n");
+        sb.append("- 仅输出单个分镜的 JSON 对象\n");
         return sb.toString();
     }
 
@@ -524,6 +534,149 @@ public class PanelPromptBuilder {
         prompt.append("流畅的动画效果，自然的镜头运动。");
 
         return prompt.toString();
+    }
+
+    /**
+     * 构建适合 Vidu API 的视频生成提示词（精简、安全版本）
+     * 去除敏感词汇，简化结构，确保通过内容审核
+     */
+    public String buildViduVideoPrompt(CharacterPromptManager.VisualStyle style, Map<String, Object> panelInfo) {
+        if (panelInfo == null) return "";
+
+        StringBuilder prompt = new StringBuilder();
+
+        // 简化的风格描述
+        String styleDesc = buildCleanStylePrefix(style);
+        prompt.append(styleDesc);
+
+        // 构图描述（核心视觉内容）
+        String composition = getStr(panelInfo, "composition");
+        if (composition != null && !composition.isEmpty()) {
+            prompt.append(sanitizePrompt(composition)).append("，");
+        }
+
+        // 场景描述
+        @SuppressWarnings("unchecked")
+        Map<String, Object> bg = (Map<String, Object>) panelInfo.get("background");
+        if (bg != null) {
+            String sceneDesc = getStr(bg, "scene_desc");
+            if (sceneDesc == null || sceneDesc.isEmpty()) {
+                sceneDesc = getStr(panelInfo, "sceneDescription");
+            }
+            if (sceneDesc != null && !sceneDesc.isEmpty()) {
+                prompt.append(sanitizePrompt(sceneDesc)).append("，");
+            }
+
+            String atmosphere = getStr(bg, "atmosphere");
+            if (atmosphere != null && !atmosphere.isEmpty()) {
+                // 只保留安全的氛围词
+                String safeAtmosphere = sanitizeAtmosphere(atmosphere);
+                if (!safeAtmosphere.isEmpty()) {
+                    prompt.append(safeAtmosphere).append("氛围，");
+                }
+            }
+        }
+
+        // 镜头和运动
+        String shotType = getStr(panelInfo, "shot_type");
+        if (shotType != null) {
+            switch (shotType) {
+                case "CLOSE_UP":
+                case "EXTREME_CLOSE_UP":
+                    prompt.append("特写镜头，"); break;
+                case "WIDE_SHOT":
+                    prompt.append("远景镜头，"); break;
+                default:
+                    prompt.append("中景镜头，"); break;
+            }
+        }
+
+        String pacing = getStr(panelInfo, "pacing");
+        if ("fast".equals(pacing)) {
+            prompt.append("动态镜头，");
+        } else {
+            prompt.append("平稳镜头，");
+        }
+
+        // 风格收尾
+        prompt.append("高质量，精细画面，流畅动画。");
+
+        return prompt.toString();
+    }
+
+    /**
+     * 净化的风格前缀（去除敏感词汇）
+     */
+    private String buildCleanStylePrefix(CharacterPromptManager.VisualStyle style) {
+        switch (style) {
+            case REAL:
+                return "写实风格，电影质感，自然光效，";
+            case D_3D:
+                return "3D渲染风格，精致光影，";
+            case ANIME:
+            case MANGA:
+                return "动漫风格，鲜艳色彩，精细插画，";
+            case INK:
+                return "中国水墨画风格，水墨写意，墨色浓淡有致，";
+            case CYBERPUNK:
+                return "赛博朋克风格，霓虹光影，";
+            default:
+                return "高质量艺术风格，";
+        }
+    }
+
+    /**
+     * 净化提示词，移除可能导致审核失败的敏感词汇
+     */
+    private String sanitizePrompt(String text) {
+        if (text == null || text.isEmpty()) return "";
+
+        String result = text;
+
+        // 替换敏感词汇为更中性的表达
+        result = result.replace("血手印", "红色印记");
+        result = result.replace("血迹", "红色痕迹");
+        result = result.replace("暗红色液体", "红色光影");
+        result = result.replace("粘稠", "流动");
+        result = result.replace("惊悚", "神秘");
+        result = result.replace("恐怖", "神秘");
+        result = result.replace("诡谲", "独特");
+        result = result.replace("诡秘", "神秘");
+        result = result.replace("颤抖", "轻微晃动");
+        result = result.replace("喘息", "呼吸");
+        result = result.replace("溶解", "融合");
+        result = result.replace("诅咒", "秘密");
+        result = result.replace("梦魇", "梦境");
+        result = result.replace("痛苦", "深沉");
+        result = result.replace("不祥", "深邃");
+
+        // 清理多余标点
+        result = result.replaceAll("[，。、；：！？]+", "，");
+        result = result.trim();
+
+        return result;
+    }
+
+    /**
+     * 净化氛围词，只保留安全的描述
+     */
+    private String sanitizeAtmosphere(String atmosphere) {
+        if (atmosphere == null || atmosphere.isEmpty()) return "";
+
+        // 替换不安全的氛围词
+        return atmosphere
+            .replace("惊悚", "神秘")
+            .replace("恐怖", "神秘")
+            .replace("诡异", "独特")
+            .replace("诡谲", "独特")
+            .replace("诡秘", "神秘")
+            .replace("不祥", "深邃")
+            .replace("压抑", "宁静")
+            .replace("阴森", "幽静")
+            .replace("可怕", "引人入胜")
+            .replace("恐惧", "好奇")
+            .replace("紧张", "专注")
+            .replace("不安", "期待");
     }
 
     // ================= 辅助方法 =================

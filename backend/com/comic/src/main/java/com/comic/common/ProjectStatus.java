@@ -38,13 +38,13 @@ public enum ProjectStatus {
     // 图像阶段
     IMAGE_GENERATING("IMAGE_GENERATING", "图像生成中", 4),
     IMAGE_REVIEW("IMAGE_REVIEW", "图像审核", 4),
-    ASSET_LOCKED("ASSET_LOCKED", "素材已锁定", 4),
+    ASSET_LOCKED("ASSET_LOCKED", "素材已锁定", 5),
     IMAGE_GENERATING_FAILED("IMAGE_GENERATING_FAILED", "图像生成失败", 4),
 
     // 分镜阶段（包含完整生产流程：分镜文本 → 背景图 → 融合图 → 视频）
     PANEL_GENERATING("PANEL_GENERATING", "分镜生产中", 5),
     PANEL_REVIEW("PANEL_REVIEW", "分镜审核", 5),
-    PANEL_CONFIRMED("PANEL_CONFIRMED", "分镜已确认", 5),
+    PANEL_CONFIRMED("PANEL_CONFIRMED", "分镜已确认", 6),
     PANEL_GENERATING_FAILED("PANEL_GENERATING_FAILED", "分镜生产失败", 5),
 
     // 视频剪辑阶段
@@ -207,7 +207,7 @@ public enum ProjectStatus {
         }
         // 当前步骤处于确认态时，当前步骤也算完成
         if (this == SCRIPT_CONFIRMED || this == CHARACTER_CONFIRMED || this == ASSET_LOCKED
-                || this == COMPLETED || this == PANEL_REVIEW || this == VIDEO_ASSEMBLING) {
+                || this == COMPLETED || this == PANEL_REVIEW || this == PANEL_CONFIRMED || this == VIDEO_ASSEMBLING) {
             steps.add(current);
         }
         return steps;
@@ -241,7 +241,7 @@ public enum ProjectStatus {
             case IMAGE_REVIEW:
                 return Arrays.asList("confirm_images");
             case ASSET_LOCKED:
-                return Arrays.asList();
+                return Arrays.asList("start_panels");
             case PANEL_GENERATING:
                 return Arrays.asList();
             case PANEL_REVIEW:

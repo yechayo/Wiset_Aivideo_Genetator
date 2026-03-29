@@ -43,4 +43,7 @@ public class ProjectStatusResponse {
     private String panelReviewEpisodeId;
 
     private boolean panelAllConfirmed;
+
+    /** 最终视频 URL (VIDEO_ASSEMBLING/COMPLETED 状态时可用) */
+    private String finalVideoUrl;
 }

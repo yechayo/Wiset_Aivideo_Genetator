@@ -1,5 +1,6 @@
 package com.comic.statemachine.action;
 
+import com.comic.dto.model.VideoSegmentModel;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
 import com.comic.repository.EpisodeRepository;
@@ -7,14 +8,17 @@ import com.comic.repository.PanelRepository;
 import com.comic.service.panel.PanelGenerationService;
 import com.comic.service.production.PanelProductionService;
 import com.comic.service.production.ComicGenerationService;
+import com.comic.service.production.VideoCompositionService;
 import com.comic.statemachine.enums.ProjectEventType;
 import com.comic.statemachine.enums.ProjectState;
 import com.comic.statemachine.service.ProjectStateMachineService;
 import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -31,10 +35,12 @@ public class PanelAction {
     private final PanelGenerationService panelGenerationService;
     private final PanelProductionService panelProductionService;
     private final ComicGenerationService comicGenerationService;
+    private final VideoCompositionService videoCompositionService;
     private final EpisodeRepository episodeRepository;
     private final PanelRepository panelRepository;
     private final ProjectStateMachineService stateMachineService;
     private final StateChangeEventPublisher eventPublisher;
+    private final OkHttpClient httpClient = new OkHttpClient();
 
     /**
      * 开始完整的生产流程（异步）
@@ -227,24 +233,108 @@ public class PanelAction {
 
         CompletableFuture.runAsync(() -> {
             try {
-                // TODO: 实现视频拼接逻辑
                 // 1. 获取所有剧集
-                // 2. 按顺序拼接每个剧集的分镜视频
-                // 3. 生成最终的剧集视频文件
+                List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+                log.info("Found {} episodes for project={}", episodes.size(), projectId);
+
+                // 2. 按剧集顺序拼接视频
+                for (Episode episode : episodes) {
+                    assembleEpisodeVideo(projectId, episode.getId(), episodes.size());
+                }
 
                 log.info("Video assembly completed for project={}", projectId);
-
-                // 模拟拼接完成
-                Thread.sleep(1000);
-
                 stateMachineService.sendEvent(projectId, ProjectEventType._VIDEO_ASSEMBLY_DONE);
                 eventPublisher.publishTaskComplete(projectId, "video_assembly", null);
             } catch (Exception e) {
                 log.error("Video assembly failed: projectId={}", projectId, e);
                 eventPublisher.publishFailure(projectId, "视频拼接失败: " + e.getMessage());
-                // 视频拼接失败，保持当前状态
+                // 回退到 PANEL_CONFIRMED，允许用户修复后重试
+                stateMachineService.persistState(projectId, ProjectState.PANEL_CONFIRMED);
             }
         });
+    }
+
+    /**
+     * 拼接单集视频
+     */
+    private void assembleEpisodeVideo(String projectId, Long episodeId, int totalEpisodes) {
+        try {
+            // 获取该集的所有分镜，按顺序排列
+            List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
+            if (panels.isEmpty()) {
+                throw new RuntimeException("第" + episodeId + "集没有分镜数据");
+            }
+
+            Integer episodeNum = getEpisodeNum(episodeRepository.selectById(episodeId));
+
+            // 收集所有视频片段
+            List<VideoSegmentModel> videoSegments = new ArrayList<>();
+            int segmentIndex = 0;
+
+            for (Panel panel : panels) {
+                Map<String, Object> info = panel.getPanelInfo();
+                if (info == null) continue;
+
+                String videoUrl = info.get("videoUrl") != null ? info.get("videoUrl").toString() : null;
+                String videoStatus = info.get("videoStatus") != null ? info.get("videoStatus").toString() : null;
+
+                if ("completed".equals(videoStatus) && videoUrl != null && !videoUrl.isEmpty()) {
+                    // 获取分镜时长，默认5秒
+                    Number durationNum = info.get("duration") instanceof Number ? (Number) info.get("duration") : null;
+                    int duration = durationNum != null ? durationNum.intValue() : 5;
+
+                    VideoSegmentModel segment = new VideoSegmentModel();
+                    segment.setUrl(videoUrl);
+                    segment.setDuration(duration);
+                    segment.setPanelIndex(segmentIndex++);
+                    videoSegments.add(segment);
+                }
+            }
+
+            if (videoSegments.isEmpty()) {
+                throw new RuntimeException("第" + episodeNum + "集没有已完成的视频片段");
+            }
+
+            log.info("拼接第{}集: {} 个视频片段", episodeNum, videoSegments.size());
+
+            // 调用视频合成服务
+            String finalVideoUrl = videoCompositionService.composeVideo(videoSegments, null);
+
+            // 保存最终视频URL到episode
+            Episode episode = episodeRepository.selectById(episodeId);
+            if (episode != null) {
+                Map<String, Object> epInfo = episode.getEpisodeInfo();
+                if (epInfo == null) {
+                    epInfo = new java.util.HashMap<>();
+                    episode.setEpisodeInfo(epInfo);
+                }
+                epInfo.put("finalVideoUrl", finalVideoUrl);
+                epInfo.put("videoAssemblyStatus", "completed");
+                episodeRepository.updateById(episode);
+            }
+
+            log.info("第{}集视频拼接完成: {}", episodeNum, finalVideoUrl);
+
+        } catch (Exception e) {
+            log.error("Episode video assembly failed: episodeId={}", episodeId, e);
+            Integer episodeNum = getEpisodeNum(episodeRepository.selectById(episodeId));
+            throw new RuntimeException("第" + episodeNum + "集视频拼接失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取集数编号
+     */
+    private Integer getEpisodeNum(Episode episode) {
+        if (episode == null) return 0;
+        Map<String, Object> info = episode.getEpisodeInfo();
+        if (info != null) {
+            Object num = info.get("episodeNum");
+            if (num instanceof Number) {
+                return ((Number) num).intValue();
+            }
+        }
+        return Math.toIntExact(episode.getId());
     }
 
     /**

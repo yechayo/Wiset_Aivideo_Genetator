@@ -51,29 +51,27 @@ public class VideoCompositionService {
         }
 
         try {
-            // 1. 下载视频片段到临时目录
-            List<Path> segmentPaths = downloadSegments(videoSegments);
+            // 直接使用 URL 进行拼接，无需先下载
+            Path concatFile = createConcatFileFromUrls(videoSegments);
 
-            // 2. 创建concat文件
-            Path concatFile = createConcatFile(segmentPaths);
-
-            // 3. 准备输出路径
+            // 准备输出路径
             Path outputPath = Files.createTempFile(Paths.get(tempDir), "final-video-", ".mp4");
 
-            // 4. 执行FFmpeg合成
+            // 执行FFmpeg合成
             if (subtitleUrl != null && !subtitleUrl.isEmpty()) {
                 // 带字幕合成
-                composeWithSubtitle(concatFile, subtitleUrl, outputPath);
+                composeWithSubtitleFromUrls(concatFile, subtitleUrl, outputPath);
             } else {
                 // 不带字幕合成
-                composeWithoutSubtitle(concatFile, outputPath);
+                composeWithoutSubtitleFromUrls(concatFile, outputPath);
             }
 
-            // 5. 上传到OSS
+            // 上传到OSS
             String finalUrl = ossService.uploadFromFile(outputPath.toString(), "videos");
 
-            // 6. 清理临时文件
-            cleanupTempFiles(segmentPaths, concatFile, outputPath);
+            // 清理临时文件
+            Files.deleteIfExists(concatFile);
+            Files.deleteIfExists(outputPath);
 
             log.info("视频合成完成: segments={}, url={}", videoSegments.size(), finalUrl);
             return finalUrl;
@@ -85,34 +83,17 @@ public class VideoCompositionService {
     }
 
     /**
-     * 下载视频片段到本地
+     * 从视频 URL 创建 concat 文件
      */
-    private List<Path> downloadSegments(List<VideoSegmentModel> videoSegments) throws Exception {
-        List<Path> paths = new ArrayList<>();
-
-        for (int i = 0; i < videoSegments.size(); i++) {
-            String url = videoSegments.get(i).getUrl();
-            Path tempPath = Files.createTempFile(Paths.get(tempDir), "segment-" + i + "-", ".mp4");
-            downloadToFile(url, tempPath);
-            paths.add(tempPath);
-
-            log.debug("视频片段准备: segment={}, path={}", i, tempPath);
-        }
-
-        return paths;
-    }
-
-    /**
-     * 创建concat文件
-     */
-    private Path createConcatFile(List<Path> segmentPaths) throws Exception {
+    private Path createConcatFileFromUrls(List<VideoSegmentModel> videoSegments) throws Exception {
         Path concatFile = Files.createTempFile(Paths.get(tempDir), "concat-", ".txt");
 
         try (FileWriter writer = new FileWriter(concatFile.toFile())) {
-            for (Path path : segmentPaths) {
-                // FFmpeg concat文件需要使用转义路径
-                String escapedPath = path.toString().replace("\\", "/").replace("'", "'\\''");
-                writer.write("file '" + escapedPath + "'\n");
+            for (VideoSegmentModel segment : videoSegments) {
+                // 对于 URL，需要特殊处理
+                String url = segment.getUrl();
+                // FFmpeg concat 协议对 URL 的处理
+                writer.write("file '" + url + "'\n");
             }
         }
 
@@ -120,15 +101,17 @@ public class VideoCompositionService {
     }
 
     /**
-     * 合成视频（不带字幕）
+     * 合成视频（不带字幕，从 URL）
      */
-    private void composeWithoutSubtitle(Path concatFile, Path outputPath) throws Exception {
+    private void composeWithoutSubtitleFromUrls(Path concatFile, Path outputPath) throws Exception {
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
         command.add("-f");
         command.add("concat");
         command.add("-safe");
         command.add("0");
+        command.add("-protocol_whitelist");
+        command.add("file,http,https,tcp,tls");
         command.add("-i");
         command.add(concatFile.toString());
         command.add("-c");
@@ -140,10 +123,10 @@ public class VideoCompositionService {
     }
 
     /**
-     * 合成视频（带字幕）
+     * 合成视频（带字幕，从 URL）
      */
-    private void composeWithSubtitle(Path concatFile, String subtitleUrl, Path outputPath) throws Exception {
-        // 下载字幕文件
+    private void composeWithSubtitleFromUrls(Path concatFile, String subtitleUrl, Path outputPath) throws Exception {
+        // 先下载字幕文件
         Path subtitlePath = Files.createTempFile(Paths.get(tempDir), "subtitle-", ".srt");
         downloadToFile(subtitleUrl, subtitlePath);
 
@@ -153,6 +136,8 @@ public class VideoCompositionService {
         command.add("concat");
         command.add("-safe");
         command.add("0");
+        command.add("-protocol_whitelist");
+        command.add("file,http,https,tcp,tls");
         command.add("-i");
         command.add(concatFile.toString());
         command.add("-vf");
@@ -172,10 +157,21 @@ public class VideoCompositionService {
      * 从公网 URL 下载文件到本地路径
      */
     private void downloadToFile(String url, Path targetPath) throws Exception {
-        Request request = new Request.Builder().url(url).get().build();
+        // 添加 User-Agent，避免被 S3 拒绝
+        Request request = new Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .get()
+                .build();
         try (Response response = httpClient.newCall(request).execute()) {
             if (!response.isSuccessful() || response.body() == null) {
-                throw new RuntimeException("下载文件失败: " + response.code() + ", url=" + url);
+                String errorMsg;
+                if (response.code() == 403) {
+                    errorMsg = "视频链接访问被拒绝（403），URL=" + url;
+                } else {
+                    errorMsg = "下载文件失败: HTTP " + response.code() + ", url=" + url;
+                }
+                throw new RuntimeException(errorMsg);
             }
             Files.write(targetPath, response.body().bytes());
         }
@@ -214,21 +210,6 @@ public class VideoCompositionService {
         }
 
         log.info("FFmpeg执行完成");
-    }
-
-    /**
-     * 清理临时文件
-     */
-    private void cleanupTempFiles(List<Path> segmentPaths, Path concatFile, Path outputFile) {
-        try {
-            for (Path path : segmentPaths) {
-                Files.deleteIfExists(path);
-            }
-            Files.deleteIfExists(concatFile);
-            Files.deleteIfExists(outputFile);
-        } catch (Exception e) {
-            log.warn("清理临时文件失败", e);
-        }
     }
 
     /**

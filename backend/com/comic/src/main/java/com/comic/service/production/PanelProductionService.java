@@ -5,6 +5,7 @@ import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.common.BusinessException;
+import com.comic.common.ProjectStatus;
 import com.comic.dto.response.PanelBackgroundResponse;
 import com.comic.dto.response.PanelProductionStatusResponse;
 import com.comic.dto.response.VideoStatusResponse;
@@ -14,6 +15,7 @@ import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
+import com.comic.statemachine.service.ProjectStateMachineService;
 import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +46,7 @@ public class PanelProductionService {
     private final ImageGenerationService imageGenerationService;
     private final VideoGenerationService videoGenerationService;
     private final ApplicationContext applicationContext;
+    private final ProjectStateMachineService stateMachineService;
 
     @Lazy
     @Autowired
@@ -204,7 +207,8 @@ public class PanelProductionService {
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
             CharacterPromptManager.VisualStyle style = getProjectStyle(panel);
-            String prompt = panelPromptBuilder.buildVideoPrompt(style, panel.getPanelInfo());
+            // 使用 Vidu 安全版本 prompt，避免审核失败
+            String prompt = panelPromptBuilder.buildViduVideoPrompt(style, panel.getPanelInfo());
             String taskId = videoGenerationService.generateAsync(prompt, 5, "16:9", comicUrl);
             info.put("videoTaskId", taskId);
             panel.setPanelInfo(info);
@@ -241,6 +245,8 @@ public class PanelProductionService {
                         String projId = getProjectIdByPanelId(panelId);
                         if (projId != null) {
                             eventPublisher.publishProgress(projId, 0, "视频生成完成");
+                            // 检查并同步项目状态
+                            syncProjectStatusIfNeeded(projId);
                         }
                         return;
                     case "failed":
@@ -257,6 +263,64 @@ public class PanelProductionService {
         } catch (Exception e) {
             log.error("视频任务轮询异常: panelId={}", panelId, e);
         }
+    }
+
+    /**
+     * 检查项目状态，如果所有分镜都完成则更新为 PANEL_REVIEW
+     */
+    private void syncProjectStatusIfNeeded(String projectId) {
+        try {
+            Project project = projectRepository.findByProjectId(projectId);
+            if (project == null) return;
+
+            ProjectStatus currentStatus = ProjectStatus.fromCode(project.getStatus());
+
+            // 只在分镜生成阶段才需要同步
+            if (currentStatus != ProjectStatus.PANEL_GENERATING
+                && currentStatus != ProjectStatus.PANEL_GENERATING_FAILED) {
+                return;
+            }
+
+            // 检查所有分镜是否都已完成
+            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+            boolean allCompleted = true;
+            int totalPanels = 0;
+            int completedPanels = 0;
+
+            for (Episode episode : episodes) {
+                List<Panel> panels = panelRepository.findByEpisodeId(episode.getId());
+                totalPanels += panels.size();
+                for (Panel p : panels) {
+                    if (isVideoCompleted(p)) {
+                        completedPanels++;
+                    } else {
+                        allCompleted = false;
+                    }
+                }
+            }
+
+            // 如果所有分镜都完成，更新状态为 PANEL_REVIEW
+            if (allCompleted && totalPanels > 0) {
+                log.info("所有分镜视频已完成，更新项目状态为 PANEL_REVIEW: projectId={}, panels={}/{}",
+                    projectId, completedPanels, totalPanels);
+                stateMachineService.persistState(projectId,
+                    com.comic.statemachine.enums.ProjectState.PANEL_REVIEW);
+            } else {
+                log.debug("分镜视频未全部完成: projectId={}, {}/{}", projectId, completedPanels, totalPanels);
+            }
+        } catch (Exception e) {
+            log.warn("同步项目状态失败: projectId={}", projectId, e);
+        }
+    }
+
+    /**
+     * 检查分镜视频是否完成
+     */
+    private boolean isVideoCompleted(Panel panel) {
+        Map<String, Object> info = panel.getPanelInfo();
+        if (info == null) return false;
+        String videoStatus = info.get("videoStatus") != null ? info.get("videoStatus").toString() : null;
+        return "completed".equals(videoStatus);
     }
 
     /**

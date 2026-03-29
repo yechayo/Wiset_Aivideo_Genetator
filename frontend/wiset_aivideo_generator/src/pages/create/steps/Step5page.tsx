@@ -21,6 +21,7 @@ import {
   generateComic,
   reviseSinglePanel,
   updatePanel,
+  confirmPanel,
 } from '../../../services/episodeService';
 import type { PanelProductionStatusResponse } from '../../../services/types/episode.types';
 import { getCharacterStatus, getCharacters } from '../../../services/characterService';
@@ -32,22 +33,36 @@ interface Step5pageProps {
 
 /**
  * 将后端 PanelProductionStatusResponse 映射为前端 SegmentPipelineStep
+ * 优先级：视频完成 > 视频生成中 > 四宫格审核 > 四宫格已批准(可生成视频) > 视频失败 > 其他
  */
 function mapProductionToPipelineStep(status: {
   backgroundStatus: string;
   backgroundUrl: string | null;
   comicStatus: string;
+  comicUrl: string | null;
   videoStatus: string;
 }): SegmentPipelineStep {
+  // 视频完成（最高优先级）
   if (status.videoStatus === 'completed') return 'video_completed';
-  if (status.videoStatus === 'failed') return 'video_failed';
+
+  // 视频生成中
   if (status.videoStatus === 'generating') return 'video_generating';
+
+  // 四宫格已生成且待审核
+  if (status.comicUrl && (status.comicStatus === 'pending_review' || status.comicStatus === 'generating' || status.comicStatus === 'failed')) {
+    return 'comic_review';
+  }
+
+  // 四宫格已批准（可生成视频）
   if (status.comicStatus === 'approved') return 'comic_approved';
-  if (status.comicStatus === 'pending_review') return 'comic_review';
-  if (status.comicStatus === 'generating') return 'comic_review';
-  if (status.comicStatus === 'failed') return 'comic_review';
+
+  // 视频失败
+  if (status.videoStatus === 'failed') return 'video_failed';
+
+  // 背景图已就绪
   if (status.backgroundUrl) return 'scene_ready';
   if (status.backgroundStatus === 'generating') return 'scene_ready';
+
   return 'pending';
 }
 
@@ -284,6 +299,7 @@ const Step5page = ({ project }: Step5pageProps) => {
             backgroundStatus: bgUrl ? 'completed' : (info.backgroundStatus || 'pending'),
             backgroundUrl: bgUrl,
             comicStatus: comicStatus || 'pending',
+            comicUrl,
             videoStatus: videoStatus || 'pending',
           }),
           comicUrl,
@@ -666,6 +682,23 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [projectId, loadPanelsForEpisode]);
 
   /**
+   * 确认分镜（单集确认后继续下一集）
+   */
+  const handleConfirmPanel = useCallback(async (episodeId: number, panelId: string) => {
+    if (!projectId) return;
+    const confirmed = window.confirm('确认后将锁定本集分镜，无法再修改。是否继续？');
+    if (!confirmed) return;
+    try {
+      await confirmPanel(projectId, episodeId, Number(panelId));
+      await refreshProductionStatuses(episodeId);
+      // 刷新整个项目状态以检查是否所有集都已完成
+      await loadEpisodes();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '确认分镜失败');
+    }
+  }, [projectId, refreshProductionStatuses, loadEpisodes]);
+
+  /**
    * 渲染集数卡片
    */
   const renderEpisodeCard = (chapterIndex: number, episode: EpisodeState) => {
@@ -714,6 +747,7 @@ const Step5page = ({ project }: Step5pageProps) => {
         isUpdatingSinglePanelId={updatingPanelId}
         onRevisePanel={handleRevisePanel}
         isRevisingPanel={revisingEpisodeId === episode.episodeId}
+        onConfirmPanel={(epId, panelId) => handleConfirmPanel(epId, panelId)}
       />
     );
   };

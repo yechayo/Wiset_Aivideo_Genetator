@@ -52,12 +52,15 @@ public class PanelGenerationService {
     private final ProjectRepository projectRepository;
     private final ObjectMapper objectMapper;
     private final PanelPromptBuilder panelPromptBuilder;
+    private final PanelService panelService;
 
     private static final Set<String> ALLOWED_SHOT_TYPES = new HashSet<>(Arrays.asList(
-            "WIDE_SHOT", "MID_SHOT", "CLOSE_UP", "OVER_SHOULDER"
+            "WIDE_SHOT", "MID_SHOT", "CLOSE_UP", "EXTREME_CLOSE_UP", "OVER_SHOULDER",
+            "EXTREME_WIDE_SHOT", "TWO_SHOT", "THREE_SHOT"
     ));
     private static final Set<String> ALLOWED_CAMERA_ANGLES = new HashSet<>(Arrays.asList(
-            "eye_level", "low_angle", "high_angle", "bird_eye"
+            "eye_level", "low_angle", "high_angle", "bird_eye", "worm_eye",
+            "dutch_angle", "aerial", "overhead"
     ));
     private static final Set<String> ALLOWED_PACING = new HashSet<>(Arrays.asList(
             "slow", "normal", "fast"
@@ -160,11 +163,14 @@ public class PanelGenerationService {
                 throw new IllegalStateException("Panel plan has no panels");
             }
 
+            // 清除旧分镜数据
+            panelService.clearOldPanels(episodeId);
+
             // Validate and fill missing duration fields from Step1
             for (int i = 0; i < panelsPlan.size(); i++) {
                 JsonNode panelPlan = panelsPlan.get(i);
                 if (!panelPlan.has("duration") || !panelPlan.get("duration").isInt()) {
-                    int defaultDuration = Math.min(16, Math.max(1,
+                    int defaultDuration = Math.min(16, Math.max(3,
                             (int) Math.round((double) episodeDuration / panelsPlan.size())));
                     ((ObjectNode) panelPlan).put("duration", defaultDuration);
                     log.warn("Panel {} missing duration, assigned default: {}", i, defaultDuration);
@@ -207,12 +213,20 @@ public class PanelGenerationService {
 
                 detailedPanels.add(detailJson);
 
+                // 立即入库单个分镜（生成一个入库一个）
+                Map<String, Object> panelData = objectMapper.convertValue(detailJson, Map.class);
+                panelService.saveSinglePanel(episodeId, panelData, i);
+                log.info("Panel saved to DB: episodeId={}, panel {}/{}", episodeId, i + 1, panelsPlan.size());
+
                 // 用当前 panel 的概要作为下一个 panel 的上下文
                 previousPanelSummary = buildPanelSummary(detailJson);
             }
 
             // Calibrate durations to ensure total is within ±5% of target
             calibrateDurations(episodeDuration, detailedPanels);
+
+            // 更新数据库中分镜的时长（校准后）
+            updatePanelsDuration(episodeId, detailedPanels);
 
             // 构建最终结果
             ObjectNode result = objectMapper.createObjectNode();
@@ -263,6 +277,9 @@ public class PanelGenerationService {
             setPanelStatus(episode, "PANEL_DONE");
             epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
             episodeRepository.updateById(episode);
+
+            // 清除旧分镜并保存新生成的分镜
+            panelService.savePanelsFromGeneration(episodeId, result);
 
             log.info("Panels revised: episodeId={}, epNum={}", episodeId, getEpInfoInt(episode, EpisodeInfoKeys.EPISODE_NUM));
             return result;
@@ -533,6 +550,33 @@ public class PanelGenerationService {
     }
 
     // ==================== 私有方法 ====================
+
+    /**
+     * 更新数据库中分镜的时长（校准后）
+     */
+    private void updatePanelsDuration(Long episodeId, ArrayNode detailedPanels) {
+        List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
+        if (panels.size() != detailedPanels.size()) {
+            log.warn("Panel count mismatch: DB has {}, JSON has {}", panels.size(), detailedPanels.size());
+            return;
+        }
+
+        for (int i = 0; i < panels.size() && i < detailedPanels.size(); i++) {
+            Panel panel = panels.get(i);
+            JsonNode panelJson = detailedPanels.get(i);
+
+            if (panelJson.has("duration")) {
+                Map<String, Object> info = panel.getPanelInfo();
+                if (info == null) {
+                    info = new HashMap<>();
+                    panel.setPanelInfo(info);
+                }
+                info.put("duration", panelJson.get("duration").asInt());
+                panelRepository.updateById(panel);
+            }
+        }
+        log.info("Updated {} panels with calibrated durations", panels.size());
+    }
 
     private void generateSingleEpisodeAsync(String projectId, Episode episode) {
         final Long epId = episode.getId();
@@ -1156,13 +1200,13 @@ public class PanelGenerationService {
         log.info("Calibrating durations: total={} target={}[{},{}]", totalActual, targetDuration, minTarget, maxTarget);
         double ratio = (double) targetDuration / totalActual;
 
-        // Proportional scaling + clamp to [1, 16]
+        // Proportional scaling + clamp to [3, 16]
         for (int i = 0; i < detailedPanels.size(); i++) {
             JsonNode panel = detailedPanels.get(i);
             if (panel.isObject() && panel.has("duration")) {
                 int original = panel.get("duration").asInt();
                 int calibrated = (int) Math.round(original * ratio);
-                calibrated = Math.max(1, Math.min(16, calibrated));
+                calibrated = Math.max(3, Math.min(16, calibrated));
                 ((ObjectNode) panel).put("duration", calibrated);
             }
         }
@@ -1188,7 +1232,7 @@ public class PanelGenerationService {
                     if (newTotal < minTarget && durations[i] < 16) {
                         maxDeviation = deviation;
                         maxDeviationIndex = i;
-                    } else if (newTotal > maxTarget && durations[i] > 1) {
+                    } else if (newTotal > maxTarget && durations[i] > 3) {
                         maxDeviation = deviation;
                         maxDeviationIndex = i;
                     }
@@ -1198,7 +1242,7 @@ public class PanelGenerationService {
             if (newTotal < minTarget && durations[maxDeviationIndex] < 16) {
                 durations[maxDeviationIndex]++;
                 newTotal++;
-            } else if (newTotal > maxTarget && durations[maxDeviationIndex] > 1) {
+            } else if (newTotal > maxTarget && durations[maxDeviationIndex] > 3) {
                 durations[maxDeviationIndex]--;
                 newTotal--;
             } else {

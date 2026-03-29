@@ -69,7 +69,8 @@ public class ProjectStateMachineController {
             result.put("currentState", currentState != null ? currentState.name() : null);
 
             if (!accepted) {
-                return Result.fail(400, "事件被拒绝，当前状态不允许该操作");
+                String message = String.format("事件 %s 被拒绝，当前状态 %s 不允许该操作", event, currentState);
+                return Result.fail(400, message);
             }
 
             return Result.ok(result);

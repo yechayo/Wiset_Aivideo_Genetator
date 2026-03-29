@@ -83,7 +83,7 @@ comic:
       retry-times: 3              # 重试次数
       # DeepSeek API 配置
       deepseek:
-        apiKey: ${DEEPSEEK_API_KEY:sk-your-deepseek-api-key}
+        apiKey: sk-47f1529041ca4926b21b8ee5820d75d0
         baseUrl: https://api.deepseek.com
         model: deepseek-chat
         maxTokens: 8192
@@ -107,22 +107,22 @@ comic:
 
   # ========== 火山引擎 Ark SDK 配置（用于 Seedream） ==========
   ark:
-    api-key: ${ARK_API_KEY:your-ark-api-key}
+    api-key: 167746d0-87be-4d4a-ab21-2022c6822ad7
     base-url: https://ark.cn-beijing.volces.com/api/v3
     seedream-model: doubao-seedream-5-0-lite-260128
     seedance-model: doubao-seedance-1-5-pro-251215
 
   # ========== Vidu 视频生成配置 ==========
-    vidu:
-      api-key: ${VIDU_API_KEY:your-vidu-api-key}
-      base-url: https://api.vidu.cn/ent/v2
-      model: viduq3-turbo
+  vidu:
+    api-key: vda_933899833004011520_0BfkVZcAn5cRhe3Llzr0mxhKwEBl8uOJ
+    base-url: https://api.vidu.cn/ent/v2
+    model: viduq3-turbo
 
 
   # ========== 阿里云 OSS 配置 ==========
   oss:
-    ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:your-access-key-id}
-    ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:your-access-key-secret}
+    ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID}
+    ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET}
     bucket-name: zhiqiantong-test
     endpoint: oss-cn-beijing.aliyuncs.com
     dir: comic/images/
@@ -134,6 +134,11 @@ comic:
       upload-dir: ./uploads    # 文件上传目录
       base-url: http://localhost:8080/files  # 文件访问基础URL
       max-size: 100MB          # 最大文件大小
+
+  # ========== FFmpeg 视频处理配置 ==========
+  ffmpeg:
+    path: ffmpeg              # FFmpeg 可执行文件路径（需在 PATH 中或指定完整路径）
+    temp-dir: ./temp/video    # 视频处理临时目录
 
 # 日志配置
 logging:

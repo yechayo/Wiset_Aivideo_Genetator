@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import styles from './Step6page.module.less';
 import type { Project } from '../../../services';
 import type { StepContentProps } from '../types';
-import { useFusionStore } from '../../../stores/fusionStore';
+import { useCreateStore } from '../../../stores/createStore';
+import { useFusionStore } from '../../../stores';
+import { startVideoAssembly } from '../../../services/projectService';
 import {
   getProductionPipeline,
   getVideoSegments,
@@ -20,10 +22,11 @@ interface Step6pageProps extends StepContentProps {
   project: Project;
 }
 
-type ViewMode = 'loading' | 'pipeline' | 'fusion' | 'atomic' | 'completed' | 'failed' | 'no-episode';
+type ViewMode = 'loading' | 'pipeline' | 'fusion' | 'atomic' | 'completed' | 'failed' | 'no-episode' | 'ready-for-assembly';
 
 const Step6page = ({ project }: Step6pageProps) => {
   const { reset: resetFusion } = useFusionStore();
+  const { statusInfo } = useCreateStore();
   const [viewMode, setViewMode] = useState<ViewMode>('loading');
   const [pipeline, setPipeline] = useState<ProductionPipelineResponse | null>(null);
   const [episodeId, setEpisodeId] = useState<string | null>(null);
@@ -36,11 +39,35 @@ const Step6page = ({ project }: Step6pageProps) => {
   const [panelStates, setPanelStates] = useState<PanelState[]>([]);
   const [panelsLoading, setPanelsLoading] = useState(false);
   const [autoContinuing, setAutoContinuing] = useState(false);
+  const [startingAssembly, setStartingAssembly] = useState(false);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const panelPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const projectId = project.projectId;
+  const statusCode = statusInfo?.statusCode || '';
+  const finalVideoUrl = statusInfo?.finalVideoUrl;
+
+  // 检查是否是 PANEL_CONFIRMED 状态，可以开始视频合成
+  const isReadyForAssembly = statusCode === 'PANEL_CONFIRMED';
+  // 检查是否是 VIDEO_ASSEMBLING 或 COMPLETED 状态
+  const isVideoAssemblyOrCompleted = statusCode === 'VIDEO_ASSEMBLING' || statusCode === 'COMPLETED';
+
+  // 开始视频合成
+  const handleStartAssembly = useCallback(async () => {
+    if (!projectId) return;
+    const confirmed = window.confirm('确认后将开始视频合成，无法再修改分镜。是否继续？');
+    if (!confirmed) return;
+    setStartingAssembly(true);
+    try {
+      await startVideoAssembly(projectId);
+      // 状态会自动更新，触发路由跳转
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '启动视频合成失败');
+    } finally {
+      setStartingAssembly(false);
+    }
+  }, [projectId]);
 
   // 加载面板状态
   const loadPanelStates = useCallback(async (targetEpisodeId: string) => {
@@ -95,6 +122,9 @@ const Step6page = ({ project }: Step6pageProps) => {
 
   // 轮询生产管线
   useEffect(() => {
+    // 如果是 PANEL_CONFIRMED 状态，不轮询旧的 pipeline API
+    if (isReadyForAssembly) return;
+
     if (!projectId) return;
 
     const poll = async () => {
@@ -182,7 +212,7 @@ const Step6page = ({ project }: Step6pageProps) => {
         pollTimerRef.current = null;
       }
     };
-  }, [projectId, viewMode, loadSegments]);
+  }, [projectId, viewMode, loadSegments, isReadyForAssembly]);
 
   useEffect(() => {
     if (viewMode === 'completed' && episodeId) {
@@ -207,7 +237,7 @@ const Step6page = ({ project }: Step6pageProps) => {
     try {
       await retryProduction(episodeId);
       setViewMode('pipeline');
-    } catch (e: any) {
+    } catch (e) {
       console.error('重试失败:', e);
     }
   }, [episodeId]);
@@ -218,7 +248,7 @@ const Step6page = ({ project }: Step6pageProps) => {
     try {
       await generateSinglePanelVideo(episodeId, panelIndex);
       await loadPanelStates(episodeId);
-    } catch (e: any) {
+    } catch (e) {
       console.error('生成视频失败:', e);
     }
   }, [episodeId, loadPanelStates]);
@@ -230,7 +260,7 @@ const Step6page = ({ project }: Step6pageProps) => {
       setAutoContinuing(true);
       await autoContinue(episodeId);
       setViewMode('pipeline');
-    } catch (e: any) {
+    } catch (e) {
       console.error('一键自动化失败:', e);
     } finally {
       setAutoContinuing(false);
@@ -242,6 +272,81 @@ const Step6page = ({ project }: Step6pageProps) => {
   const completedPanels = panelStates.filter((p) => p.videoStatus === 'completed').length;
   const totalPanels = panelStates.length;
   const allPanelsCompleted = totalPanels > 0 && completedPanels === totalPanels;
+
+  // 如果是 PANEL_CONFIRMED 状态，显示准备开始视频合成的界面
+  if (isReadyForAssembly) {
+    return (
+      <div className={styles.content}>
+        <div className={styles.header}>
+          <h1 className={styles.title}>视频合成</h1>
+          <p className={styles.subtitle}>所有分镜已确认，可以开始视频合成</p>
+        </div>
+        <div className={styles.readyView}>
+          <div className={styles.readyIcon}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className={styles.readyTitle}>分镜全部完成</h2>
+          <p className={styles.readyDescription}>
+            所有 {statusInfo?.panelTotalEpisodes || 0} 集分镜已确认完成，可以开始合成最终视频
+          </p>
+          <button
+            className={styles.startAssemblyButton}
+            onClick={handleStartAssembly}
+            disabled={startingAssembly}
+          >
+            {startingAssembly ? '启动中...' : '开始视频合成'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 如果是 VIDEO_ASSEMBLING 或 COMPLETED 状态，显示最终视频
+  if (isVideoAssemblyOrCompleted) {
+    return (
+      <div className={styles.content}>
+        <div className={styles.header}>
+          <h1 className={styles.title}>生成进度</h1>
+          <p className={styles.subtitle}>查看生成进度和下载</p>
+        </div>
+        <div className={styles.completedView}>
+          {statusCode === 'VIDEO_ASSEMBLING' && !finalVideoUrl && (
+            <>
+              <div className={styles.spinner}></div>
+              <p className={styles.completedMessage}>视频合成中...</p>
+            </>
+          )}
+          {finalVideoUrl ? (
+            <>
+              <div className={styles.completedIcon}>&#10003;</div>
+              <p className={styles.completedMessage}>
+                {statusCode === 'COMPLETED' ? '视频生产完成' : '视频合成完成'}
+              </p>
+              <div className={styles.videoContainer}>
+                <video controls src={finalVideoUrl} />
+              </div>
+              <a
+                className={styles.downloadButton}
+                href={finalVideoUrl}
+                download
+                target="_blank"
+                rel="noreferrer"
+              >
+                下载视频
+              </a>
+            </>
+          ) : (
+            <div className={styles.loadingState}>
+              <div className={styles.spinner}></div>
+              <p>正在处理视频...</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (viewMode === 'loading') {
     return (
