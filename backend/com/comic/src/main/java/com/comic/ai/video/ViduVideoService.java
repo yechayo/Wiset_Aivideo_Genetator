@@ -65,6 +65,7 @@ public class ViduVideoService implements VideoGenerationService {
             requestBody.put("images", Collections.singletonList(referenceImage));
             requestBody.put("prompt", prompt);
             requestBody.put("duration", duration);
+            requestBody.put("resolution", "540p");
             requestBody.put("watermark", false);
             requestBody.put("off_peak", offPeak);
 

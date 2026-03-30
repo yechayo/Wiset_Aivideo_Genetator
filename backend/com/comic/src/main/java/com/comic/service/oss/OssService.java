@@ -48,14 +48,58 @@ public class OssService {
         );
     }
 
-    private OSS getOssClient() {
-        return ossClient;
-    }
-
     @PreDestroy
     public void shutdown() {
         if (ossClient != null) {
             ossClient.shutdown();
+        }
+    }
+
+    private static final String DIR_VIDEOS = "comic/videos/";
+
+    /**
+     * 从 URL 下载视频并上传到 OSS
+     * 先完整下载到内存再上传，解耦 OkHttp 和 OSS 的流生命周期
+     *
+     * @param videoUrl 视频临时 URL（如 Vidu 返回的 URL）
+     * @param fileName 自定义文件名（不含路径），为 null 时自动生成 UUID
+     * @return OSS 公网 URL
+     */
+    public String uploadVideoFromUrl(String videoUrl, String fileName) {
+        try {
+            log.info("开始从URL下载视频并上传到OSS: {}", videoUrl);
+
+            // 1. 先将视频完整下载到内存
+            byte[] videoBytes;
+            String contentType;
+            Request request = new Request.Builder().url(videoUrl).build();
+            try (Response response = httpClient.newCall(request).execute()) {
+                if (!response.isSuccessful() || response.body() == null) {
+                    throw new RuntimeException("下载视频失败: " + response.code());
+                }
+                contentType = response.body().contentType() != null
+                        ? response.body().contentType().toString()
+                        : "video/mp4";
+                videoBytes = response.body().bytes();
+            }
+            // OkHttp Response 已关闭，后续上传不再依赖其连接
+
+            // 2. 生成文件名
+            if (fileName == null || fileName.isEmpty()) {
+                String ext = getVideoExtension(contentType, videoUrl);
+                fileName = UUID.randomUUID().toString().replace("-", "") + ext;
+            }
+
+            String objectKey = DIR_VIDEOS + fileName;
+
+            // 3. 上传到 OSS
+            ByteArrayInputStream bais = new ByteArrayInputStream(videoBytes);
+            String ossUrl = uploadFromInputStream(bais, objectKey, contentType, videoBytes.length);
+            log.info("视频已上传到OSS: {} -> {}, 大小: {} KiB", videoUrl, ossUrl, videoBytes.length / 1024);
+            return ossUrl;
+        } catch (Exception e) {
+            log.error("上传视频到OSS失败: {}", videoUrl, e);
+            throw new RuntimeException("上传视频到OSS失败: " + e.getMessage(), e);
         }
     }
 
@@ -66,39 +110,35 @@ public class OssService {
      * @param fileName 自定义文件名（不含路径），为 null 时自动生成 UUID
      * @return OSS 公网 URL
      */
-    public String uploadFromUrl(String imageUrl, String fileName) {
+    public String uploadImageFromUrl(String imageUrl, String fileName) {
         try {
-            // 下载图片
+            // 1. 先将图片完整下载到内存
+            byte[] imageBytes;
+            String contentType;
             Request request = new Request.Builder().url(imageUrl).build();
             try (Response response = httpClient.newCall(request).execute()) {
                 if (!response.isSuccessful() || response.body() == null) {
                     throw new RuntimeException("下载图片失败: " + response.code());
                 }
-
-                String contentType = response.body().contentType() != null
+                contentType = response.body().contentType() != null
                         ? response.body().contentType().toString()
                         : "image/png";
-                InputStream inputStream = response.body().byteStream();
-
-                // 生成文件名
-                if (fileName == null || fileName.isEmpty()) {
-                    String ext = getExtension(contentType, imageUrl);
-                    fileName = UUID.randomUUID().toString().replace("-", "") + ext;
-                }
-
-                String objectKey = ossProperties.getDir() + fileName;
-
-                // 上传到 OSS
-                getOssClient().putObject(
-                        ossProperties.getBucketName(),
-                        objectKey,
-                        inputStream
-                );
-
-                String publicUrl = getPublicUrl(objectKey);
-                log.info("图片已上传到 OSS: {} -> {}", imageUrl, publicUrl);
-                return publicUrl;
+                imageBytes = response.body().bytes();
             }
+
+            // 2. 生成文件名
+            if (fileName == null || fileName.isEmpty()) {
+                String ext = getImageExtension(contentType, imageUrl);
+                fileName = UUID.randomUUID().toString().replace("-", "") + ext;
+            }
+
+            String objectKey = ossProperties.getDir() + fileName;
+
+            // 3. 上传到 OSS
+            ByteArrayInputStream bais = new ByteArrayInputStream(imageBytes);
+            String publicUrl = uploadFromInputStream(bais, objectKey, contentType, imageBytes.length);
+            log.info("图片已上传到 OSS: {} -> {}, 大小: {} KiB", imageUrl, publicUrl, imageBytes.length / 1024);
+            return publicUrl;
         } catch (Exception e) {
             log.error("上传图片到 OSS 失败: {}", imageUrl, e);
             throw new RuntimeException("上传图片到 OSS 失败: " + e.getMessage(), e);
@@ -123,7 +163,7 @@ public class OssService {
             String objectKey = ossProperties.getDir() + category + "/" + fileName;
 
             try (InputStream inputStream = new FileInputStream(file)) {
-                getOssClient().putObject(
+                ossClient.putObject(
                         ossProperties.getBucketName(),
                         objectKey,
                         inputStream
@@ -154,7 +194,7 @@ public class OssService {
             metadata.setContentType(contentType);
             metadata.setContentLength(contentLength);
 
-            getOssClient().putObject(
+            ossClient.putObject(
                     ossProperties.getBucketName(),
                     objectKey,
                     inputStream,
@@ -286,19 +326,35 @@ public class OssService {
     }
 
     /**
-     * 从 contentType 或 URL 中提取文件扩展名
+     * 从 contentType 或 URL 中提取图片扩展名
      */
-    private String getExtension(String contentType, String url) {
+    private String getImageExtension(String contentType, String url) {
         if (contentType.contains("png")) return ".png";
         if (contentType.contains("jpeg") || contentType.contains("jpg")) return ".jpg";
         if (contentType.contains("webp")) return ".webp";
-        // 从 URL 提取
+        return extractExtensionFromUrl(url, ".png");
+    }
+
+    /**
+     * 从 contentType 或 URL 中提取视频扩展名
+     */
+    private String getVideoExtension(String contentType, String url) {
+        if (contentType.contains("mp4")) return ".mp4";
+        if (contentType.contains("webm")) return ".webm";
+        if (contentType.contains("mov")) return ".mov";
+        return extractExtensionFromUrl(url, ".mp4");
+    }
+
+    /**
+     * 共享的 URL 扩展名提取逻辑
+     */
+    private String extractExtensionFromUrl(String url, String defaultExt) {
         if (url.contains(".")) {
             int dotIndex = url.lastIndexOf(".");
             int queryIndex = url.indexOf("?", dotIndex);
             String ext = queryIndex > dotIndex ? url.substring(dotIndex, queryIndex) : url.substring(dotIndex);
             if (ext.length() <= 5) return ext;
         }
-        return ".png";
+        return defaultExt;
     }
 }
