@@ -765,32 +765,34 @@ public class PipelineService implements StageCompletionCallback {
                 return;
             }
 
-            if (currentEpisode != null) {
-                Integer epNum = getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM);
-                switch (projectStatus) {
-                    case EPISODE_SCRIPT_GENERATING:
-                        dto.setStatusDescription("Generating episode script...");
-                        break;
-                    case EPISODE_SCRIPT_GENERATING_FAILED:
-                        dto.setStatusDescription("Episode script generation failed");
-                        break;
-                    case STORYBOARD_GENERATING:
-                        dto.setStatusDescription("Generating storyboard for episode " + epNum + "...");
-                        break;
-                    case STORYBOARD_REVIEW:
-                        dto.setStatusDescription(
-                                "Review episode " + epNum
-                                        + " storyboard (" + completedCount + "/" + totalEpisodes + ")"
-                        );
-                        break;
-                    case STORYBOARD_GENERATING_FAILED:
-                        dto.setStatusDescription(
-                                "Episode " + epNum + " storyboard generation failed"
-                        );
-                        break;
-                    default:
-                        break;
-                }
+            // 根据 projectStatus 设置状态描述
+            Integer epNum = currentEpisode != null
+                    ? getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM)
+                    : null;
+
+            switch (projectStatus) {
+                case EPISODE_SCRIPT_GENERATING:
+                    dto.setStatusDescription("Generating episode script...");
+                    break;
+                case EPISODE_SCRIPT_GENERATING_FAILED:
+                    dto.setStatusDescription("Episode script generation failed");
+                    break;
+                case STORYBOARD_GENERATING:
+                    dto.setStatusDescription("Generating storyboard for episode " + epNum + "...");
+                    break;
+                case STORYBOARD_REVIEW:
+                    dto.setStatusDescription(
+                            "Review episode " + epNum
+                                    + " storyboard (" + completedCount + "/" + totalEpisodes + ")"
+                    );
+                    break;
+                case STORYBOARD_GENERATING_FAILED:
+                    dto.setStatusDescription(
+                            "Episode " + epNum + " storyboard generation failed"
+                    );
+                    break;
+                default:
+                    break;
             }
         } catch (Exception e) {
             log.warn("Failed to enrich panel status: projectId={}, error={}", projectId, e.getMessage());
