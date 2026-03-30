@@ -3,10 +3,13 @@ package com.comic.service.panel;
 import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.image.SeedreamImageService;
 import com.comic.common.BusinessException;
+import com.comic.entity.Episode;
 import com.comic.entity.Panel;
+import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.service.oss.OssService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -17,6 +20,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -34,6 +38,7 @@ public class GridImageService {
     @Resource private PanelPromptBuilder panelPromptBuilder;
     @Resource private PanelRepository panelRepository;
     @Resource private OssService ossService;
+    @Resource private EpisodeRepository episodeRepository;
 
     /**
      * 为指定 Panel 生成九宫格图 → 切割 → 融合参考图
@@ -100,6 +105,92 @@ public class GridImageService {
         }
     }
 
+    /**
+     * 更新 Episode 的九宫格状态
+     */
+    public void updateEpisodeGridStatus(Long episodeId, String status) {
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) throw new BusinessException("Episode 不存在: " + episodeId);
+        Map<String, Object> info = episode.getEpisodeInfo() != null ? episode.getEpisodeInfo() : new HashMap<>();
+        info.put("gridStatus", status);
+        episode.setEpisodeInfo(info);
+        episodeRepository.updateById(episode);
+    }
+
+    /**
+     * 为整个 Episode 生成九宫格图 → 切割 → 构建 splitShots
+     * 与 generateGridsForPanel 逻辑类似，但操作的是 episodeInfo 而非 panelInfo
+     */
+    @Async
+    public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle) {
+        try {
+            Episode episode = episodeRepository.selectById(episodeId);
+            if (episode == null) throw new BusinessException("Episode 不存在: " + episodeId);
+
+            Map<String, Object> episodeInfo = episode.getEpisodeInfo();
+            List<String> characterRefUrls = getCharacterReferenceUrls(episodeId);
+            int pageCount = calculatePageCount(shots.size(), SHOTS_PER_PAGE);
+            List<String> gridImageUrls = new ArrayList<>();
+
+            // 逐页生成九宫格
+            for (int page = 0; page < pageCount; page++) {
+                int fromIdx = page * SHOTS_PER_PAGE;
+                int toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, shots.size());
+                List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
+
+                String prompt = panelPromptBuilder.buildGridPrompt(visualStyle, pageShots, characterRefUrls);
+                String imageUrl;
+                if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
+                    imageUrl = seedreamImageService.generateWithMultipleReferences(
+                        prompt, characterRefUrls, 1920, 1080);
+                } else {
+                    imageUrl = seedreamImageService.generate(prompt, 1920, 1080, visualStyle);
+                }
+                gridImageUrls.add(imageUrl);
+            }
+
+            // 切割九宫格 → 构建 splitShots
+            List<Map<String, Object>> splitShots = new ArrayList<>();
+            for (int page = 0; page < gridImageUrls.size(); page++) {
+                BufferedImage gridImage = downloadImage(gridImageUrls.get(page));
+                List<BufferedImage> subImages = splitGridImage(gridImage, GRID_COLS, GRID_ROWS);
+                int fromIdx = page * SHOTS_PER_PAGE;
+                for (int i = 0; i < subImages.size() && (fromIdx + i) < shots.size(); i++) {
+                    Map<String, Object> shot = shots.get(fromIdx + i);
+                    String ossUrl = uploadToOssEpisode(subImages.get(i), episodeId, fromIdx + i);
+                    Map<String, Object> splitShot = new HashMap<>(shot);
+                    splitShot.put("splitImageUrl", ossUrl);
+                    splitShots.add(splitShot);
+                }
+            }
+
+            // 更新 episodeInfo
+            episodeInfo.put("gridImages", gridImageUrls);
+            episodeInfo.put("splitShots", splitShots);
+            episodeInfo.put("gridStatus", "generated");
+            episodeInfo.put("gridPageCount", pageCount);
+            episode.setEpisodeInfo(episodeInfo);
+            episodeRepository.updateById(episode);
+
+            log.info("Episode {} 整集九宫格完成, {} 页, {} 分镜", episodeId, pageCount, shots.size());
+
+        } catch (Exception e) {
+            log.error("Episode {} 整集九宫格失败", episodeId, e);
+            try {
+                updateEpisodeGridStatus(episodeId, "failed");
+                Episode episode = episodeRepository.selectById(episodeId);
+                if (episode != null) {
+                    Map<String, Object> info = episode.getEpisodeInfo();
+                    info.put("errorMessage", e.getMessage());
+                    episode.setEpisodeInfo(info);
+                    episodeRepository.updateById(episode);
+                }
+            } catch (Exception ex) {
+                log.error("更新失败状态异常: episodeId={}", episodeId, ex);
+            }
+        }
+    }
+
     /** 切割九宫格（纯函数） */
     public static List<BufferedImage> splitGridImage(BufferedImage img, int cols, int rows) {
         List<BufferedImage> subImages = new ArrayList<>();
@@ -114,6 +205,38 @@ public class GridImageService {
     /** 分页数（纯函数） */
     public static int calculatePageCount(int totalShots, int shotsPerPage) {
         return totalShots <= 0 ? 0 : (int) Math.ceil((double) totalShots / shotsPerPage);
+    }
+
+    /**
+     * 为指定 Panel 的 splitShots 创建融合参考图（公开版）
+     */
+    public BufferedImage createFusionImageForPanel(List<Map<String, Object>> panelShots, List<String> charRefUrls) {
+        return createFusionImage(panelShots, charRefUrls);
+    }
+
+    /**
+     * 获取 Episode 的角色参考图（公开版本，供外部调用）
+     */
+    public List<String> getCharacterReferenceUrlsForEpisode(Long episodeId) {
+        return getCharacterReferenceUrls(episodeId);
+    }
+
+    /**
+     * 上传 Panel 融合图到 OSS
+     */
+    public String uploadFusionImageForPanel(BufferedImage img, Long episodeId, List<Map<String, Object>> shots) {
+        try {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            ImageIO.write(img, "png", baos);
+            byte[] bytes = baos.toByteArray();
+            int firstShotNum = shots.isEmpty() ? 0 : ((Number) shots.get(0).get("shotNumber")).intValue();
+            String fileName = "episode_" + episodeId + "_fusion_" + firstShotNum + "_" + UUID.randomUUID().toString().substring(0, 8) + ".png";
+            String objectKey = "comic/grids/" + fileName;
+            java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(bytes);
+            return ossService.uploadFromInputStream(bais, objectKey, "image/png", bytes.length);
+        } catch (Exception e) {
+            throw new RuntimeException("融合图上传失败: episodeId=" + episodeId, e);
+        }
     }
 
     private BufferedImage createFusionImage(List<Map<String, Object>> shots, List<String> charRefUrls) {
@@ -186,5 +309,19 @@ public class GridImageService {
     private void updatePanelInfo(Panel panel, Map<String, Object> info) {
         panel.setPanelInfo(info);
         panelRepository.updateById(panel);
+    }
+
+    private String uploadToOssEpisode(BufferedImage img, Long episodeId, Object suffix) {
+        try {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            ImageIO.write(img, "png", baos);
+            byte[] bytes = baos.toByteArray();
+            String fileName = "episode_" + episodeId + "_grid_" + suffix + "_" + UUID.randomUUID().toString().substring(0, 8) + ".png";
+            String objectKey = "comic/grids/" + fileName;
+            java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(bytes);
+            return ossService.uploadFromInputStream(bais, objectKey, "image/png", bytes.length);
+        } catch (Exception e) {
+            throw new RuntimeException("OSS上传失败: episodeId=" + episodeId + ", suffix=" + suffix, e);
+        }
     }
 }
