@@ -189,3 +189,46 @@ export interface PanelBackgroundResponse {
   status: string;
   prompt: string | null;
 }
+
+// ================= 九宫格分镜相关类型 =================
+
+/** 分镜数据（对应后端 Panel.panelInfo.shots 数组元素） */
+export interface StoryboardShot {
+  shotNumber: number;
+  duration: number;
+  scene: string;
+  characters: string[];
+  shotSize: string;
+  cameraAngle: string;
+  cameraMovement: string;
+  visualDescription: string;
+  dialogue: string;
+  visualEffects: string;
+  audioEffects: string;
+  splitImageUrl?: string;
+  startTime?: number;
+  endTime?: number;
+}
+
+/** 九宫格审核状态 */
+export type GridStatus = 'pending' | 'generating' | 'generated' | 'approved' | 'rejected' | 'failed';
+
+/** 视频生成状态 */
+export type VideoGenStatus = 'pending' | 'generating' | 'completed' | 'failed';
+
+/** Panel 九宫格+视频完整状态（对应后端 getProductionStatus） */
+export interface PanelGridStatusResponse {
+  panelId: number;
+  gridStatus: GridStatus;
+  gridImages: string[];
+  fusionImageUrl: string | null;
+  shots: StoryboardShot[];
+  totalShots: number;
+  totalDuration: number;
+  gridPageCount: number;
+  gridRejectionFeedback: string | null;
+  videoStatus: VideoGenStatus;
+  videoUrl: string | null;
+  videoTaskId: string | null;
+  offPeak: boolean;
+}

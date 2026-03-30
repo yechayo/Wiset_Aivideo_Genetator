@@ -1,5 +1,5 @@
 /** 片段流水线状态 */
-export type SegmentPipelineStep = 'pending' | 'scene_ready' | 'comic_review' | 'comic_approved' | 'video_generating' | 'video_completed' | 'video_failed';
+export type SegmentPipelineStep = 'pending' | 'grid_generating' | 'grid_review' | 'grid_approved' | 'video_generating' | 'video_completed' | 'video_failed';
 
 /** 分镜详细信息 */
 export interface PanelData {
@@ -26,7 +26,10 @@ export interface SegmentState {
   sceneThumbnail: string | null;
   characterAvatars: { charId: string; name: string; avatarUrl: string }[];
   pipelineStep: SegmentPipelineStep;
-  comicUrl: string | null;
+  gridImages: string[];
+  gridStatus: string;
+  fusionImageUrl: string | null;
+  shots: any[];
   videoUrl: string | null;
   feedback: string;
   panelData?: PanelData;

@@ -2,10 +2,11 @@
  * 剧集生产相关API服务
  */
 
-import { get, post } from './apiClient';
+import { get, post, put } from './apiClient';
 import type { ApiResponse, PaginatedResponse } from './types/auth.types';
 import type {
   PanelProductionStatusResponse,
+  PanelGridStatusResponse,
   ProductionPipelineResponse,
   VideoSegmentInfo,
   PanelState,
@@ -80,98 +81,34 @@ export async function getBatchProductionStatuses(
   );
 }
 
-// ================= 背景图 API =================
+// ================= 九宫格审核 API =================
 
-/** 获取背景图状态 */
-export async function getBackgroundStatus(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<{
-  panelId: number;
-  panelIndex: number;
-  backgroundUrl: string;
-  status: string;
-  prompt: string;
-}>> {
-  return get<ApiResponse<{
-    panelId: number;
-    panelIndex: number;
-    backgroundUrl: string;
-    status: string;
-    prompt: string;
-  }>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/background`,
-  );
+/** 审核通过九宫格 */
+export async function approveGrid(projectId: string, episodeId: number, panelId: number): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/grid/approve`);
 }
 
-/** 生成背景图（自动匹配角色） */
-export async function generateBackground(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<any>> {
-  return post<ApiResponse<any>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/background`,
-  );
+/** 拒绝九宫格 */
+export async function rejectGrid(projectId: string, episodeId: number, panelId: number, reason: string): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/grid/reject`, { reason });
 }
 
-/** 重新生成背景图 */
-export async function regenerateBackground(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/background/regenerate`,
-  );
+/** 重新生成九宫格 */
+export async function regenerateGrid(projectId: string, episodeId: number, panelId: number): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/grid/regenerate`);
 }
 
-// ================= 四宫格漫画 API =================
-
-/** 获取四宫格漫画状态 */
-export async function getComicStatus(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<any>> {
-  return get<ApiResponse<any>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/comic`,
-  );
+/** 一键通过所有九宫格 */
+export async function approveAllGrids(projectId: string, episodeId: number): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/grid/approve-all`);
 }
 
-/** 生成四宫格漫画 */
-export async function generateComic(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/comic`,
-  );
-}
-
-/** 审核通过四宫格漫画 */
-export async function approveComic(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/comic/approve`,
-  );
-}
-
-/** 退回重生成四宫格漫画 */
-export async function reviseComic(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-  feedback: string,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/comic/revise`,
-    { feedback },
+/** 获取单 Panel 生产状态（新版，返回 PanelGridStatusResponse） */
+export async function getPanelGridStatus(
+  projectId: string, episodeId: number, panelId: number,
+): Promise<ApiResponse<PanelGridStatusResponse>> {
+  return get<ApiResponse<PanelGridStatusResponse>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/production-status`,
   );
 }
 

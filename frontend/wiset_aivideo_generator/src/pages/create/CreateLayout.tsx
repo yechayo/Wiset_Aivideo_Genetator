@@ -165,7 +165,8 @@ const CreateLayout = () => {
 
   const showLoadingOverlay =
     ((statusInfo?.isGenerating ?? false)
-      && statusInfo?.statusCode !== 'PANEL_GENERATING'
+      && statusInfo?.statusCode !== 'STORYBOARD_GENERATING'
+      && statusInfo?.statusCode !== 'EPISODE_SCRIPT_GENERATING'
       && statusInfo?.statusCode !== 'IMAGE_GENERATING'
       && statusInfo?.statusCode !== 'CHARACTER_EXTRACTING')
     || isStepTransitioning;
