@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ChevronRightIcon } from '../../../../components/icons/Icons';
-import type { EpisodeState, SegmentState, SegmentPipelineStep } from '../types';
+import type { EpisodeState, SegmentPipelineStep } from '../types';
 import styles from './EpisodeCard.module.less';
 import { SegmentCard } from './SegmentCard';
 
