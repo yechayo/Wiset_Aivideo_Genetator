@@ -2,7 +2,6 @@ package com.comic.service.production;
 
 import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.PanelPromptBuilder;
-import com.comic.ai.image.ImageGenerationService;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.dto.response.VideoStatusResponse;
@@ -13,6 +12,7 @@ import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.oss.OssService;
+import com.comic.service.panel.GridImageService;
 import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +22,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +30,7 @@ import java.util.stream.Collectors;
 
 /**
  * 单分镜视频生产服务
- * 负责：背景图 → 四宫格漫画（ComicGenerationService）→ 视频
+ * 负责：九宫格生成（GridImageService）→ 审核确认 → 融合参考图 → 视频
  */
 @Service
 @RequiredArgsConstructor
@@ -40,7 +41,6 @@ public class PanelProductionService {
     private final EpisodeRepository episodeRepository;
     private final ProjectRepository projectRepository;
     private final PanelPromptBuilder panelPromptBuilder;
-    private final ImageGenerationService imageGenerationService;
     private final VideoGenerationService videoGenerationService;
     private final OssService ossService;
     private final ApplicationContext applicationContext;
@@ -48,6 +48,10 @@ public class PanelProductionService {
     @Lazy
     @Autowired
     private ProjectStatusBroadcaster broadcaster;
+
+    @Lazy
+    @Autowired
+    private GridImageService gridImageService;
 
     private PanelProductionService self() {
         return applicationContext.getBean(PanelProductionService.class);
@@ -68,45 +72,27 @@ public class PanelProductionService {
     // ==================== 生产状态 ====================
 
     /**
-     * 获取单 Panel 完整生产状态
+     * 获取单 Panel 完整生产状态（grid-based）
      */
     public Map<String, Object> getProductionStatus(Long panelId) {
         Panel panel = panelRepository.selectById(panelId);
-        if (panel == null) throw new BusinessException("分镜不存在");
-        Map<String, Object> response = new HashMap<>();
-        response.put("panelId", panelId);
-        Map<String, Object> info = panel.getPanelInfo();
-        if (info == null) {
-            response.put("overallStatus", "pending");
-            response.put("currentStage", "background");
-            return response;
-        }
-        String bgUrl = getStr(info, "backgroundUrl");
-        response.put("backgroundUrl", bgUrl);
-        response.put("backgroundStatus", bgUrl != null ? "completed" : "pending");
-        String comicUrl = getStr(info, "comicUrl");
-        String comicStatus = getStr(info, "comicStatus");
-        response.put("comicUrl", comicUrl);
-        response.put("comicStatus", comicStatus != null ? comicStatus : (comicUrl != null ? "approved" : "pending"));
-        String videoUrl = getStr(info, "videoUrl");
-        String videoStatus = getStr(info, "videoStatus");
-        response.put("videoUrl", videoUrl);
-        response.put("videoStatus", videoStatus != null ? videoStatus : (videoUrl != null ? "completed" : "pending"));
-
-        // 视频元数据
-        String videoTaskId = getStr(info, "videoTaskId");
-        response.put("videoTaskId", videoTaskId);
-        Boolean offPeak = info.containsKey("offPeak") ? (Boolean) info.get("offPeak") : null;
-        response.put("offPeak", offPeak);
-        Integer videoDuration = getInt(info, "videoDuration");
-        if (videoDuration == null && info.containsKey("duration")) {
-            videoDuration = info.get("duration") instanceof Number ? ((Number) info.get("duration")).intValue() : null;
-        }
-        response.put("videoDuration", videoDuration);
-
-        response.put("overallStatus", determineOverallStatus(response));
-        response.put("currentStage", determineCurrentStage(response));
-        return response;
+        if (panel == null) throw new BusinessException("Panel 不存在");
+        Map<String, Object> panelInfo = panel.getPanelInfo();
+        Map<String, Object> status = new HashMap<>();
+        status.put("panelId", panel.getId());
+        status.put("gridStatus", panelInfo.getOrDefault("gridStatus", "pending"));
+        status.put("gridImages", panelInfo.getOrDefault("gridImages", new ArrayList<>()));
+        status.put("fusionImageUrl", panelInfo.get("fusionImageUrl"));
+        status.put("shots", panelInfo.get("shots"));
+        status.put("totalShots", panelInfo.getOrDefault("totalShots", 0));
+        status.put("totalDuration", panelInfo.getOrDefault("totalDuration", 0));
+        status.put("gridPageCount", panelInfo.getOrDefault("gridPageCount", 0));
+        status.put("gridRejectionFeedback", panelInfo.get("gridRejectionFeedback"));
+        status.put("videoStatus", panelInfo.getOrDefault("videoStatus", "pending"));
+        status.put("videoUrl", panelInfo.get("videoUrl"));
+        status.put("videoTaskId", panelInfo.get("videoTaskId"));
+        status.put("offPeak", panelInfo.getOrDefault("offPeak", false));
+        return status;
     }
 
     /**
@@ -117,58 +103,41 @@ public class PanelProductionService {
         return panels.stream().map(p -> getProductionStatus(p.getId())).collect(Collectors.toList());
     }
 
-    // ==================== 背景图 ====================
+    // ==================== 九宫格审核 ====================
 
-    /**
-     * 获取背景图状态
-     */
-    public Map<String, Object> getBackgroundStatusByPanelId(Long panelId) {
+    public void approveGrid(Long panelId) {
         Panel panel = panelRepository.selectById(panelId);
-        if (panel == null) throw new BusinessException("分镜不存在");
-        Map<String, Object> response = new HashMap<>();
-        response.put("panelId", panelId);
+        if (panel == null) throw new BusinessException("Panel 不存在");
         Map<String, Object> info = panel.getPanelInfo();
-        String bgUrl = info != null ? getStr(info, "backgroundUrl") : null;
-        if (bgUrl != null) {
-            response.put("backgroundUrl", bgUrl);
-            response.put("status", "completed");
-        } else {
-            response.put("status", "pending");
-        }
-        return response;
+        info.put("gridStatus", "approved");
+        info.put("gridRejectionFeedback", null);
+        updatePanelInfo(panel, info);
     }
 
-    /**
-     * 生成背景图（异步）
-     */
-    public void generateBackgroundByPanelId(Long panelId) {
-        checkNotGenerating(panelId, "backgroundStatus", "背景图");
-        self().doGenerateBackgroundByPanelId(panelId);
+    public void rejectGrid(Long panelId, String reason) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("Panel 不存在");
+        Map<String, Object> info = panel.getPanelInfo();
+        info.put("gridStatus", "rejected");
+        info.put("gridRejectionFeedback", reason);
+        updatePanelInfo(panel, info);
     }
 
-    @Async
-    public void doGenerateBackgroundByPanelId(Long panelId) {
-        try {
-            Panel panel = panelRepository.selectById(panelId);
-            if (panel == null) throw new BusinessException("分镜不存在");
-            CharacterPromptManager.VisualStyle style = getProjectStyle(panel);
-            String prompt = panelPromptBuilder.buildBackgroundPrompt(style, panel.getPanelInfo());
-            String imageUrl = imageGenerationService.generate(prompt, 2848, 1600, "anime");
-            Map<String, Object> info = panel.getPanelInfo() != null ? panel.getPanelInfo() : new HashMap<>();
-            info.put("backgroundUrl", imageUrl);
-            info.put("backgroundStatus", "completed");
-            panel.setPanelInfo(info);
-            panelRepository.updateById(panel);
-            log.info("背景图生成完成: panelId={}", panelId);
-            String projId = getProjectIdByPanelId(panelId);
-            if (projId != null) {
-                broadcaster.broadcast(projId, "PRODUCING", "PRODUCING");
-            }
-        } catch (Exception e) {
-            log.error("背景图生成失败: panelId={}", panelId, e);
-            updatePanelState(panelId, "backgroundStatus", "failed", e.getMessage());
-            throw new BusinessException("背景图生成失败: " + e.getMessage());
+    public void regenerateGrid(Long panelId) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("Panel 不存在");
+        Map<String, Object> info = panel.getPanelInfo();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
+        if (shots != null) {
+            for (Map<String, Object> shot : shots) shot.remove("splitImageUrl");
         }
+        info.put("gridImages", new ArrayList<>());
+        info.put("gridStatus", "generating");
+        info.put("fusionImageUrl", null);
+        info.put("errorMessage", null);
+        updatePanelInfo(panel, info);
+        gridImageService.generateGridsForPanel(panelId);
     }
 
     // ==================== 视频 ====================
@@ -194,14 +163,20 @@ public class PanelProductionService {
     }
 
     /**
-     * 生成视频（异步）
+     * 生成视频（异步）- 使用融合参考图 + 多镜头提示词
      */
     public void generateVideoByPanelId(Long panelId) {
         generateVideoByPanelId(panelId, false);
     }
 
     public void generateVideoByPanelId(Long panelId, boolean offPeak) {
-        checkNotGenerating(panelId, "videoStatus", "视频");
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
+        Map<String, Object> info = panel.getPanelInfo();
+        String gridStatus = info != null ? getStr(info, "gridStatus") : null;
+        if (!"approved".equals(gridStatus)) {
+            throw new BusinessException("九宫格未审核通过，请先审核");
+        }
         self().doGenerateVideoByPanelId(panelId, offPeak);
     }
 
@@ -211,18 +186,32 @@ public class PanelProductionService {
             Panel panel = panelRepository.selectById(panelId);
             if (panel == null) throw new BusinessException("分镜不存在");
             Map<String, Object> info = panel.getPanelInfo();
-            String comicUrl = getStr(info, "comicUrl");
-            String comicStatus = getStr(info, "comicStatus");
-            if (!"approved".equals(comicStatus) || comicUrl == null) {
-                throw new BusinessException("四宫格漫画未审核通过，请先审核");
+            String fusionImageUrl = getStr(info, "fusionImageUrl");
+            if (fusionImageUrl == null) {
+                throw new BusinessException("融合参考图不存在，请先生成九宫格");
             }
+
             info.put("videoStatus", "generating");
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
-            CharacterPromptManager.VisualStyle style = getProjectStyle(panel);
-            String prompt = panelPromptBuilder.buildVideoPrompt(style, panel.getPanelInfo());
-            int panelDuration = info.containsKey("duration") ? ((Number) info.get("duration")).intValue() : 5;
-            String taskId = videoGenerationService.generateAsync(prompt, panelDuration, "16:9", comicUrl, offPeak);
+
+            // 构建多镜头提示词
+            String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
+            String prompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info);
+
+            // 从 shots 计算总时长
+            int totalDuration = 0;
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
+            if (shots != null) {
+                for (Map<String, Object> shot : shots) {
+                    Object dur = shot.get("duration");
+                    if (dur instanceof Number) totalDuration += ((Number) dur).intValue();
+                }
+            }
+            if (totalDuration <= 0) totalDuration = 5;
+
+            String taskId = videoGenerationService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak);
             info.put("videoTaskId", taskId);
             info.put("offPeak", offPeak);
             panel.setPanelInfo(info);
@@ -317,45 +306,9 @@ public class PanelProductionService {
         return v != null ? v.toString() : null;
     }
 
-    private Integer getInt(Map<String, Object> info, String key) {
-        Object v = info.get(key);
-        if (v == null) return null;
-        if (v instanceof Number) {
-            return ((Number) v).intValue();
-        }
-        try {
-            return Integer.parseInt(v.toString());
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    /**
-     * 获取项目的视觉风格
-     */
-    private CharacterPromptManager.VisualStyle getProjectStyle(Panel panel) {
-        try {
-            Episode episode = episodeRepository.selectById(panel.getEpisodeId());
-            if (episode == null) return CharacterPromptManager.VisualStyle.ANIME;
-            Project project = projectRepository.findByProjectId(episode.getProjectId());
-            if (project == null) return CharacterPromptManager.VisualStyle.ANIME;
-            Map<String, Object> info = project.getProjectInfo();
-            String styleCode = info != null ? String.valueOf(info.get("visualStyle")) : null;
-            return CharacterPromptManager.VisualStyle.fromCode(styleCode);
-        } catch (Exception e) {
-            log.warn("获取项目视觉风格失败，使用默认ANIME: panelId={}", panel.getId(), e);
-            return CharacterPromptManager.VisualStyle.ANIME;
-        }
-    }
-
-    private void checkNotGenerating(Long panelId, String statusKey, String label) {
-        Panel panel = panelRepository.selectById(panelId);
-        if (panel == null) throw new BusinessException("分镜不存在");
-        Map<String, Object> info = panel.getPanelInfo();
-        String status = info != null ? getStr(info, statusKey) : null;
-        if ("generating".equals(status)) {
-            throw new BusinessException(label + "正在生成中，请稍后");
-        }
+    private void updatePanelInfo(Panel panel, Map<String, Object> info) {
+        panel.setPanelInfo(info);
+        panelRepository.updateById(panel);
     }
 
     private void updatePanelState(Long panelId, String stateKey, String stateValue, String errorMsg) {
@@ -366,29 +319,5 @@ public class PanelProductionService {
         if (errorMsg != null) info.put("errorMessage", errorMsg);
         panel.setPanelInfo(info);
         panelRepository.updateById(panel);
-    }
-
-    private String determineOverallStatus(Map<String, Object> r) {
-        String videoStatus = r.get("videoStatus") != null ? r.get("videoStatus").toString() : null;
-        String comicStatus = r.get("comicStatus") != null ? r.get("comicStatus").toString() : null;
-        String bgStatus = r.get("backgroundStatus") != null ? r.get("backgroundStatus").toString() : null;
-        if ("completed".equals(videoStatus)) return "completed";
-        if ("failed".equals(videoStatus) || "failed".equals(comicStatus) || "failed".equals(bgStatus)) return "failed";
-        if ("generating".equals(videoStatus) || "generating".equals(comicStatus) || "generating".equals(bgStatus)) return "in_progress";
-        if (r.get("backgroundUrl") != null || r.get("comicUrl") != null) return "in_progress";
-        return "pending";
-    }
-
-    private String determineCurrentStage(Map<String, Object> r) {
-        String videoStatus = r.get("videoStatus") != null ? r.get("videoStatus").toString() : null;
-        String comicStatus = r.get("comicStatus") != null ? r.get("comicStatus").toString() : null;
-        String bgStatus = r.get("backgroundStatus") != null ? r.get("backgroundStatus").toString() : null;
-        if ("completed".equals(videoStatus)) return "video";
-        if ("generating".equals(videoStatus)) return "video";
-        if ("approved".equals(comicStatus)) return "video";
-        if ("generating".equals(comicStatus)) return "comic";
-        if ("pending".equals(comicStatus) && r.get("backgroundUrl") != null) return "comic";
-        if ("generating".equals(bgStatus)) return "background";
-        return "background";
     }
 }
