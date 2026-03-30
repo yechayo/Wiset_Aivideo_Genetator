@@ -195,7 +195,7 @@ public class PipelineService implements StageCompletionCallback {
         }
 
         // Gate: verify project has producible panels before entering PRODUCING
-        if ("all_panels_confirmed".equals(event)) {
+        if ("all_panels_confirmed".equals(event) || "all_grids_approved".equals(event)) {
             List<Episode> episodes = episodeRepository.findByProjectId(projectId);
             int totalPanels = 0;
             for (Episode ep : episodes) {
@@ -318,16 +318,20 @@ public class PipelineService implements StageCompletionCallback {
                 return ProjectStatus.IMAGE_GENERATING;
             case ASSET_LOCKED:
                 return ProjectStatus.IMAGE_REVIEW;
-            case PANEL_GENERATING:
+            case EPISODE_SCRIPT_GENERATING:
                 return ProjectStatus.ASSET_LOCKED;
-            case PANEL_REVIEW:
-                return ProjectStatus.PANEL_GENERATING;
+            case EPISODE_SCRIPT_GENERATING_FAILED:
+                return ProjectStatus.EPISODE_SCRIPT_GENERATING;
+            case STORYBOARD_GENERATING:
+                return ProjectStatus.ASSET_LOCKED;
+            case STORYBOARD_GENERATING_FAILED:
+                return ProjectStatus.STORYBOARD_GENERATING;
+            case STORYBOARD_REVIEW:
+                return ProjectStatus.STORYBOARD_GENERATING;
             case PRODUCING:
-                return ProjectStatus.PANEL_REVIEW;
-            case VIDEO_ASSEMBLING:
-                return ProjectStatus.PRODUCING;
+                return ProjectStatus.STORYBOARD_REVIEW;
             case COMPLETED:
-                return ProjectStatus.VIDEO_ASSEMBLING;
+                return ProjectStatus.PRODUCING;
             default:
                 return null;
         }
@@ -374,12 +378,14 @@ public class PipelineService implements StageCompletionCallback {
                 }
                 break;
             case ASSET_LOCKED:
-            case PANEL_GENERATING:
-            case PANEL_REVIEW:
+            case EPISODE_SCRIPT_GENERATING:
+            case EPISODE_SCRIPT_GENERATING_FAILED:
+            case STORYBOARD_GENERATING:
+            case STORYBOARD_GENERATING_FAILED:
+            case STORYBOARD_REVIEW:
             case PRODUCING:
-            case VIDEO_ASSEMBLING:
-                // 回滚 PRODUCING/VIDEO_ASSEMBLING 时释放生产锁
-                if ((from == ProjectStatus.PRODUCING || from == ProjectStatus.VIDEO_ASSEMBLING) && stringRedisTemplate != null) {
+                // 回滚 PRODUCING 时释放生产锁
+                if (from == ProjectStatus.PRODUCING && stringRedisTemplate != null) {
                     try {
                         stringRedisTemplate.delete("lock:production:" + projectId);
                     } catch (Exception e) {
@@ -449,13 +455,11 @@ public class PipelineService implements StageCompletionCallback {
 
         if (status == ProjectStatus.PRODUCING) {
             enrichProducingStatus(dto, projectId);
-        } else if (status == ProjectStatus.VIDEO_ASSEMBLING) {
-            dto.setStatusCode("VIDEO_ASSEMBLING");
-            dto.setStatusDescription("视频拼接剪辑中");
-            dto.setGenerating(true);
-        } else if (status == ProjectStatus.PANEL_GENERATING
-                || status == ProjectStatus.PANEL_REVIEW
-                || status == ProjectStatus.PANEL_GENERATING_FAILED) {
+        } else if (status == ProjectStatus.EPISODE_SCRIPT_GENERATING
+                || status == ProjectStatus.EPISODE_SCRIPT_GENERATING_FAILED
+                || status == ProjectStatus.STORYBOARD_GENERATING
+                || status == ProjectStatus.STORYBOARD_GENERATING_FAILED
+                || status == ProjectStatus.STORYBOARD_REVIEW) {
             enrichPanelStatus(dto, projectId);
         } else {
             dto.setStatusCode(status.getCode());
@@ -733,15 +737,15 @@ public class PipelineService implements StageCompletionCallback {
             }
 
             ProjectStatus projectStatus = ProjectStatus.fromCode(project.getStatus());
-            if (failedEpisode != null && projectStatus == ProjectStatus.PANEL_GENERATING) {
-                projectStatus = ProjectStatus.PANEL_GENERATING_FAILED;
-            } else if (failedEpisode == null && projectStatus == ProjectStatus.PANEL_GENERATING_FAILED) {
-                // 失败已恢复：有完成/审核中的 episode 则恢复到 PANEL_REVIEW，否则回到 PANEL_GENERATING
+            if (failedEpisode != null && projectStatus == ProjectStatus.STORYBOARD_GENERATING) {
+                projectStatus = ProjectStatus.STORYBOARD_GENERATING_FAILED;
+            } else if (failedEpisode == null && projectStatus == ProjectStatus.STORYBOARD_GENERATING_FAILED) {
+                // 失败已恢复：有完成/审核中的 episode 则恢复到 STORYBOARD_REVIEW，否则回到 STORYBOARD_GENERATING
                 projectStatus = (completedCount > 0 || reviewEpisode != null)
-                        ? ProjectStatus.PANEL_REVIEW : ProjectStatus.PANEL_GENERATING;
+                        ? ProjectStatus.STORYBOARD_REVIEW : ProjectStatus.STORYBOARD_GENERATING;
                 project.setStatus(projectStatus.getCode());
                 projectRepository.updateById(project);
-                log.info("Panel status recovered: projectId={}, PANEL_GENERATING_FAILED -> {}", projectId, projectStatus.getCode());
+                log.info("Panel status recovered: projectId={}, STORYBOARD_GENERATING_FAILED -> {}", projectId, projectStatus.getCode());
             }
 
             dto.setStatusCode(projectStatus.getCode());
@@ -750,7 +754,7 @@ public class PipelineService implements StageCompletionCallback {
             dto.setFailed(projectStatus.isFailed());
             dto.setReview(projectStatus.isReview());
 
-            boolean allConfirmed = completedCount == totalEpisodes && projectStatus == ProjectStatus.PANEL_REVIEW;
+            boolean allConfirmed = completedCount == totalEpisodes && projectStatus == ProjectStatus.STORYBOARD_REVIEW;
             dto.setPanelAllConfirmed(allConfirmed);
             if (allConfirmed) {
                 dto.setPanelReviewEpisodeId(null);
@@ -761,18 +765,18 @@ public class PipelineService implements StageCompletionCallback {
             if (currentEpisode != null) {
                 Integer epNum = getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM);
                 switch (projectStatus) {
-                    case PANEL_GENERATING:
-                        dto.setStatusDescription("Generating panels for episode " + epNum + "...");
+                    case STORYBOARD_GENERATING:
+                        dto.setStatusDescription("Generating storyboard for episode " + epNum + "...");
                         break;
-                    case PANEL_REVIEW:
+                    case STORYBOARD_REVIEW:
                         dto.setStatusDescription(
                                 "Review episode " + epNum
-                                        + " panels (" + completedCount + "/" + totalEpisodes + ")"
+                                        + " storyboard (" + completedCount + "/" + totalEpisodes + ")"
                         );
                         break;
-                    case PANEL_GENERATING_FAILED:
+                    case STORYBOARD_GENERATING_FAILED:
                         dto.setStatusDescription(
-                                "Episode " + epNum + " panel generation failed"
+                                "Episode " + epNum + " storyboard generation failed"
                         );
                         break;
                     default:
@@ -843,13 +847,14 @@ public class PipelineService implements StageCompletionCallback {
                 generateAllCharacterImagesAsync(projectId);
                 break;
 
-            case PANEL_GENERATING:
+            case EPISODE_SCRIPT_GENERATING:
+            case STORYBOARD_GENERATING:
                 CompletableFuture.runAsync(() -> {
                     try {
                         panelGenerationService.startPanelGeneration(projectId);
                     } catch (Exception e) {
                         log.error("Panel generation failed: projectId={}, error={}", projectId, e.getMessage(), e);
-                        safeAdvanceOnFailure(projectId, "panels_failed", "PANEL_GENERATING", e);
+                        safeAdvanceOnFailure(projectId, "panels_failed", "STORYBOARD_GENERATING", e);
                     }
                 });
                 break;
@@ -857,11 +862,6 @@ public class PipelineService implements StageCompletionCallback {
             case PRODUCING:
                 // Auto-start strict-serial production orchestrator
                 // Note: startOrResume removed - manual control required
-                break;
-
-            case VIDEO_ASSEMBLING:
-                // 自动开始拼接编排（预留，后续实现拼接服务后接入）
-                log.info("Video assembling started: projectId={}", projectId);
                 break;
 
             default:

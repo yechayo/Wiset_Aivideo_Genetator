@@ -104,23 +104,23 @@ class ProjectStateMachineE2ETest {
     }
 
     @Test
-    @DisplayName("Full lifecycle: IMAGE_REVIEW -> confirm -> ASSET_LOCKED -> PANEL_GENERATING")
-    void full_lifecycle_image_review_to_panel_generating() {
+    @DisplayName("Full lifecycle: IMAGE_REVIEW -> confirm -> ASSET_LOCKED")
+    void full_lifecycle_image_review_to_asset_locked() {
         Project project = createProject("e2e-3", ProjectStatus.IMAGE_REVIEW);
         when(projectRepository.findByProjectId("e2e-3")).thenReturn(project);
         when(projectRepository.updateById(any(Project.class))).thenReturn(1);
 
         pipelineService.advancePipeline("e2e-3", "confirm_images");
 
-        // Verify the full auto-advance chain reached PANEL_GENERATING
-        // (startPanelGeneration is called asynchronously inside CompletableFuture.runAsync)
-        assertEquals(ProjectStatus.PANEL_GENERATING.getCode(), project.getStatus());
+        // Verify reached ASSET_LOCKED
+        // (auto-advance to EPISODE_SCRIPT_GENERATING not yet implemented)
+        assertEquals(ProjectStatus.ASSET_LOCKED.getCode(), project.getStatus());
     }
 
     @Test
-    @DisplayName("Full lifecycle: PANEL_REVIEW -> all_panels_confirmed -> PRODUCING (orchestrator triggered)")
-    void full_lifecycle_panel_review_to_producing() {
-        Project project = createProject("e2e-3b", ProjectStatus.PANEL_REVIEW);
+    @DisplayName("Full lifecycle: STORYBOARD_REVIEW -> all_grids_approved -> PRODUCING")
+    void full_lifecycle_storyboard_review_to_producing() {
+        Project project = createProject("e2e-3b", ProjectStatus.STORYBOARD_REVIEW);
         when(projectRepository.findByProjectId("e2e-3b")).thenReturn(project);
         when(projectRepository.updateById(any(Project.class))).thenReturn(1);
         // Return episodes with panels so the gate check passes
@@ -133,32 +133,21 @@ class ProjectStateMachineE2ETest {
         panel.setEpisodeId(1L);
         when(panelRepository.findByEpisodeId(1L)).thenReturn(java.util.Collections.singletonList(panel));
 
-        pipelineService.advancePipeline("e2e-3b", "all_panels_confirmed");
+        // Use "all_grids_approved" which is the new transition event name
+        pipelineService.advancePipeline("e2e-3b", "all_grids_approved");
 
         assertEquals(ProjectStatus.PRODUCING.getCode(), project.getStatus());
         // Note: startOrResume removed — manual control required
     }
 
     @Test
-    @DisplayName("PRODUCING -> production_completed -> VIDEO_ASSEMBLING (persisted)")
-    void full_lifecycle_producing_to_video_assembling() {
+    @DisplayName("PRODUCING -> production_completed -> COMPLETED (persisted)")
+    void full_lifecycle_producing_to_completed() {
         Project project = createProject("e2e-4", ProjectStatus.PRODUCING);
         when(projectRepository.findByProjectId("e2e-4")).thenReturn(project);
         when(projectRepository.updateById(any(Project.class))).thenReturn(1);
 
         pipelineService.advancePipeline("e2e-4", "production_completed");
-
-        assertEquals(ProjectStatus.VIDEO_ASSEMBLING.getCode(), project.getStatus());
-    }
-
-    @Test
-    @DisplayName("VIDEO_ASSEMBLING -> assembly_completed -> COMPLETED (persisted)")
-    void full_lifecycle_video_assembling_to_completed() {
-        Project project = createProject("e2e-4b", ProjectStatus.VIDEO_ASSEMBLING);
-        when(projectRepository.findByProjectId("e2e-4b")).thenReturn(project);
-        when(projectRepository.updateById(any(Project.class))).thenReturn(1);
-
-        pipelineService.advancePipeline("e2e-4b", "assembly_completed");
 
         assertEquals(ProjectStatus.COMPLETED.getCode(), project.getStatus());
     }
@@ -217,7 +206,7 @@ class ProjectStateMachineE2ETest {
             ProjectStatus.resolveTransition(ProjectStatus.CHARACTER_REVIEW, "confirm_characters"));
         assertEquals(ProjectStatus.ASSET_LOCKED,
             ProjectStatus.resolveTransition(ProjectStatus.IMAGE_REVIEW, "confirm_images"));
-        assertEquals(ProjectStatus.VIDEO_ASSEMBLING,
+        assertEquals(ProjectStatus.COMPLETED,
             ProjectStatus.resolveTransition(ProjectStatus.PRODUCING, "production_completed"));
     }
 
@@ -228,12 +217,10 @@ class ProjectStateMachineE2ETest {
             ProjectStatus.resolveTransition(ProjectStatus.SCRIPT_CONFIRMED, "start_character_extraction"));
         assertEquals(ProjectStatus.IMAGE_GENERATING,
             ProjectStatus.resolveTransition(ProjectStatus.CHARACTER_CONFIRMED, "start_image_generation"));
-        assertEquals(ProjectStatus.PANEL_GENERATING,
-            ProjectStatus.resolveTransition(ProjectStatus.ASSET_LOCKED, "start_panels"));
+        assertEquals(ProjectStatus.EPISODE_SCRIPT_GENERATING,
+            ProjectStatus.resolveTransition(ProjectStatus.ASSET_LOCKED, "start_episode_script"));
         assertEquals(ProjectStatus.PRODUCING,
-            ProjectStatus.resolveTransition(ProjectStatus.PANEL_REVIEW, "all_panels_confirmed"));
-        assertEquals(ProjectStatus.COMPLETED,
-            ProjectStatus.resolveTransition(ProjectStatus.VIDEO_ASSEMBLING, "assembly_completed"));
+            ProjectStatus.resolveTransition(ProjectStatus.STORYBOARD_REVIEW, "all_grids_approved"));
     }
 
     @Test
@@ -247,8 +234,8 @@ class ProjectStateMachineE2ETest {
             ProjectStatus.resolveTransition(ProjectStatus.CHARACTER_EXTRACTING, "characters_failed"));
         assertEquals(ProjectStatus.IMAGE_GENERATING_FAILED,
             ProjectStatus.resolveTransition(ProjectStatus.IMAGE_GENERATING, "images_failed"));
-        assertEquals(ProjectStatus.PANEL_GENERATING_FAILED,
-            ProjectStatus.resolveTransition(ProjectStatus.PANEL_GENERATING, "panels_failed"));
+        assertEquals(ProjectStatus.STORYBOARD_GENERATING_FAILED,
+            ProjectStatus.resolveTransition(ProjectStatus.STORYBOARD_GENERATING, "storyboard_failed"));
     }
 
     @Test
@@ -262,8 +249,8 @@ class ProjectStateMachineE2ETest {
             ProjectStatus.resolveTransition(ProjectStatus.CHARACTER_EXTRACTING_FAILED, "retry"));
         assertEquals(ProjectStatus.CHARACTER_CONFIRMED,
             ProjectStatus.resolveTransition(ProjectStatus.IMAGE_GENERATING_FAILED, "retry"));
-        assertEquals(ProjectStatus.ASSET_LOCKED,
-            ProjectStatus.resolveTransition(ProjectStatus.PANEL_GENERATING_FAILED, "retry"));
+        assertEquals(ProjectStatus.STORYBOARD_GENERATING,
+            ProjectStatus.resolveTransition(ProjectStatus.STORYBOARD_GENERATING_FAILED, "retry"));
     }
 
     @Test
@@ -279,7 +266,7 @@ class ProjectStateMachineE2ETest {
     @Test
     @DisplayName("all_panels_confirmed gate rejects when no panels exist")
     void all_panels_confirmed_gate_rejects_empty_panels() {
-        Project project = createProject("e2e-8", ProjectStatus.PANEL_REVIEW);
+        Project project = createProject("e2e-8", ProjectStatus.STORYBOARD_REVIEW);
         when(projectRepository.findByProjectId("e2e-8")).thenReturn(project);
         // Return episodes with NO panels -> gate should reject
         com.comic.entity.Episode episode = new com.comic.entity.Episode();
@@ -288,13 +275,14 @@ class ProjectStateMachineE2ETest {
         when(episodeRepository.findByProjectId("e2e-8")).thenReturn(java.util.Collections.singletonList(episode));
         when(panelRepository.findByEpisodeId(1L)).thenReturn(new java.util.ArrayList<>());
 
+        // Note: PipelineService gate check now also accepts "all_grids_approved"
         BusinessException ex = assertThrows(BusinessException.class, () ->
-            pipelineService.advancePipeline("e2e-8", "all_panels_confirmed")
+            pipelineService.advancePipeline("e2e-8", "all_grids_approved")
         );
         assertTrue(ex.getMessage().contains("没有可生产的分镜"));
 
         // Status should not change
-        assertEquals(ProjectStatus.PANEL_REVIEW.getCode(), project.getStatus());
+        assertEquals(ProjectStatus.STORYBOARD_REVIEW.getCode(), project.getStatus());
         verify(projectRepository, never()).updateById(any(Project.class));
     }
 

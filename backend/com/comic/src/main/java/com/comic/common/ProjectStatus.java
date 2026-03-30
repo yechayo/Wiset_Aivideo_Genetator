@@ -41,16 +41,17 @@ public enum ProjectStatus {
     ASSET_LOCKED("ASSET_LOCKED", "素材已锁定", 4),
     IMAGE_GENERATING_FAILED("IMAGE_GENERATING_FAILED", "图像生成失败", 4),
 
-    // 分镜阶段（逐集生成+逐集审核）
-    PANEL_GENERATING("PANEL_GENERATING", "分镜生成中", 5),
-    PANEL_REVIEW("PANEL_REVIEW", "分镜审核", 5),
-    PANEL_GENERATING_FAILED("PANEL_GENERATING_FAILED", "分镜生成失败", 5),
+    // 分镜阶段（分集剧本 → 分镜生成 → 分镜审核）
+    EPISODE_SCRIPT_GENERATING("EPISODE_SCRIPT_GENERATING", "分集剧本生成中", 5),
+    EPISODE_SCRIPT_GENERATING_FAILED("EPISODE_SCRIPT_GENERATING_FAILED", "分集剧本生成失败", 5),
+    STORYBOARD_GENERATING("STORYBOARD_GENERATING", "分镜生成中", 5),
+    STORYBOARD_GENERATING_FAILED("STORYBOARD_GENERATING_FAILED", "分镜生成失败", 5),
+    STORYBOARD_REVIEW("STORYBOARD_REVIEW", "分镜审核", 5),
 
-    // 生产阶段（逐 Panel 视频生产，属于分镜阶段的一部分）
+    // 生产阶段
     PRODUCING("PRODUCING", "生产中", 5),
 
-    // 拼接剪辑阶段
-    VIDEO_ASSEMBLING("VIDEO_ASSEMBLING", "拼接剪辑中", 6),
+    // 完成
     COMPLETED("COMPLETED", "已完成", 6);
 
     /** 状态码 */
@@ -81,6 +82,18 @@ public enum ProjectStatus {
         }
         if ("SCRIPT_REVISION_REQUESTED".equals(code)) {
             return OUTLINE_REVIEW;
+        }
+        if ("PANEL_GENERATING".equals(code)) {
+            return STORYBOARD_GENERATING;
+        }
+        if ("PANEL_REVIEW".equals(code)) {
+            return STORYBOARD_REVIEW;
+        }
+        if ("PANEL_GENERATING_FAILED".equals(code)) {
+            return STORYBOARD_GENERATING_FAILED;
+        }
+        if ("VIDEO_ASSEMBLING".equals(code)) {
+            return PRODUCING;
         }
         for (ProjectStatus status : values()) {
             if (status.code.equals(code)) {
@@ -121,8 +134,10 @@ public enum ProjectStatus {
         put(map, CHARACTER_EXTRACTING, "retry", SCRIPT_CONFIRMED);
         put(map, IMAGE_GENERATING_FAILED, "retry", CHARACTER_CONFIRMED);
         put(map, IMAGE_GENERATING, "retry", CHARACTER_CONFIRMED);
-        put(map, PANEL_GENERATING_FAILED, "retry", ASSET_LOCKED);
-        put(map, PANEL_GENERATING, "retry", ASSET_LOCKED);
+        put(map, EPISODE_SCRIPT_GENERATING_FAILED, "retry", EPISODE_SCRIPT_GENERATING);
+        put(map, EPISODE_SCRIPT_GENERATING, "retry", ASSET_LOCKED);
+        put(map, STORYBOARD_GENERATING_FAILED, "retry", STORYBOARD_GENERATING);
+        put(map, STORYBOARD_GENERATING, "retry", ASSET_LOCKED);
 
         // 剧本 → 角色
         put(map, SCRIPT_CONFIRMED, "start_character_extraction", CHARACTER_EXTRACTING);
@@ -140,22 +155,27 @@ public enum ProjectStatus {
         put(map, IMAGE_GENERATING, "images_failed", IMAGE_GENERATING_FAILED);
         put(map, IMAGE_REVIEW, "confirm_images", ASSET_LOCKED);
 
-        // 素材 → 分镜
-        put(map, ASSET_LOCKED, "start_panels", PANEL_GENERATING);
+        // 素材 → 分集剧本
+        put(map, ASSET_LOCKED, "start_episode_script", EPISODE_SCRIPT_GENERATING);
 
-        // 分镜阶段
-        put(map, PANEL_GENERATING, "panels_generated", PANEL_REVIEW);
-        put(map, PANEL_GENERATING, "panels_failed", PANEL_GENERATING_FAILED);
-        put(map, PANEL_REVIEW, "confirm_panels", PANEL_REVIEW);
-        put(map, PANEL_REVIEW, "all_panels_confirmed", PRODUCING);
-        put(map, PANEL_REVIEW, "revise_panels", PANEL_GENERATING);
-        put(map, PANEL_GENERATING_FAILED, "retry", ASSET_LOCKED);
+        // 分集剧本阶段
+        put(map, EPISODE_SCRIPT_GENERATING, "episode_script_generated", STORYBOARD_GENERATING);
+        put(map, EPISODE_SCRIPT_GENERATING, "episode_script_failed", EPISODE_SCRIPT_GENERATING_FAILED);
+        put(map, EPISODE_SCRIPT_GENERATING_FAILED, "retry", EPISODE_SCRIPT_GENERATING);
+        put(map, EPISODE_SCRIPT_GENERATING, "retry", ASSET_LOCKED);
 
-        // 生产 → 拼接剪辑
-        put(map, PRODUCING, "production_completed", VIDEO_ASSEMBLING);
+        // 分镜生成阶段
+        put(map, STORYBOARD_GENERATING, "storyboard_generated", STORYBOARD_REVIEW);
+        put(map, STORYBOARD_GENERATING, "storyboard_failed", STORYBOARD_GENERATING_FAILED);
+        put(map, STORYBOARD_GENERATING_FAILED, "retry", STORYBOARD_GENERATING);
+        put(map, STORYBOARD_GENERATING, "retry", ASSET_LOCKED);
 
-        // 拼接剪辑 → 完成
-        put(map, VIDEO_ASSEMBLING, "assembly_completed", COMPLETED);
+        // 分镜审核阶段
+        put(map, STORYBOARD_REVIEW, "all_grids_approved", PRODUCING);
+        put(map, STORYBOARD_REVIEW, "regenerate_storyboard", EPISODE_SCRIPT_GENERATING);
+
+        // 生产 → 完成（直接完成，不再需要拼接）
+        put(map, PRODUCING, "production_completed", COMPLETED);
 
         ALLOWED_TRANSITIONS = Collections.unmodifiableMap(map);
     }
@@ -207,7 +227,7 @@ public enum ProjectStatus {
         }
         // 当前步骤处于确认态时，当前步骤也算完成
         if (this == SCRIPT_CONFIRMED || this == CHARACTER_CONFIRMED || this == ASSET_LOCKED
-                || this == COMPLETED || this == PANEL_REVIEW || this == VIDEO_ASSEMBLING) {
+                || this == COMPLETED || this == STORYBOARD_REVIEW) {
             steps.add(current);
         }
         return steps;
@@ -242,13 +262,17 @@ public enum ProjectStatus {
                 return Arrays.asList("confirm_images");
             case ASSET_LOCKED:
                 return Arrays.asList();
-            case PANEL_GENERATING:
+            case EPISODE_SCRIPT_GENERATING:
                 return Arrays.asList();
-            case PANEL_REVIEW:
-                return Arrays.asList("confirm_panels", "revise_panels");
+            case EPISODE_SCRIPT_GENERATING_FAILED:
+                return Arrays.asList("retry");
+            case STORYBOARD_GENERATING:
+                return Arrays.asList();
+            case STORYBOARD_GENERATING_FAILED:
+                return Arrays.asList("retry");
+            case STORYBOARD_REVIEW:
+                return Arrays.asList("approve_all_grids", "regenerate_storyboard");
             case PRODUCING:
-                return Arrays.asList();
-            case VIDEO_ASSEMBLING:
                 return Arrays.asList();
             case COMPLETED:
                 return Arrays.asList("view_result");

@@ -536,7 +536,7 @@ public class PanelGenerationService {
         Episode nextEpisode = findNextPendingEpisode(projectId);
         if (nextEpisode == null) {
             log.warn("No pending episodes for panel generation: projectId={}", projectId);
-            if (ProjectStatus.PANEL_GENERATING.getCode().equals(project.getStatus())) {
+            if (ProjectStatus.STORYBOARD_GENERATING.getCode().equals(project.getStatus())) {
                 pipelineService.advancePipeline(projectId, "panels_generated");
             }
             return;
@@ -682,7 +682,7 @@ public class PanelGenerationService {
 
     private void updateProjectToFailed(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
-        if (project != null && ProjectStatus.PANEL_GENERATING.getCode().equals(project.getStatus())) {
+        if (project != null && ProjectStatus.STORYBOARD_GENERATING.getCode().equals(project.getStatus())) {
             pipelineService.advancePipeline(projectId, "panels_failed");
         }
     }
