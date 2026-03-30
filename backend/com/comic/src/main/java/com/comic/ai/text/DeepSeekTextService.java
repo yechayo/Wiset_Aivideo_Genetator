@@ -173,7 +173,8 @@ public class DeepSeekTextService implements TextGenerationService {
             if (content != null && !content.isNull()) {
                 String contentText = content.asText();
                 if (isTruncatedResponse(finishReason, contentText)) {
-                    throw new RuntimeException("DeepSeek output truncated (finish_reason=length)");
+                    log.warn("DeepSeek output truncated (finish_reason=length), attempting repair");
+                    return contentText;
                 }
                 if (!contentText.trim().isEmpty()) {
                     return contentText;
@@ -199,7 +200,12 @@ public class DeepSeekTextService implements TextGenerationService {
             return false;
         }
         String trimmedContent = contentText == null ? "" : contentText.trim();
-        return trimmedContent.startsWith("{") && !trimmedContent.endsWith("}");
+        // 检测 JSON 对象或数组是否被截断
+        boolean isJsonObject = trimmedContent.startsWith("{");
+        boolean isJsonArray = trimmedContent.startsWith("[");
+        if (isJsonObject) return !trimmedContent.endsWith("}");
+        if (isJsonArray) return !trimmedContent.endsWith("]");
+        return false;
     }
 
     private void sleepBeforeRetry(int attempt) throws InterruptedException {
@@ -286,7 +292,7 @@ public class DeepSeekTextService implements TextGenerationService {
         return shots;
     }
 
-    /** 解析 DeepSeek 返回的 JSON 数组 */
+    /** 解析 DeepSeek 返回的 JSON 数组，自动修复截断 JSON */
     private List<Map<String, Object>> parseJsonArray(String jsonStr) {
         String cleaned = jsonStr.trim();
         if (cleaned.startsWith("```json")) cleaned = cleaned.substring(7);
@@ -298,7 +304,63 @@ public class DeepSeekTextService implements TextGenerationService {
             ObjectMapper mapper = new ObjectMapper();
             return mapper.readValue(cleaned, new TypeReference<List<Map<String, Object>>>() {});
         } catch (JsonProcessingException e) {
+            // 尝试修复截断的 JSON（DeepSeek 响应可能被截断）
+            String repaired = attemptRepairTruncatedJson(cleaned);
+            if (repaired != null) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    return mapper.readValue(repaired, new TypeReference<List<Map<String, Object>>>() {});
+                } catch (JsonProcessingException e2) {
+                    throw new BusinessException("JSON 解析失败: " + e2.getMessage());
+                }
+            }
             throw new BusinessException("JSON 解析失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 尝试修复截断的 JSON 数组。
+     * 使用 brace-counting 找到真正的顶层对象闭合位置（跳过字符串内部的 }），
+     * 然后从最后一个有效闭合位置截断并补全 ]。
+     */
+    private String attemptRepairTruncatedJson(String json) {
+        if (!json.startsWith("[")) return null;
+
+        // 收集所有顶层对象的 } 位置（depth=0 时遇到的 }）
+        List<Integer> validClosings = new ArrayList<>();
+        int depth = 0;
+        boolean inString = false;
+        boolean escape = false;
+
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (escape) { escape = false; continue; }
+            if (c == '\\' && inString) { escape = true; continue; }
+            if (c == '"') { inString = !inString; continue; }
+            if (inString) continue;
+            if (c == '{') depth++;
+            else if (c == '}') {
+                depth--;
+                if (depth == 0) validClosings.add(i);
+            }
+        }
+
+        if (validClosings.isEmpty()) return null;
+
+        // 从最后一个有效闭合位置往前尝试
+        ObjectMapper mapper = new ObjectMapper();
+        TypeReference<List<Map<String, Object>>> type = new TypeReference<List<Map<String, Object>>>() {};
+
+        for (int i = validClosings.size() - 1; i >= 0; i--) {
+            String candidate = json.substring(0, validClosings.get(i) + 1) + "]";
+            try {
+                List<Map<String, Object>> result = mapper.readValue(candidate, type);
+                log.warn("修复截断JSON: 保留 {}/{} 个对象", result.size(), validClosings.size());
+                return candidate;
+            } catch (Exception e) {
+                continue;
+            }
+        }
+        return null;
     }
 }

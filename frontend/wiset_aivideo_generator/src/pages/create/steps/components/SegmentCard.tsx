@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { SegmentState, SegmentPipelineStep } from '../types';
 import styles from './SegmentCard.module.less';
 import { GridReviewPanel } from './GridReviewPanel';
+import { PanelGroupView } from './PanelGroupView';
 import VideoPanel from './VideoPanel';
 
 export interface SegmentCardProps {
@@ -16,10 +17,6 @@ export interface SegmentCardProps {
   onGenerateVideo: () => void;
   isRegeneratingGrid?: boolean;
   isGeneratingVideo?: boolean;
-  onReviseSinglePanel?: (feedback: string) => void;
-  isRevisingPanel?: boolean;
-  onUpdatePanel?: (fields: Record<string, any>) => void;
-  isUpdatingPanel?: boolean;
 }
 
 /**
@@ -66,13 +63,8 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
   onGenerateVideo,
   isRegeneratingGrid,
   isGeneratingVideo,
-  onReviseSinglePanel,
-  isRevisingPanel,
-  onUpdatePanel,
-  isUpdatingPanel,
 }) => {
   const stepStatus = getPipelineStepStatus(segment.pipelineStep);
-  const [showManualEdit, setShowManualEdit] = useState(false);
   const [showPromptDetail, setShowPromptDetail] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['plot', 'fields', 'grid', 'video']));
   const toggleGroup = (key: string) => {
@@ -82,15 +74,6 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
       return next;
     });
   };
-  const [durationValue, setDurationValue] = useState(segment.panelData?.duration || 5);
-  const [revisionFeedback, setRevisionFeedback] = useState('');
-  const [editFields, setEditFields] = useState({
-    composition: segment.panelData?.dialogue || '',
-    dialogue: Array.isArray(segment.panelData?.dialogue)
-      ? segment.panelData.dialogue.map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text).join('\n')
-      : '',
-    image_prompt_hint: segment.panelData?.imagePromptHint || '',
-  });
 
   return (
     <div className={`${styles.segmentCard} ${isExpanded ? styles.expanded : ''}`}>
@@ -257,19 +240,27 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
       {/* 展开内容区 */}
       {isExpanded && (
         <div className={styles.content}>
-          {/* 左侧：九宫格审核面板 */}
+          {/* 左侧面板 */}
           <div className={styles.panel}>
-            <GridReviewPanel
-              panelId={Number(segment.panelData?.panelId || 0)}
-              gridImages={segment.gridImages}
-              shots={segment.shots}
-              gridStatus={segment.gridStatus}
-              gridRejectionFeedback={segment.feedback || null}
-              onApprove={onApproveGrid}
-              onReject={onRejectGrid}
-              onRegenerate={onRegenerateGrid}
-              isRegenerating={isRegeneratingGrid}
-            />
+            {segment.shots.length > 1 ? (
+              <PanelGroupView
+                fusionImageUrl={segment.fusionImageUrl}
+                shots={segment.shots}
+                gridStatus={segment.gridStatus}
+              />
+            ) : (
+              <GridReviewPanel
+                panelId={Number(segment.panelData?.panelId || 0)}
+                gridImages={segment.gridImages}
+                shots={segment.shots}
+                gridStatus={segment.gridStatus}
+                gridRejectionFeedback={segment.feedback || null}
+                onApprove={onApproveGrid}
+                onReject={onRejectGrid}
+                onRegenerate={onRegenerateGrid}
+                isRegenerating={isRegeneratingGrid}
+              />
+            )}
           </div>
 
           {/* 右侧：AI 视频面板 */}
@@ -331,25 +322,38 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
                         {expandedGroups.has('plot') && <div className={styles.promptGroupBody}>{sceneSummary}</div>}
                       </div>
                     )}
-                    {/* 原始字段 */}
+                    {/* 分镜信息 */}
                     <div className={styles.promptGroup}>
                       <div className={styles.promptGroupTitle} onClick={() => toggleGroup('fields')}>
                         <span className={styles.promptGroupArrow}>{expandedGroups.has('fields') ? '▼' : '▶'}</span>
-                        分镜字段
+                        {shots.length > 1 ? '分组分镜列表' : '分镜字段'}
                       </div>
                       {expandedGroups.has('fields') && (
                       <div className={styles.promptFieldGrid}>
-                        {d.composition && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>构图描述</span><span className={styles.pfValue}>{d.composition}</span></div>}
-                        {(d.shotType || d.cameraAngle) && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>镜头</span><span className={styles.pfValue}>{d.shotType}{d.cameraAngle ? ` / ${d.cameraAngle}` : ''}</span></div>}
-                        {d.pacing && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>节奏</span><span className={styles.pfValue}>{d.pacing}</span></div>}
-                        <div className={styles.promptFieldItem}><span className={styles.pfLabel}>时长</span><span className={styles.pfValue}><input type="number" value={durationValue} min={1} max={16} onChange={e => setDurationValue(Number(e.target.value))} onBlur={() => { const v = Math.max(1, Math.min(16, Math.round(durationValue || 5))); setDurationValue(v); if (v !== d.duration && onUpdatePanel) { onUpdatePanel({ duration: v }); } }} style={{ width: 48, padding: '2px 6px', border: '1px solid #d9d9d9', borderRadius: 4, textAlign: 'center', fontSize: 13, outline: 'none' }} />s</span></div>
-                        {d.background?.scene_desc && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>场景描述</span><span className={styles.pfValue}>{d.background.scene_desc}</span></div>}
-                        {d.background?.atmosphere && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>氛围</span><span className={styles.pfValue}>{d.background.atmosphere}</span></div>}
-                        {d.background?.time_of_day && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>时间</span><span className={styles.pfValue}>{d.background.time_of_day}</span></div>}
-                        {d.characters?.length > 0 && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>角色</span><span className={styles.pfValue}>{d.characters.map((c: any) => `${c.name || c.char_id}${c.expression ? `(${c.expression})` : ''}${c.pose ? `[${c.pose}]` : ''}`).join('、')}</span></div>}
-                        {d.dialogue && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>对话</span><span className={styles.pfValue}>{d.dialogue}</span></div>}
-                        {d.sfx?.length > 0 && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>音效</span><span className={styles.pfValue}>{d.sfx.join('、')}</span></div>}
-                        {d.imagePromptHint && <div className={`${styles.promptFieldItem} ${styles.promptFieldItemFull}`}><span className={styles.pfLabel}>画面提示词</span><span className={styles.pfValue}>{d.imagePromptHint}</span></div>}
+                        {shots.length > 1 ? (
+                          shots.map((shot: any, idx: number) => (
+                            <div key={idx} className={`${styles.promptFieldItem} ${styles.promptFieldItemFull}`}>
+                              <span className={styles.pfLabel}>分镜 {shot.shotNumber || idx + 1}</span>
+                              <span className={styles.pfValue}>
+                                {shot.duration}s · {shot.shotSize || ''} · {shot.cameraAngle || ''} · {shot.visualDescription || ''}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <>
+                            {d.composition && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>构图描述</span><span className={styles.pfValue}>{d.composition}</span></div>}
+                            {(d.shotType || d.cameraAngle) && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>镜头</span><span className={styles.pfValue}>{d.shotType}{d.cameraAngle ? ` / ${d.cameraAngle}` : ''}</span></div>}
+                            {d.pacing && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>节奏</span><span className={styles.pfValue}>{d.pacing}</span></div>}
+                            <div className={styles.promptFieldItem}><span className={styles.pfLabel}>时长</span><span className={styles.pfValue}>{d.duration || 5}s</span></div>
+                            {d.background?.scene_desc && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>场景描述</span><span className={styles.pfValue}>{d.background.scene_desc}</span></div>}
+                            {d.background?.atmosphere && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>氛围</span><span className={styles.pfValue}>{d.background.atmosphere}</span></div>}
+                            {d.background?.time_of_day && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>时间</span><span className={styles.pfValue}>{d.background.time_of_day}</span></div>}
+                            {d.characters?.length > 0 && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>角色</span><span className={styles.pfValue}>{d.characters.map((c: any) => `${c.name || c.char_id}${c.expression ? `(${c.expression})` : ''}${c.pose ? `[${c.pose}]` : ''}`).join('、')}</span></div>}
+                            {d.dialogue && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>对话</span><span className={styles.pfValue}>{d.dialogue}</span></div>}
+                            {d.sfx?.length > 0 && <div className={styles.promptFieldItem}><span className={styles.pfLabel}>音效</span><span className={styles.pfValue}>{d.sfx.join('、')}</span></div>}
+                            {d.imagePromptHint && <div className={`${styles.promptFieldItem} ${styles.promptFieldItemFull}`}><span className={styles.pfLabel}>画面提示词</span><span className={styles.pfValue}>{d.imagePromptHint}</span></div>}
+                          </>
+                        )}
                       </div>
                       )}
                     </div>
@@ -367,97 +371,6 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
             </div>
           )}
 
-          {/* 分镜修改区域 - 九宫格已生成后不再需要 */}
-          {segment.gridImages.length === 0 && segment.gridStatus !== 'approved' && (
-          <div className={styles.revisionSection}>
-            <div className={styles.revisionHeader}>
-              <span className={styles.revisionTitle}>分镜修改</span>
-              <div className={styles.revisionTabs}>
-                <button
-                  className={`${styles.revisionTab} ${!showManualEdit ? styles.activeTab : ''}`}
-                  onClick={() => setShowManualEdit(false)}
-                >
-                  AI修改
-                </button>
-                <button
-                  className={`${styles.revisionTab} ${showManualEdit ? styles.activeTab : ''}`}
-                  onClick={() => setShowManualEdit(true)}
-                >
-                  手动编辑
-                </button>
-              </div>
-            </div>
-
-            {!showManualEdit ? (
-              <div className={styles.revisionContent}>
-                <textarea
-                  className={styles.revisionTextarea}
-                  placeholder="请输入修改建议，例如：把角色表情改为愤怒，增加更多对话..."
-                  value={revisionFeedback}
-                  onChange={(e) => setRevisionFeedback(e.target.value)}
-                  disabled={isRevisingPanel}
-                  rows={3}
-                />
-                <button
-                  className={styles.revisionButton}
-                  onClick={() => {
-                    if (revisionFeedback.trim() && onReviseSinglePanel) {
-                      onReviseSinglePanel(revisionFeedback.trim());
-                      setRevisionFeedback('');
-                    }
-                  }}
-                  disabled={isRevisingPanel || !revisionFeedback.trim()}
-                >
-                  {isRevisingPanel ? '修改中...' : '提交修改'}
-                </button>
-              </div>
-            ) : (
-              <div className={styles.revisionContent}>
-                <label className={styles.editLabel}>
-                  构图描述
-                  <textarea
-                    className={styles.editTextarea}
-                    value={editFields.composition || ''}
-                    onChange={(e) => setEditFields(f => ({ ...f, composition: e.target.value }))}
-                    disabled={isUpdatingPanel}
-                    rows={3}
-                  />
-                </label>
-                <label className={styles.editLabel}>
-                  对话内容
-                  <textarea
-                    className={styles.editTextarea}
-                    value={editFields.dialogue || ''}
-                    onChange={(e) => setEditFields(f => ({ ...f, dialogue: e.target.value }))}
-                    disabled={isUpdatingPanel}
-                    rows={3}
-                  />
-                </label>
-                <label className={styles.editLabel}>
-                  画面提示词
-                  <textarea
-                    className={styles.editTextarea}
-                    value={editFields.image_prompt_hint || ''}
-                    onChange={(e) => setEditFields(f => ({ ...f, image_prompt_hint: e.target.value }))}
-                    disabled={isUpdatingPanel}
-                    rows={3}
-                  />
-                </label>
-                <button
-                  className={styles.revisionButton}
-                  onClick={() => {
-                    if (onUpdatePanel) {
-                      onUpdatePanel(editFields);
-                    }
-                  }}
-                  disabled={isUpdatingPanel}
-                >
-                  {isUpdatingPanel ? '保存中...' : '保存修改'}
-                </button>
-              </div>
-            )}
-          </div>
-          )}
         </div>
       )}
     </div>

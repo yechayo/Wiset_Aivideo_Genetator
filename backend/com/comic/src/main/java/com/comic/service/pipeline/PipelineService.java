@@ -21,7 +21,7 @@ import com.comic.repository.ProjectRepository;
 import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
 import com.comic.service.script.ScriptService;
-import com.comic.service.panel.PanelGenerationService;
+
 import com.comic.service.storyboard.StoryboardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -59,10 +59,6 @@ public class PipelineService implements StageCompletionCallback {
     private final CharacterExtractService characterExtractService;
     private final CharacterImageGenerationService characterImageGenerationService;
     private final ProjectStatusBroadcaster broadcaster;
-
-    @Lazy
-    @Autowired
-    private PanelGenerationService panelGenerationService;
 
     @Lazy
     @Autowired
@@ -882,8 +878,19 @@ public class PipelineService implements StageCompletionCallback {
                     try {
                         storyboardService.generateEpisodeScriptAndStoryboard(projectId);
                     } catch (Exception e) {
-                        log.error("Storyboard generation failed: projectId={}, error={}", projectId, e.getMessage(), e);
-                        safeAdvanceOnFailure(projectId, "storyboard_failed", "EPISODE_SCRIPT_GENERATING", e);
+                        log.error("Episode script/storyboard generation failed: projectId={}, error={}", projectId, e.getMessage(), e);
+                        // 根据当前实际状态选择正确的失败事件
+                        try {
+                            Project p = projectRepository.findByProjectId(projectId);
+                            String currentStatus = p != null ? p.getStatus() : "";
+                            if (ProjectStatus.STORYBOARD_GENERATING.getCode().equals(currentStatus)) {
+                                safeAdvanceOnFailure(projectId, "storyboard_failed", currentStatus, e);
+                            } else {
+                                safeAdvanceOnFailure(projectId, "episode_script_failed", currentStatus, e);
+                            }
+                        } catch (Exception ex2) {
+                            safeAdvanceOnFailure(projectId, "episode_script_failed", "EPISODE_SCRIPT_GENERATING", e);
+                        }
                     }
                 });
                 break;

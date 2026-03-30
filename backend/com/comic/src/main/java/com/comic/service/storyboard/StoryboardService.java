@@ -44,11 +44,12 @@ public class StoryboardService {
     private GridImageService gridImageService;
 
     /**
-     * 主入口：生成结构化分集剧本 → 分镜脚本 → 贪心分组 → 创建 Panel
+     * 主入口：生成结构化分集剧本 → 分镜脚本 → 异步生成整集九宫格
      * 被PipelineService异步调用
      */
     @Transactional
     public void generateEpisodeScriptAndStoryboard(String projectId) {
+        log.info("[Pipeline] 开始分集剧本+分镜生成: projectId={}", projectId);
         try {
             Project project = projectRepository.findByProjectId(projectId);
             if (project == null) {
@@ -61,46 +62,59 @@ public class StoryboardService {
             String charactersDesc = getCharacterDescriptions(projectId);
 
             // 1. 生成结构化分集剧本
+            log.info("[Pipeline] Step1: 调用DeepSeek生成分集剧本: projectId={}", projectId);
             List<Map<String, Object>> scripts = deepSeekTextService.generateEpisodeScript(
                 outline, charactersDesc, targetDuration, visualStyle);
+            log.info("[Pipeline] Step1完成: 生成 {} 集剧本, projectId={}", scripts.size(), projectId);
 
             // 2. 逐集生成分镜并创建Panel
             for (Map<String, Object> script : scripts) {
+                String title = (String) script.get("title");
                 String content = (String) script.get("content");
                 String characters = (String) script.getOrDefault("characters", "");
 
+                log.info("[Pipeline] Step2: 调用DeepSeek生成分镜: projectId={}, episode={}", projectId, title);
                 List<Map<String, Object>> shots = deepSeekTextService.generateStoryboard(
                     content, characters, targetDuration, visualStyle);
+                log.info("[Pipeline] Step2完成: 生成 {} 个分镜, projectId={}, episode={}", shots.size(), projectId, title);
 
                 Long episodeId = findOrCreateEpisode(projectId, script, shots, visualStyle);
+                log.info("[Pipeline] Episode创建/更新: episodeId={}, projectId={}", episodeId, projectId);
                 deleteExistingPanels(episodeId);
 
                 // 设置 episodeInfo.gridStatus = "generating"，异步生成整集九宫格
                 gridImageService.updateEpisodeGridStatus(episodeId, "generating");
+                log.info("[Pipeline] Step3: 启动异步九宫格生成: episodeId={}, shotCount={}", episodeId, shots.size());
                 gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle);
             }
 
             // 3. 推进状态：两步推进
             // EPISODE_SCRIPT_GENERATING → "episode_script_generated" → STORYBOARD_GENERATING
+            log.info("[Pipeline] Step4: 推进状态 episode_script_generated: projectId={}", projectId);
             pipelineService.advancePipeline(projectId, "episode_script_generated");
             // STORYBOARD_GENERATING → "storyboard_generated" → STORYBOARD_REVIEW
+            log.info("[Pipeline] Step5: 推进状态 storyboard_generated → STORYBOARD_REVIEW: projectId={}", projectId);
             pipelineService.advancePipeline(projectId, "storyboard_generated");
+            log.info("[Pipeline] 全部完成: projectId={}, 状态已推进到STORYBOARD_REVIEW", projectId);
 
         } catch (Exception e) {
-            log.error("分镜生成异常: projectId={}", projectId, e);
+            log.error("[Pipeline] 分镜生成异常: projectId={}, error={}", projectId, e.getMessage(), e);
             try {
                 // 根据当前状态选择正确的失败事件
                 Project current = projectRepository.findByProjectId(projectId);
                 if (current != null) {
                     String status = current.getStatus();
+                    log.error("[Pipeline] 当前状态: {}, 尝试推进失败事件: projectId={}", status, projectId);
                     if (ProjectStatus.EPISODE_SCRIPT_GENERATING.getCode().equals(status)) {
                         pipelineService.advancePipeline(projectId, "episode_script_failed");
                     } else if (ProjectStatus.STORYBOARD_GENERATING.getCode().equals(status)) {
                         pipelineService.advancePipeline(projectId, "storyboard_failed");
+                    } else {
+                        log.error("[Pipeline] 无法匹配失败事件: status={}, projectId={}", status, projectId);
                     }
                 }
             } catch (Exception ex) {
-                log.error("Failed to set failed status: projectId={}", projectId, ex);
+                log.error("[Pipeline] 设置失败状态也失败: projectId={}", projectId, ex);
             }
         }
     }
@@ -175,27 +189,6 @@ public class StoryboardService {
         for (Panel p : existing) {
             p.setDeleted(true);
             panelRepository.updateById(p);
-        }
-    }
-
-    private void createPanels(Long episodeId, List<List<Map<String, Object>>> groups, String visualStyle) {
-        for (List<Map<String, Object>> group : groups) {
-            Panel panel = new Panel();
-            panel.setEpisodeId(episodeId);
-            panel.setStatus("pending");
-            panel.setDeleted(false);
-            Map<String, Object> panelInfo = new HashMap<>();
-            panelInfo.put("shots", group);
-            panelInfo.put("totalShots", group.size());
-            panelInfo.put("totalDuration",
-                group.stream().mapToInt(s -> ((Number) s.get("duration")).intValue()).sum());
-            panelInfo.put("gridStatus", "pending");
-            panelInfo.put("gridPageCount", (int) Math.ceil(group.size() / 9.0));
-            panelInfo.put("gridImages", new ArrayList<String>());
-            panelInfo.put("videoStatus", "pending");
-            panelInfo.put("visualStyle", visualStyle);
-            panel.setPanelInfo(panelInfo);
-            panelRepository.insert(panel);
         }
     }
 

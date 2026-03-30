@@ -4,28 +4,20 @@ import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
 import com.comic.common.Result;
 import com.comic.dto.request.PanelCreateRequest;
-import com.comic.dto.request.PanelReviseRequest;
 import com.comic.dto.request.PanelUpdateRequest;
 import com.comic.dto.response.*;
-import com.comic.entity.Episode;
-import com.comic.entity.Job;
 import com.comic.entity.Panel;
 import com.comic.entity.Project;
-import com.comic.repository.EpisodeRepository;
-import com.comic.repository.JobRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.job.JobQueueService;
 import com.comic.service.panel.PanelService;
 import com.comic.service.production.PanelProductionService;
-import com.comic.service.panel.PanelGenerationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -37,10 +29,6 @@ import java.util.Map;
 public class PanelController {
 
     private final PanelService panelService;
-    private final PanelGenerationService panelGenerationService;
-    private final JobQueueService jobQueueService;
-    private final EpisodeRepository episodeRepository;
-    private final JobRepository jobRepository;
     private final PanelProductionService panelProductionService;
     private final ProjectRepository projectRepository;
     private final PanelRepository panelRepository;
@@ -96,110 +84,6 @@ public class PanelController {
         return Result.ok();
     }
 
-    // ================= 分镜生成流程（从 StoryController 迁入） =================
-
-    @PostMapping("/generate")
-    @Operation(summary = "AI 生成分镜", description = "LLM 生成 + 镜头增强")
-    public Result<Map<String, String>> generatePanels(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId) {
-        Episode episode = episodeRepository.findByProjectIdAndId(projectId, episodeId);
-        if (episode == null) {
-            return Result.fail(404, "剧集不存在");
-        }
-        String jobId = jobQueueService.submitPanelGenerationJob(episodeId);
-        Map<String, String> result = new HashMap<>();
-        result.put("jobId", jobId);
-        return Result.ok(result);
-    }
-
-
-    @GetMapping("/generate/{jobId}/status")
-    @Operation(summary = "分镜生成任务状态")
-    public Result<Map<String, Object>> getGenerateStatus(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable String jobId) {
-        Map<String, Object> status = new HashMap<>();
-        status.put("jobId", jobId);
-
-        // 优先查 job 表（真实任务状态）
-        Job job = jobRepository.selectById(jobId);
-        if (job == null) {
-            // job 不存在，可能是旧数据被清理了，返回 unknown 让前端重新请求
-            status.put("status", "unknown");
-            return Result.ok(status);
-        }
-
-        switch (job.getStatus()) {
-            case "PENDING":
-                status.put("status", "pending");
-                status.put("progress", job.getProgress());
-                status.put("message", job.getProgressMsg());
-                break;
-            case "RUNNING":
-                status.put("status", "processing");
-                status.put("progress", job.getProgress());
-                status.put("message", job.getProgressMsg());
-                break;
-            case "SUCCESS":
-                status.put("status", "completed");
-                break;
-            case "FAILED":
-                status.put("status", "failed");
-                if (job.getErrorMsg() != null) {
-                    status.put("errorMessage", job.getErrorMsg());
-                }
-                break;
-            default:
-                status.put("status", "unknown");
-                break;
-        }
-        return Result.ok(status);
-    }
-
-    @PostMapping("/{panelId}/confirm")
-    @Operation(summary = "确认分镜内容")
-    public Result<Void> confirmPanel(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable Long panelId) {
-        panelGenerationService.confirmPanels(episodeId);
-        return Result.ok();
-    }
-
-    @PostMapping("/{panelId}/revise")
-    @Operation(summary = "修改分镜（整集重新生成）")
-    public Result<Void> revisePanel(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable Long panelId,
-            @RequestBody PanelReviseRequest request) {
-        panelGenerationService.revisePanels(episodeId, request.getFeedback());
-        return Result.ok();
-    }
-
-    @PostMapping("/{panelId}/revise-single")
-    @Operation(summary = "AI 修改单个分镜")
-    public Result<Void> reviseSinglePanel(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable Long panelId,
-            @RequestBody PanelReviseRequest request) {
-        panelGenerationService.reviseSinglePanel(panelId, request.getFeedback());
-        return Result.ok();
-    }
-
-    @PostMapping("/{panelId}/retry")
-    @Operation(summary = "重试失败的生成")
-    public Result<Void> retryPanel(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable Long panelId) {
-        panelGenerationService.retryFailedPanels(episodeId);
-        return Result.ok();
-    }
-
     // ================= 生产状态查询 =================
 
     @GetMapping("/{panelId}/production-status")
@@ -249,21 +133,6 @@ public class PanelController {
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
         panelProductionService.regenerateGrid(panelId);
-        return Result.ok();
-    }
-
-    @PutMapping("/grid/approve-all")
-    @Operation(summary = "批量审核通过所有九宫格")
-    public Result<Void> approveAllGrids(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId) {
-        List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
-        for (Panel p : panels) {
-            Map<String, Object> info = p.getPanelInfo();
-            if (info != null && "generated".equals(info.get("gridStatus"))) {
-                panelProductionService.approveGrid(p.getId());
-            }
-        }
         return Result.ok();
     }
 

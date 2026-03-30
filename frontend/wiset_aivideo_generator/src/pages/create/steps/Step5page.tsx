@@ -10,23 +10,19 @@ import type {
 import {
   getEpisodes,
   getPanels,
-  generatePanels,
-  getPanelGenerateStatus,
-  revisePanel,
   getBatchProductionStatuses,
   approveGrid,
   rejectGrid,
   regenerateGrid,
-  approveAllGrids,
   generateVideo,
-  reviseSinglePanel,
-  updatePanel,
   getEpisodeGridStatus,
   approveEpisodeGrid,
   rejectEpisodeGrid,
   regenerateEpisodeGrid,
 } from '../../../services/episodeService';
 import { getCharacterStatus, getCharacters } from '../../../services/characterService';
+import { advanceStatus } from '../../../services/projectService';
+import { useCreateStore } from '../../../stores/createStore';
 import EpisodeCard from './components/EpisodeCard';
 import { BatchReviewBar } from './components/BatchReviewBar';
 
@@ -60,20 +56,37 @@ function mapGridToPipelineStep(status: {
  */
 const Step5page = ({ project }: Step5pageProps) => {
   const projectId = project?.projectId;
+  const { statusInfo, syncStatus } = useCreateStore();
+
+  // 检测分集剧本/分镜生成失败状态
+  const failedStatusCode = statusInfo?.isFailed && statusInfo?.statusCode
+    ? statusInfo.statusCode : '';
+  const isPipelineFailed = failedStatusCode === 'EPISODE_SCRIPT_GENERATING_FAILED'
+    || failedStatusCode === 'STORYBOARD_GENERATING_FAILED';
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetryPipeline = useCallback(async () => {
+    if (!projectId || retrying) return;
+    setRetrying(true);
+    try {
+      await advanceStatus(projectId, 'forward', 'retry');
+      await syncStatus(projectId);
+    } catch (e: any) {
+      setError(e.message || '重试失败');
+    } finally {
+      setRetrying(false);
+    }
+  }, [projectId, retrying, syncStatus]);
 
   // 数据状态
   const [chapters, setChapters] = useState<ChapterState[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [generatingEpisodeId, setGeneratingEpisodeId] = useState<number | null>(null);
   const [charAvatarMap, setCharAvatarMap] = useState<Record<string, string>>({});
   // 角色 name→ID 映射，用于修正 AI 把名字填进 char_id 的老数据
   const [charNameToIdMap, setCharNameToIdMap] = useState<Record<string, string>>({});
   const [generatingGridPanelId, setGeneratingGridPanelId] = useState<string | null>(null);
   const [generatingVideoPanelId, setGeneratingVideoPanelId] = useState<string | null>(null);
-  const [revisingPanelId, setRevisingPanelId] = useState<string | null>(null);
-  const [updatingPanelId, setUpdatingPanelId] = useState<string | null>(null);
-  const [revisingEpisodeId, setRevisingEpisodeId] = useState<number | null>(null);
 
   // UI 状态：当前展开的集数/片段（手风琴模式）
   const [expansion, setExpansion] = useState<ExpansionState>({
@@ -180,79 +193,32 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [loadEpisodes]);
 
   /**
-   * 页面加载恢复：检测正在生成中的 episode，自动恢复轮询
-   * 解决刷新页面后丢失 loading 状态的问题
+   * 页面加载恢复：检测正在生成九宫格的 episode，自动恢复轮询
    */
   useEffect(() => {
-    if (chapters.length === 0 || generatingEpisodeId !== null) return;
+    if (chapters.length === 0) return;
     const allEpisodes = chapters.flatMap(ch => ch.episodes);
-    const generatingEp = allEpisodes.find(ep =>
-      ep.episodeInfo?.status === 'STORYBOARD_GENERATING' ||
-      ep.episodeInfo?.panelPlan
+    const generatingGridEp = allEpisodes.find(ep =>
+      ep.isNewFlow && ep.gridStatus === 'generating'
     );
-    if (!generatingEp) {
-      // 新流程：检测正在生成九宫格的 episode
-      const generatingGridEp = allEpisodes.find(ep =>
-        ep.isNewFlow && ep.gridStatus === 'generating'
-      );
-      if (generatingGridEp) {
-        const gridEpId = generatingGridEp.episodeId;
-        console.info('检测到正在生成中的 episode 九宫格, 恢复轮询: epId=', gridEpId);
-        refreshEpisodeGridStatus(gridEpId);
-        const gridPoll = async () => {
-          while (true) {
-            await new Promise(r => setTimeout(r, 5000));
-            await refreshEpisodeGridStatus(gridEpId);
-            const currentEps = chapters.flatMap(ch => ch.episodes);
-            const currentGridEp = currentEps.find(e => e.episodeId === gridEpId);
-            if (currentGridEp && (currentGridEp.gridStatus === 'generated' || currentGridEp.gridStatus === 'approved' || currentGridEp.gridStatus === 'failed')) {
-              return;
-            }
-          }
-        };
-        gridPoll();
-      }
-      return;
-    }
+    if (!generatingGridEp) return;
 
-    const epId = generatingEp.episodeId;
-    console.info('检测到正在生成中的 episode, 恢复轮询: epId=', epId);
-    setGeneratingEpisodeId(epId);
-
-    // 恢复轮询：每 5 秒刷新 panels，直到生成完成（基于状态，无次数限制）
-    const poll = async () => {
+    const gridEpId = generatingGridEp.episodeId;
+    console.info('检测到正在生成中的 episode 九宫格, 恢复轮询: epId=', gridEpId);
+    refreshEpisodeGridStatus(gridEpId);
+    const gridPoll = async () => {
       while (true) {
         await new Promise(r => setTimeout(r, 5000));
-        try {
-          // 刷新 panels
-          panelsLoadedRef.current.delete(epId);
-          await loadPanelsForEpisode(epId);
-
-          // 检查 episode 状态是否已更新
-          const res = await getEpisodes(projectId!);
-          if (res.code !== 0 && res.code !== 200) continue;
-          const items = res.data?.items || [];
-          const currentEp = items.find((e: any) => e.id === epId);
-          if (!currentEp) continue;
-
-          const epStatus = currentEp.episodeInfo?.status;
-          if (epStatus === 'PANEL_DONE' || epStatus === 'PANEL_CONFIRMED') {
-            setGeneratingEpisodeId(null);
-            return;
-          }
-          if (epStatus === 'PANEL_FAILED') {
-            const errMsg = currentEp.episodeInfo?.errorMsg || '分镜生成失败';
-            alert(errMsg);
-            setGeneratingEpisodeId(null);
-            return;
-          }
-        } catch {
-          // 轮询失败继续重试
+        await refreshEpisodeGridStatus(gridEpId);
+        const currentEps = chapters.flatMap(ch => ch.episodes);
+        const currentGridEp = currentEps.find(e => e.episodeId === gridEpId);
+        if (currentGridEp && (currentGridEp.gridStatus === 'generated' || currentGridEp.gridStatus === 'approved' || currentGridEp.gridStatus === 'failed')) {
+          return;
         }
       }
     };
-    poll();
-  }, [chapters.length, generatingEpisodeId]);
+    gridPoll();
+  }, [chapters.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * 加载项目角色列表，构建 name→ID 映射
@@ -309,34 +275,10 @@ const Step5page = ({ project }: Step5pageProps) => {
     0
   );
 
-  // 新流程：统计 episode 级九宫格
+  // 统计 episode 级九宫格
   const newFlowEpisodes = chapters.flatMap(ch => ch.episodes).filter(ep => ep.isNewFlow);
   const approvedGridEpisodes = newFlowEpisodes.filter(ep => ep.gridStatus === 'approved').length;
   const pendingGridEpisodes = newFlowEpisodes.filter(ep => ep.gridStatus === 'generated' || ep.gridStatus === 'rejected').length;
-
-  // 旧流程统计
-  const oldFlowApprovedSegments = chapters.reduce(
-    (sum, ch) =>
-      sum +
-      ch.episodes.reduce(
-        (s, ep) => s + ep.segments.filter(seg => seg.pipelineStep === 'grid_approved').length,
-        0
-      ),
-    0
-  );
-  const oldFlowPendingSegments = chapters.reduce(
-    (sum, ch) =>
-      sum +
-      ch.episodes.reduce(
-        (s, ep) => s + ep.segments.filter(seg => seg.pipelineStep === 'grid_review').length,
-        0
-      ),
-    0
-  );
-
-  // 合并统计
-  const approvedSegments = approvedGridEpisodes + oldFlowApprovedSegments;
-  const pendingReviewSegments = pendingGridEpisodes + oldFlowPendingSegments;
 
   // 记录已加载过分镜的集数，避免重复请求
   const panelsLoadedRef = useRef<Set<number>>(new Set());
@@ -408,38 +350,39 @@ const Step5page = ({ project }: Step5pageProps) => {
       const segments: SegmentState[] = panels.map((panel: any, idx: number) => {
         const info = panel.panelInfo || {};
         const planPanelId = info.panel_id || info.planPanelId || '';
+        const shots = info.shots || [];
+        const isGroupedPanel = shots.length > 1;
 
-        // 解析角色头像列表，修正无效 char_id
-        const characterAvatars = (info.characters || []).map((c: any) => {
-          const rawCharId = c.char_id || '';
-          const resolvedCharId = (rawCharId && !rawCharId.startsWith('CHAR-'))
-            ? (charNameToIdMap[rawCharId] || rawCharId)
-            : rawCharId;
-          return {
-            charId: resolvedCharId,
-            name: c.name || rawCharId || '',
-            avatarUrl: charAvatarMap[resolvedCharId] || '',
-          };
-        });
-        // 拼接台词
-        const dialogue = (info.dialogue || [])
-          .map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text)
-          .join('\n');
+        // 新流程：从 shots 中提取角色
+        const allCharacters = shots.flatMap((s: any) => s.characters || []);
+        const uniqueCharNames = [...new Set(allCharacters)];
+
+        // 新流程：分组显示 "N 个分镜 · Xs"，旧流程用原始字段
+        const synopsis = isGroupedPanel
+          ? `${shots.length} 个分镜 · ${info.totalDuration || shots.reduce((s: number, sh: any) => s + (sh.duration || 0), 0)}s`
+          : (info.scene_summary || (planPanelId ? sceneSummaryMap[planPanelId] : '') || info.composition || shots[0]?.visualDescription || '');
+
+        // 新流程缩略图：融合图 > splitImageUrl > gridImages
+        const thumbnail = info.fusionImageUrl
+          || shots[0]?.splitImageUrl
+          || (info.gridImages?.length > 0 ? info.gridImages[0] : null);
 
         const videoUrl = info.videoUrl || null;
         const videoStatus = info.videoStatus || null;
         const gridImages = info.gridImages || [];
         const gridStatus = info.gridStatus || 'pending';
         const fusionImageUrl = info.fusionImageUrl || null;
-        const shots = info.shots || [];
 
         return {
           segmentIndex: idx,
-          title: `分镜 ${idx + 1}`,
-          // 优先级: scene_summary > sceneSummaryMap[planPanelId] > composition
-          synopsis: info.scene_summary || (planPanelId ? sceneSummaryMap[planPanelId] : '') || info.composition || '',
-          sceneThumbnail: gridImages.length > 0 ? gridImages[0] : null,
-          characterAvatars,
+          title: isGroupedPanel ? `分组 ${idx + 1}` : `分镜 ${idx + 1}`,
+          synopsis,
+          sceneThumbnail: thumbnail,
+          characterAvatars: uniqueCharNames.map(name => ({
+            charId: charNameToIdMap[name] || '',
+            name,
+            avatarUrl: (charNameToIdMap[name] && charAvatarMap[charNameToIdMap[name]]) || '',
+          })),
           pipelineStep: mapGridToPipelineStep({
             gridStatus: gridStatus,
             videoStatus: videoStatus || 'pending',
@@ -452,17 +395,22 @@ const Step5page = ({ project }: Step5pageProps) => {
           feedback: info.revisionFeedback || '',
           panelData: {
             panelId: String(panel.id),
-            planPanelId: info.panel_id || '',
+            planPanelId,
             composition: info.composition || '',
             shotType: info.shot_type,
             cameraAngle: info.camera_angle,
             pacing: info.pacing,
-            dialogue,
+            dialogue: Array.isArray(info.dialogue)
+              ? info.dialogue.map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text).join('\n')
+              : '',
             characters: info.characters || [],
             background: info.background || {},
             imagePromptHint: info.image_prompt_hint,
             sfx: info.sfx || [],
-            duration: info.duration,
+            duration: info.duration || info.totalDuration,
+            totalShots: info.totalShots,
+            totalDuration: info.totalDuration,
+            visualStyle: info.visualStyle,
           },
         };
       });
@@ -585,94 +533,6 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [expansion.expandedEpisodeId, loadPanelsForEpisode, refreshProductionStatuses]);
 
   /**
-   * 生成分镜（异步任务，轮询状态）
-   */
-  const handleGeneratePanels = useCallback(async (episodeId: number) => {
-    if (!projectId || generatingEpisodeId !== null) return;
-    setGeneratingEpisodeId(episodeId);
-    try {
-      const res = await generatePanels(projectId, episodeId);
-      // 400 且提示"已有任务在执行中"，视为成功，直接进入轮询
-      const isAlreadyRunning =
-        (res.code === 400 && res.message?.includes('已有分镜生成任务在执行中')) ||
-        (res.code === 400 && res.message?.includes('already'));
-
-      if (res.code !== 0 && res.code !== 200 && !isAlreadyRunning) {
-        alert(res.message || '生成分镜失败');
-        setGeneratingEpisodeId(null);
-        return;
-      }
-      // 从响应中获取 jobId
-      const jobId = res.data?.jobId || res.data?.id || String(res.data);
-      if (!jobId || jobId === 'null' || jobId === 'undefined') {
-        // 无 jobId，直接刷新分镜
-        panelsLoadedRef.current.delete(episodeId);
-        await loadPanelsForEpisode(episodeId);
-        setGeneratingEpisodeId(null);
-        return;
-      }
-      // 轮询任务状态（同时逐步加载已生成的 panel，基于状态无次数限制）
-      const poll = async () => {
-        while (true) {
-          await new Promise(r => setTimeout(r, 3000));
-          try {
-            // 增量加载：刷新已生成的 panel，让用户看到逐步生成的过程
-            panelsLoadedRef.current.delete(episodeId);
-            await loadPanelsForEpisode(episodeId);
-
-            const statusRes = await getPanelGenerateStatus(projectId, episodeId, jobId);
-            if (statusRes.code !== 0 && statusRes.code !== 200) continue;
-            const status = statusRes.data?.status || statusRes.data?.state;
-            if (status === 'completed' || status === 'COMPLETED' || status === 'SUCCESS') {
-              panelsLoadedRef.current.delete(episodeId);
-              await loadPanelsForEpisode(episodeId);
-              setGeneratingEpisodeId(null);
-              return;
-            }
-            if (status === 'failed' || status === 'FAILED' || status === 'ERROR') {
-              const errMsg = statusRes.data?.errorMessage || statusRes.data?.message || '';
-              alert('分镜生成失败' + (errMsg ? '：' + errMsg : ''));
-              setGeneratingEpisodeId(null);
-              return;
-            }
-          } catch {
-            // 轮询失败继续重试
-          }
-        }
-      };
-      poll();
-    } catch (err: any) {
-      // 400 "已有任务在执行中" 也会抛异常，同样进入轮询
-      const msg = err?.response?.data?.message || err?.message || '';
-      const isAlreadyRunning =
-        msg.includes('已有分镜生成任务在执行中') || msg.includes('already');
-      if (isAlreadyRunning) {
-        // 无法获取 jobId，直接定时刷新分镜（基于状态无次数限制）
-        const poll = async () => {
-          while (true) {
-            await new Promise(r => setTimeout(r, 5000));
-            panelsLoadedRef.current.delete(episodeId);
-            await loadPanelsForEpisode(episodeId);
-            // 如果分镜数据不再是空，说明生成完成
-            const chaps = await new Promise<ChapterState[]>(resolve => {
-              setChapters(prev => { resolve(prev); return prev; });
-            });
-            const ep = chaps.flatMap(c => c.episodes).find(e => e.episodeId === episodeId);
-            if (ep && ep.segments.length > 0) {
-              setGeneratingEpisodeId(null);
-              return;
-            }
-          }
-        };
-        poll();
-        return;
-      }
-      alert(msg || '生成分镜失败');
-      setGeneratingEpisodeId(null);
-    }
-  }, [projectId, generatingEpisodeId, loadPanelsForEpisode]);
-
-  /**
    * 切换片段展开/收起
    */
   const toggleSegment = useCallback((segmentKey: string | null) => {
@@ -681,26 +541,6 @@ const Step5page = ({ project }: Step5pageProps) => {
       expandedSegmentKey: segmentKey,
     }));
   }, []);
-
-  /**
-   * 修改分镜脚本
-   */
-  const handleRevisePanel = useCallback(async (episodeId: number) => {
-    if (!projectId) return;
-    const feedback = prompt('请输入修改意见：');
-    if (!feedback?.trim()) return;
-    setRevisingEpisodeId(episodeId);
-    try {
-      const res = await revisePanel(projectId, episodeId, 0, feedback.trim());
-      if (res.code !== 0 && res.code !== 200) {
-        alert(res.message || '修改分镜失败');
-      }
-    } catch (err: any) {
-      alert(err?.message || '修改分镜失败');
-    } finally {
-      setRevisingEpisodeId(null);
-    }
-  }, [projectId]);
 
   /**
    * 审核通过九宫格
@@ -771,20 +611,7 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [projectId, refreshProductionStatuses]);
 
   /**
-   * 一键通过所有九宫格
-   */
-  const handleApproveAllGrids = useCallback(async (episodeId: number) => {
-    if (!projectId) return;
-    try {
-      await approveAllGrids(projectId, episodeId);
-      await refreshProductionStatuses(episodeId);
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || '批量审核失败');
-    }
-  }, [projectId, refreshProductionStatuses]);
-
-  /**
-   * 审核通过整集九宫格（新流程）
+   * 审核通过整集九宫格
    */
   const handleApproveEpisodeGrid = useCallback(async (episodeId: number) => {
     if (!projectId) return;
@@ -920,40 +747,6 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [projectId, refreshProductionStatuses, offPeak]);
 
   /**
-   * AI 修改单个分镜
-   */
-  const handleReviseSinglePanel = useCallback(async (episodeId: number, panelId: string, feedback: string) => {
-    if (!projectId) return;
-    setRevisingPanelId(panelId);
-    try {
-      await reviseSinglePanel(projectId, episodeId, Number(panelId), feedback);
-      panelsLoadedRef.current.delete(episodeId);
-      await loadPanelsForEpisode(episodeId);
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || '修改分镜失败');
-    } finally {
-      setRevisingPanelId(null);
-    }
-  }, [projectId, loadPanelsForEpisode]);
-
-  /**
-   * 手动更新分镜信息
-   */
-  const handleUpdatePanel = useCallback(async (episodeId: number, panelId: string, fields: Record<string, any>) => {
-    if (!projectId) return;
-    setUpdatingPanelId(panelId);
-    try {
-      await updatePanel(projectId, episodeId, Number(panelId), fields);
-      panelsLoadedRef.current.delete(episodeId);
-      await loadPanelsForEpisode(episodeId);
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || '保存分镜失败');
-    } finally {
-      setUpdatingPanelId(null);
-    }
-  }, [projectId, loadPanelsForEpisode]);
-
-  /**
    * 渲染集数卡片
    */
   const renderEpisodeCard = (chapterIndex: number, episode: EpisodeState) => {
@@ -984,25 +777,9 @@ const Step5page = ({ project }: Step5pageProps) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
           if (panelId) handleGenerateVideo(epId, panelId);
         }}
-        onGeneratePanels={handleGeneratePanels}
-        isGeneratingPanels={generatingEpisodeId === episode.episodeId}
         onRefreshPanels={handleRefreshPanels}
         generatingGridPanelId={generatingGridPanelId}
         generatingVideoPanelId={generatingVideoPanelId}
-        onSegmentReviseSingle={(epId, segIdx, feedback) => {
-          const panelId = episode.segments[segIdx]?.panelData?.panelId;
-          if (panelId) handleReviseSinglePanel(epId, panelId, feedback);
-        }}
-        isRevisingSinglePanelId={revisingPanelId}
-        onSegmentUpdatePanel={(epId, segIdx, fields) => {
-          const panelId = episode.segments[segIdx]?.panelData?.panelId;
-          if (panelId) handleUpdatePanel(epId, panelId, fields);
-        }}
-        isUpdatingSinglePanelId={updatingPanelId}
-        onRevisePanel={handleRevisePanel}
-        isRevisingPanel={revisingEpisodeId === episode.episodeId}
-        onApproveAllGrids={() => handleApproveAllGrids(episode.episodeId)}
-        // === 新流程 props ===
         onApproveEpisodeGrid={() => handleApproveEpisodeGrid(episode.episodeId)}
         onRejectEpisodeGrid={(reason: string) => handleRejectEpisodeGrid(episode.episodeId, reason)}
         onRegenerateEpisodeGrid={() => handleRegenerateEpisodeGrid(episode.episodeId)}
@@ -1023,6 +800,44 @@ const Step5page = ({ project }: Step5pageProps) => {
     }
     return <span className={styles.dotPending} />;
   };
+
+  // 流水线生成中状态（分集剧本/分镜正在生成）
+  const isGeneratingScript = statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
+    || statusInfo?.statusCode === 'STORYBOARD_GENERATING';
+  if (isGeneratingScript && !isPipelineFailed) {
+    const label = statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
+      ? '正在生成分集剧本...' : '正在生成分镜脚本...';
+    return (
+      <div className={styles.pageContainer}>
+        <div className={styles.loadingState}>
+          <div className={styles.spinner} />
+          <p>{label}</p>
+          <p style={{ color: '#888', fontSize: 13, marginTop: 4 }}>AI 正在创作中，通常需要 1-3 分钟</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 流水线失败状态（分集剧本/分镜生成失败）
+  if (isPipelineFailed && !loading) {
+    const failedLabel = failedStatusCode === 'EPISODE_SCRIPT_GENERATING_FAILED'
+      ? '分集剧本生成失败' : '分镜生成失败';
+    return (
+      <div className={styles.pageContainer}>
+        <div className={styles.errorState}>
+          <h3 style={{ color: '#ef4444', marginBottom: 8 }}>{failedLabel}</h3>
+          <p>{statusInfo?.statusDescription || 'AI 生成过程中出现错误，请重试。'}</p>
+          <button
+            onClick={handleRetryPipeline}
+            className={styles.retryButton}
+            disabled={retrying}
+          >
+            {retrying ? '重试中...' : '重试生成'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // 加载中状态
   if (loading) {
@@ -1090,23 +905,16 @@ const Step5page = ({ project }: Step5pageProps) => {
       </div>
 
       {/* 批量审核栏 */}
-      {(totalSegments > 0 || newFlowEpisodes.length > 0) && (
+      {newFlowEpisodes.length > 0 && (
         <BatchReviewBar
-          totalPanels={totalSegments + newFlowEpisodes.length}
-          approvedCount={approvedSegments}
-          pendingReviewCount={pendingReviewSegments}
+          totalPanels={newFlowEpisodes.length}
+          approvedCount={approvedGridEpisodes}
+          pendingReviewCount={pendingGridEpisodes}
           onApproveAll={() => {
-            // 新流程：审核所有 pending/rejected 的 episode 九宫格
-            const newFlowPending = newFlowEpisodes.filter(
+            const pending = newFlowEpisodes.filter(
               ep => ep.gridStatus === 'generated' || ep.gridStatus === 'rejected'
             );
-            if (newFlowPending.length > 0) {
-              newFlowPending.forEach(ep => handleApproveEpisodeGrid(ep.episodeId));
-              return;
-            }
-            // 旧流程：审核所有 panel 九宫格
-            const allEpisodeIds = [...new Set(chapters.flatMap(ch => ch.episodes.map(ep => ep.episodeId)))];
-            allEpisodeIds.forEach(eid => handleApproveAllGrids(eid));
+            pending.forEach(ep => handleApproveEpisodeGrid(ep.episodeId));
           }}
         />
       )}

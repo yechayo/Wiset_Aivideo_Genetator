@@ -16,6 +16,11 @@ export interface PanelData {
   imagePromptHint: string;
   sfx: string[];
   duration?: number;
+  // === 新流程字段 ===
+  totalShots?: number;
+  totalDuration?: number;
+  visualStyle?: string;
+  fusionImageUrl?: string | null;
 }
 
 /** 片段状态 */

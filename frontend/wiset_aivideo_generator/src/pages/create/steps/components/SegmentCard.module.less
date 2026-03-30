@@ -323,8 +323,8 @@
 
 // 展开内容区
 .content {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
   padding: 0 var(--space-4) var(--space-4);
   animation: slideDown var(--duration-normal) var(--easing-standard);
@@ -390,10 +390,6 @@
 
 // 响应式适配
 @media (max-width: 768px) {
-  .content {
-    grid-template-columns: 1fr;
-  }
-
   .headerRight {
     gap: var(--space-2);
   }

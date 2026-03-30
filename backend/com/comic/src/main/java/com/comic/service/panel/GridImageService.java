@@ -3,8 +3,11 @@ package com.comic.service.panel;
 import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.image.SeedreamImageService;
 import com.comic.common.BusinessException;
+import com.comic.common.CharacterInfoKeys;
+import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
+import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.service.oss.OssService;
@@ -39,6 +42,7 @@ public class GridImageService {
     @Resource private PanelRepository panelRepository;
     @Resource private OssService ossService;
     @Resource private EpisodeRepository episodeRepository;
+    @Resource private CharacterRepository characterRepository;
 
     /**
      * 为指定 Panel 生成九宫格图 → 切割 → 融合参考图
@@ -241,20 +245,48 @@ public class GridImageService {
 
     private BufferedImage createFusionImage(List<Map<String, Object>> shots, List<String> charRefUrls) {
         int fCols = 3, cellW = 640, cellH = 360, pad = 8, headerH = 60;
-        int fRows = (int) Math.ceil((double) shots.size() / fCols);
-        int cw = fCols * (cellW + pad) + pad;
-        int ch = headerH + fRows * (cellH + pad) + pad;
 
-        BufferedImage canvas = new BufferedImage(cw, ch, BufferedImage.TYPE_INT_RGB);
+        // 角色参考图侧栏
+        int sidebarW = 0;
+        List<BufferedImage> charImages = new ArrayList<>();
+        if (charRefUrls != null && !charRefUrls.isEmpty()) {
+            sidebarW = 360;
+            for (String url : charRefUrls) {
+                try {
+                    charImages.add(downloadImage(url));
+                } catch (Exception e) {
+                    log.warn("角色参考图下载失败: {}", url);
+                }
+            }
+        }
+
+        int fRows = (int) Math.ceil((double) shots.size() / fCols);
+        int gridW = fCols * (cellW + pad) + pad;
+        int contentH = headerH + fRows * (cellH + pad) + pad;
+
+        // 计算侧栏需要的高度
+        int sidebarH = 0;
+        if (!charImages.isEmpty()) {
+            int charImgSize = 160;
+            int charPad = 8;
+            int charCols = 1;
+            int charRows = (int) Math.ceil((double) charImages.size() / charCols);
+            sidebarH = headerH + charRows * (charImgSize + charPad) + charPad;
+        }
+        int totalH = Math.max(contentH, sidebarH);
+        int totalW = gridW + (sidebarW > 0 ? sidebarW + pad : 0);
+
+        BufferedImage canvas = new BufferedImage(totalW, totalH, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = canvas.createGraphics();
         g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
         g.setColor(FUSION_BG_COLOR);
-        g.fillRect(0, 0, cw, ch);
+        g.fillRect(0, 0, totalW, totalH);
 
         g.setColor(Color.WHITE);
         g.setFont(new Font("SansSerif", Font.BOLD, 20));
         g.drawString("分镜融合图 - 共" + shots.size() + "个镜头", pad, headerH - 15);
 
+        // 绘制分镜
         for (int i = 0; i < shots.size(); i++) {
             int x = pad + (i % fCols) * (cellW + pad);
             int y = headerH + pad + (i / fCols) * (cellH + pad);
@@ -272,19 +304,94 @@ public class GridImageService {
             g.fillRect(x+4, y+4, 70, 22);
             g.setColor(Color.WHITE);
             g.setFont(new Font("SansSerif", Font.PLAIN, 12));
-            // 使用带圈数字标签，对应 Vidu 参考图中的编号
             String[] circledNumbers = {"①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨",
                     "⑩", "⑪", "⑫", "⑬", "⑭", "⑮", "⑯"};
             String label = i < circledNumbers.length ? circledNumbers[i] : String.valueOf(i + 1);
             g.drawString(label, x+10, y+19);
         }
+
+        // 绘制角色参考图侧栏
+        if (!charImages.isEmpty()) {
+            int sidebarX = gridW + pad;
+            g.setColor(Color.WHITE);
+            g.setFont(new Font("SansSerif", Font.BOLD, 16));
+            g.drawString("角色参考", sidebarX + pad, headerH - 15);
+
+            int charImgSize = 160;
+            for (int i = 0; i < charImages.size(); i++) {
+                int cx = sidebarX + pad;
+                int cy = headerH + pad + i * (charImgSize + pad);
+                BufferedImage cimg = charImages.get(i);
+                double scale = Math.min((double) charImgSize / cimg.getWidth(), (double) charImgSize / cimg.getHeight());
+                int sw = (int)(cimg.getWidth() * scale);
+                int sh = (int)(cimg.getHeight() * scale);
+                g.drawImage(cimg, cx + (charImgSize - sw)/2, cy + (charImgSize - sh)/2, sw, sh, null);
+                // 角色编号
+                g.setColor(Color.BLACK);
+                g.fillRect(cx+2, cy+2, 24, 18);
+                g.setColor(Color.WHITE);
+                g.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                g.drawString("C" + (i+1), cx+4, cy+15);
+            }
+        }
+
         g.dispose();
         return canvas;
     }
 
     private List<String> getCharacterReferenceUrls(Long episodeId) {
-        // TODO: 从 CharacterService 获取角色参考图 URL
-        return new ArrayList<>();
+        List<String> urls = new ArrayList<>();
+        try {
+            Episode episode = episodeRepository.selectById(episodeId);
+            if (episode == null) return urls;
+
+            // 从 episodeInfo.shots 收集角色名
+            Map<String, Object> episodeInfo = episode.getEpisodeInfo();
+            if (episodeInfo == null) return urls;
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> shots = (List<Map<String, Object>>) episodeInfo.get("shots");
+            if (shots == null) return urls;
+
+            java.util.Set<String> charNames = new java.util.LinkedHashSet<>();
+            for (Map<String, Object> shot : shots) {
+                @SuppressWarnings("unchecked")
+                List<String> characters = (List<String>) shot.get("characters");
+                if (characters != null) {
+                    for (String c : characters) {
+                        if (c != null && !c.trim().isEmpty()) charNames.add(c.trim());
+                    }
+                }
+            }
+
+            // 查询项目所有角色，按名字匹配
+            List<Character> allChars = characterRepository.findByProjectId(episode.getProjectId());
+            Map<String, Character> nameToChar = new HashMap<>();
+            for (Character ch : allChars) {
+                Map<String, Object> info = ch.getCharacterInfo();
+                if (info != null) {
+                    String name = (String) info.get(CharacterInfoKeys.NAME);
+                    if (name != null) nameToChar.put(name.trim(), ch);
+                }
+            }
+
+            for (String charName : charNames) {
+                Character ch = nameToChar.get(charName);
+                if (ch == null) continue;
+                Map<String, Object> info = ch.getCharacterInfo();
+                if (info == null) continue;
+                String url = (String) info.get(CharacterInfoKeys.THREE_VIEW_GRID_URL);
+                if (url == null || url.isEmpty()) {
+                    url = (String) info.get(CharacterInfoKeys.EXPRESSION_GRID_URL);
+                }
+                if (url != null && !url.isEmpty()) {
+                    urls.add(url);
+                }
+            }
+            log.info("角色参考图: episodeId={}, charNames={}, urls={}", episodeId, charNames, urls.size());
+        } catch (Exception e) {
+            log.warn("获取角色参考图失败: episodeId={}", episodeId, e);
+        }
+        return urls;
     }
 
     private BufferedImage downloadImage(String url) {

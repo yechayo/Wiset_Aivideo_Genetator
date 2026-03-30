@@ -114,7 +114,7 @@ public enum ProjectStatus {
         put(map, DRAFT, "start_script_generation", OUTLINE_GENERATING);
 
         // 剧本阶段内部
-        put(map, OUTLINE_GENERATING, "script_generated", SCRIPT_REVIEW);
+        put(map, OUTLINE_GENERATING, "script_generated", OUTLINE_REVIEW);
         put(map, OUTLINE_GENERATING, "script_failed", OUTLINE_GENERATING_FAILED);
         put(map, OUTLINE_REVIEW, "generate_episodes", EPISODE_GENERATING);
         put(map, OUTLINE_REVIEW, "revise_outline", OUTLINE_GENERATING);
@@ -123,6 +123,7 @@ public enum ProjectStatus {
         put(map, EPISODE_GENERATING, "script_failed", EPISODE_GENERATING_FAILED);
         put(map, SCRIPT_REVIEW, "generate_episodes", EPISODE_GENERATING);
         put(map, SCRIPT_REVIEW, "revise_episodes", EPISODE_GENERATING);
+        put(map, SCRIPT_REVIEW, "revise_outline", OUTLINE_GENERATING);
         put(map, SCRIPT_REVIEW, "confirm_script", SCRIPT_CONFIRMED);
 
         // 失败重试（包括卡在 *_GENERATING 中间状态的情况）

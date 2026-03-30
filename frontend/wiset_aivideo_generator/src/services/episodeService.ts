@@ -30,33 +30,6 @@ export async function getPanels(projectId: string, episodeId: number): Promise<A
   return get<ApiResponse<any[]>>(`/api/projects/${projectId}/episodes/${episodeId}/panels`);
 }
 
-/** AI 生成分镜 */
-export async function generatePanels(projectId: string, episodeId: number): Promise<ApiResponse<any>> {
-  return post<ApiResponse<any>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/generate`);
-}
-
-/** 分镜生成任务状态 */
-export async function getPanelGenerateStatus(
-  projectId: string,
-  episodeId: number,
-  jobId: string
-): Promise<ApiResponse<any>> {
-  return get<ApiResponse<any>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/generate/${jobId}/status`);
-}
-
-/** 修改分镜 */
-export async function revisePanel(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-  feedback: string,
-): Promise<ApiResponse<any>> {
-  return post<ApiResponse<any>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/revise`,
-    { feedback },
-  );
-}
-
 // ================= Panel 生产状态 API =================
 
 /** 批量获取所有 Panel 生产状态 */
@@ -125,12 +98,7 @@ export async function regenerateGrid(projectId: string, episodeId: number, panel
   return post<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/grid/regenerate`);
 }
 
-/** 一键通过所有九宫格 */
-export async function approveAllGrids(projectId: string, episodeId: number): Promise<ApiResponse<void>> {
-  return put<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/grid/approve-all`);
-}
-
-/** 获取单 Panel 生产状态（新版，返回 PanelGridStatusResponse） */
+/** 获取单 Panel 生产状态 */
 export async function getPanelGridStatus(
   projectId: string, episodeId: number, panelId: number,
 ): Promise<ApiResponse<PanelGridStatusResponse>> {
@@ -162,32 +130,6 @@ export async function retryVideo(
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video/retry`,
-  );
-}
-
-/** AI 修改单个分镜 */
-export async function reviseSinglePanel(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-  feedback: string,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/revise-single`,
-    { feedback },
-  );
-}
-
-/** 更新分镜信息（手动编辑） */
-export async function updatePanel(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-  panelInfo: Record<string, any>,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}`,
-    { panelInfo },
   );
 }
 
