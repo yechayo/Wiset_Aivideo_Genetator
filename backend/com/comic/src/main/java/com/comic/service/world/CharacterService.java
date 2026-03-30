@@ -39,6 +39,10 @@ public class CharacterService {
                 CharacterStateModel dto = parseOrDefault(character);
                 dto.setCharId(getCharacterInfoStr(character, "charId"));
                 dto.setName(getCharacterInfoStr(character, "name"));
+                // 填充角色特征字段
+                dto.setAppearance(getCharacterInfoStr(character, "appearance"));
+                dto.setAppearancePrompt(getCharacterInfoStr(character, "appearancePrompt"));
+                dto.setPersonality(getCharacterInfoStr(character, "personality"));
                 dtos.add(dto);
             } catch (Exception e) {
                 log.warn("Failed to parse character state: charId={}", getCharacterInfoStr(character, "charId"), e);

@@ -143,7 +143,10 @@ public class PanelGenerationService {
             String recentMemory = getRecentMemory(episode.getProjectId(), safeEpNum);
 
             Project project = projectRepository.findByProjectId(episode.getProjectId());
-            int episodeDuration = getProjectInfoIntOrDefault(project, ProjectInfoKeys.EPISODE_DURATION);
+            // 优先使用 episode 级时长，fallback 到项目级
+            int episodeDuration = getEpInfoInt(episode, EpisodeInfoKeys.DURATION) != null
+                    ? getEpInfoInt(episode, EpisodeInfoKeys.DURATION)
+                    : getProjectInfoIntOrDefault(project, ProjectInfoKeys.EPISODE_DURATION);
 
             // ===== Step 1: 分镜规划 =====
             log.info("Panel generation Step1 (plan): episodeId={}, epNum={}", episodeId, safeEpNum);
@@ -1264,7 +1267,7 @@ public class PanelGenerationService {
     }
 
     private String getRecentMemory(String projectId, int currentEp) {
-        int startEp = Math.max(1, currentEp - 5);
+        int startEp = Math.max(1, currentEp - 3);
         List<Episode> recentEps = episodeRepository.findByProjectId(projectId).stream()
                 .filter(ep -> {
                     Integer epNum = getEpInfoInt(ep, EpisodeInfoKeys.EPISODE_NUM);
@@ -1284,13 +1287,43 @@ public class PanelGenerationService {
         for (Episode ep : recentEps) {
             Integer epNum = getEpInfoInt(ep, EpisodeInfoKeys.EPISODE_NUM);
             String title = getEpInfoStr(ep, EpisodeInfoKeys.TITLE);
+            String charactersText = flattenEpInfoList(ep, EpisodeInfoKeys.CHARACTERS);
+            String content = preferredEpisodeText(ep);
+
             sb.append("[EP").append(epNum != null ? epNum : "?").append("] ")
-                    .append(title != null ? title : "")
-                    .append(": ")
-                    .append(preferredEpisodeText(ep))
-                    .append("\n");
+                    .append(title != null ? title : "").append("\n");
+            sb.append("  角色：").append(charactersText).append("\n");
+            // 截取摘要，避免全文塞入浪费 token
+            if (content != null && content.length() > 200) {
+                sb.append("  摘要：").append(content, 0, 200).append("...\n");
+            } else if (content != null && !content.isEmpty()) {
+                sb.append("  摘要：").append(content).append("\n");
+            }
+            // 如果有 continuityNote，加入以增强连贯性
+            String continuity = getEpInfoStr(ep, EpisodeInfoKeys.CONTINUITY_NOTE);
+            if (continuity != null && !continuity.isEmpty()) {
+                sb.append("  衔接说明：").append(continuity).append("\n");
+            }
+            sb.append("\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * 从 episodeInfo 中读取列表字段为可读字符串，兼容 List 和 String 格式。
+     */
+    @SuppressWarnings("unchecked")
+    private String flattenEpInfoList(Episode ep, String key) {
+        Map<String, Object> info = ep.getEpisodeInfo();
+        if (info == null) return "无";
+        Object val = info.get(key);
+        if (val == null) return "无";
+        if (val instanceof List) {
+            List<String> list = (List<String>) val;
+            return list.isEmpty() ? "无" : String.join("、", list);
+        }
+        String text = val.toString().trim();
+        return text.isEmpty() ? "无" : text;
     }
 
     private String buildRevisionUserPrompt(Episode episode, String feedback) {

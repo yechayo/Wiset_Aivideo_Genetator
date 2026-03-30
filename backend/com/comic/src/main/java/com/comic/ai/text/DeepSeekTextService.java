@@ -72,6 +72,9 @@ public class DeepSeekTextService implements TextGenerationService {
 
             requestBody.put("messages", messages);
             requestBody.put("max_tokens", maxTokens);
+            Map<String, Object> responseFormat = new HashMap<String, Object>();
+            responseFormat.put("type", "json_object");
+            requestBody.put("response_format", responseFormat);
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             Request request = new Request.Builder()

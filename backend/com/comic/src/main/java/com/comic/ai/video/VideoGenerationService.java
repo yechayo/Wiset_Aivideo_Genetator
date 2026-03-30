@@ -17,7 +17,7 @@ public interface VideoGenerationService {
      * @param referenceImage 参考图（可选）
      * @return 任务ID，用于查询进度
      */
-    String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage);
+    String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage, String resolution);
 
     /**
      * 查询视频生成任务状态

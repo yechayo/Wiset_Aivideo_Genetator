@@ -18,6 +18,18 @@ const visualStyleOptions = [
   { value: 'CYBERPUNK', label: '赛博朋克' },
 ];
 
+// 题材类型选项（与后端 WorldRuleService.generateGenreRules 对应）
+const genreOptions = [
+  { value: '热血玄幻', label: '热血玄幻' },
+  { value: '仙侠修真', label: '仙侠修真' },
+  { value: '都市异能', label: '都市异能' },
+  { value: '科幻机甲', label: '科幻机甲' },
+  { value: '悬疑推理', label: '悬疑推理' },
+  { value: '搞笑日常', label: '搞笑日常' },
+  { value: '恋爱校园', label: '恋爱校园' },
+  { value: '冒险热血', label: '冒险热血' },
+];
+
 // 目标受众选项
 const targetAudienceOptions = [
   { value: 'children', label: '儿童 (6-12岁)' },
@@ -70,10 +82,10 @@ interface Step1ContentProps extends StepContentProps {
 const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
   // 表单状态
   const [storyIdea, setStoryIdea] = useState('');
-  const [generateMode, setGenerateMode] = useState<'single' | 'series'>('single');
+  const [genre, setGenre] = useState('');
   const [visualStyle, setVisualStyle] = useState<VisualStyle | ''>('');
   const [targetAudience, setTargetAudience] = useState('');
-  const [totalEpisodes, setTotalEpisodes] = useState(10);
+  const [totalEpisodes, setTotalEpisodes] = useState(1);
   const [episodeDuration, setEpisodeDuration] = useState('60');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
@@ -100,7 +112,7 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
         storyPrompt: storyIdea,
         visualStyle: visualStyle || undefined,
         targetAudience,
-        totalEpisodes: generateMode === 'series' ? totalEpisodes : 1,
+        totalEpisodes: totalEpisodes,
         episodeDuration: parseFloat(episodeDuration),
       };
 
@@ -191,37 +203,20 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
 
       {/* 生成配置卡片 */}
       <div className={styles.card}>
-        {/* 生成模式 */}
+        {/* 总集数 */}
         <div className={styles.configSection}>
-          <label className={styles.configLabel}>生成模式</label>
-          <div className={styles.radioGroup}>
-            <div
-              className={`${styles.radioItem} ${generateMode === 'single' ? styles.active : ''}`}
-              onClick={() => setGenerateMode('single')}
-              role="radio"
-              aria-checked={generateMode === 'single'}
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && setGenerateMode('single')}
-            >
-              <span className={styles.radioButton}>
-                <span className={styles.radioButtonInner}></span>
-              </span>
-              <span>单集视频</span>
-            </div>
-            <div
-              className={`${styles.radioItem} ${generateMode === 'series' ? styles.active : ''}`}
-              onClick={() => setGenerateMode('series')}
-              role="radio"
-              aria-checked={generateMode === 'series'}
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && setGenerateMode('series')}
-            >
-              <span className={styles.radioButton}>
-                <span className={styles.radioButtonInner}></span>
-              </span>
-              <span>系列漫剧</span>
-            </div>
-          </div>
+          <label className={styles.configLabel} htmlFor="total-episodes">
+            总集数
+          </label>
+          <input
+            id="total-episodes"
+            type="number"
+            className={styles.input}
+            min="1"
+            max="100"
+            value={totalEpisodes}
+            onChange={(e) => setTotalEpisodes(parseInt(e.target.value) || 1)}
+          />
         </div>
 
         {/* 画面风格 */}
@@ -291,23 +286,6 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
           </div>
         </div>
 
-        {/* 系列漫剧集数 */}
-        {generateMode === 'series' && (
-          <div className={styles.configSection}>
-            <label className={styles.configLabel} htmlFor="total-episodes">
-              总集数
-            </label>
-            <input
-              id="total-episodes"
-              type="number"
-              className={styles.input}
-              min="1"
-              max="100"
-              value={totalEpisodes}
-              onChange={(e) => setTotalEpisodes(parseInt(e.target.value) || 1)}
-            />
-          </div>
-        )}
       </div>
 
       {/* 生成按钮 */}

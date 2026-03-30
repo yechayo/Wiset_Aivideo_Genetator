@@ -15,10 +15,28 @@ public class CharacterStateModel {
     private String costumeState;
     private Map<String, String> relationships;
 
+    // 角色特征字段（用于分镜规划和生成）
+    private String appearance;           // 中文外貌描述
+    private String appearancePrompt;     // 英文AI生图提示词
+    private String personality;          // 性格特征
+
     public String toPromptText() {
         StringBuilder sb = new StringBuilder();
         sb.append("- ").append(name).append("（").append(charId).append("）");
-        sb.append("：位置=").append(location != null ? location : "未知");
+
+        // 外貌特征
+        if (appearance != null && !appearance.isEmpty()) {
+            sb.append("【外貌】").append(appearance);
+        }
+
+        // 性格特征
+        if (personality != null && !personality.isEmpty()) {
+            sb.append("【性格】").append(personality);
+        }
+
+        // 当前状态
+        sb.append("【当前状态】");
+        sb.append("位置=").append(location != null ? location : "未知");
         sb.append("，情绪=").append(emotion != null ? emotion : "平静");
         if (inventory != null && !inventory.isEmpty()) {
             sb.append("，持有=");

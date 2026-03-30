@@ -143,7 +143,7 @@ public class ComicGenerationService {
     }
 
     /**
-     * 从 panelInfo.characters 中提取 charId，查库获取角色的名称和外貌描述。
+     * 从 panelInfo.characters 中提取 charId，查库获取角色的名称、外貌描述和英文提示词。
      */
     private Map<String, Map<String, String>> resolveCharacterDescriptions(Map<String, Object> panelInfo) {
         Map<String, Map<String, String>> result = new HashMap<>();
@@ -170,8 +170,12 @@ public class ComicGenerationService {
                 Map<String, String> desc = new HashMap<>();
                 Object name = charInfo.get(CharacterInfoKeys.NAME);
                 Object appearance = charInfo.get(CharacterInfoKeys.APPEARANCE);
+                // 优先使用英文提示词
+                Object appearancePrompt = charInfo.get(CharacterInfoKeys.APPEARANCE_PROMPT);
+
                 desc.put("name", name != null ? name.toString() : null);
                 desc.put("appearance", appearance != null ? appearance.toString() : null);
+                desc.put("appearancePrompt", appearancePrompt != null ? appearancePrompt.toString() : null);
                 result.put(charId, desc);
             } catch (Exception e) {
                 log.warn("查询角色信息失败: charId={}", charId, e);

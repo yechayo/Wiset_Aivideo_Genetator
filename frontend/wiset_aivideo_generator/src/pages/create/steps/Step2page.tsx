@@ -330,10 +330,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   };
 
   const getDefaultEpisodeCount = (chapterTitle: string): number => {
-    if (scriptData?.isSingleEpisode || scriptData?.project?.projectInfo?.totalEpisodes === 1) {
-      return 1;
-    }
-
     const fromChapter = extractEpisodeCountFromChapter(chapterTitle);
     if (fromChapter && fromChapter > 0) {
       return fromChapter;

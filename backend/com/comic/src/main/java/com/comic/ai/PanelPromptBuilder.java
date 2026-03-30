@@ -349,14 +349,18 @@ public class PanelPromptBuilder {
             for (Map<String, Object> ch : characters) {
                 String charId = ch.get("char_id") != null ? ch.get("char_id").toString() : null;
 
-                // 从 charDescriptions 获取角色名称和外貌
+                // 从 charDescriptions 获取角色名称和外貌（优先使用英文提示词）
                 String name = null;
                 String appearance = null;
                 if (charId != null && charDescriptions != null) {
                     Map<String, String> desc = charDescriptions.get(charId);
                     if (desc != null) {
                         name = desc.get("name");
-                        appearance = desc.get("appearance");
+                        // 优先使用英文 appearancePrompt，回退到中文 appearance
+                        String appearancePrompt = desc.get("appearancePrompt");
+                        appearance = (appearancePrompt != null && !appearancePrompt.isEmpty())
+                                ? appearancePrompt
+                                : desc.get("appearance");
                     }
                 }
 

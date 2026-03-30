@@ -62,20 +62,11 @@ public class CharacterExtractService {
 
             String storyPrompt = getProjectInfoStr(project, ProjectInfoKeys.STORY_PROMPT);
 
-            String systemPrompt = "你是一个专业的角色设计师，擅长从故事大纲中提取和分析角色信息。\n\n"
-                    + "请仔细阅读以下故事大纲，提取出所有重要角色，并为每个角色生成详细的角色档案。\n"
-                    + "角色定位只能是以下三种之一：主角、反派、配角";
-            String userPrompt = "请从以下故事大纲中提取角色信息：\n\n"
-                    + "【故事创意】\n" + storyPrompt + "\n\n"
-                    + "【故事大纲】\n" + outline + "\n\n"
-                    + "要求：\n"
-                    + "1. 只返回纯JSON数组，不要有任何其他文字说明\n"
-                    + "2. 不要使用markdown代码块标记\n"
-                    + "3. 每个角色必须包含：name(姓名), role(角色定位), personality(性格), appearance(外貌), background(背景), voice(声音特点)\n"
-                    + "4. 所有字段都必须有值，不能为null\n"
-                    + "5. role只能是：主角、反派、配角\n"
-                    + "6. 返回格式示例：[{\"name\":\"张三\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\",\"voice\":\"沉稳男声\"}]\n\n"
-                    + "请直接返回JSON数组：";
+            String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
+            if (visualStyle == null) visualStyle = "3D";
+
+            String systemPrompt = buildCharacterExtractionSystemPrompt(visualStyle);
+            String userPrompt = buildCharacterExtractionUserPrompt(storyPrompt, outline);
 
             String result = textGenerationService.generate(systemPrompt, userPrompt);
 
@@ -188,10 +179,18 @@ public class CharacterExtractService {
                 dto.setCharId(generateCharId(projectId));
                 dto.setName(getStringValue(data, "name"));
                 dto.setRole(getStringValue(data, "role"));
-                dto.setPersonality(getStringValue(data, CharacterInfoKeys.PERSONALITY));
+                dto.setAlias(getStringValue(data, "alias"));
+                dto.setPersonality(getStringValue(data, "personality"));
                 dto.setAppearance(getStringValue(data, "appearance"));
+                dto.setAppearancePrompt(getStringValue(data, "appearancePrompt"));
+                dto.setProfession(getStringValue(data, "profession"));
                 dto.setBackground(getStringValue(data, "background"));
                 dto.setVoice(getStringValue(data, "voice"));
+                // 主角/反派扩展字段
+                dto.setMotivation(getStringValue(data, "motivation"));
+                dto.setWeakness(getStringValue(data, "weakness"));
+                dto.setRelationships(getStringValue(data, "relationships"));
+                dto.setHabits(getStringValue(data, "habits"));
                 dto.setConfirmed(false);
                 result.add(dto);
             }
@@ -256,15 +255,34 @@ public class CharacterExtractService {
             info.put(CharacterInfoKeys.CHAR_ID, dto.getCharId());
             info.put(CharacterInfoKeys.NAME, dto.getName());
             info.put(CharacterInfoKeys.ROLE, dto.getRole());
+            info.put(CharacterInfoKeys.ALIAS, dto.getAlias());
             info.put(CharacterInfoKeys.PERSONALITY, dto.getPersonality());
-            info.put(CharacterInfoKeys.VOICE, dto.getVoice());
             info.put(CharacterInfoKeys.APPEARANCE, dto.getAppearance());
+            info.put(CharacterInfoKeys.APPEARANCE_PROMPT, dto.getAppearancePrompt());
+            info.put(CharacterInfoKeys.PROFESSION, dto.getProfession());
+            info.put(CharacterInfoKeys.VOICE, dto.getVoice());
             info.put(CharacterInfoKeys.BACKGROUND, dto.getBackground());
+
+            // 主角/反派扩展字段（配角可能为空）
+            boolean isMain = "主角".equals(dto.getRole()) || "反派".equals(dto.getRole());
+            if (isMain) {
+                putIfNotEmpty(info, CharacterInfoKeys.MOTIVATION, dto.getMotivation());
+                putIfNotEmpty(info, CharacterInfoKeys.WEAKNESS, dto.getWeakness());
+                putIfNotEmpty(info, CharacterInfoKeys.RELATIONSHIPS, dto.getRelationships());
+                putIfNotEmpty(info, CharacterInfoKeys.HABITS, dto.getHabits());
+            }
+
             info.put(CharacterInfoKeys.CONFIRMED, false);
             info.put(CharacterInfoKeys.VISUAL_STYLE, visualStyle);
             character.setCharacterInfo(info);
 
             characterRepository.insert(character);
+        }
+    }
+
+    private void putIfNotEmpty(Map<String, Object> map, String key, String value) {
+        if (value != null && !value.isEmpty()) {
+            map.put(key, value);
         }
     }
 
@@ -313,6 +331,79 @@ public class CharacterExtractService {
         if (info == null) return null;
         Object script = info.get(ProjectInfoKeys.SCRIPT);
         return script instanceof Map ? (Map<String, Object>) script : null;
+    }
+
+    // ================= 角色 Prompt 构建 =================
+
+    /**
+     * 构建角色提取系统提示词
+     * 参考文档设计：主角11字段（含英文appearancePrompt）、配角5字段
+     */
+    private String buildCharacterExtractionSystemPrompt(String visualStyle) {
+        String styleDesc;
+        switch (visualStyle != null ? visualStyle.toUpperCase() : "3D") {
+            case "REAL": styleDesc = "真人写实风格（真人电影质感，自然光影）"; break;
+            case "ANIME": styleDesc = "动漫风格（精细2D动漫插画）"; break;
+            case "MANGA": styleDesc = "日本漫画风格（彩色漫画插画）"; break;
+            case "INK": styleDesc = "中国水墨风格（水墨写意）"; break;
+            case "CYBERPUNK": styleDesc = "赛博朋克风格（霓虹灯光，未来感）"; break;
+            default: styleDesc = "3D CG风格（高精度3D建模，半写实）"; break;
+        }
+
+        return "你是一位资深的角色设计师和小说家。\n"
+            + "你的任务是根据提供的角色名称和剧本上下文，生成详细的角色档案。\n\n"
+            + "本剧的视觉风格为「" + styleDesc + "」。\n\n"
+            + "## 输出要求\n\n"
+            + "直接输出 JSON 数组，不要 markdown 代码块标记。\n"
+            + "按角色重要性分级处理：\n\n"
+            + "### 主角/反派（完整档案）\n"
+            + "必须包含以下字段：\n"
+            + "- name: 姓名\n"
+            + "- role: 角色定位（主角/反派/配角）\n"
+            + "- alias: 称谓或外号（如「李医生」「老张」）\n"
+            + "- personality: 性格描述（主性格+次性格）\n"
+            + "- appearance: 中文外貌描述（年龄、性别、身高、身材、发型、着装）\n"
+            + "- appearancePrompt: 英文AI生图提示词（关键！格式：[Style Keywords], [Character Description], [Clothing], [Face], [Lighting]。必须严格匹配「" + styleDesc + "」视觉风格）\n"
+            + "- profession: 职业（含隐藏身份）\n"
+            + "- background: 生活环境、生理特征、地域标签\n"
+            + "- voice: 声音特点\n"
+            + "- motivation: 核心动机\n"
+            + "- weakness: 恐惧与弱点\n"
+            + "- relationships: 核心关系及影响\n"
+            + "- habits: 语言风格、行为习惯、兴趣爱好\n\n"
+            + "### 配角（精简档案）\n"
+            + "必须包含以下字段：\n"
+            + "- name, role, alias, personality, appearance, appearancePrompt, profession, voice\n"
+            + "- 不需要 motivation/weakness/relationships/habits\n\n"
+            + "## appearancePrompt 编写规则\n"
+            + "这是最重要的字段，直接用于AI图片生成。要求：\n"
+            + "1. 必须是纯英文\n"
+            + "2. 以视觉风格关键词开头\n"
+            + "3. 按此顺序：[Style], [Gender/Age/Build], [Hair], [Face/Eyes], [Clothing], [Accessories], [Lighting]\n"
+            + "4. 避免抽象描述，用具体视觉元素（如「long silver hair」而非「elegant hair」）\n"
+            + "5. 不要出现中文名字\n\n"
+            + "示例（3D风格主角）：\n"
+            + "\"Semi-realistic 3D CG character, young woman age 22, slender build, long silver hair with blue highlights, "
+            + "sharp ice-blue eyes, delicate features, wearing dark blue military coat with silver buttons, "
+            + "black leather gloves, silver earring on left ear, soft ethereal lighting, cinematic rim light\"\n";
+    }
+
+    /**
+     * 构建角色提取用户提示词
+     */
+    private String buildCharacterExtractionUserPrompt(String storyPrompt, String outline) {
+        return "请从以下故事中提取所有角色信息：\n\n"
+            + "【故事创意】\n" + storyPrompt + "\n\n"
+            + "【故事大纲】\n" + outline + "\n\n"
+            + "要求：\n"
+            + "1. 只返回纯JSON数组，不要有任何其他文字说明\n"
+            + "2. 不要使用markdown代码块标记\n"
+            + "3. 所有字段都必须有值，不能为null\n"
+            + "4. role只能是：主角、反派、配角\n"
+            + "5. appearancePrompt 必须是英文，是AI图片生成的核心依据\n"
+            + "6. 主角和反派必须填写完整档案（含motivation/weakness/relationships/habits）\n"
+            + "7. 配角只需要精简档案\n\n"
+            + "请直接返回JSON数组：";
     }
 
     private String getScriptOutlineText(Project project) {

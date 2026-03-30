@@ -14,6 +14,7 @@ public final class EpisodeInfoKeys {
     public static final String ERROR_MSG = "errorMsg";
     public static final String PRODUCTION_STATUS = "productionStatus";
     public static final String OUTLINE_NODE = "outlineNode";
+    public static final String DURATION = "duration";
 
     private EpisodeInfoKeys() {}
 }

@@ -209,7 +209,16 @@ public class PanelProductionService {
             CharacterPromptManager.VisualStyle style = getProjectStyle(panel);
             // 使用 Vidu 安全版本 prompt，避免审核失败
             String prompt = panelPromptBuilder.buildViduVideoPrompt(style, panel.getPanelInfo());
-            String taskId = videoGenerationService.generateAsync(prompt, 5, "16:9", comicUrl);
+            // 从 panelInfo 读取 LLM 规划的 duration，默认 5 秒
+            int duration = 5;
+            Object durationObj = info.get("duration");
+            if (durationObj instanceof Number) {
+                int planned = ((Number) durationObj).intValue();
+                if (planned >= 3 && planned <= 16) {
+                    duration = planned;
+                }
+            }
+            String taskId = videoGenerationService.generateAsync(prompt, duration, "16:9", comicUrl, "540p");
             info.put("videoTaskId", taskId);
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);

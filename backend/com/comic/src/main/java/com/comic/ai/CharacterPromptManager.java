@@ -19,6 +19,18 @@ public class CharacterPromptManager {
     }
 
     /**
+     * 获取角色的英文外貌提示词，优先使用 appearancePrompt，回退到 appearance
+     * 图片生成需要英文提示词以获得更好的效果
+     */
+    private String getAppearancePrompt(Character character) {
+        String prompt = getCharInfoStr(character, "appearancePrompt");
+        if (prompt != null && !prompt.isEmpty()) {
+            return prompt;
+        }
+        return getCharInfoStr(character, "appearance");
+    }
+
+    /**
      * 视觉风格枚举
      */
     public enum VisualStyle {
@@ -73,9 +85,10 @@ public class CharacterPromptManager {
 
     /**
      * 构建九宫格表情大全图提示词
+     * 优先使用 appearancePrompt（英文），回退到 appearance（中文）
      */
     public String buildExpressionGridPrompt(Character character, VisualStyle style) {
-        String appearance = getCharInfoStr(character, "appearance");
+        String appearance = getAppearancePrompt(character);
         String personality = getCharInfoStr(character, "personality");
         String stylePrefix = buildCharacterStylePrefix(style);
         String negativePrompt = buildExpressionNegativePrompt(style);
@@ -99,9 +112,10 @@ public class CharacterPromptManager {
 
     /**
      * 构建三视图大全图提示词
+     * 优先使用 appearancePrompt（英文），回退到 appearance（中文）
      */
     public String buildThreeViewGridPrompt(Character character, VisualStyle style) {
-        String appearance = getCharInfoStr(character, "appearance");
+        String appearance = getAppearancePrompt(character);
         String personality = getCharInfoStr(character, "personality");
         String stylePrefix = buildCharacterStylePrefix(style);
         String negativePrompt = buildThreeViewNegativePrompt(style);

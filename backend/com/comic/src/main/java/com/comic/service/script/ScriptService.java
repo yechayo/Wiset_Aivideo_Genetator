@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * 剧本服务
@@ -131,7 +132,8 @@ public class ScriptService {
             String systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
                 totalEpisodes != null ? totalEpisodes : 4,
                 genre,
-                targetAudience
+                targetAudience,
+                visualStyle
             );
 
             String userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
@@ -140,7 +142,8 @@ public class ScriptService {
                 worldConfig.getRulesText(),
                 totalEpisodes != null ? totalEpisodes : 4,
                 episodeDuration != null ? episodeDuration / 60 : 1,
-                visualStyle != null ? visualStyle : "REAL"
+                visualStyle != null ? visualStyle : "REAL",
+                null  // 首次生成无旧大纲
             );
 
             log.info("systemPrompt: {}", systemPrompt);
@@ -149,18 +152,58 @@ public class ScriptService {
             // 调用文本生成服务生成大纲
             String outlineContent = textGenerationService.generate(systemPrompt, userPrompt);
 
-            // 保存大纲到 projectInfo
+            // 保存大纲到 projectInfo，同时解析 JSON 提取结构化数据
             Map<String, Object> info = ensureProjectInfo(project);
             Map<String, Object> scriptMap = getScriptMap(project);
             if (scriptMap == null) {
                 scriptMap = new HashMap<>();
                 info.put(ProjectInfoKeys.SCRIPT, scriptMap);
             }
-            scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
+
+            // 尝试解析 JSON 结构，分别存储 outline/characters/items/episodes
+            try {
+                String cleanedJson = outlineContent;
+                if (cleanedJson.startsWith("```json")) cleanedJson = cleanedJson.substring(7);
+                if (cleanedJson.startsWith("```")) cleanedJson = cleanedJson.substring(3);
+                if (cleanedJson.endsWith("```")) cleanedJson = cleanedJson.substring(0, cleanedJson.length() - 3);
+                cleanedJson = cleanedJson.trim();
+
+                com.fasterxml.jackson.databind.JsonNode outlineNode =
+                        objectMapper.readTree(cleanedJson);
+
+                // 存 outline 字段（Markdown 大纲文本）
+                if (outlineNode.has("outline")) {
+                    scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineNode.get("outline").asText());
+                } else {
+                    // fallback: 整个内容作为 outline
+                    scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
+                }
+
+                // 存 characters 数组（结构化角色数据）
+                if (outlineNode.has("characters")) {
+                    scriptMap.put(ProjectInfoKeys.SCRIPT_CHARACTERS,
+                            objectMapper.writeValueAsString(outlineNode.get("characters")));
+                }
+
+                // 存 items 数组（结构化物品数据）
+                if (outlineNode.has("items")) {
+                    scriptMap.put(ProjectInfoKeys.SCRIPT_ITEMS,
+                            objectMapper.writeValueAsString(outlineNode.get("items")));
+                }
+
+                // 存 episodes 数组（分集概要数据）
+                if (outlineNode.has("episodes")) {
+                    scriptMap.put(ProjectInfoKeys.SCRIPT_EPISODES,
+                            objectMapper.writeValueAsString(outlineNode.get("episodes")));
+                }
+            } catch (Exception parseEx) {
+                log.warn("大纲 JSON 解析失败，回退为原始文本存储: {}", parseEx.getMessage());
+                scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
+            }
 
             ScriptPromptBuilder.ScriptParams params = scriptPromptBuilder.calculateScriptParameters(
                 totalEpisodes != null ? totalEpisodes : 4);
-            int fallbackEpisodeCount = params.isSingleEpisode ? 1 : Math.max(1, params.episodesPerChapter);
+            int fallbackEpisodeCount = Math.max(1, params.episodesPerChapter);
             info.put(ProjectInfoKeys.EPISODES_PER_CHAPTER, fallbackEpisodeCount);
 
             // 持久化大纲内容到数据库（方法无事务，必须显式 save）
@@ -195,7 +238,7 @@ public class ScriptService {
             throw new BusinessException("当前状态不能生成分集，请先生成并确认大纲。当前状态: " + status);
         }
 
-        // 验证章节顺序（必须顺序生成，单集只有一个章节，验证天然通过）
+        // 验证章节顺序（必须顺序生成）
         validateChapterOrder(project, chapter);
 
         int resolvedEpisodeCount = resolveEpisodeCount(project, chapter, episodeCount, false);
@@ -208,9 +251,9 @@ public class ScriptService {
         try {
             String outline = getScriptOutlineText(project);
 
-            // 从大纲提取全局信息
-            String globalCharacters = extractCharactersFromOutline(outline);
-            String globalItems = extractItemsFromOutline(outline);
+            // 从大纲提取全局信息（优先从结构化 JSON 读取，正则作为 fallback）
+            String globalCharacters = extractCharactersStructured(project, outline);
+            String globalItems = extractItemsStructured(project, outline);
 
             // 获取前序剧集摘要（保持连贯性）
             String previousSummary = buildPreviousEpisodesSummary(projectId);
@@ -218,7 +261,10 @@ public class ScriptService {
             Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
 
             // 构建分集prompt
-            String systemPrompt = scriptPromptBuilder.buildScriptEpisodeSystemPrompt();
+            String systemPrompt = scriptPromptBuilder.buildScriptEpisodeSystemPrompt(
+                episodeDuration != null ? episodeDuration / 60 : 1,
+                getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE)
+            );
             String userPrompt = scriptPromptBuilder.buildScriptEpisodeUserPrompt(
                 outline,
                 chapter,
@@ -269,16 +315,8 @@ public class ScriptService {
 
         Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
 
-        // 判断是否为单集模式
-        boolean isSingleEpisode = totalEpisodes != null && totalEpisodes == 1;
-
         // 获取所有章节
-        List<String> chapters;
-        if (isSingleEpisode) {
-            chapters = Collections.singletonList("单集剧本");
-        } else {
-            chapters = extractChaptersFromOutline(getScriptOutlineText(project));
-        }
+        List<String> chapters = extractChaptersFromOutline(getScriptOutlineText(project));
 
         // 获取已生成的章节
         List<Episode> existingEpisodes = episodeRepository.findByProjectId(projectId);
@@ -461,8 +499,6 @@ public class ScriptService {
             log.info("Raw episode data: {}", rawEpisodes);
         }
 
-        Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
-        boolean isSingleEpisode = totalEpisodes != null && totalEpisodes == 1;
         String outline = getScriptOutlineText(project);
 
         log.info("getScriptContent result: outlineLength={}, episodesCount={}",
@@ -474,42 +510,31 @@ public class ScriptService {
         result.put("status", project.getStatus());
         result.put("projectInfo", project.getProjectInfo());  // 直接返回 projectInfo
         result.put("outline", outline);
-        result.put("isSingleEpisode", isSingleEpisode);
         result.put("episodes", episodes);
 
-        if (isSingleEpisode) {
-            String singleChapter = "单集剧本";
-            boolean hasEpisodes = !episodes.isEmpty();
-            result.put("chapters", Collections.singletonList(singleChapter));
-            result.put("generatedChapters", hasEpisodes ? Collections.singletonList(singleChapter) : Collections.emptyList());
-            result.put("pendingChapters", hasEpisodes ? Collections.emptyList() : Collections.singletonList(singleChapter));
-            result.put("nextChapter", hasEpisodes ? null : singleChapter);
-            result.put("needGenerateScript", !hasEpisodes);
-        } else {
-            List<String> chapters = extractChaptersFromOutline(outline);
+        List<String> chapters = extractChaptersFromOutline(outline);
 
-            Set<String> generatedChapters = new HashSet<>();
-            for (Episode ep : episodes) {
-                String chapterTitle = getEpisodeInfoStr(ep, EpisodeInfoKeys.CHAPTER_TITLE);
-                if (chapterTitle != null) {
-                    generatedChapters.add(chapterTitle);
-                }
+        Set<String> generatedChapters = new HashSet<>();
+        for (Episode ep : episodes) {
+            String chapterTitle = getEpisodeInfoStr(ep, EpisodeInfoKeys.CHAPTER_TITLE);
+            if (chapterTitle != null) {
+                generatedChapters.add(chapterTitle);
             }
-
-            List<String> pendingChapters = new ArrayList<>();
-            for (String chapter : chapters) {
-                if (!generatedChapters.contains(chapter)) {
-                    pendingChapters.add(chapter);
-                }
-            }
-
-            String nextChapter = pendingChapters.isEmpty() ? null : pendingChapters.get(0);
-
-            result.put("chapters", chapters);
-            result.put("generatedChapters", new ArrayList<>(generatedChapters));
-            result.put("pendingChapters", pendingChapters);
-            result.put("nextChapter", nextChapter);
         }
+
+        List<String> pendingChapters = new ArrayList<>();
+        for (String chapter : chapters) {
+            if (!generatedChapters.contains(chapter)) {
+                pendingChapters.add(chapter);
+            }
+        }
+
+        String nextChapter = pendingChapters.isEmpty() ? null : pendingChapters.get(0);
+
+        result.put("chapters", chapters);
+        result.put("generatedChapters", new ArrayList<>(generatedChapters));
+        result.put("pendingChapters", pendingChapters);
+        result.put("nextChapter", nextChapter);
 
         return result;
     }
@@ -590,6 +615,78 @@ public class ScriptService {
     }
 
     /**
+     * 从结构化数据中提取角色信息（优先），正则作为 fallback
+     */
+    public String extractCharactersStructured(Project project, String outline) {
+        // 优先从结构化字段读取
+        Map<String, Object> scriptMap = getScriptMap(project);
+        if (scriptMap != null) {
+            Object charactersObj = scriptMap.get(ProjectInfoKeys.SCRIPT_CHARACTERS);
+            if (charactersObj != null && !charactersObj.toString().isEmpty()) {
+                String charactersJson = charactersObj.toString();
+                try {
+                    // 将 JSON 数组格式化为可读文本
+                    com.fasterxml.jackson.databind.JsonNode charactersNode =
+                            objectMapper.readTree(charactersJson);
+                    if (charactersNode.isArray() && charactersNode.size() > 0) {
+                        StringBuilder sb = new StringBuilder("## 主要人物小传\n\n");
+                        for (com.fasterxml.jackson.databind.JsonNode charNode : charactersNode) {
+                            String name = charNode.has("name") ? charNode.get("name").asText() : "未知";
+                            String role = charNode.has("role") ? charNode.get("role").asText() : "";
+                            String personality = charNode.has("personality") ? charNode.get("personality").asText() : "";
+                            String appearance = charNode.has("appearance") ? charNode.get("appearance").asText() : "";
+                            String background = charNode.has("background") ? charNode.get("background").asText() : "";
+
+                            sb.append("### ").append(name).append("（").append(role).append("）\n");
+                            sb.append("- 性格：").append(personality).append("\n");
+                            sb.append("- 外貌：").append(appearance).append("\n");
+                            sb.append("- 背景：").append(background).append("\n\n");
+                        }
+                        return sb.toString();
+                    }
+                } catch (Exception e) {
+                    log.warn("结构化角色 JSON 解析失败，回退到正则提取: {}", e.getMessage());
+                }
+            }
+        }
+
+        // fallback: 正则从大纲文本提取
+        return extractCharactersFromOutline(outline);
+    }
+
+    /**
+     * 从结构化数据中提取物品信息（优先），正则作为 fallback
+     */
+    public String extractItemsStructured(Project project, String outline) {
+        // 优先从结构化字段读取
+        Map<String, Object> scriptMap = getScriptMap(project);
+        if (scriptMap != null) {
+            Object itemsObj = scriptMap.get(ProjectInfoKeys.SCRIPT_ITEMS);
+            if (itemsObj != null && !itemsObj.toString().isEmpty()) {
+                String itemsJson = itemsObj.toString();
+                try {
+                    com.fasterxml.jackson.databind.JsonNode itemsNode =
+                            objectMapper.readTree(itemsJson);
+                    if (itemsNode.isArray() && itemsNode.size() > 0) {
+                        StringBuilder sb = new StringBuilder("## 关键物品设定\n\n");
+                        for (com.fasterxml.jackson.databind.JsonNode itemNode : itemsNode) {
+                            String name = itemNode.has("name") ? itemNode.get("name").asText() : "未知";
+                            String description = itemNode.has("description") ? itemNode.get("description").asText() : "";
+                            sb.append("- **").append(name).append("**: ").append(description).append("\n");
+                        }
+                        return sb.toString();
+                    }
+                } catch (Exception e) {
+                    log.warn("结构化物品 JSON 解析失败，回退到正则提取: {}", e.getMessage());
+                }
+            }
+        }
+
+        // fallback: 正则从大纲文本提取
+        return extractItemsFromOutline(outline);
+    }
+
+    /**
      * 从大纲中提取角色信息
      */
     public String extractCharactersFromOutline(String outline) {
@@ -639,13 +736,13 @@ public class ScriptService {
         for (Episode ep : episodes) {
             Integer epNum = getEpisodeInfoInt(ep, EpisodeInfoKeys.EPISODE_NUM);
             String title = getEpisodeInfoStr(ep, EpisodeInfoKeys.TITLE);
-            String characters = getEpisodeInfoStr(ep, EpisodeInfoKeys.CHARACTERS);
-            String keyItems = getEpisodeInfoStr(ep, EpisodeInfoKeys.KEY_ITEMS);
+            String charactersText = flattenEpisodeInfoList(ep, EpisodeInfoKeys.CHARACTERS);
+            String keyItemsText = flattenEpisodeInfoList(ep, EpisodeInfoKeys.KEY_ITEMS);
             String content = getEpisodeInfoStr(ep, EpisodeInfoKeys.CONTENT);
 
             sb.append("第").append(epNum).append("集：").append(title != null ? title : "").append("\n");
-            sb.append("- 涉及角色：").append(characters != null ? characters : "无").append("\n");
-            sb.append("- 关键物品：").append(keyItems != null ? keyItems : "无").append("\n");
+            sb.append("- 涉及角色：").append(charactersText).append("\n");
+            sb.append("- 关键物品：").append(keyItemsText).append("\n");
             if (content != null && content.length() > 200) {
                 sb.append("- 剧情摘要：").append(content.substring(0, 200)).append("...\n");
             } else if (content != null) {
@@ -655,6 +752,24 @@ public class ScriptService {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 从 episodeInfo 中读取列表字段，兼容 List 和 String 两种存储格式。
+     * 新数据为 List<String>，老数据可能为逗号分隔 String。
+     */
+    @SuppressWarnings("unchecked")
+    private String flattenEpisodeInfoList(Episode ep, String key) {
+        Map<String, Object> info = ep.getEpisodeInfo();
+        if (info == null) return "无";
+        Object val = info.get(key);
+        if (val == null) return "无";
+        if (val instanceof List) {
+            List<String> list = (List<String>) val;
+            return list.isEmpty() ? "无" : String.join("、", list);
+        }
+        String text = val.toString().trim();
+        return text.isEmpty() ? "无" : text;
     }
 
     /**
@@ -708,14 +823,6 @@ public class ScriptService {
     }
 
     int resolveEpisodeCount(Project project, String chapter, Integer requestedEpisodeCount, boolean isBatch) {
-        Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
-        boolean isSingleEpisode = project != null
-                && totalEpisodes != null
-                && totalEpisodes == 1;
-        if (isSingleEpisode) {
-            return 1;
-        }
-
         if (requestedEpisodeCount != null && requestedEpisodeCount > 0) {
             return requestedEpisodeCount;
         }
@@ -804,11 +911,19 @@ public class ScriptService {
                 epInfo.put(EpisodeInfoKeys.EPISODE_NUM, episodeNum++);
                 epInfo.put(EpisodeInfoKeys.TITLE, getJsonText(episodeNode, "title", "第" + (episodeNum - 1) + "集"));
                 epInfo.put(EpisodeInfoKeys.CONTENT, getJsonText(episodeNode, "content", ""));
-                epInfo.put(EpisodeInfoKeys.CHARACTERS, getJsonText(episodeNode, "characters", ""));
-                epInfo.put(EpisodeInfoKeys.KEY_ITEMS, getJsonText(episodeNode, "keyItems", ""));
+                epInfo.put(EpisodeInfoKeys.CHARACTERS, parseJsonStringArray(episodeNode, "characters"));
+                epInfo.put(EpisodeInfoKeys.KEY_ITEMS, parseJsonStringArray(episodeNode, "keyItems"));
                 epInfo.put(EpisodeInfoKeys.CONTINUITY_NOTE, getJsonText(episodeNode, "continuityNote", ""));
                 epInfo.put(EpisodeInfoKeys.VISUAL_STYLE_NOTE, getJsonText(episodeNode, "visualStyleNote", ""));
                 epInfo.put(EpisodeInfoKeys.CHAPTER_TITLE, chapterTitle);
+                // 优先取 AI 返回的 duration（秒），fallback 到项目级 episodeDuration
+                Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
+                JsonNode durationNode = episodeNode.get("duration");
+                if (durationNode != null && durationNode.isNumber()) {
+                    epInfo.put(EpisodeInfoKeys.DURATION, durationNode.asInt());
+                } else {
+                    epInfo.put(EpisodeInfoKeys.DURATION, episodeDuration != null ? episodeDuration : 60);
+                }
                 epInfo.put(EpisodeInfoKeys.RETRY_COUNT, 0);
                 episode.setEpisodeInfo(epInfo);
 
@@ -849,6 +964,36 @@ public class ScriptService {
     }
 
     /**
+     * 从 JsonNode 解析字符串数组字段。
+     * 兼容三种 AI 返回格式：["A","B"]（数组）、"A,B"（逗号分隔字符串）、"A"（单个字符串）
+     */
+    private List<String> parseJsonStringArray(JsonNode node, String field) {
+        if (!node.has(field) || node.get(field).isNull()) {
+            return Collections.emptyList();
+        }
+        JsonNode fieldNode = node.get(field);
+        if (fieldNode.isArray()) {
+            List<String> result = new ArrayList<>();
+            for (JsonNode item : fieldNode) {
+                String val = item.asText("").trim();
+                if (!val.isEmpty()) {
+                    result.add(val);
+                }
+            }
+            return result;
+        }
+        // 兼容：AI 返回逗号分隔字符串的情况
+        String text = fieldNode.asText("").trim();
+        if (text.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(text.split("[,、，]"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+    }
+
+    /**
      * 重新生成大纲
      */
     private void regenerateOutline(Project project, String revisionNote, String currentOutline) {
@@ -860,19 +1005,24 @@ public class ScriptService {
             Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
             String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
 
+            // 获取世界规则作为背景设定（而非用 currentOutline 替代）
+            WorldConfigModel worldConfig = worldRuleService.getWorldConfig(project.getProjectId());
+
             String systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
                 totalEpisodes != null ? totalEpisodes : 4,
                 genre,
-                targetAudience
+                targetAudience,
+                visualStyle
             );
 
             String userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
                 storyPrompt,
                 genre,
-                currentOutline,
+                worldConfig.getRulesText(),
                 totalEpisodes != null ? totalEpisodes : 4,
                 episodeDuration != null ? episodeDuration / 60 : 1,
-                visualStyle != null ? visualStyle : "REAL"
+                visualStyle != null ? visualStyle : "REAL",
+                currentOutline  // 旧大纲作为独立上下文传入
             );
 
             // 添加修改意见

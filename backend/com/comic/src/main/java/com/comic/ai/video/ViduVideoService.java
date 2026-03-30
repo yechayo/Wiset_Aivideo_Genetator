@@ -47,7 +47,7 @@ public class ViduVideoService implements VideoGenerationService {
     private final Semaphore semaphore = new Semaphore(1);
 
     @Override
-    public String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage) {
+    public String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage, String resolution) {
         boolean acquired = false;
         try {
             semaphore.acquire();
@@ -60,6 +60,7 @@ public class ViduVideoService implements VideoGenerationService {
             requestBody.put("images", Collections.singletonList(referenceImage));
             requestBody.put("prompt", prompt);
             requestBody.put("duration", duration);
+            requestBody.put("resolution", resolution);
             requestBody.put("watermark", false);
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);

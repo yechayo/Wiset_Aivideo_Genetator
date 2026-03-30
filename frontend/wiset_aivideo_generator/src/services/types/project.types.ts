@@ -182,7 +182,6 @@ export interface ScriptContentResponse {
   generatedChapters: string[];
   pendingChapters: string[];
   episodes: Episode[];
-  isSingleEpisode?: boolean;
   needGenerateScript?: boolean;
 }
 
