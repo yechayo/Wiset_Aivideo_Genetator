@@ -12,42 +12,40 @@ import {
   getPanels,
   generatePanels,
   getPanelGenerateStatus,
-  generateBackground,
   revisePanel,
   getBatchProductionStatuses,
-  approveComic,
-  reviseComic,
+  approveGrid,
+  rejectGrid,
+  regenerateGrid,
+  approveAllGrids,
   generateVideo,
-  generateComic,
   reviseSinglePanel,
   updatePanel,
 } from '../../../services/episodeService';
-import type { PanelProductionStatusResponse } from '../../../services/types/episode.types';
+import type { PanelGridStatusResponse } from '../../../services/types/episode.types';
 import { getCharacterStatus, getCharacters } from '../../../services/characterService';
 import EpisodeCard from './components/EpisodeCard';
+import { BatchReviewBar } from './components/BatchReviewBar';
 
 interface Step5pageProps {
   project: any;
 }
 
 /**
- * 将后端 PanelProductionStatusResponse 映射为前端 SegmentPipelineStep
+ * 将后端 PanelGridStatusResponse 映射为前端 SegmentPipelineStep
  */
-function mapProductionToPipelineStep(status: {
-  backgroundStatus: string;
-  backgroundUrl: string | null;
-  comicStatus: string;
+function mapGridToPipelineStep(status: {
+  gridStatus: string;
   videoStatus: string;
 }): SegmentPipelineStep {
   if (status.videoStatus === 'completed') return 'video_completed';
   if (status.videoStatus === 'failed') return 'video_failed';
   if (status.videoStatus === 'generating') return 'video_generating';
-  if (status.comicStatus === 'approved') return 'comic_approved';
-  if (status.comicStatus === 'pending_review') return 'comic_review';
-  if (status.comicStatus === 'generating') return 'comic_review';
-  if (status.comicStatus === 'failed') return 'comic_review';
-  if (status.backgroundUrl) return 'scene_ready';
-  if (status.backgroundStatus === 'generating') return 'scene_ready';
+  if (status.gridStatus === 'approved') return 'grid_approved';
+  if (status.gridStatus === 'generating') return 'grid_generating';
+  if (status.gridStatus === 'generated') return 'grid_review';
+  if (status.gridStatus === 'failed') return 'grid_review';  // still show for error state
+  if (status.gridStatus === 'rejected') return 'grid_review';
   return 'pending';
 }
 
@@ -68,8 +66,7 @@ const Step5page = ({ project }: Step5pageProps) => {
   const [charAvatarMap, setCharAvatarMap] = useState<Record<string, string>>({});
   // 角色 name→ID 映射，用于修正 AI 把名字填进 char_id 的老数据
   const [charNameToIdMap, setCharNameToIdMap] = useState<Record<string, string>>({});
-  const [generatingBackgroundPanelId, setGeneratingBackgroundPanelId] = useState<string | null>(null);
-  const [generatingComicPanelId, setGeneratingComicPanelId] = useState<string | null>(null);
+  const [generatingGridPanelId, setGeneratingGridPanelId] = useState<string | null>(null);
   const [generatingVideoPanelId, setGeneratingVideoPanelId] = useState<string | null>(null);
   const [revisingPanelId, setRevisingPanelId] = useState<string | null>(null);
   const [updatingPanelId, setUpdatingPanelId] = useState<string | null>(null);
@@ -181,13 +178,13 @@ const Step5page = ({ project }: Step5pageProps) => {
     if (chapters.length === 0 || generatingEpisodeId !== null) return;
     const allEpisodes = chapters.flatMap(ch => ch.episodes);
     const generatingEp = allEpisodes.find(ep =>
-      ep.episodeInfo?.status === 'PANEL_GENERATING' ||
+      ep.episodeInfo?.status === 'STORYBOARD_GENERATING' ||
       ep.episodeInfo?.panelPlan
     );
     if (!generatingEp) return;
 
     const epId = generatingEp.episodeId;
-    log.info('检测到正在生成中的 episode, 恢复轮询: epId={}', epId);
+    console.info('检测到正在生成中的 episode, 恢复轮询: epId=', epId);
     setGeneratingEpisodeId(epId);
 
     // 恢复轮询：每 5 秒刷新 panels，直到生成完成（基于状态，无次数限制）
@@ -275,6 +272,24 @@ const Step5page = ({ project }: Step5pageProps) => {
       sum +
       ch.episodes.reduce(
         (s, ep) => s + ep.segments.filter(seg => seg.pipelineStep === 'video_completed').length,
+        0
+      ),
+    0
+  );
+  const approvedSegments = chapters.reduce(
+    (sum, ch) =>
+      sum +
+      ch.episodes.reduce(
+        (s, ep) => s + ep.segments.filter(seg => seg.pipelineStep === 'grid_approved').length,
+        0
+      ),
+    0
+  );
+  const pendingReviewSegments = chapters.reduce(
+    (sum, ch) =>
+      sum +
+      ch.episodes.reduce(
+        (s, ep) => s + ep.segments.filter(seg => seg.pipelineStep === 'grid_review').length,
         0
       ),
     0
@@ -368,26 +383,28 @@ const Step5page = ({ project }: Step5pageProps) => {
           .map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text)
           .join('\n');
 
-        const bgUrl = info.backgroundUrl || null;
-        const comicUrl = info.comicUrl || null;
-        const comicStatus = info.comicStatus || null;
         const videoUrl = info.videoUrl || null;
         const videoStatus = info.videoStatus || null;
+        const gridImages = info.gridImages || [];
+        const gridStatus = info.gridStatus || 'pending';
+        const fusionImageUrl = info.fusionImageUrl || null;
+        const shots = info.shots || [];
 
         return {
           segmentIndex: idx,
           title: `分镜 ${idx + 1}`,
           // 优先级: scene_summary > sceneSummaryMap[planPanelId] > composition
           synopsis: info.scene_summary || (planPanelId ? sceneSummaryMap[planPanelId] : '') || info.composition || '',
-          sceneThumbnail: bgUrl,
+          sceneThumbnail: gridImages.length > 0 ? gridImages[0] : null,
           characterAvatars,
-          pipelineStep: mapProductionToPipelineStep({
-            backgroundStatus: bgUrl ? 'completed' : (info.backgroundStatus || 'pending'),
-            backgroundUrl: bgUrl,
-            comicStatus: comicStatus || 'pending',
+          pipelineStep: mapGridToPipelineStep({
+            gridStatus: gridStatus,
             videoStatus: videoStatus || 'pending',
           }),
-          comicUrl,
+          gridImages,
+          gridStatus,
+          fusionImageUrl,
+          shots,
           videoUrl,
           feedback: info.revisionFeedback || '',
           panelData: {
@@ -475,8 +492,8 @@ const Step5page = ({ project }: Step5pageProps) => {
       const res = await getBatchProductionStatuses(projectId, episodeId);
       if ((res.code !== 0 && res.code !== 200) || !res.data) return;
 
-      const statusMap = new Map<number, PanelProductionStatusResponse>();
-      res.data.forEach(s => statusMap.set(s.panelId, s));
+      const statusMap = new Map<number, any>();
+      res.data.forEach((s: any) => statusMap.set(s.panelId, s));
 
       setChapters(prev =>
         prev.map(ch => ({
@@ -490,12 +507,18 @@ const Step5page = ({ project }: Step5pageProps) => {
                     const status = statusMap.get(panelId);
                     if (!status) return seg;
 
+                    // Use gridStatus/videoStatus from the response
+                    const gridStatus = status.gridStatus || seg.gridStatus;
+                    const videoStatus = status.videoStatus || 'pending';
+
                     return {
                       ...seg,
-                      pipelineStep: mapProductionToPipelineStep(status),
-                      comicUrl: status.comicUrl ?? seg.comicUrl,
+                      pipelineStep: mapGridToPipelineStep({ gridStatus, videoStatus }),
+                      gridImages: status.gridImages?.length ? status.gridImages : seg.gridImages,
+                      gridStatus,
+                      fusionImageUrl: status.fusionImageUrl ?? seg.fusionImageUrl,
+                      shots: status.shots?.length ? status.shots : seg.shots,
                       videoUrl: status.videoUrl ?? seg.videoUrl,
-                      sceneThumbnail: status.backgroundUrl ?? seg.sceneThumbnail,
                       videoTaskId: status.videoTaskId ?? seg.videoTaskId,
                       videoOffPeak: status.offPeak ?? seg.videoOffPeak,
                     };
@@ -617,33 +640,6 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, []);
 
   /**
-   * 生成背景图
-   */
-  const handleGenerateBackground = useCallback(async (episodeId: number, panelId: string) => {
-    if (!projectId || !panelId) return;
-    setGeneratingBackgroundPanelId(panelId);
-    try {
-      const res = await generateBackground(projectId, episodeId, Number(panelId));
-      if (res.code !== 0 && res.code !== 200) {
-        alert(res.message || '生成背景图失败');
-        setGeneratingBackgroundPanelId(null);
-        return;
-      }
-      const poll = async () => {
-        for (let i = 0; i < 40; i++) {
-          await new Promise(r => setTimeout(r, 3000));
-          await refreshProductionStatuses(episodeId);
-        }
-        setGeneratingBackgroundPanelId(null);
-      };
-      poll();
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || '生成背景图失败');
-      setGeneratingBackgroundPanelId(null);
-    }
-  }, [projectId, refreshProductionStatuses]);
-
-  /**
    * 修改分镜脚本
    */
   const handleRevisePanel = useCallback(async (episodeId: number) => {
@@ -664,12 +660,12 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [projectId]);
 
   /**
-   * 审核通过四宫格漫画
+   * 审核通过九宫格
    */
-  const handleApproveComic = useCallback(async (episodeId: number, panelId: string) => {
+  const handleApproveGrid = useCallback(async (episodeId: number, panelId: string) => {
     if (!projectId) return;
     try {
-      await approveComic(projectId, episodeId, Number(panelId));
+      await approveGrid(projectId, episodeId, Number(panelId));
       await refreshProductionStatuses(episodeId);
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '审核失败');
@@ -677,82 +673,45 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [projectId, refreshProductionStatuses]);
 
   /**
-   * 生成四宫格漫画
+   * 退回九宫格
    */
-  const handleGenerateComic = useCallback(async (episodeId: number, panelId: string) => {
+  const handleRejectGrid = useCallback(async (episodeId: number, panelId: string, reason: string) => {
     if (!projectId) return;
-    setGeneratingComicPanelId(panelId);
     try {
-      await generateComic(projectId, episodeId, Number(panelId));
-      // 基于状态的轮询，检查是否生成完成或失败
-      const poll = async () => {
-        while (true) {
-          await new Promise(r => setTimeout(r, 3000));
-          try {
-            // 获取该panel的生产状态
-            const res = await getBatchProductionStatuses(projectId, episodeId);
-            if ((res.code !== 0 && res.code !== 200) || !res.data) continue;
-
-            const panelStatus = res.data.find((s: any) => s.panelId === Number(panelId));
-            if (panelStatus) {
-              const comicStatus = panelStatus.comicStatus;
-              // 检查状态
-              if (comicStatus === 'approved' || comicStatus === 'pending_review') {
-                // 生成成功
-                await refreshProductionStatuses(episodeId);
-                setGeneratingComicPanelId(null);
-                return;
-              }
-              if (comicStatus === 'failed') {
-                // 生成失败
-                alert('四宫格生成失败');
-                setGeneratingComicPanelId(null);
-                return;
-              }
-            }
-          } catch {
-            // 继续轮询
-          }
-        }
-      };
-      poll();
+      await rejectGrid(projectId, episodeId, Number(panelId), reason);
+      await refreshProductionStatuses(episodeId);
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || '生成四宫格失败');
-      setGeneratingComicPanelId(null);
+      alert(err?.response?.data?.message || err?.message || '退回失败');
     }
   }, [projectId, refreshProductionStatuses]);
 
   /**
-   * 退回重生成四宫格漫画
+   * 重新生成九宫格
    */
-  const handleRegenerateComic = useCallback(async (episodeId: number, panelId: string, feedback: string) => {
+  const handleRegenerateGrid = useCallback(async (episodeId: number, panelId: string) => {
     if (!projectId) return;
-    setGeneratingComicPanelId(panelId);
+    setGeneratingGridPanelId(panelId);
     try {
-      await reviseComic(projectId, episodeId, Number(panelId), feedback);
+      await regenerateGrid(projectId, episodeId, Number(panelId));
       // 基于状态的轮询，检查是否生成完成或失败
       const poll = async () => {
         while (true) {
           await new Promise(r => setTimeout(r, 3000));
           try {
-            // 获取该panel的生产状态
             const res = await getBatchProductionStatuses(projectId, episodeId);
             if ((res.code !== 0 && res.code !== 200) || !res.data) continue;
 
             const panelStatus = res.data.find((s: any) => s.panelId === Number(panelId));
             if (panelStatus) {
-              const comicStatus = panelStatus.comicStatus;
-              // 检查状态
-              if (comicStatus === 'approved' || comicStatus === 'pending_review') {
-                // 生成成功
+              const gs = panelStatus.gridStatus;
+              if (gs === 'generated' || gs === 'approved') {
                 await refreshProductionStatuses(episodeId);
-                setGeneratingComicPanelId(null);
+                setGeneratingGridPanelId(null);
                 return;
               }
-              if (comicStatus === 'failed') {
-                // 生成失败
-                alert('四宫格重新生成失败');
-                setGeneratingComicPanelId(null);
+              if (gs === 'failed') {
+                alert('九宫格重新生成失败');
+                setGeneratingGridPanelId(null);
                 return;
               }
             }
@@ -764,7 +723,20 @@ const Step5page = ({ project }: Step5pageProps) => {
       poll();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '重新生成失败');
-      setGeneratingComicPanelId(null);
+      setGeneratingGridPanelId(null);
+    }
+  }, [projectId, refreshProductionStatuses]);
+
+  /**
+   * 一键通过所有九宫格
+   */
+  const handleApproveAllGrids = useCallback(async (episodeId: number) => {
+    if (!projectId) return;
+    try {
+      await approveAllGrids(projectId, episodeId);
+      await refreshProductionStatuses(episodeId);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '批量审核失败');
     }
   }, [projectId, refreshProductionStatuses]);
 
@@ -863,13 +835,17 @@ const Step5page = ({ project }: Step5pageProps) => {
         onToggle={() => toggleEpisode(episode.episodeId)}
         expandedSegmentKey={expansion.expandedSegmentKey}
         onSegmentToggle={toggleSegment}
-        onSegmentApprove={(epId, segIdx) => {
+        onSegmentApproveGrid={(epId, segIdx) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
-          if (panelId) handleApproveComic(epId, panelId);
+          if (panelId) handleApproveGrid(epId, panelId);
         }}
-        onSegmentRegenerate={(epId, segIdx, feedback) => {
+        onSegmentRejectGrid={(epId, segIdx, reason) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
-          if (panelId) handleRegenerateComic(epId, panelId, feedback);
+          if (panelId) handleRejectGrid(epId, panelId, reason);
+        }}
+        onSegmentRegenerateGrid={(epId, segIdx) => {
+          const panelId = episode.segments[segIdx]?.panelData?.panelId;
+          if (panelId) handleRegenerateGrid(epId, panelId);
         }}
         onSegmentGenerateVideo={(epId, segIdx) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
@@ -878,13 +854,7 @@ const Step5page = ({ project }: Step5pageProps) => {
         onGeneratePanels={handleGeneratePanels}
         isGeneratingPanels={generatingEpisodeId === episode.episodeId}
         onRefreshPanels={handleRefreshPanels}
-        onGenerateBackground={handleGenerateBackground}
-        generatingBackgroundPanelId={generatingBackgroundPanelId}
-        onSegmentGenerateComic={(epId, segIdx) => {
-          const panelId = episode.segments[segIdx]?.panelData?.panelId;
-          if (panelId) handleGenerateComic(epId, panelId);
-        }}
-        generatingComicPanelId={generatingComicPanelId}
+        generatingGridPanelId={generatingGridPanelId}
         generatingVideoPanelId={generatingVideoPanelId}
         onSegmentReviseSingle={(epId, segIdx, feedback) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
@@ -898,6 +868,7 @@ const Step5page = ({ project }: Step5pageProps) => {
         isUpdatingSinglePanelId={updatingPanelId}
         onRevisePanel={handleRevisePanel}
         isRevisingPanel={revisingEpisodeId === episode.episodeId}
+        onApproveAllGrids={() => handleApproveAllGrids(episode.episodeId)}
       />
     );
   };
@@ -909,7 +880,7 @@ const Step5page = ({ project }: Step5pageProps) => {
     if (step === 'video_completed') {
       return <span className={styles.dotCompleted} />;
     }
-    if (step === 'video_generating' || step === 'comic_review' || step === 'comic_approved') {
+    if (step === 'video_generating' || step === 'grid_review' || step === 'grid_approved' || step === 'grid_generating') {
       return <span className={styles.dotInProgress} />;
     }
     return <span className={styles.dotPending} />;
@@ -967,9 +938,6 @@ const Step5page = ({ project }: Step5pageProps) => {
             <span className={styles.totalCount}>{totalSegments}</span>
             <span className={styles.statsLabel}>片段已完成</span>
           </div>
-          <button className={styles.generateAllButton} disabled>
-            一键生成
-          </button>
           <button
             className={`${styles.offPeakToggle} ${offPeak ? styles.offPeakActive : ''}`}
             onClick={toggleOffPeak}
@@ -982,6 +950,20 @@ const Step5page = ({ project }: Step5pageProps) => {
           </button>
         </div>
       </div>
+
+      {/* 批量审核栏 */}
+      {totalSegments > 0 && (
+        <BatchReviewBar
+          totalPanels={totalSegments}
+          approvedCount={approvedSegments}
+          pendingReviewCount={pendingReviewSegments}
+          onApproveAll={() => {
+            // Approve all grids across all episodes
+            const allEpisodeIds = [...new Set(chapters.flatMap(ch => ch.episodes.map(ep => ep.episodeId)))];
+            allEpisodeIds.forEach(eid => handleApproveAllGrids(eid));
+          }}
+        />
+      )}
 
       {/* 章节列表 */}
       <div className={styles.chapterList}>

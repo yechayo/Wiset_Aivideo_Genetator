@@ -10,11 +10,11 @@ interface EpisodeCardProps {
   onToggle: () => void;
   expandedSegmentKey: string | null;
   onSegmentToggle: (key: string | null) => void;
-  onSegmentApprove: (episodeId: number, segmentIndex: number) => void;
-  onSegmentRegenerate: (episodeId: number, segmentIndex: number, feedback: string) => void;
+  onSegmentApproveGrid: (episodeId: number, segmentIndex: number) => void;
+  onSegmentRejectGrid: (episodeId: number, segmentIndex: number, reason: string) => void;
+  onSegmentRegenerateGrid: (episodeId: number, segmentIndex: number) => void;
   onSegmentGenerateVideo: (episodeId: number, segmentIndex: number) => void;
-  onSegmentGenerateComic?: (episodeId: number, segmentIndex: number) => void;
-  generatingComicPanelId?: string | null;
+  generatingGridPanelId?: string | null;
   generatingVideoPanelId?: string | null;
   onSegmentReviseSingle?: (episodeId: number, segmentIndex: number, feedback: string) => void;
   isRevisingSinglePanelId?: string | null;
@@ -23,17 +23,16 @@ interface EpisodeCardProps {
   onGeneratePanels?: (episodeId: number) => void;
   isGeneratingPanels?: boolean;
   onRefreshPanels?: (episodeId: number) => void;
-  onGenerateBackground?: (episodeId: number, panelId: string) => void;
-  generatingBackgroundPanelId?: string | null;
   onRevisePanel?: (episodeId: number) => void;
   isRevisingPanel?: boolean;
+  onApproveAllGrids?: () => void;
 }
 
 /**
  * 计算剧集的整体状态
  * - 已完成: 所有 segments 都是 video_completed
- * - 进行中: 有 segment 处于 comic_review/comic_approved/video_generating
- * - 未开始: 所有 segments 都是 pending/scene_ready
+ * - 进行中: 有 segment 处于 grid_review/grid_approved/video_generating
+ * - 未开始: 所有 segments 都是 pending
  */
 const getEpisodeStatus = (segments: SegmentState[]): 'completed' | 'in-progress' | 'not-started' => {
   if (segments.length === 0) return 'not-started';
@@ -42,8 +41,9 @@ const getEpisodeStatus = (segments: SegmentState[]): 'completed' | 'in-progress'
   if (allCompleted) return 'completed';
 
   const hasInProgress = segments.some(s =>
-    s.pipelineStep === 'comic_review' ||
-    s.pipelineStep === 'comic_approved' ||
+    s.pipelineStep === 'grid_generating' ||
+    s.pipelineStep === 'grid_review' ||
+    s.pipelineStep === 'grid_approved' ||
     s.pipelineStep === 'video_generating'
   );
   if (hasInProgress) return 'in-progress';
@@ -54,12 +54,12 @@ const getEpisodeStatus = (segments: SegmentState[]): 'completed' | 'in-progress'
 /**
  * 获取片段的状态颜色
  * - 绿色: video_completed
- * - 黄色: comic_review/comic_approved/video_generating
- * - 灰色: pending/scene_ready
+ * - 黄色: grid_review/grid_approved/video_generating
+ * - 灰色: pending
  */
 const getSegmentStatusColor = (step: SegmentPipelineStep): string => {
   if (step === 'video_completed') return '#4ade80';
-  if (step === 'comic_review' || step === 'comic_approved' || step === 'video_generating') return '#fbbf24';
+  if (step === 'grid_review' || step === 'grid_approved' || step === 'grid_generating' || step === 'video_generating') return '#fbbf24';
   return '#474747';
 };
 
@@ -74,11 +74,11 @@ const EpisodeCard = ({
   onToggle,
   expandedSegmentKey,
   onSegmentToggle,
-  onSegmentApprove,
-  onSegmentRegenerate,
+  onSegmentApproveGrid,
+  onSegmentRejectGrid,
+  onSegmentRegenerateGrid,
   onSegmentGenerateVideo,
-  onSegmentGenerateComic,
-  generatingComicPanelId,
+  generatingGridPanelId,
   generatingVideoPanelId,
   onSegmentReviseSingle,
   isRevisingSinglePanelId,
@@ -87,10 +87,9 @@ const EpisodeCard = ({
   onGeneratePanels,
   isGeneratingPanels,
   onRefreshPanels,
-  onGenerateBackground,
-  generatingBackgroundPanelId,
   onRevisePanel,
   isRevisingPanel,
+  onApproveAllGrids,
 }: EpisodeCardProps) => {
   const episodeStatus = getEpisodeStatus(episode.segments);
 
@@ -110,18 +109,16 @@ const EpisodeCard = ({
         sceneSummary={episode.sceneSummaryMap?.[segment.panelData?.planPanelId || '']}
         isExpanded={isSegmentExpanded}
         onToggle={() => onSegmentToggle(isSegmentExpanded ? null : segmentKey)}
-        onApprove={() => onSegmentApprove(episode.episodeId, segment.segmentIndex)}
-        onRegenerate={(feedback) => onSegmentRegenerate(episode.episodeId, segment.segmentIndex, feedback)}
+        onApproveGrid={() => onSegmentApproveGrid(episode.episodeId, segment.segmentIndex)}
+        onRejectGrid={(reason) => onSegmentRejectGrid(episode.episodeId, segment.segmentIndex, reason)}
+        onRegenerateGrid={() => onSegmentRegenerateGrid(episode.episodeId, segment.segmentIndex)}
         onGenerateVideo={() => onSegmentGenerateVideo(episode.episodeId, segment.segmentIndex)}
-        onGenerateComic={onSegmentGenerateComic ? () => onSegmentGenerateComic(episode.episodeId, segment.segmentIndex) : undefined}
-        isGeneratingComic={generatingComicPanelId === segment.panelData?.panelId}
+        isRegeneratingGrid={generatingGridPanelId === segment.panelData?.panelId}
         isGeneratingVideo={generatingVideoPanelId === segment.panelData?.panelId}
         onReviseSinglePanel={onSegmentReviseSingle ? (feedback) => onSegmentReviseSingle(episode.episodeId, segment.segmentIndex, feedback) : undefined}
         isRevisingPanel={isRevisingSinglePanelId === segment.panelData?.panelId}
         onUpdatePanel={onSegmentUpdatePanel ? (fields) => onSegmentUpdatePanel(episode.episodeId, segment.segmentIndex, fields) : undefined}
         isUpdatingPanel={isUpdatingSinglePanelId === segment.panelData?.panelId}
-        onGenerateBackground={onGenerateBackground ? (panelId) => onGenerateBackground(episode.episodeId, panelId) : undefined}
-        isGeneratingBackground={generatingBackgroundPanelId === segment.panelData?.panelId}
       />
     );
   });
@@ -164,6 +161,18 @@ const EpisodeCard = ({
               title={hasProductionStarted ? '已有分镜进入生产流程，无法修改脚本' : ''}
             >
               {isRevisingPanel ? <><span className={styles.miniSpinner} />修改中...</> : '修改分镜脚本'}
+            </button>
+          )}
+
+          {/* 一键审核通过按钮 */}
+          {onApproveAllGrids && isExpanded && (
+            <button
+              className={styles.generatePanelsBtn}
+              onClick={(e) => { e.stopPropagation(); onApproveAllGrids(); }}
+              disabled={!episode.segments.some(s => s.pipelineStep === 'grid_review')}
+              title="一键审核通过所有九宫格"
+            >
+              一键通过
             </button>
           )}
 
