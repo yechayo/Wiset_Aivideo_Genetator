@@ -7,6 +7,7 @@ import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.JobRepository;
 import com.comic.repository.ProjectRepository;
+import com.comic.common.ProjectStatus;
 import com.comic.service.pipeline.PipelineService;
 import com.comic.service.panel.PanelService;
 import com.comic.service.panel.PanelGenerationService;
@@ -68,7 +69,7 @@ public class JobQueueService {
     public String submitPanelGenerationJob(Long episodeId) {
         // 防重复：检查 episode 状态
         Episode episode = episodeRepository.selectById(episodeId);
-        if (episode != null && "PANEL_GENERATING".equals(episode.getStatus())) {
+        if (episode != null && "STORYBOARD_GENERATING".equals(episode.getStatus())) {
             Map<String, Object> info = episode.getEpisodeInfo();
             String errorMsg = (info != null && info.get("errorMsg") != null)
                     ? info.get("errorMsg").toString().trim() : "";
@@ -92,7 +93,7 @@ public class JobQueueService {
 
         // 立即重置 episode 状态，避免状态接口返回旧错误
         if (episode != null) {
-            episode.setStatus("PANEL_GENERATING");
+            episode.setStatus("STORYBOARD_GENERATING");
             Map<String, Object> info = episode.getEpisodeInfo();
             if (info != null) {
                 info.put("errorMsg", null);
@@ -178,7 +179,7 @@ public class JobQueueService {
 
             updateJobStatus(job, "RUNNING", 90, "保存结果...");
 
-            // 推进 project 状态：PANEL_GENERATING → PANEL_REVIEW
+            // 推进 project 状态：STORYBOARD_GENERATING → STORYBOARD_REVIEW
             advanceProjectToPanelReview(episodeId);
 
             job.setStatus("SUCCESS");
@@ -211,8 +212,9 @@ public class JobQueueService {
             if (episode == null) return;
             Project project = projectRepository.findByProjectId(episode.getProjectId());
             if (project == null) return;
-            if ("PANEL_GENERATING".equals(project.getStatus())) {
-                pipelineService.advancePipeline(project.getProjectId(), "panels_generated");
+            if (ProjectStatus.STORYBOARD_GENERATING.getCode().equals(project.getStatus())
+                    || ProjectStatus.EPISODE_SCRIPT_GENERATING.getCode().equals(project.getStatus())) {
+                pipelineService.advancePipeline(project.getProjectId(), "storyboard_generated");
             }
         } catch (Exception e) {
             log.error("推进 project 状态失败: episodeId={}", episodeId, e);

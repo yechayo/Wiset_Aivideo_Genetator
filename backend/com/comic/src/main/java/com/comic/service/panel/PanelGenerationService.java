@@ -125,7 +125,7 @@ public class PanelGenerationService {
             throw new IllegalArgumentException("Episode not found: " + episodeId);
         }
 
-        episode.setStatus("PANEL_GENERATING");
+        episode.setStatus("STORYBOARD_GENERATING");
         epInfo(episode).put(EpisodeInfoKeys.RETRY_COUNT, 0);
         epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
         episodeRepository.updateById(episode);
@@ -319,14 +319,14 @@ public class PanelGenerationService {
             characterService.updateStatesFromPanelJson(episode.getProjectId(), result);
 
             epInfo(episode).put("panelJson", resultJson);
-            episode.setStatus("PANEL_DONE");
+            episode.setStatus("STORYBOARD_DONE");
             epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
             episodeRepository.updateById(episode);
 
             log.info("Panels generated: episodeId={}, epNum={}, panelCount={}", episodeId, safeEpNum, detailedPanels.size());
             return resultJson;
         } catch (Exception e) {
-            episode.setStatus("PANEL_FAILED");
+            episode.setStatus("STORYBOARD_FAILED");
             epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, e.getMessage());
             episodeRepository.updateById(episode);
             if (e instanceof RuntimeException) {
@@ -345,7 +345,7 @@ public class PanelGenerationService {
             throw new IllegalArgumentException("Episode not found: " + episodeId);
         }
 
-        episode.setStatus("PANEL_GENERATING");
+        episode.setStatus("STORYBOARD_GENERATING");
         epInfo(episode).put(EpisodeInfoKeys.RETRY_COUNT, 0);
         epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
         episodeRepository.updateById(episode);
@@ -354,14 +354,14 @@ public class PanelGenerationService {
             String result = generateWithRetryAndFeedback(episode, feedback);
 
             epInfo(episode).put("panelJson", result);
-            episode.setStatus("PANEL_DONE");
+            episode.setStatus("STORYBOARD_DONE");
             epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
             episodeRepository.updateById(episode);
 
             log.info("Panels revised: episodeId={}, epNum={}", episodeId, getEpInfoInt(episode, EpisodeInfoKeys.EPISODE_NUM));
             return result;
         } catch (Exception e) {
-            episode.setStatus("PANEL_FAILED");
+            episode.setStatus("STORYBOARD_FAILED");
             epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, e.getMessage());
             episodeRepository.updateById(episode);
             if (e instanceof RuntimeException) {
@@ -378,14 +378,14 @@ public class PanelGenerationService {
             throw new BusinessException("Episode not found");
         }
 
-        episode.setStatus("PANEL_CONFIRMED");
+        episode.setStatus("STORYBOARD_CONFIRMED");
         episodeRepository.updateById(episode);
 
         String projectId = episode.getProjectId();
         Episode nextEpisode = findNextPendingEpisode(projectId);
         if (nextEpisode != null) {
             Project project = projectRepository.findByProjectId(projectId);
-            pipelineService.advancePipeline(projectId, "start_panels");
+            pipelineService.advancePipeline(projectId, "start_episode_script");
             generateSingleEpisodeAsync(projectId, nextEpisode);
         } else {
             log.info("All episodes confirmed: projectId={}", projectId);
@@ -405,7 +405,7 @@ public class PanelGenerationService {
         String projectId = episode.getProjectId();
         Project project = projectRepository.findByProjectId(projectId);
         if (project != null) {
-            pipelineService.advancePipeline(projectId, "start_panels");
+            pipelineService.advancePipeline(projectId, "start_episode_script");
         }
         markEpisodeGenerating(episode);
 
@@ -413,7 +413,7 @@ public class PanelGenerationService {
         new Thread(() -> {
             try {
                 generatePanels(epId);
-                pipelineService.advancePipeline(projectId, "panel_generated");
+                pipelineService.advancePipeline(projectId, "storyboard_generated");
             } catch (Exception e) {
                 log.error("Panel retry failed: episodeId={}", epId, e);
                 updateEpisodeToFailedIfNeeded(epId, e.getMessage());
@@ -491,8 +491,9 @@ public class PanelGenerationService {
                 Map<String, Object> existingInfo = panel.getPanelInfo() != null
                         ? panel.getPanelInfo() : new HashMap<>();
                 Set<String> productionFields = new HashSet<>(Arrays.asList(
-                        "backgroundUrl", "backgroundStatus", "comicUrl", "comicStatus",
-                        "videoUrl", "videoStatus", "videoTaskId", "videoDuration", "errorMessage"
+                        "gridStatus", "gridImages", "fusionImageUrl", "gridRejectionFeedback",
+                        "gridPageCount", "totalShots", "totalDuration",
+                        "videoUrl", "videoStatus", "videoTaskId", "errorMessage"
                 ));
                 Map<String, Object> preserved = new HashMap<>();
                 for (String field : productionFields) {
@@ -537,12 +538,12 @@ public class PanelGenerationService {
         if (nextEpisode == null) {
             log.warn("No pending episodes for panel generation: projectId={}", projectId);
             if (ProjectStatus.STORYBOARD_GENERATING.getCode().equals(project.getStatus())) {
-                pipelineService.advancePipeline(projectId, "panels_generated");
+                pipelineService.advancePipeline(projectId, "storyboard_generated");
             }
             return;
         }
 
-        // 状态已由 advancePipeline("start_panels") 设置
+        // 状态已由 advancePipeline("start_episode_script") 设置
         markEpisodeGenerating(nextEpisode);
 
         generateSingleEpisodeAsync(projectId, nextEpisode);
@@ -557,7 +558,7 @@ public class PanelGenerationService {
 
         List<Episode> episodes = episodeRepository.findByProjectId(projectId);
         for (Episode ep : episodes) {
-            if (!"PANEL_CONFIRMED".equals(ep.getStatus())) {
+            if (!"STORYBOARD_CONFIRMED".equals(ep.getStatus())) {
                 throw new BusinessException("All episodes must be panel-confirmed before production");
             }
         }
@@ -645,7 +646,7 @@ public class PanelGenerationService {
         new Thread(() -> {
             try {
                 generatePanels(epId);
-                pipelineService.advancePipeline(projectId, "panel_generated");
+                pipelineService.advancePipeline(projectId, "storyboard_generated");
             } catch (Exception e) {
                 Integer epNum = null;
                 Episode ep = episodeRepository.selectById(epId);
@@ -665,12 +666,12 @@ public class PanelGenerationService {
             }
         }
         for (Episode ep : episodes) {
-            if ("PANEL_FAILED".equals(ep.getStatus())) {
+            if ("STORYBOARD_FAILED".equals(ep.getStatus())) {
                 return ep;
             }
         }
         for (Episode ep : episodes) {
-            if ("PANEL_GENERATING".equals(ep.getStatus())) {
+            if ("STORYBOARD_GENERATING".equals(ep.getStatus())) {
                 String errorMsg = getEpInfoStr(ep, EpisodeInfoKeys.ERROR_MSG);
                 if (errorMsg != null && !errorMsg.trim().isEmpty()) {
                     return ep;
@@ -683,7 +684,7 @@ public class PanelGenerationService {
     private void updateProjectToFailed(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project != null && ProjectStatus.STORYBOARD_GENERATING.getCode().equals(project.getStatus())) {
-            pipelineService.advancePipeline(projectId, "panels_failed");
+            pipelineService.advancePipeline(projectId, "storyboard_failed");
         }
     }
 
@@ -691,10 +692,10 @@ public class PanelGenerationService {
         if (episode == null) {
             return false;
         }
-        if ("PANEL_FAILED".equals(episode.getStatus())) {
+        if ("STORYBOARD_FAILED".equals(episode.getStatus())) {
             return true;
         }
-        if ("PANEL_GENERATING".equals(episode.getStatus())) {
+        if ("STORYBOARD_GENERATING".equals(episode.getStatus())) {
             Map<String, Object> info = episode.getEpisodeInfo();
             if (info != null) {
                 Object errorMsg = info.get(EpisodeInfoKeys.ERROR_MSG);
@@ -708,7 +709,7 @@ public class PanelGenerationService {
         if (episode == null) {
             return;
         }
-        episode.setStatus("PANEL_GENERATING");
+        episode.setStatus("STORYBOARD_GENERATING");
         epInfo(episode).put(EpisodeInfoKeys.RETRY_COUNT, 0);
         epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, null);
         episodeRepository.updateById(episode);
@@ -720,13 +721,13 @@ public class PanelGenerationService {
             return;
         }
 
-        boolean alreadyFinalized = "PANEL_DONE".equals(episode.getStatus())
-                || "PANEL_CONFIRMED".equals(episode.getStatus());
+        boolean alreadyFinalized = "STORYBOARD_DONE".equals(episode.getStatus())
+                || "STORYBOARD_CONFIRMED".equals(episode.getStatus());
         if (alreadyFinalized) {
             return;
         }
 
-        episode.setStatus("PANEL_FAILED");
+        episode.setStatus("STORYBOARD_FAILED");
         if (errorMsg != null && !errorMsg.trim().isEmpty()) {
             epInfo(episode).put(EpisodeInfoKeys.ERROR_MSG, errorMsg);
         }
