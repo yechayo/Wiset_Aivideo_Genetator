@@ -9,6 +9,7 @@ import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
+import com.comic.service.panel.GridImageService;
 import com.comic.service.pipeline.PipelineService;
 import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,8 @@ public class StoryboardService {
     private PipelineService pipelineService;
     @Resource
     private ProjectStatusBroadcaster broadcaster;
+    @Resource
+    private GridImageService gridImageService;
 
     /**
      * 主入口：生成结构化分集剧本 → 分镜脚本 → 贪心分组 → 创建 Panel
@@ -69,12 +72,12 @@ public class StoryboardService {
                 List<Map<String, Object>> shots = deepSeekTextService.generateStoryboard(
                     content, characters, targetDuration, visualStyle);
 
-                List<List<Map<String, Object>>> groups = greedyGroup(shots, MAX_PANEL_DURATION);
-                if (groups.isEmpty()) continue;
-
-                Long episodeId = findOrCreateEpisode(projectId, script);
+                Long episodeId = findOrCreateEpisode(projectId, script, shots, visualStyle);
                 deleteExistingPanels(episodeId);
-                createPanels(episodeId, groups, visualStyle);
+
+                // 设置 episodeInfo.gridStatus = "generating"，异步生成整集九宫格
+                gridImageService.updateEpisodeGridStatus(episodeId, "generating");
+                gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle);
             }
 
             // 3. 推进状态：两步推进
@@ -137,13 +140,18 @@ public class StoryboardService {
         return "";
     }
 
-    private Long findOrCreateEpisode(String projectId, Map<String, Object> script) {
+    private Long findOrCreateEpisode(String projectId, Map<String, Object> script,
+                                       List<Map<String, Object>> shots, String visualStyle) {
         String title = (String) script.get("title");
         List<Episode> episodes = episodeRepository.findByProjectId(projectId);
         for (Episode ep : episodes) {
             Map<String, Object> info = ep.getEpisodeInfo();
             if (info != null && title.equals(info.get("title"))) {
                 info.putAll(script);
+                // 新流程：shots 存入 episodeInfo
+                info.put("shots", shots);
+                info.put("visualStyle", visualStyle);
+                info.put("gridStatus", "pending");
                 ep.setEpisodeInfo(info);
                 episodeRepository.updateById(ep);
                 return ep.getId();
@@ -153,7 +161,11 @@ public class StoryboardService {
         episode.setProjectId(projectId);
         episode.setStatus("pending");
         episode.setDeleted(false);
-        episode.setEpisodeInfo(new HashMap<>(script));
+        Map<String, Object> episodeInfo = new HashMap<>(script);
+        episodeInfo.put("shots", shots);
+        episodeInfo.put("visualStyle", visualStyle);
+        episodeInfo.put("gridStatus", "pending");
+        episode.setEpisodeInfo(episodeInfo);
         episodeRepository.insert(episode);
         return episode.getId();
     }
