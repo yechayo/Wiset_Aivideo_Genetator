@@ -11,6 +11,7 @@ import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
 import com.comic.service.panel.PanelGenerationService;
 import com.comic.service.script.ScriptService;
+import com.comic.service.storyboard.StoryboardService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -55,6 +56,7 @@ class PipelineServiceAutoAdvanceTest {
     private CharacterExtractService characterExtractService;
     private CharacterImageGenerationService characterImageGenerationService;
     private PanelGenerationService panelGenerationService;
+    private StoryboardService storyboardService;
     private ProjectStatusBroadcaster broadcaster;
 
     @BeforeEach
@@ -67,6 +69,7 @@ class PipelineServiceAutoAdvanceTest {
         characterExtractService = mock(CharacterExtractService.class);
         characterImageGenerationService = mock(CharacterImageGenerationService.class);
         panelGenerationService = mock(PanelGenerationService.class);
+        storyboardService = mock(StoryboardService.class);
         broadcaster = mock(ProjectStatusBroadcaster.class);
 
         pipelineService = new PipelineService(
@@ -82,6 +85,7 @@ class PipelineServiceAutoAdvanceTest {
 
         // Inject mocked dependencies via reflection
         ReflectionTestUtils.setField(pipelineService, "panelGenerationService", panelGenerationService);
+        ReflectionTestUtils.setField(pipelineService, "storyboardService", storyboardService);
         ReflectionTestUtils.setField(pipelineService, "stringRedisTemplate", mock(StringRedisTemplate.class));
 
         // Inject pipelineServiceSelf spy for auto-advance chain verification
@@ -172,6 +176,9 @@ class PipelineServiceAutoAdvanceTest {
 
         // Then: Status should auto-advance from ASSET_LOCKED to EPISODE_SCRIPT_GENERATING
         assertEquals(ProjectStatus.EPISODE_SCRIPT_GENERATING.getCode(), project.getStatus());
+
+        // Verify StoryboardService was called to generate episode script and storyboard
+        verify(storyboardService, times(1)).generateEpisodeScriptAndStoryboard(eq("test-project-3"));
     }
 
     @Test

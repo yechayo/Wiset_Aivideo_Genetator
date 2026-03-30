@@ -22,6 +22,7 @@ import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
 import com.comic.service.script.ScriptService;
 import com.comic.service.panel.PanelGenerationService;
+import com.comic.service.storyboard.StoryboardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,6 +67,10 @@ public class PipelineService implements StageCompletionCallback {
     @Lazy
     @Autowired
     private com.comic.service.production.PanelProductionService panelProductionService;
+
+    @Lazy
+    @Autowired
+    private StoryboardService storyboardService;
 
     /** 自引用，用于异步线程中调用 advancePipeline（绕过 Spring 代理） */
     @Lazy
@@ -327,7 +332,7 @@ public class PipelineService implements StageCompletionCallback {
             case STORYBOARD_GENERATING_FAILED:
                 return ProjectStatus.STORYBOARD_GENERATING;
             case STORYBOARD_REVIEW:
-                return ProjectStatus.STORYBOARD_GENERATING;
+                return ProjectStatus.EPISODE_SCRIPT_GENERATING;
             case PRODUCING:
                 return ProjectStatus.STORYBOARD_REVIEW;
             case COMPLETED:
@@ -378,6 +383,8 @@ public class PipelineService implements StageCompletionCallback {
                 }
                 break;
             case ASSET_LOCKED:
+                // No storyboard data exists at this stage, nothing to clean
+                break;
             case EPISODE_SCRIPT_GENERATING:
             case EPISODE_SCRIPT_GENERATING_FAILED:
             case STORYBOARD_GENERATING:
@@ -416,6 +423,14 @@ public class PipelineService implements StageCompletionCallback {
                             panelInfo.remove("videoStatus");
                             panelInfo.remove("videoTaskId");
                             panelInfo.remove("errorMessage");
+                            panelInfo.remove("gridStatus");
+                            panelInfo.remove("gridImages");
+                            panelInfo.remove("fusionImageUrl");
+                            panelInfo.remove("shots");
+                            panelInfo.remove("gridRejectionFeedback");
+                            panelInfo.remove("gridPageCount");
+                            panelInfo.remove("totalShots");
+                            panelInfo.remove("totalDuration");
                             panel.setPanelInfo(panelInfo);
                             panelRepository.updateById(panel);
                         }
@@ -507,26 +522,20 @@ public class PipelineService implements StageCompletionCallback {
 
                     // Determine sub-stage and blocked reason
                     if (info == null) {
-                        summary.setProductionSubStage("background");
+                        summary.setProductionSubStage("grid");
                     } else {
-                        String bgStatus = strVal(info, "backgroundStatus");
-                        String comicStatus = strVal(info, "comicStatus");
+                        String gridStatus = strVal(info, "gridStatus");
                         String vStatus = strVal(info, "videoStatus");
 
-                        if ("failed".equals(bgStatus)) {
-                            summary.setProductionSubStage("background");
+                        if ("failed".equals(gridStatus)) {
+                            summary.setProductionSubStage("grid");
                             summary.setBlockedReason("panel_failed");
-                        } else if ("generating".equals(bgStatus)) {
-                            summary.setProductionSubStage("background");
-                        } else if ("failed".equals(comicStatus)) {
-                            summary.setProductionSubStage("comic");
-                            summary.setBlockedReason("panel_failed");
-                        } else if ("generating".equals(comicStatus)) {
-                            summary.setProductionSubStage("comic");
-                        } else if ("pending_review".equals(comicStatus)) {
+                        } else if ("generating".equals(gridStatus)) {
+                            summary.setProductionSubStage("grid");
+                        } else if ("pending".equals(gridStatus) || "generated".equals(gridStatus)) {
                             summary.setProductionSubStage("pending_review");
-                            summary.setBlockedReason("awaiting_comic_approval");
-                        } else if ("approved".equals(comicStatus)) {
+                            summary.setBlockedReason("awaiting_grid_approval");
+                        } else if ("approved".equals(gridStatus)) {
                             if ("failed".equals(vStatus)) {
                                 summary.setProductionSubStage("video");
                                 summary.setBlockedReason("panel_failed");
@@ -536,7 +545,7 @@ public class PipelineService implements StageCompletionCallback {
                                 summary.setProductionSubStage("video");
                             }
                         } else {
-                            summary.setProductionSubStage("background");
+                            summary.setProductionSubStage("grid");
                         }
                     }
                 }
@@ -665,18 +674,12 @@ public class PipelineService implements StageCompletionCallback {
         if (info == null) return "pending";
 
         String videoStatus = strVal(info, "videoStatus");
-        String comicStatus = strVal(info, "comicStatus");
-        String bgStatus = strVal(info, "backgroundStatus");
-        String bgUrl = strVal(info, "backgroundUrl");
+        String gridStatus = strVal(info, "gridStatus");
 
-        // 视频完成 → 整体完成
         if ("completed".equals(videoStatus)) return "completed";
-        // 任一阶段失败 → 整体失败
-        if ("failed".equals(videoStatus) || "failed".equals(comicStatus) || "failed".equals(bgStatus)) return "failed";
-        // 任一阶段正在生成
-        if ("generating".equals(videoStatus) || "generating".equals(comicStatus) || "generating".equals(bgStatus)) return "in_progress";
-        // 有产出但未完成
-        if (bgUrl != null || strVal(info, "comicUrl") != null) return "in_progress";
+        if ("failed".equals(videoStatus) || "failed".equals(gridStatus)) return "failed";
+        if ("generating".equals(videoStatus) || "generating".equals(gridStatus)) return "in_progress";
+        if (strVal(info, "fusionImageUrl") != null) return "in_progress";
         return "pending";
     }
 
@@ -698,18 +701,18 @@ public class PipelineService implements StageCompletionCallback {
 
             for (Episode ep : episodes) {
                 if (failedEpisode == null
-                        && ("PANEL_FAILED".equals(ep.getStatus())
+                        && ("STORYBOARD_FAILED".equals(ep.getStatus())
                             || isPanelGeneratingWithError(ep)
                             || isStaleGenerating(ep))) {
                     failedEpisode = ep;
                 }
                 if (generatingEpisode == null
-                        && "PANEL_GENERATING".equals(ep.getStatus())
+                        && "STORYBOARD_GENERATING".equals(ep.getStatus())
                         && !isPanelGeneratingWithError(ep)
                         && !isStaleGenerating(ep)) {
                     generatingEpisode = ep;
                 }
-                if (reviewEpisode == null && "PANEL_DONE".equals(ep.getStatus())) {
+                if (reviewEpisode == null && "STORYBOARD_DONE".equals(ep.getStatus())) {
                     reviewEpisode = ep;
                 }
                 if (draftEpisode == null && (ep.getStatus() == null || "DRAFT".equals(ep.getStatus()))) {
@@ -724,7 +727,7 @@ public class PipelineService implements StageCompletionCallback {
 
             int completedCount = 0;
             for (Episode ep : episodes) {
-                if ("PANEL_CONFIRMED".equals(ep.getStatus())) {
+                if ("STORYBOARD_CONFIRMED".equals(ep.getStatus())) {
                     completedCount++;
                 }
             }
@@ -765,6 +768,12 @@ public class PipelineService implements StageCompletionCallback {
             if (currentEpisode != null) {
                 Integer epNum = getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM);
                 switch (projectStatus) {
+                    case EPISODE_SCRIPT_GENERATING:
+                        dto.setStatusDescription("Generating episode script...");
+                        break;
+                    case EPISODE_SCRIPT_GENERATING_FAILED:
+                        dto.setStatusDescription("Episode script generation failed");
+                        break;
                     case STORYBOARD_GENERATING:
                         dto.setStatusDescription("Generating storyboard for episode " + epNum + "...");
                         break;
@@ -792,7 +801,7 @@ public class PipelineService implements StageCompletionCallback {
         if (episode == null) {
             return false;
         }
-        if (!"PANEL_GENERATING".equals(episode.getStatus())) {
+        if (!"STORYBOARD_GENERATING".equals(episode.getStatus())) {
             return false;
         }
         String errorMsg = getEpisodeInfoStr(episode, EpisodeInfoKeys.ERROR_MSG);
@@ -803,7 +812,7 @@ public class PipelineService implements StageCompletionCallback {
 
     /** Detect episodes stuck in GENERATING for too long (e.g. server restarted). */
     private boolean isStaleGenerating(Episode episode) {
-        if (episode == null || !"PANEL_GENERATING".equals(episode.getStatus())) {
+        if (episode == null || !"STORYBOARD_GENERATING".equals(episode.getStatus())) {
             return false;
         }
         if (isPanelGeneratingWithError(episode)) {
@@ -848,13 +857,12 @@ public class PipelineService implements StageCompletionCallback {
                 break;
 
             case EPISODE_SCRIPT_GENERATING:
-            case STORYBOARD_GENERATING:
                 CompletableFuture.runAsync(() -> {
                     try {
-                        panelGenerationService.startPanelGeneration(projectId);
+                        storyboardService.generateEpisodeScriptAndStoryboard(projectId);
                     } catch (Exception e) {
-                        log.error("Panel generation failed: projectId={}, error={}", projectId, e.getMessage(), e);
-                        safeAdvanceOnFailure(projectId, "panels_failed", "STORYBOARD_GENERATING", e);
+                        log.error("Storyboard generation failed: projectId={}, error={}", projectId, e.getMessage(), e);
+                        safeAdvanceOnFailure(projectId, "storyboard_failed", "EPISODE_SCRIPT_GENERATING", e);
                     }
                 });
                 break;
