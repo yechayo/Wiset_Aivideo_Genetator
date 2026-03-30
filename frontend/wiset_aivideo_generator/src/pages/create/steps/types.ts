@@ -37,6 +37,25 @@ export interface SegmentState {
   videoOffPeak?: boolean | null;
 }
 
+/** Episode 级九宫格状态 */
+export type EpisodeGridStatus = 'pending' | 'generating' | 'generated' | 'approved' | 'rejected' | 'failed';
+
+/** 切割后的分镜（带完整元数据） */
+export interface SplitShot {
+  shotNumber: number;
+  splitImageUrl: string;
+  duration: number;
+  scene: string;
+  characters: string[];
+  shotSize: string;
+  cameraAngle: string;
+  cameraMovement: string;
+  visualDescription: string;
+  dialogue: string;
+  visualEffects: string;
+  audioEffects: string;
+}
+
 /** 剧集状态 */
 export interface EpisodeState {
   episodeId: number;
@@ -45,6 +64,17 @@ export interface EpisodeState {
   /** panelPlan JSON 解析后的 scene_summary 映射：panel_id → scene_summary */
   sceneSummaryMap: Record<string, string>;
   segments: SegmentState[];
+  // === 新流程：Episode 级九宫格 ===
+  /** 整集九宫格状态 */
+  gridStatus?: EpisodeGridStatus;
+  /** 整集九宫格图 URL 列表（分页） */
+  gridImages?: string[];
+  /** 切割后的分镜列表（带完整元数据） */
+  splitShots?: SplitShot[];
+  /** 九宫格拒绝原因 */
+  gridRejectionFeedback?: string | null;
+  /** 是否使用新流程（episodeInfo 中有 gridStatus 字段） */
+  isNewFlow?: boolean;
   /** Raw episodeInfo from backend Episode entity */
   episodeInfo?: Record<string, any>;
 }

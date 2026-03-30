@@ -69,6 +69,45 @@ export async function getBatchProductionStatuses(
   );
 }
 
+// ================= 整集九宫格审核 API（新流程） =================
+
+/** 获取整集九宫格状态 */
+export async function getEpisodeGridStatus(
+  projectId: string, episodeId: number,
+): Promise<ApiResponse<any>> {
+  return get<ApiResponse<any>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/grid`,
+  );
+}
+
+/** 审核通过整集九宫格 */
+export async function approveEpisodeGrid(
+  projectId: string, episodeId: number,
+): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/grid/approve`,
+  );
+}
+
+/** 拒绝整集九宫格 */
+export async function rejectEpisodeGrid(
+  projectId: string, episodeId: number, reason: string,
+): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/grid/reject`,
+    { reason },
+  );
+}
+
+/** 重新生成整集九宫格 */
+export async function regenerateEpisodeGrid(
+  projectId: string, episodeId: number,
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/grid/regenerate`,
+  );
+}
+
 // ================= 九宫格审核 API =================
 
 /** 审核通过九宫格 */
