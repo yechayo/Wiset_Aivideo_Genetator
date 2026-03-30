@@ -21,6 +21,10 @@ import {
   generateVideo,
   reviseSinglePanel,
   updatePanel,
+  getEpisodeGridStatus,
+  approveEpisodeGrid,
+  rejectEpisodeGrid,
+  regenerateEpisodeGrid,
 } from '../../../services/episodeService';
 import { getCharacterStatus, getCharacters } from '../../../services/characterService';
 import EpisodeCard from './components/EpisodeCard';
@@ -142,6 +146,12 @@ const Step5page = ({ project }: Step5pageProps) => {
             title: ep.episodeInfo?.title,
             sceneSummaryMap,
             segments: [],
+            // 新流程：提取 Episode 级九宫格数据
+            gridStatus: ep.episodeInfo?.gridStatus || undefined,
+            gridImages: ep.episodeInfo?.gridImages || [],
+            splitShots: ep.episodeInfo?.splitShots || [],
+            gridRejectionFeedback: ep.episodeInfo?.gridRejectionFeedback || null,
+            isNewFlow: !!ep.episodeInfo?.gridStatus,
           };
         });
         builtChapters.push({
@@ -180,7 +190,30 @@ const Step5page = ({ project }: Step5pageProps) => {
       ep.episodeInfo?.status === 'STORYBOARD_GENERATING' ||
       ep.episodeInfo?.panelPlan
     );
-    if (!generatingEp) return;
+    if (!generatingEp) {
+      // 新流程：检测正在生成九宫格的 episode
+      const generatingGridEp = allEpisodes.find(ep =>
+        ep.isNewFlow && ep.gridStatus === 'generating'
+      );
+      if (generatingGridEp) {
+        const gridEpId = generatingGridEp.episodeId;
+        console.info('检测到正在生成中的 episode 九宫格, 恢复轮询: epId=', gridEpId);
+        refreshEpisodeGridStatus(gridEpId);
+        const gridPoll = async () => {
+          while (true) {
+            await new Promise(r => setTimeout(r, 5000));
+            await refreshEpisodeGridStatus(gridEpId);
+            const currentEps = chapters.flatMap(ch => ch.episodes);
+            const currentGridEp = currentEps.find(e => e.episodeId === gridEpId);
+            if (currentGridEp && (currentGridEp.gridStatus === 'generated' || currentGridEp.gridStatus === 'approved' || currentGridEp.gridStatus === 'failed')) {
+              return;
+            }
+          }
+        };
+        gridPoll();
+      }
+      return;
+    }
 
     const epId = generatingEp.episodeId;
     console.info('检测到正在生成中的 episode, 恢复轮询: epId=', epId);
@@ -261,7 +294,7 @@ const Step5page = ({ project }: Step5pageProps) => {
     return () => clearTimeout(timer);
   }, [charNameToIdMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 计算完成统计
+  // 计算完成统计（兼容新旧流程）
   const totalSegments = chapters.reduce(
     (sum, ch) => sum + ch.episodes.reduce((s, ep) => s + ep.segments.length, 0),
     0
@@ -275,7 +308,14 @@ const Step5page = ({ project }: Step5pageProps) => {
       ),
     0
   );
-  const approvedSegments = chapters.reduce(
+
+  // 新流程：统计 episode 级九宫格
+  const newFlowEpisodes = chapters.flatMap(ch => ch.episodes).filter(ep => ep.isNewFlow);
+  const approvedGridEpisodes = newFlowEpisodes.filter(ep => ep.gridStatus === 'approved').length;
+  const pendingGridEpisodes = newFlowEpisodes.filter(ep => ep.gridStatus === 'generated' || ep.gridStatus === 'rejected').length;
+
+  // 旧流程统计
+  const oldFlowApprovedSegments = chapters.reduce(
     (sum, ch) =>
       sum +
       ch.episodes.reduce(
@@ -284,7 +324,7 @@ const Step5page = ({ project }: Step5pageProps) => {
       ),
     0
   );
-  const pendingReviewSegments = chapters.reduce(
+  const oldFlowPendingSegments = chapters.reduce(
     (sum, ch) =>
       sum +
       ch.episodes.reduce(
@@ -293,6 +333,10 @@ const Step5page = ({ project }: Step5pageProps) => {
       ),
     0
   );
+
+  // 合并统计
+  const approvedSegments = approvedGridEpisodes + oldFlowApprovedSegments;
+  const pendingReviewSegments = pendingGridEpisodes + oldFlowPendingSegments;
 
   // 记录已加载过分镜的集数，避免重复请求
   const panelsLoadedRef = useRef<Set<number>>(new Set());
@@ -740,6 +784,96 @@ const Step5page = ({ project }: Step5pageProps) => {
   }, [projectId, refreshProductionStatuses]);
 
   /**
+   * 审核通过整集九宫格（新流程）
+   */
+  const handleApproveEpisodeGrid = useCallback(async (episodeId: number) => {
+    if (!projectId) return;
+    try {
+      await approveEpisodeGrid(projectId, episodeId);
+      panelsLoadedRef.current.delete(episodeId);
+      await loadEpisodes();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '审核失败');
+    }
+  }, [projectId, loadEpisodes]);
+
+  /**
+   * 拒绝整集九宫格（新流程）
+   */
+  const handleRejectEpisodeGrid = useCallback(async (episodeId: number, reason: string) => {
+    if (!projectId) return;
+    try {
+      await rejectEpisodeGrid(projectId, episodeId, reason);
+      await loadEpisodes();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '退回失败');
+    }
+  }, [projectId, loadEpisodes]);
+
+  /**
+   * 重新生成整集九宫格（新流程）
+   */
+  const handleRegenerateEpisodeGrid = useCallback(async (episodeId: number) => {
+    if (!projectId) return;
+    try {
+      await regenerateEpisodeGrid(projectId, episodeId);
+      const poll = async () => {
+        while (true) {
+          await new Promise(r => setTimeout(r, 5000));
+          try {
+            const res = await getEpisodeGridStatus(projectId, episodeId);
+            const gridStatus = res.data?.gridStatus;
+            if (gridStatus === 'generated' || gridStatus === 'approved') {
+              await loadEpisodes();
+              return;
+            }
+            if (gridStatus === 'failed') {
+              alert('九宫格重新生成失败');
+              await loadEpisodes();
+              return;
+            }
+          } catch {
+            // 继续轮询
+          }
+        }
+      };
+      poll();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '重新生成失败');
+    }
+  }, [projectId, loadEpisodes]);
+
+  /**
+   * 刷新整集九宫格状态（轮询用）
+   */
+  const refreshEpisodeGridStatus = useCallback(async (episodeId: number) => {
+    if (!projectId) return;
+    try {
+      const res = await getEpisodeGridStatus(projectId, episodeId);
+      if ((res.code !== 0 && res.code !== 200) || !res.data) return;
+      const data = res.data;
+      setChapters(prev =>
+        prev.map(ch => ({
+          ...ch,
+          episodes: ch.episodes.map(ep =>
+            ep.episodeId === episodeId
+              ? {
+                  ...ep,
+                  gridStatus: data.gridStatus,
+                  gridImages: data.gridImages || [],
+                  splitShots: data.splitShots || [],
+                  gridRejectionFeedback: data.gridRejectionFeedback,
+                }
+              : ep
+          ),
+        }))
+      );
+    } catch {
+      // 静默失败
+    }
+  }, [projectId]);
+
+  /**
    * 生成视频
    */
   const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string) => {
@@ -868,6 +1002,11 @@ const Step5page = ({ project }: Step5pageProps) => {
         onRevisePanel={handleRevisePanel}
         isRevisingPanel={revisingEpisodeId === episode.episodeId}
         onApproveAllGrids={() => handleApproveAllGrids(episode.episodeId)}
+        // === 新流程 props ===
+        onApproveEpisodeGrid={() => handleApproveEpisodeGrid(episode.episodeId)}
+        onRejectEpisodeGrid={(reason: string) => handleRejectEpisodeGrid(episode.episodeId, reason)}
+        onRegenerateEpisodeGrid={() => handleRegenerateEpisodeGrid(episode.episodeId)}
+        onRefreshEpisodeGrid={() => refreshEpisodeGridStatus(episode.episodeId)}
       />
     );
   };
@@ -951,13 +1090,21 @@ const Step5page = ({ project }: Step5pageProps) => {
       </div>
 
       {/* 批量审核栏 */}
-      {totalSegments > 0 && (
+      {(totalSegments > 0 || newFlowEpisodes.length > 0) && (
         <BatchReviewBar
-          totalPanels={totalSegments}
+          totalPanels={totalSegments + newFlowEpisodes.length}
           approvedCount={approvedSegments}
           pendingReviewCount={pendingReviewSegments}
           onApproveAll={() => {
-            // Approve all grids across all episodes
+            // 新流程：审核所有 pending/rejected 的 episode 九宫格
+            const newFlowPending = newFlowEpisodes.filter(
+              ep => ep.gridStatus === 'generated' || ep.gridStatus === 'rejected'
+            );
+            if (newFlowPending.length > 0) {
+              newFlowPending.forEach(ep => handleApproveEpisodeGrid(ep.episodeId));
+              return;
+            }
+            // 旧流程：审核所有 panel 九宫格
             const allEpisodeIds = [...new Set(chapters.flatMap(ch => ch.episodes.map(ep => ep.episodeId)))];
             allEpisodeIds.forEach(eid => handleApproveAllGrids(eid));
           }}
