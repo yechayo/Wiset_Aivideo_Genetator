@@ -149,7 +149,11 @@ public class GridImageService {
             g.fillRect(x+4, y+4, 70, 22);
             g.setColor(Color.WHITE);
             g.setFont(new Font("SansSerif", Font.PLAIN, 12));
-            g.drawString("Shot " + (i+1), x+10, y+19);
+            // 使用带圈数字标签，对应 Vidu 参考图中的编号
+            String[] circledNumbers = {"①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨",
+                    "⑩", "⑪", "⑫", "⑬", "⑭", "⑮", "⑯"};
+            String label = i < circledNumbers.length ? circledNumbers[i] : String.valueOf(i + 1);
+            g.drawString(label, x+10, y+19);
         }
         g.dispose();
         return canvas;

@@ -91,12 +91,12 @@ public class EpisodeController {
         return Result.ok(episode.getEpisodeInfo());
     }
 
-    @PostMapping("/{episodeId}/storyboard")
-    @Operation(summary = "生成分集分镜")
-    public Result<Void> generateStoryboard(
+    @GetMapping("/{episodeId}/panels")
+    @Operation(summary = "获取剧集分镜列表")
+    public Result<?> getEpisodePanels(
             @PathVariable String projectId,
             @PathVariable Long episodeId) {
-        storyboardService.generateEpisodeScriptAndStoryboard(projectId);
-        return Result.ok();
+        // Delegates to PanelController's panel listing
+        return Result.ok(episodeService.getEpisode(projectId, episodeId));
     }
 }

@@ -252,46 +252,6 @@ public class PanelPromptBuilder {
     }
 
     /**
-     * 构建背景图提示词（纯背景，无角色，中文）
-     * 结构：风格前缀 + 场景描述 + 背景专用指令
-     */
-    public String buildBackgroundPrompt(CharacterPromptManager.VisualStyle style, Map<String, Object> panelInfo) {
-        if (panelInfo == null) return "";
-
-        String stylePrefix = buildSceneStylePrefix(style);
-
-        // 场景内容
-        String sceneDesc = null;
-        @SuppressWarnings("unchecked")
-        Map<String, Object> bg = (Map<String, Object>) panelInfo.get("background");
-        if (bg != null) {
-            sceneDesc = getStr(bg, "scene_desc");
-        }
-        String timeOfDay = bg != null ? getStr(bg, "time_of_day") : null;
-        String atmosphere = bg != null ? getStr(bg, "atmosphere") : null;
-
-        if (sceneDesc == null || sceneDesc.isEmpty()) {
-            sceneDesc = getStr(panelInfo, "sceneDescription");
-        }
-        if (sceneDesc == null || sceneDesc.isEmpty()) return "";
-
-        StringBuilder prompt = new StringBuilder();
-        prompt.append(stylePrefix);
-        prompt.append(sceneDesc);
-
-        if (atmosphere != null && !atmosphere.isEmpty()) {
-            prompt.append("，").append(atmosphere).append("的氛围");
-        }
-        if (timeOfDay != null && !timeOfDay.isEmpty()) {
-            prompt.append("，").append(timeOfDay).append("时分的自然光效");
-        }
-
-        prompt.append("。纯场景背景，不包含任何人物角色。广角横屏构图，电影级景深，画面层次分明。");
-
-        return prompt.toString();
-    }
-
-    /**
      * 构建视频生成提示词（中文）
      * 结构：风格前缀 + 画面内容 + 镜头语言 + 角色动作
      */

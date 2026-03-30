@@ -237,12 +237,14 @@ public class DeepSeekTextService implements TextGenerationService {
     public List<Map<String, Object>> generateStoryboard(
             String episodeContent, String characters, int totalDuration, String visualStyle) {
         int recommendedShots = Math.max(1, totalDuration * 10 / 25);
+        int minShots = Math.max(1, totalDuration / 4);
+        int maxShots = totalDuration;
 
         String systemPrompt = "你是一位专业的影视分镜师。请根据提供的剧本内容，生成详细的分镜脚本。\n"
             + "关键约束：\n"
             + "- 每个分镜时长：1-4秒\n"
             + "- 所有分镜时长总和必须 >= " + totalDuration + "秒\n"
-            + "- 推荐分镜数量：" + recommendedShots + " 个\n"
+            + "- 分镜数量范围：" + minShots + " ~ " + maxShots + " 个（推荐：" + recommendedShots + "个）\n"
             + "- 输出纯 JSON 数组，不要包含 markdown 代码块标记\n\n"
             + "每个分镜包含以下字段：\n"
             + "- shotNumber: 镜头编号（从1开始）\n"
@@ -270,11 +272,15 @@ public class DeepSeekTextService implements TextGenerationService {
             throw new BusinessException("分镜生成结果为空，请重试");
         }
 
-        // 钳制时长到 1-4 秒
+        // 钳制时长到 1-4 秒，并自动计算 startTime/endTime
+        int currentTime = 0;
         for (Map<String, Object> shot : shots) {
             int duration = ((Number) shot.get("duration")).intValue();
             duration = Math.max(1, Math.min(4, duration));
             shot.put("duration", duration);
+            shot.put("startTime", currentTime);
+            currentTime += duration;
+            shot.put("endTime", currentTime);
         }
 
         return shots;

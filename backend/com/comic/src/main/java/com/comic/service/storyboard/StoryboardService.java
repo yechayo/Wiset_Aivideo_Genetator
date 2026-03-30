@@ -2,6 +2,7 @@ package com.comic.service.storyboard;
 
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.common.BusinessException;
+import com.comic.common.ProjectStatus;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
 import com.comic.entity.Project;
@@ -74,13 +75,25 @@ public class StoryboardService {
                 createPanels(episodeId, groups, visualStyle);
             }
 
-            // 3. 推进状态
+            // 3. 推进状态：两步推进
+            // EPISODE_SCRIPT_GENERATING → "episode_script_generated" → STORYBOARD_GENERATING
+            pipelineService.advancePipeline(projectId, "episode_script_generated");
+            // STORYBOARD_GENERATING → "storyboard_generated" → STORYBOARD_REVIEW
             pipelineService.advancePipeline(projectId, "storyboard_generated");
 
         } catch (Exception e) {
             log.error("分镜生成异常: projectId={}", projectId, e);
             try {
-                pipelineService.advancePipeline(projectId, "storyboard_failed");
+                // 根据当前状态选择正确的失败事件
+                Project current = projectRepository.findByProjectId(projectId);
+                if (current != null) {
+                    String status = current.getStatus();
+                    if (ProjectStatus.EPISODE_SCRIPT_GENERATING.getCode().equals(status)) {
+                        pipelineService.advancePipeline(projectId, "episode_script_failed");
+                    } else if (ProjectStatus.STORYBOARD_GENERATING.getCode().equals(status)) {
+                        pipelineService.advancePipeline(projectId, "storyboard_failed");
+                    }
+                }
             } catch (Exception ex) {
                 log.error("Failed to set failed status: projectId={}", projectId, ex);
             }
