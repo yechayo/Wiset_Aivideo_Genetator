@@ -104,7 +104,7 @@ class ProjectStateMachineE2ETest {
     }
 
     @Test
-    @DisplayName("Full lifecycle: IMAGE_REVIEW -> confirm -> ASSET_LOCKED")
+    @DisplayName("Full lifecycle: IMAGE_REVIEW -> confirm -> EPISODE_SCRIPT_GENERATING")
     void full_lifecycle_image_review_to_asset_locked() {
         Project project = createProject("e2e-3", ProjectStatus.IMAGE_REVIEW);
         when(projectRepository.findByProjectId("e2e-3")).thenReturn(project);
@@ -112,9 +112,8 @@ class ProjectStateMachineE2ETest {
 
         pipelineService.advancePipeline("e2e-3", "confirm_images");
 
-        // Verify reached ASSET_LOCKED
-        // (auto-advance to EPISODE_SCRIPT_GENERATING not yet implemented)
-        assertEquals(ProjectStatus.ASSET_LOCKED.getCode(), project.getStatus());
+        // Verify auto-advance from ASSET_LOCKED to EPISODE_SCRIPT_GENERATING
+        assertEquals(ProjectStatus.EPISODE_SCRIPT_GENERATING.getCode(), project.getStatus());
     }
 
     @Test

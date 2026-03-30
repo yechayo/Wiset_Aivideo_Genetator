@@ -277,7 +277,7 @@ public class PipelineService implements StageCompletionCallback {
         switch (status) {
             case SCRIPT_CONFIRMED: return "start_character_extraction";
             case CHARACTER_CONFIRMED: return "start_image_generation";
-            case ASSET_LOCKED: return "start_panels";
+            case ASSET_LOCKED: return "start_episode_script";
             default: return null;
         }
     }

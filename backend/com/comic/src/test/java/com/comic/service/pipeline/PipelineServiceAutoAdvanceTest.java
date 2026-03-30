@@ -152,7 +152,7 @@ class PipelineServiceAutoAdvanceTest {
     }
 
     @Test
-    void confirm_images_should_transition_to_asset_locked() {
+    void confirm_images_should_transition_to_episode_script_generating() {
         // Setup: Create a project in IMAGE_REVIEW state
         Project project = createTestProject("test-project-3");
         project.setStatus(ProjectStatus.IMAGE_REVIEW.getCode());
@@ -170,9 +170,8 @@ class PipelineServiceAutoAdvanceTest {
             Thread.currentThread().interrupt();
         }
 
-        // Then: Status should reach ASSET_LOCKED
-        // (auto-advance to EPISODE_SCRIPT_GENERATING not yet implemented)
-        assertEquals(ProjectStatus.ASSET_LOCKED.getCode(), project.getStatus());
+        // Then: Status should auto-advance from ASSET_LOCKED to EPISODE_SCRIPT_GENERATING
+        assertEquals(ProjectStatus.EPISODE_SCRIPT_GENERATING.getCode(), project.getStatus());
     }
 
     @Test
