@@ -296,34 +296,28 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
               </div>
               {showPromptDetail && (() => {
                 const d = segment.panelData;
-                // 拼接视频提示词（与后端 buildVideoPrompt 逻辑一致）
+                const shots = segment.shots || [];
+
+                // 拼接多镜头视频提示词（与后端 buildMultiShotPrompt 逻辑一致）
                 const videoParts: string[] = [];
-                videoParts.push('你是一个专业的视频导演，请根据以下分镜描述生成高质量的视频。');
-                if (d.composition) videoParts.push(`【构图描述】${d.composition}。`);
-                if (d.background?.scene_desc) videoParts.push(`【场景描述】${d.background.scene_desc}。`);
-                if (d.background?.atmosphere) videoParts.push(`【氛围】${d.background.atmosphere}。`);
-                if (d.background?.time_of_day) videoParts.push(`【时间】${d.background.time_of_day}。`);
-                const videoShotMap: Record<string, string> = { WIDE_SHOT: '【镜头类型】远景，展示完整场景。', MID_SHOT: '【镜头类型】中景，聚焦角色半身。', CLOSE_UP: '【镜头类型】特写，聚焦面部细节。', OVER_SHOULDER: '【镜头类型】过肩镜头。' };
-                if (d.shotType && videoShotMap[d.shotType]) videoParts.push(videoShotMap[d.shotType]);
-                const videoAngleMap: Record<string, string> = { eye_level: '【镜头角度】平视角度。', low_angle: '【镜头角度】低角度仰拍。', high_angle: '【镜头角度】高角度俯拍。', bird_eye: '【镜头角度】鸟瞰俯视视角。' };
-                if (d.cameraAngle && videoAngleMap[d.cameraAngle]) videoParts.push(videoAngleMap[d.cameraAngle]);
-                const pacingMap: Record<string, string> = { slow: '【运动节奏】缓慢、从容的运动节奏。', fast: '【运动节奏】快速、充满动感的运动节奏。' };
-                if (d.pacing) videoParts.push(pacingMap[d.pacing] || '【运动节奏】自然平稳的运动节奏。');
-                if (d.characters?.length > 0) {
-                  videoParts.push('【角色表演】');
-                  d.characters.forEach((c: any) => {
-                    let part = '';
-                    if (c.pose) part += c.pose;
-                    if (c.expression) part += `，${c.expression}表情`;
-                    if (c.position) part += `，位置：${c.position}`;
-                    videoParts.push(part + '；');
-                  });
-                }
-                if (d.dialogue) videoParts.push(`【对话台词】${d.dialogue}；`);
-                if (d.sfx?.length > 0) videoParts.push(`【音效设计】${d.sfx.join('、')}。`);
-                if (d.imagePromptHint) videoParts.push(`【画面细节参考】${d.imagePromptHint}`);
-                videoParts.push('[风格前缀]');
-                videoParts.push('流畅的动画效果，自然的镜头运动。');
+                videoParts.push('专业电影级画面。\n\n');
+                videoParts.push(`多镜头连续拍摄指令，以下 ${shots.length} 个镜头必须在同一视频中连续呈现：\n\n`);
+
+                shots.forEach((shot: any, idx: number) => {
+                  const shotNum = shot.shotNumber || idx + 1;
+                  videoParts.push(`【分镜${shotNum}】\n`);
+                  videoParts.push(`duration: ${shot.duration}s\n`);
+                  videoParts.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || ''}\n`);
+                  const dialogue = shot.dialogue;
+                  if (dialogue && dialogue !== '无') videoParts.push(`对白: ${dialogue}\n`);
+                  const audioEffects = shot.audioEffects;
+                  if (audioEffects && audioEffects !== '无') videoParts.push(`音效: [${audioEffects}]\n`);
+                  videoParts.push('\n');
+                });
+
+                videoParts.push('## 画面衔接\n视频应从参考图自然展开，多镜头间平滑过渡。\n');
+                videoParts.push('保持角色位置和动作的连贯性。\n');
+                videoParts.push(`参考图中编号①②③对应【分镜1】【分镜2】【分镜3】的画面内容。`);
                 const videoPrompt = videoParts.join('');
 
                 return (
