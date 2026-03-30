@@ -11,6 +11,13 @@ export interface ComicPanelProps {
   isGeneratingComic?: boolean;
 }
 
+// Loading spinner component (same as VideoPanel)
+const LoadingSpinner: React.FC = () => (
+  <div className={styles.spinner}>
+    <div className={styles.spinnerRing}></div>
+  </div>
+);
+
 export const ComicPanel: React.FC<ComicPanelProps> = ({
   comicUrl,
   pipelineStep,
@@ -65,6 +72,15 @@ export const ComicPanel: React.FC<ComicPanelProps> = ({
   };
 
   const renderStatusBadge = () => {
+    // 生成中状态优先显示
+    if (isGeneratingComic) {
+      return (
+        <div className={styles.statusBadge} style={{ backgroundColor: '#fbbf24' }}>
+          <span className={styles.miniSpinner} />
+          <span>生成中</span>
+        </div>
+      );
+    }
     switch (pipelineStep) {
       case 'comic_approved':
       case 'video_generating':
@@ -183,7 +199,12 @@ export const ComicPanel: React.FC<ComicPanelProps> = ({
       </div>
 
       <div className={styles.content}>
-        {pipelineStep === 'pending' ? (
+        {isGeneratingComic ? (
+          <div className={styles.loadingOverlay}>
+            <LoadingSpinner />
+            <p className={styles.placeholderText}>四宫格生成中...</p>
+          </div>
+        ) : pipelineStep === 'pending' ? (
           renderPlaceholder('请先生成背景图')
         ) : pipelineStep === 'scene_ready' ? (
           <div className={styles.placeholder}>
@@ -199,10 +220,9 @@ export const ComicPanel: React.FC<ComicPanelProps> = ({
               <button
                 className={styles.approveButton}
                 onClick={onGenerateComic}
-                disabled={isGeneratingComic}
                 style={{ marginTop: 12 }}
               >
-                {isGeneratingComic ? <><span className={styles.miniSpinner} />生成中...</> : '生成四宫格'}
+                生成四宫格
               </button>
             )}
           </div>

@@ -37,6 +37,13 @@ public class PanelPromptBuilder {
         sb.append("\n## 任务\n");
         sb.append("根据剧集内容，规划该集的分镜列表。只需要列出每个 panel 的概要信息，不需要详细描述。\n\n");
 
+        sb.append("## 对话密度要求\n");
+        sb.append("这是一个以对话驱动的漫画故事，大量对话是叙事的核心手段。\n");
+        sb.append("- 在 scene_summary 中应包含关键对话的概要或提示（如：A质问B为什么这样做）\n");
+        sb.append("- 多设计角色之间的互动对话场景，减少纯动作/纯场景的 panel\n");
+        sb.append("- 对话应推动剧情发展、展现角色性格、制造冲突或悬念\n");
+        sb.append("- 独白和旁白也可以作为对话的形式\n\n");
+
         sb.append("## 输出格式（仅返回 JSON）\n");
         sb.append("{\n");
         sb.append("  \"episode\": 集数编号,\n");
@@ -77,7 +84,10 @@ public class PanelPromptBuilder {
         sb.append("- 单 panel 时长范围：10~16 秒\n");
         sb.append("- 所有 panel 时长之和必须在 ").append(minDuration).append("~").append(maxDuration).append(" 秒之间\n\n");
         sb.append("## 剧集内容\n").append(episodeContent != null ? episodeContent : "").append("\n\n");
-        sb.append("## 前情提要\n").append(recentMemory != null ? recentMemory : "无").append("\n");
+        sb.append("## 前情提要\n").append(recentMemory != null ? recentMemory : "无").append("\n\n");
+        sb.append("## 对话规划提示\n");
+        sb.append("在 scene_summary 中请包含该 panel 的关键对话概要或互动提示（如：A质问B、A向B坦白秘密）。\n");
+        sb.append("大部分 panel 应涉及角色之间的对话互动，纯场景/纯动作的 panel 应尽量少。\n");
         return sb.toString();
     }
 
@@ -139,6 +149,10 @@ public class PanelPromptBuilder {
         sb.append("关键要求：\n");
         sb.append("- image_prompt_hint 必须足够详细，是后续 AI 生成图片的核心输入\n");
         sb.append("- composition 要描述画面布局、角色站位关系\n");
+        sb.append("- dialogue 是叙事核心，每个 panel 至少包含 1-3 条对话（speech/thought/narration_box）\n");
+        sb.append("- 优先设计角色互动对话，用对话推动剧情、展现性格、制造冲突\n");
+        sb.append("- 纯动作/纯场景的 panel 也应配旁白或内心独白，避免无对话的 panel\n");
+        sb.append("- 对话要自然口语化，避免书面化或说教式台词\n");
         sb.append("- 仅返回单个 panel 的 JSON，不要数组\n");
         return sb.toString();
     }
@@ -166,6 +180,8 @@ public class PanelPromptBuilder {
         sb.append("要求：\n");
         sb.append("- 根据概要生成完整的 panel 描述\n");
         sb.append("- image_prompt_hint 要包含足够的视觉细节用于图片生成\n");
+        sb.append("- dialogue 中至少包含 1-3 条对话（speech/thought/narration_box），用对话推动叙事\n");
+        sb.append("- 如果概要中没有明确的对话场景，请主动设计角色互动或内心独白\n");
         sb.append("- 仅输出单个 panel 的 JSON 对象\n");
         return sb.toString();
     }

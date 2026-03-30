@@ -14,6 +14,7 @@ import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
+import com.comic.service.oss.OssService;
 import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +44,7 @@ public class PanelProductionService {
     private final PanelPromptBuilder panelPromptBuilder;
     private final ImageGenerationService imageGenerationService;
     private final VideoGenerationService videoGenerationService;
+    private final OssService ossService;
     private final ApplicationContext applicationContext;
 
     @Lazy
@@ -249,10 +251,22 @@ public class PanelProductionService {
                     case "completed":
                         String videoUrl = status.getVideoUrl();
                         if (videoUrl == null) videoUrl = videoGenerationService.downloadVideo(status.getTaskId());
+                        // 将 Vidu 返回的临时 URL 上传到阿里云 OSS，获得永久 URL
+                        boolean videoUrlPermanent = false;
+                        try {
+                            String ossVideoUrl = ossService.uploadVideoFromUrl(videoUrl, null);
+                            log.info("视频已上传到OSS: panelId={}, 原URL={}, OSS URL={}", panelId, videoUrl, ossVideoUrl);
+                            videoUrl = ossVideoUrl;
+                            videoUrlPermanent = true;
+                        } catch (Exception e) {
+                            log.error("视频上传OSS失败，仍使用临时URL: panelId={}, url={}", panelId, videoUrl, e);
+                            // 上传失败仍使用临时 URL，标记为非永久，后续可重试
+                        }
                         Panel panel = panelRepository.selectById(panelId);
                         if (panel != null) {
                             Map<String, Object> info = panel.getPanelInfo();
                             info.put("videoUrl", videoUrl);
+                            info.put("videoUrlPermanent", videoUrlPermanent);
                             info.put("videoStatus", "completed");
                             info.put("errorMessage", null);
                             panel.setPanelInfo(info);

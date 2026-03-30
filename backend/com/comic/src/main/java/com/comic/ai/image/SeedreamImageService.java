@@ -64,7 +64,7 @@ public class SeedreamImageService implements ImageGenerationService {
                 String tempUrl = parseResponse(responseBody);
 
                 // 转存到 OSS，获取永久公网 URL
-                String ossUrl = ossService.uploadFromUrl(tempUrl, null);
+                String ossUrl = ossService.uploadImageFromUrl(tempUrl, null);
                 log.info("Seedream 图片生成完成，已转存 OSS: {}", ossUrl);
                 return ossUrl;
             }
@@ -114,7 +114,7 @@ public class SeedreamImageService implements ImageGenerationService {
                 String responseBody = response.body().string();
                 String tempUrl = parseResponse(responseBody);
 
-                String ossUrl = ossService.uploadFromUrl(tempUrl, null);
+                String ossUrl = ossService.uploadImageFromUrl(tempUrl, null);
                 log.info("Seedream 参考图生成完成，已转存 OSS: {}", ossUrl);
                 return ossUrl;
             }
@@ -171,7 +171,7 @@ public class SeedreamImageService implements ImageGenerationService {
                 String responseBody = response.body().string();
                 String tempUrl = parseResponse(responseBody);
 
-                String ossUrl = ossService.uploadFromUrl(tempUrl, null);
+                String ossUrl = ossService.uploadImageFromUrl(tempUrl, null);
                 log.info("Seedream 多参考图生成完成，已转存 OSS: {}", ossUrl);
                 return ossUrl;
             }

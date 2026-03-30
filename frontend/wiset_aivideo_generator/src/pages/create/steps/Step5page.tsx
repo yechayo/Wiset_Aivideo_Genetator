@@ -812,7 +812,7 @@ const Step5page = ({ project }: Step5pageProps) => {
       alert(err?.response?.data?.message || err?.message || '生成视频失败');
       setGeneratingVideoPanelId(null);
     }
-  }, [projectId, refreshProductionStatuses]);
+  }, [projectId, refreshProductionStatuses, offPeak]);
 
   /**
    * AI 修改单个分镜
