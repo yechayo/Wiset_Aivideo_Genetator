@@ -202,12 +202,31 @@ public class PipelineService implements StageCompletionCallback {
         // Gate: verify project has producible panels before entering PRODUCING
         if ("all_panels_confirmed".equals(event) || "all_grids_approved".equals(event)) {
             List<Episode> episodes = episodeRepository.findByProjectId(projectId);
-            int totalPanels = 0;
-            for (Episode ep : episodes) {
-                totalPanels += panelRepository.findByEpisodeId(ep.getId()).size();
-            }
-            if (totalPanels == 0) {
-                throw new BusinessException("没有可生产的分镜，请先完成分镜生成");
+
+            // 新流程：检查所有 Episode 的 gridStatus === "approved"
+            boolean hasNewFlow = episodes.stream()
+                .anyMatch(ep -> {
+                    Map<String, Object> info = ep.getEpisodeInfo();
+                    return info != null && info.containsKey("gridStatus");
+                });
+
+            if (hasNewFlow) {
+                // 新流程验证：所有 Episode 九宫格必须审核通过
+                for (Episode ep : episodes) {
+                    Map<String, Object> info = ep.getEpisodeInfo();
+                    if (info == null || !"approved".equals(info.get("gridStatus"))) {
+                        throw new BusinessException("请先审核通过所有剧集的九宫格");
+                    }
+                }
+            } else {
+                // 旧流程验证：Panel 数量 > 0
+                int totalPanels = 0;
+                for (Episode ep : episodes) {
+                    totalPanels += panelRepository.findByEpisodeId(ep.getId()).size();
+                }
+                if (totalPanels == 0) {
+                    throw new BusinessException("没有可生产的分镜");
+                }
             }
         }
 
