@@ -6,12 +6,15 @@ import com.comic.dto.request.EpisodeUpdateRequest;
 import com.comic.dto.response.EpisodeListItemResponse;
 import com.comic.dto.response.PaginatedResponse;
 import com.comic.service.episode.EpisodeService;
+import com.comic.service.storyboard.StoryboardService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/projects/{projectId}/episodes")
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 public class EpisodeController {
 
     private final EpisodeService episodeService;
+    private final StoryboardService storyboardService;
 
     @GetMapping
     @Operation(summary = "剧集列表（分页）")
@@ -64,6 +68,35 @@ public class EpisodeController {
             @PathVariable String projectId,
             @PathVariable Long episodeId) {
         episodeService.deleteEpisode(projectId, episodeId);
+        return Result.ok();
+    }
+
+    // ================= 剧集剧本与分镜 =================
+
+    @PostMapping("/{episodeId}/script")
+    @Operation(summary = "生成分集剧本与分镜")
+    public Result<Void> generateEpisodeScript(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        storyboardService.generateEpisodeScriptAndStoryboard(projectId);
+        return Result.ok();
+    }
+
+    @GetMapping("/{episodeId}/script")
+    @Operation(summary = "获取分集剧本信息")
+    public Result<Map<String, Object>> getEpisodeScript(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        EpisodeListItemResponse episode = episodeService.getEpisode(projectId, episodeId);
+        return Result.ok(episode.getEpisodeInfo());
+    }
+
+    @PostMapping("/{episodeId}/storyboard")
+    @Operation(summary = "生成分集分镜")
+    public Result<Void> generateStoryboard(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        storyboardService.generateEpisodeScriptAndStoryboard(projectId);
         return Result.ok();
     }
 }

@@ -9,9 +9,11 @@ import com.comic.dto.request.PanelUpdateRequest;
 import com.comic.dto.response.*;
 import com.comic.entity.Episode;
 import com.comic.entity.Job;
+import com.comic.entity.Panel;
 import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.JobRepository;
+import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.job.JobQueueService;
 import com.comic.service.panel.PanelService;
@@ -41,6 +43,7 @@ public class PanelController {
     private final JobRepository jobRepository;
     private final PanelProductionService panelProductionService;
     private final ProjectRepository projectRepository;
+    private final PanelRepository panelRepository;
 
     // ================= 分镜 CRUD =================
 
@@ -216,34 +219,51 @@ public class PanelController {
         return Result.ok(panelProductionService.getBatchProductionStatus(episodeId));
     }
 
-    // ================= 背景图生成 =================
+    // ================= 九宫格审核 =================
 
-    @GetMapping("/{panelId}/background")
-    @Operation(summary = "获取背景图状态")
-    public Result<Map<String, Object>> getBackgroundStatus(
+    @PutMapping("/{panelId}/grid/approve")
+    @Operation(summary = "审核通过九宫格")
+    public Result<Void> approveGrid(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
-        return Result.ok(panelProductionService.getBackgroundStatusByPanelId(panelId));
-    }
-
-    @PostMapping("/{panelId}/background")
-    @Operation(summary = "生成背景图（自动匹配角色）")
-    public Result<Void> generateBackground(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable Long panelId) {
-        panelProductionService.generateBackgroundByPanelId(panelId);
+        panelProductionService.approveGrid(panelId);
         return Result.ok();
     }
 
-    @PostMapping("/{panelId}/background/regenerate")
-    @Operation(summary = "重新生成背景图")
-    public Result<Void> regenerateBackground(
+    @PutMapping("/{panelId}/grid/reject")
+    @Operation(summary = "驳回九宫格")
+    public Result<Void> rejectGrid(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId,
+            @RequestBody Map<String, String> body) {
+        panelProductionService.rejectGrid(panelId, body.getOrDefault("reason", ""));
+        return Result.ok();
+    }
+
+    @PostMapping("/{panelId}/grid/regenerate")
+    @Operation(summary = "重新生成九宫格")
+    public Result<Void> regenerateGrid(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
-        panelProductionService.generateBackgroundByPanelId(panelId);
+        panelProductionService.regenerateGrid(panelId);
+        return Result.ok();
+    }
+
+    @PutMapping("/grid/approve-all")
+    @Operation(summary = "批量审核通过所有九宫格")
+    public Result<Void> approveAllGrids(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
+        for (Panel p : panels) {
+            Map<String, Object> info = p.getPanelInfo();
+            if (info != null && "generated".equals(info.get("gridStatus"))) {
+                panelProductionService.approveGrid(p.getId());
+            }
+        }
         return Result.ok();
     }
 
@@ -259,7 +279,7 @@ public class PanelController {
     }
 
     @PostMapping("/{panelId}/video")
-    @Operation(summary = "生成视频（四宫格 → 视频大模型）")
+    @Operation(summary = "生成视频（九宫格融合图 → 视频大模型）")
     public Result<Void> generateVideo(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
