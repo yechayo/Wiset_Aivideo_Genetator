@@ -3,7 +3,6 @@ package com.comic.controller;
 import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
 import com.comic.common.Result;
-import com.comic.dto.request.ComicReviseRequest;
 import com.comic.dto.request.PanelCreateRequest;
 import com.comic.dto.request.PanelReviseRequest;
 import com.comic.dto.request.PanelUpdateRequest;
@@ -16,7 +15,6 @@ import com.comic.repository.JobRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.job.JobQueueService;
 import com.comic.service.panel.PanelService;
-import com.comic.service.production.ComicGenerationService;
 import com.comic.service.production.PanelProductionService;
 import com.comic.service.panel.PanelGenerationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -42,7 +40,6 @@ public class PanelController {
     private final EpisodeRepository episodeRepository;
     private final JobRepository jobRepository;
     private final PanelProductionService panelProductionService;
-    private final ComicGenerationService comicGenerationService;
     private final ProjectRepository projectRepository;
 
     // ================= 分镜 CRUD =================
@@ -204,7 +201,7 @@ public class PanelController {
 
     @GetMapping("/{panelId}/production-status")
     @Operation(summary = "单 Panel 完整生产状态")
-    public Result<PanelProductionStatusResponse> getProductionStatus(
+    public Result<Map<String, Object>> getProductionStatus(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
@@ -213,7 +210,7 @@ public class PanelController {
 
     @GetMapping("/production-statuses")
     @Operation(summary = "批量获取所有 Panel 生产状态")
-    public Result<List<PanelProductionStatusResponse>> getBatchProductionStatuses(
+    public Result<List<Map<String, Object>>> getBatchProductionStatuses(
             @PathVariable String projectId,
             @PathVariable Long episodeId) {
         return Result.ok(panelProductionService.getBatchProductionStatus(episodeId));
@@ -223,7 +220,7 @@ public class PanelController {
 
     @GetMapping("/{panelId}/background")
     @Operation(summary = "获取背景图状态")
-    public Result<PanelBackgroundResponse> getBackgroundStatus(
+    public Result<Map<String, Object>> getBackgroundStatus(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
@@ -247,48 +244,6 @@ public class PanelController {
             @PathVariable Long episodeId,
             @PathVariable Long panelId) {
         panelProductionService.generateBackgroundByPanelId(panelId);
-        return Result.ok();
-    }
-
-    // ================= 四宫格漫画（AI 融合，审核点） =================
-
-    @GetMapping("/{panelId}/comic")
-    @Operation(summary = "获取四宫格状态")
-    public Result<ComicStatusResponse> getComicStatus(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable Long panelId) {
-        return Result.ok(comicGenerationService.getComicStatus(panelId));
-    }
-
-    @PostMapping("/{panelId}/comic")
-    @Operation(summary = "生成四宫格漫画")
-    public Result<Void> generateComic(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable Long panelId) {
-        comicGenerationService.generateComic(panelId);
-        return Result.ok();
-    }
-
-    @PostMapping("/{panelId}/comic/approve")
-    @Operation(summary = "审核通过四宫格")
-    public Result<Void> approveComic(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable Long panelId) {
-        comicGenerationService.approveComic(panelId);
-        return Result.ok();
-    }
-
-    @PostMapping("/{panelId}/comic/revise")
-    @Operation(summary = "退回重生成四宫格")
-    public Result<Void> reviseComic(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId,
-            @PathVariable Long panelId,
-            @RequestBody ComicReviseRequest request) {
-        comicGenerationService.reviseComic(panelId, request.getFeedback());
         return Result.ok();
     }
 

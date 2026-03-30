@@ -4,7 +4,6 @@ import com.comic.dto.model.CharacterStateModel;
 import com.comic.dto.model.WorldConfigModel;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -293,180 +292,6 @@ public class PanelPromptBuilder {
     }
 
     /**
-     * 构建四宫格漫画提示词（向后兼容，无角色信息）
-     */
-    public String buildComicPrompt(Map<String, Object> panelInfo) {
-        return buildComicPrompt(panelInfo, new HashMap<>(), null);
-    }
-
-    /**
-     * 构建四宫格漫画提示词（无剧情简介）
-     */
-    public String buildComicPrompt(Map<String, Object> panelInfo, Map<String, Map<String, String>> charDescriptions) {
-        return buildComicPrompt(panelInfo, charDescriptions, null);
-    }
-
-    /**
-     * 构建四宫格漫画提示词（增强版：剧情上下文 + 角色参考图映射）
-     *
-     * @param panelInfo        分镜信息
-     * @param charDescriptions 角色描述 Map<charId, Map<"name"|"appearance"|"imageIndex"|"role", ...>>
-     * @param episodeSynopsis  剧情简介（可为 null）
-     */
-    public String buildComicPrompt(Map<String, Object> panelInfo, Map<String, Map<String, String>> charDescriptions, String episodeSynopsis) {
-        if (panelInfo == null) return "";
-        if (charDescriptions == null) charDescriptions = new HashMap<>();
-
-        StringBuilder prompt = new StringBuilder();
-
-        // 专业角色前缀
-        prompt.append("你是一个专业的漫画家，请根据以下分镜描述生成高质量的四宫格漫画。");
-
-        // 0. 剧情背景（可选）
-        if (episodeSynopsis != null && !episodeSynopsis.isEmpty()) {
-            prompt.append("【剧情背景】").append(episodeSynopsis);
-        }
-
-        // 0.5 参考图说明（仅在有角色参考图时添加）
-        boolean hasCharImages = charDescriptions.values().stream()
-                .anyMatch(d -> d.get("imageIndex") != null);
-        if (hasCharImages) {
-            prompt.append("【参考图说明】");
-            prompt.append("图1：场景背景参考图。");
-            for (Map.Entry<String, Map<String, String>> entry : charDescriptions.entrySet()) {
-                Map<String, String> desc = entry.getValue();
-                String imageIndex = desc.get("imageIndex");
-                String name = desc.get("name");
-                String role = desc.get("role");
-                if (imageIndex != null && name != null) {
-                    prompt.append("图").append(imageIndex).append("：角色\"").append(name).append("\"的参考图");
-                    if (role != null && !role.isEmpty()) {
-                        prompt.append("（").append(role).append("）");
-                    }
-                    prompt.append("，请严格按照该参考图中的角色外貌来绘制该角色。");
-                }
-            }
-        }
-
-        // 1. 构图描述
-        String composition = getStr(panelInfo, "composition");
-        if (composition != null && !composition.isEmpty()) {
-            prompt.append("【构图描述】").append(composition).append("。");
-        }
-
-        // 2. 场景描述 + 氛围 + 时间
-        @SuppressWarnings("unchecked")
-        Map<String, Object> bg = (Map<String, Object>) panelInfo.get("background");
-        if (bg != null) {
-            String sceneDesc = getStr(bg, "scene_desc");
-            if (sceneDesc == null || sceneDesc.isEmpty()) {
-                sceneDesc = getStr(panelInfo, "sceneDescription");
-            }
-            if (sceneDesc != null && !sceneDesc.isEmpty()) {
-                prompt.append("【场景描述】").append(sceneDesc).append("。");
-            }
-            String atmosphere = getStr(bg, "atmosphere");
-            if (atmosphere != null && !atmosphere.isEmpty()) {
-                prompt.append("【氛围】").append(atmosphere).append("。");
-            }
-            String timeOfDay = getStr(bg, "time_of_day");
-            if (timeOfDay != null && !timeOfDay.isEmpty()) {
-                prompt.append("【时间】").append(timeOfDay).append("。");
-            }
-        }
-
-        // 3. 镜头语言
-        String shotType = getStr(panelInfo, "shot_type");
-        String cameraAngle = getStr(panelInfo, "camera_angle");
-
-        if (shotType != null) {
-            switch (shotType) {
-                case "WIDE_SHOT": prompt.append("【镜头类型】远景，展示完整场景。"); break;
-                case "MID_SHOT": prompt.append("【镜头类型】中景，聚焦角色半身。"); break;
-                case "CLOSE_UP": prompt.append("【镜头类型】特写，聚焦面部细节。"); break;
-                case "OVER_SHOULDER": prompt.append("【镜头类型】过肩镜头。"); break;
-                default: break;
-            }
-        }
-
-        if (cameraAngle != null) {
-            switch (cameraAngle) {
-                case "eye_level": prompt.append("【镜头角度】平视角度。"); break;
-                case "low_angle": prompt.append("【镜头角度】低角度仰拍。"); break;
-                case "high_angle": prompt.append("【镜头角度】高角度俯拍。"); break;
-                case "bird_eye": prompt.append("【镜头角度】鸟瞰俯视视角。"); break;
-                default: break;
-            }
-        }
-
-        // 4. 角色表演（名称 + 外貌 + 姿态 + 位置 + 表情）
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> characters = (List<Map<String, Object>>) panelInfo.get("characters");
-        if (characters != null && !characters.isEmpty()) {
-            prompt.append("【角色表演】");
-            for (Map<String, Object> ch : characters) {
-                String charId = ch.get("char_id") != null ? ch.get("char_id").toString() : null;
-
-                // 从 charDescriptions 获取角色名称和外貌
-                String name = null;
-                String appearance = null;
-                if (charId != null && charDescriptions != null) {
-                    Map<String, String> desc = charDescriptions.get(charId);
-                    if (desc != null) {
-                        name = desc.get("name");
-                        appearance = desc.get("appearance");
-                    }
-                }
-
-                String pose = ch.get("pose") != null ? ch.get("pose").toString() : null;
-                String position = ch.get("position") != null ? ch.get("position").toString() : null;
-                String expression = ch.get("expression") != null ? ch.get("expression").toString() : null;
-                String costumeState = ch.get("costume_state") != null ? ch.get("costume_state").toString() : null;
-
-                if (name != null) prompt.append(name);
-                if (appearance != null) prompt.append("（").append(appearance).append("）");
-                if (pose != null) prompt.append("，").append(pose);
-                if (position != null) prompt.append("，位置：").append(position);
-                if (expression != null) prompt.append("，").append(expression).append("表情");
-                if (costumeState != null && !"normal".equals(costumeState)) {
-                    prompt.append("，服装状态：").append(costumeState);
-                }
-                prompt.append("；");
-            }
-        }
-
-        // 5. 对话台词
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> dialogue = (List<Map<String, Object>>) panelInfo.get("dialogue");
-        if (dialogue != null && !dialogue.isEmpty()) {
-            prompt.append("【对话台词】");
-            for (Map<String, Object> d : dialogue) {
-                String speaker = d.get("speaker") != null ? d.get("speaker").toString() : null;
-                String text = d.get("text") != null ? d.get("text").toString() : null;
-                if (speaker != null && text != null) {
-                    prompt.append(speaker).append("：\"").append(text).append("\"；");
-                } else if (text != null) {
-                    prompt.append("\"").append(text).append("\"；");
-                }
-            }
-        }
-
-        // 6. 画面细节参考（LLM 生成的详细英文提示词）
-        String imagePromptHint = getStr(panelInfo, "image_prompt_hint");
-        if (imagePromptHint != null && !imagePromptHint.isEmpty()) {
-            prompt.append("【画面细节参考】").append(imagePromptHint);
-        }
-
-        // 7. 四宫格布局指令 + 风格指令 + 无文字说明
-        prompt.append("保持参考图的背景风格和场景布局不变。");
-        prompt.append("生成2行2列四宫格漫画，共4个连续分镜画面，每个格子标注序号(1,2,3,4)。");
-        prompt.append("高质量动漫风格，画面精细。");
-        prompt.append("图片中不要有任何文字或字幕。");
-
-        return prompt.toString();
-    }
-
-    /**
      * 构建视频生成提示词（中文）
      * 结构：风格前缀 + 画面内容 + 镜头语言 + 角色动作
      */
@@ -605,5 +430,86 @@ public class PanelPromptBuilder {
     private String getStr(Map<String, Object> info, String key) {
         Object v = info.get(key);
         return v != null ? v.toString() : null;
+    }
+
+    /**
+     * 场景风格前缀（String 重载）
+     */
+    public String buildSceneStylePrefix(String visualStyle) {
+        try {
+            return buildSceneStylePrefix(CharacterPromptManager.VisualStyle.fromCode(visualStyle));
+        } catch (Exception e) {
+            return buildSceneStylePrefix(CharacterPromptManager.VisualStyle.ANIME);
+        }
+    }
+
+    /**
+     * 构建九宫格图片生成提示词
+     */
+    public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots,
+                                   List<String> charReferences) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(buildSceneStylePrefix(visualStyle));
+        sb.append("\n\n生成一张 3x3 分镜九宫格图片。图片比例 16:9，黑色细边框分隔。保持角色外观一致性，图片中不包含任何文字。\n\n");
+
+        if (charReferences != null && !charReferences.isEmpty()) {
+            sb.append("角色参考：").append(String.join("、", charReferences)).append("\n\n");
+        }
+
+        for (Map<String, Object> shot : shots) {
+            sb.append("面板 ").append(shot.get("shotNumber")).append(": ");
+            sb.append("16:9 - ").append(shot.getOrDefault("visualDescription", ""));
+            sb.append(" ").append(shot.getOrDefault("shotSize", ""));
+            sb.append(" ").append(shot.getOrDefault("cameraAngle", ""));
+            sb.append(" environment: ").append(shot.getOrDefault("scene", ""));
+            sb.append("\n");
+        }
+
+        int emptySlots = 9 - shots.size();
+        if (emptySlots > 0) {
+            sb.append("剩余 ").append(emptySlots).append(" 个面板: (empty panel - storyboard end)");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 构建多镜头视频生成提示词
+     */
+    @SuppressWarnings("unchecked")
+    public String buildMultiShotPrompt(String visualStyle, Map<String, Object> panelInfo) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(buildSceneStylePrefix(visualStyle));
+        sb.append(" 专业电影级画面。\n\n");
+
+        List<Map<String, Object>> shots = (List<Map<String, Object>>) panelInfo.get("shots");
+        int n = shots != null ? shots.size() : 0;
+        sb.append("多镜头连续拍摄指令，以下 ").append(n).append(" 个镜头必须在同一视频中连续呈现：\n\n");
+
+        if (shots != null) {
+            for (Map<String, Object> shot : shots) {
+                int shotNum = ((Number) shot.get("shotNumber")).intValue();
+                sb.append("Shot ").append(shotNum).append(":\n");
+                sb.append("duration: ").append(shot.get("duration")).append("s\n");
+                sb.append("Scene: ").append(shot.getOrDefault("shotSize", ""))
+                  .append(", ").append(shot.getOrDefault("cameraAngle", ""))
+                  .append(", ").append(shot.getOrDefault("cameraMovement", ""))
+                  .append(", ").append(shot.getOrDefault("visualDescription", "")).append("\n");
+
+                String dialogue = (String) shot.get("dialogue");
+                if (dialogue != null && !"无".equals(dialogue)) {
+                    sb.append("对白: ").append(dialogue).append("\n");
+                }
+                String audioEffects = (String) shot.get("audioEffects");
+                if (audioEffects != null && !"无".equals(audioEffects)) {
+                    sb.append("音效: [").append(audioEffects).append("]\n");
+                }
+                sb.append("\n");
+            }
+        }
+
+        sb.append("## 画面衔接\n视频应从参考图自然展开，多镜头间平滑过渡。\n");
+        sb.append("保持角色位置和动作的连贯性。\n");
+        sb.append("参考图中编号①②③对应 Shot 1/2/3 的画面内容。");
+        return sb.toString();
     }
 }

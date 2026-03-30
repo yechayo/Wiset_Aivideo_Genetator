@@ -5,8 +5,6 @@ import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.common.BusinessException;
-import com.comic.dto.response.PanelBackgroundResponse;
-import com.comic.dto.response.PanelProductionStatusResponse;
 import com.comic.dto.response.VideoStatusResponse;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
@@ -72,49 +70,49 @@ public class PanelProductionService {
     /**
      * 获取单 Panel 完整生产状态
      */
-    public PanelProductionStatusResponse getProductionStatus(Long panelId) {
+    public Map<String, Object> getProductionStatus(Long panelId) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
-        PanelProductionStatusResponse response = new PanelProductionStatusResponse();
-        response.setPanelId(panelId);
+        Map<String, Object> response = new HashMap<>();
+        response.put("panelId", panelId);
         Map<String, Object> info = panel.getPanelInfo();
         if (info == null) {
-            response.setOverallStatus("pending");
-            response.setCurrentStage("background");
+            response.put("overallStatus", "pending");
+            response.put("currentStage", "background");
             return response;
         }
         String bgUrl = getStr(info, "backgroundUrl");
-        response.setBackgroundUrl(bgUrl);
-        response.setBackgroundStatus(bgUrl != null ? "completed" : "pending");
+        response.put("backgroundUrl", bgUrl);
+        response.put("backgroundStatus", bgUrl != null ? "completed" : "pending");
         String comicUrl = getStr(info, "comicUrl");
         String comicStatus = getStr(info, "comicStatus");
-        response.setComicUrl(comicUrl);
-        response.setComicStatus(comicStatus != null ? comicStatus : (comicUrl != null ? "approved" : "pending"));
+        response.put("comicUrl", comicUrl);
+        response.put("comicStatus", comicStatus != null ? comicStatus : (comicUrl != null ? "approved" : "pending"));
         String videoUrl = getStr(info, "videoUrl");
         String videoStatus = getStr(info, "videoStatus");
-        response.setVideoUrl(videoUrl);
-        response.setVideoStatus(videoStatus != null ? videoStatus : (videoUrl != null ? "completed" : "pending"));
+        response.put("videoUrl", videoUrl);
+        response.put("videoStatus", videoStatus != null ? videoStatus : (videoUrl != null ? "completed" : "pending"));
 
         // 视频元数据
         String videoTaskId = getStr(info, "videoTaskId");
-        response.setVideoTaskId(videoTaskId);
+        response.put("videoTaskId", videoTaskId);
         Boolean offPeak = info.containsKey("offPeak") ? (Boolean) info.get("offPeak") : null;
-        response.setOffPeak(offPeak);
+        response.put("offPeak", offPeak);
         Integer videoDuration = getInt(info, "videoDuration");
         if (videoDuration == null && info.containsKey("duration")) {
             videoDuration = info.get("duration") instanceof Number ? ((Number) info.get("duration")).intValue() : null;
         }
-        response.setVideoDuration(videoDuration);
+        response.put("videoDuration", videoDuration);
 
-        response.setOverallStatus(determineOverallStatus(response));
-        response.setCurrentStage(determineCurrentStage(response));
+        response.put("overallStatus", determineOverallStatus(response));
+        response.put("currentStage", determineCurrentStage(response));
         return response;
     }
 
     /**
      * 批量获取所有 Panel 生产状态
      */
-    public List<PanelProductionStatusResponse> getBatchProductionStatus(Long episodeId) {
+    public List<Map<String, Object>> getBatchProductionStatus(Long episodeId) {
         List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
         return panels.stream().map(p -> getProductionStatus(p.getId())).collect(Collectors.toList());
     }
@@ -124,18 +122,18 @@ public class PanelProductionService {
     /**
      * 获取背景图状态
      */
-    public PanelBackgroundResponse getBackgroundStatusByPanelId(Long panelId) {
+    public Map<String, Object> getBackgroundStatusByPanelId(Long panelId) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
-        PanelBackgroundResponse response = new PanelBackgroundResponse();
-        response.setPanelId(panelId);
+        Map<String, Object> response = new HashMap<>();
+        response.put("panelId", panelId);
         Map<String, Object> info = panel.getPanelInfo();
         String bgUrl = info != null ? getStr(info, "backgroundUrl") : null;
         if (bgUrl != null) {
-            response.setBackgroundUrl(bgUrl);
-            response.setStatus("completed");
+            response.put("backgroundUrl", bgUrl);
+            response.put("status", "completed");
         } else {
-            response.setStatus("pending");
+            response.put("status", "pending");
         }
         return response;
     }
@@ -370,21 +368,27 @@ public class PanelProductionService {
         panelRepository.updateById(panel);
     }
 
-    private String determineOverallStatus(PanelProductionStatusResponse r) {
-        if ("completed".equals(r.getVideoStatus())) return "completed";
-        if ("failed".equals(r.getVideoStatus()) || "failed".equals(r.getComicStatus()) || "failed".equals(r.getBackgroundStatus())) return "failed";
-        if ("generating".equals(r.getVideoStatus()) || "generating".equals(r.getComicStatus()) || "generating".equals(r.getBackgroundStatus())) return "in_progress";
-        if (r.getBackgroundUrl() != null || r.getComicUrl() != null) return "in_progress";
+    private String determineOverallStatus(Map<String, Object> r) {
+        String videoStatus = r.get("videoStatus") != null ? r.get("videoStatus").toString() : null;
+        String comicStatus = r.get("comicStatus") != null ? r.get("comicStatus").toString() : null;
+        String bgStatus = r.get("backgroundStatus") != null ? r.get("backgroundStatus").toString() : null;
+        if ("completed".equals(videoStatus)) return "completed";
+        if ("failed".equals(videoStatus) || "failed".equals(comicStatus) || "failed".equals(bgStatus)) return "failed";
+        if ("generating".equals(videoStatus) || "generating".equals(comicStatus) || "generating".equals(bgStatus)) return "in_progress";
+        if (r.get("backgroundUrl") != null || r.get("comicUrl") != null) return "in_progress";
         return "pending";
     }
 
-    private String determineCurrentStage(PanelProductionStatusResponse r) {
-        if ("completed".equals(r.getVideoStatus())) return "video";
-        if ("generating".equals(r.getVideoStatus())) return "video";
-        if ("approved".equals(r.getComicStatus())) return "video";
-        if ("generating".equals(r.getComicStatus())) return "comic";
-        if ("pending".equals(r.getComicStatus()) && r.getBackgroundUrl() != null) return "comic";
-        if ("generating".equals(r.getBackgroundStatus())) return "background";
+    private String determineCurrentStage(Map<String, Object> r) {
+        String videoStatus = r.get("videoStatus") != null ? r.get("videoStatus").toString() : null;
+        String comicStatus = r.get("comicStatus") != null ? r.get("comicStatus").toString() : null;
+        String bgStatus = r.get("backgroundStatus") != null ? r.get("backgroundStatus").toString() : null;
+        if ("completed".equals(videoStatus)) return "video";
+        if ("generating".equals(videoStatus)) return "video";
+        if ("approved".equals(comicStatus)) return "video";
+        if ("generating".equals(comicStatus)) return "comic";
+        if ("pending".equals(comicStatus) && r.get("backgroundUrl") != null) return "comic";
+        if ("generating".equals(bgStatus)) return "background";
         return "background";
     }
 }

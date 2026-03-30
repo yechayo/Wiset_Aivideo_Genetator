@@ -1,5 +1,8 @@
 package com.comic.ai.text;
 
+import com.comic.common.BusinessException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -201,5 +204,95 @@ public class DeepSeekTextService implements TextGenerationService {
 
     private void sleepBeforeRetry(int attempt) throws InterruptedException {
         Thread.sleep(RETRY_DELAY_MS * attempt);
+    }
+
+    /**
+     * 生成结构化分集剧本（JSON 格式）
+     */
+    public List<Map<String, Object>> generateEpisodeScript(
+            String outlineNode, String characters, int durationSeconds, String visualStyle) {
+        String systemPrompt = "你是一位专业的影视编剧。请根据提供的大纲和角色信息，生成结构化分集剧本。\n"
+            + "输出格式为纯 JSON 数组，不要包含 markdown 代码块标记。\n"
+            + "每个元素包含以下字段：\n"
+            + "- title: 集标题\n"
+            + "- content: 剧本正文内容（约" + (durationSeconds / 60) + "分钟对应的字数，中文约200-250字/分钟）\n"
+            + "- characters: 本集出场角色，逗号分隔\n"
+            + "- keyItems: 本集关键道具/场景，逗号分隔\n"
+            + "- continuityNote: 连贯性备注\n"
+            + "注意：内容要紧凑，适合" + durationSeconds + "秒的短视频。";
+
+        String userPrompt = "大纲节点：" + outlineNode + "\n"
+            + "角色：" + characters + "\n"
+            + "视觉风格：" + visualStyle + "\n"
+            + "目标时长：" + durationSeconds + "秒\n"
+            + "请生成结构化分集剧本 JSON。";
+
+        String response = generate(systemPrompt, userPrompt);
+        return parseJsonArray(response);
+    }
+
+    /**
+     * 生成分镜脚本（DetailedStoryboardShot 数组）
+     */
+    public List<Map<String, Object>> generateStoryboard(
+            String episodeContent, String characters, int totalDuration, String visualStyle) {
+        int recommendedShots = Math.max(1, totalDuration * 10 / 25);
+
+        String systemPrompt = "你是一位专业的影视分镜师。请根据提供的剧本内容，生成详细的分镜脚本。\n"
+            + "关键约束：\n"
+            + "- 每个分镜时长：1-4秒\n"
+            + "- 所有分镜时长总和必须 >= " + totalDuration + "秒\n"
+            + "- 推荐分镜数量：" + recommendedShots + " 个\n"
+            + "- 输出纯 JSON 数组，不要包含 markdown 代码块标记\n\n"
+            + "每个分镜包含以下字段：\n"
+            + "- shotNumber: 镜头编号（从1开始）\n"
+            + "- duration: 时长（秒，1-4）\n"
+            + "- scene: 场景描述\n"
+            + "- characters: 出场角色数组\n"
+            + "- shotSize: 景别（大远景/远景/全景/中景/中近景/近景/特写/大特写）\n"
+            + "- cameraAngle: 角度（视平/高位俯拍/低位仰拍/斜拍/越肩/鸟瞰）\n"
+            + "- cameraMovement: 运镜（固定/横移/俯仰/横摇/升降/轨道推拉/变焦推拉/正跟随/倒跟随/环绕/滑轨横移）\n"
+            + "- visualDescription: 画面描述\n"
+            + "- dialogue: 对白（无则填\"无\"）\n"
+            + "- visualEffects: 视觉特效（无则填\"无\"）\n"
+            + "- audioEffects: 音效（无则填\"无\"）";
+
+        String userPrompt = "剧本内容：\n" + episodeContent + "\n\n"
+            + "角色：" + characters + "\n"
+            + "视觉风格：" + visualStyle + "\n"
+            + "目标总时长：" + totalDuration + "秒\n\n"
+            + "请生成详细的分镜脚本 JSON 数组。";
+
+        String response = generate(systemPrompt, userPrompt);
+        List<Map<String, Object>> shots = parseJsonArray(response);
+
+        if (shots == null || shots.isEmpty()) {
+            throw new BusinessException("分镜生成结果为空，请重试");
+        }
+
+        // 钳制时长到 1-4 秒
+        for (Map<String, Object> shot : shots) {
+            int duration = ((Number) shot.get("duration")).intValue();
+            duration = Math.max(1, Math.min(4, duration));
+            shot.put("duration", duration);
+        }
+
+        return shots;
+    }
+
+    /** 解析 DeepSeek 返回的 JSON 数组 */
+    private List<Map<String, Object>> parseJsonArray(String jsonStr) {
+        String cleaned = jsonStr.trim();
+        if (cleaned.startsWith("```json")) cleaned = cleaned.substring(7);
+        else if (cleaned.startsWith("```")) cleaned = cleaned.substring(3);
+        if (cleaned.endsWith("```")) cleaned = cleaned.substring(0, cleaned.length() - 3);
+        cleaned = cleaned.trim();
+
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(cleaned, new TypeReference<List<Map<String, Object>>>() {});
+        } catch (JsonProcessingException e) {
+            throw new BusinessException("JSON 解析失败: " + e.getMessage());
+        }
     }
 }
