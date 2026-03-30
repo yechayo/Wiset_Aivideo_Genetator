@@ -13,6 +13,7 @@ import com.comic.service.pipeline.PipelineService;
 import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
@@ -43,6 +44,7 @@ public class StoryboardService {
      * 主入口：生成结构化分集剧本 → 分镜脚本 → 贪心分组 → 创建 Panel
      * 被PipelineService异步调用
      */
+    @Transactional
     public void generateEpisodeScriptAndStoryboard(String projectId) {
         try {
             Project project = projectRepository.findByProjectId(projectId);

@@ -5,7 +5,6 @@
 import { get, post, put } from './apiClient';
 import type { ApiResponse, PaginatedResponse } from './types/auth.types';
 import type {
-  PanelProductionStatusResponse,
   PanelGridStatusResponse,
   ProductionPipelineResponse,
   VideoSegmentInfo,
@@ -60,23 +59,12 @@ export async function revisePanel(
 
 // ================= Panel 生产状态 API =================
 
-/** 获取单 Panel 完整生产状态 */
-export async function getPanelProductionStatus(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<PanelProductionStatusResponse>> {
-  return get<ApiResponse<PanelProductionStatusResponse>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/production-status`,
-  );
-}
-
 /** 批量获取所有 Panel 生产状态 */
 export async function getBatchProductionStatuses(
   projectId: string,
   episodeId: number,
-): Promise<ApiResponse<PanelProductionStatusResponse[]>> {
-  return get<ApiResponse<PanelProductionStatusResponse[]>>(
+): Promise<ApiResponse<PanelGridStatusResponse[]>> {
+  return get<ApiResponse<PanelGridStatusResponse[]>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/production-statuses`,
   );
 }

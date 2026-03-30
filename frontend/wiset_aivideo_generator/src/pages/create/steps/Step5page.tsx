@@ -22,7 +22,6 @@ import {
   reviseSinglePanel,
   updatePanel,
 } from '../../../services/episodeService';
-import type { PanelGridStatusResponse } from '../../../services/types/episode.types';
 import { getCharacterStatus, getCharacters } from '../../../services/characterService';
 import EpisodeCard from './components/EpisodeCard';
 import { BatchReviewBar } from './components/BatchReviewBar';

@@ -45,6 +45,8 @@ export interface EpisodeState {
   /** panelPlan JSON 解析后的 scene_summary 映射：panel_id → scene_summary */
   sceneSummaryMap: Record<string, string>;
   segments: SegmentState[];
+  /** Raw episodeInfo from backend Episode entity */
+  episodeInfo?: Record<string, any>;
 }
 
 /** 章节状态 */

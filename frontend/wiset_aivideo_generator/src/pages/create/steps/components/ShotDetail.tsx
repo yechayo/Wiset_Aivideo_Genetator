@@ -21,7 +21,6 @@ const FieldRow: React.FC<{ label: string; value: string }> = ({ label, value }) 
 
 export const ShotDetail: React.FC<ShotDetailProps> = ({
   shot,
-  shotIndex,
   splitImageUrl,
   onClose,
 }) => {

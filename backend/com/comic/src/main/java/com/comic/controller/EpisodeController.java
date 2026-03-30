@@ -90,13 +90,4 @@ public class EpisodeController {
         EpisodeListItemResponse episode = episodeService.getEpisode(projectId, episodeId);
         return Result.ok(episode.getEpisodeInfo());
     }
-
-    @GetMapping("/{episodeId}/panels")
-    @Operation(summary = "获取剧集分镜列表")
-    public Result<?> getEpisodePanels(
-            @PathVariable String projectId,
-            @PathVariable Long episodeId) {
-        // Delegates to PanelController's panel listing
-        return Result.ok(episodeService.getEpisode(projectId, episodeId));
-    }
 }
