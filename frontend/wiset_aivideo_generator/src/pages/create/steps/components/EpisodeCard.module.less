@@ -327,3 +327,92 @@
   color: var(--color-text-muted);
   font-style: italic;
 }
+
+/* 整集九宫格审核视图 */
+.episodeGridReview {
+  padding: 16px 0;
+}
+
+.gridImageList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.gridImagePage {
+  flex: 1;
+  min-width: 300px;
+  max-width: 600px;
+}
+
+.gridPageLabel {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.gridImage {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #2a2a2e;
+}
+
+/* 分割分镜列表 */
+.splitShotList {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #2a2a2e;
+}
+
+.splitShotTitle {
+  font-size: 13px;
+  color: #999;
+  margin-bottom: 12px;
+}
+
+.splitShotGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.splitShotItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #1a1a1c;
+  font-size: 13px;
+}
+
+.splitShotNumber {
+  color: #6c6cff;
+  font-weight: 600;
+  min-width: 30px;
+}
+
+.splitShotDesc {
+  color: #ccc;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.splitShotDuration {
+  color: #888;
+  font-size: 12px;
+}
+
+/* 退回原因 */
+.rejectionFeedback {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 77, 79, 0.1);
+  border: 1px solid rgba(255, 77, 79, 0.3);
+  color: #ff8a8d;
+  font-size: 13px;
+}

@@ -26,6 +26,11 @@ interface EpisodeCardProps {
   onRevisePanel?: (episodeId: number) => void;
   isRevisingPanel?: boolean;
   onApproveAllGrids?: () => void;
+  // === 新流程 props ===
+  onApproveEpisodeGrid?: () => void;
+  onRejectEpisodeGrid?: (reason: string) => void;
+  onRegenerateEpisodeGrid?: () => void;
+  onRefreshEpisodeGrid?: () => void;
 }
 
 /**
@@ -34,20 +39,31 @@ interface EpisodeCardProps {
  * - 进行中: 有 segment 处于 grid_review/grid_approved/video_generating
  * - 未开始: 所有 segments 都是 pending
  */
-const getEpisodeStatus = (segments: SegmentState[]): 'completed' | 'in-progress' | 'not-started' => {
-  if (segments.length === 0) return 'not-started';
-
-  const allCompleted = segments.every(s => s.pipelineStep === 'video_completed');
+const getEpisodeStatus = (episode: EpisodeState): 'completed' | 'in-progress' | 'not-started' => {
+  // 新流程：基于 gridStatus 判断
+  if (episode.isNewFlow) {
+    if (episode.gridStatus === 'approved' && episode.segments.length > 0) {
+      const allCompleted = episode.segments.every(s => s.pipelineStep === 'video_completed');
+      if (allCompleted) return 'completed';
+      const hasInProgress = episode.segments.some(s =>
+        s.pipelineStep === 'video_generating' || s.pipelineStep === 'grid_approved'
+      );
+      return hasInProgress ? 'in-progress' : 'not-started';
+    }
+    if (episode.gridStatus === 'generating' || episode.gridStatus === 'generated') return 'in-progress';
+    return 'not-started';
+  }
+  // 旧流程
+  if (episode.segments.length === 0) return 'not-started';
+  const allCompleted = episode.segments.every(s => s.pipelineStep === 'video_completed');
   if (allCompleted) return 'completed';
-
-  const hasInProgress = segments.some(s =>
+  const hasInProgress = episode.segments.some(s =>
     s.pipelineStep === 'grid_generating' ||
     s.pipelineStep === 'grid_review' ||
     s.pipelineStep === 'grid_approved' ||
     s.pipelineStep === 'video_generating'
   );
   if (hasInProgress) return 'in-progress';
-
   return 'not-started';
 };
 
@@ -90,8 +106,20 @@ const EpisodeCard = ({
   onRevisePanel,
   isRevisingPanel,
   onApproveAllGrids,
+  onApproveEpisodeGrid,
+  onRejectEpisodeGrid,
+  onRegenerateEpisodeGrid,
+  onRefreshEpisodeGrid,
 }: EpisodeCardProps) => {
-  const episodeStatus = getEpisodeStatus(episode.segments);
+  const episodeStatus = getEpisodeStatus(episode);
+
+  // 新流程 vs 旧流程
+  const isNewFlow = episode.isNewFlow;
+  const isGridApproved = isNewFlow && episode.gridStatus === 'approved';
+  const isGridPending = isNewFlow && (episode.gridStatus === 'pending' || episode.gridStatus === 'generating');
+  const isGridReview = isNewFlow && episode.gridStatus === 'generated';
+  const isGridRejected = isNewFlow && episode.gridStatus === 'rejected';
+  const isGridFailed = isNewFlow && episode.gridStatus === 'failed';
 
   // 只要有一个 panel 进入了生产流程（非 pending），就禁止修改分镜脚本
   const hasProductionStarted = episode.segments.some(s => s.pipelineStep !== 'pending');
@@ -137,7 +165,22 @@ const EpisodeCard = ({
             <h4 className={styles.title}>
               第{episode.episodeIndex}集：{episode.title}
             </h4>
-            <span className={styles.segmentCount}>{episode.segments.length} 个片段</span>
+            <span className={styles.segmentCount}>
+            {isNewFlow ? (
+              <>
+                {episode.gridStatus === 'approved' ? '九宫格已通过' :
+                 episode.gridStatus === 'generating' ? '九宫格生成中...' :
+                 episode.gridStatus === 'generated' ? '待审核九宫格' :
+                 episode.gridStatus === 'rejected' ? '九宫格已退回' :
+                 episode.gridStatus === 'failed' ? '九宫格生成失败' :
+                 '未生成九宫格'}
+                {episode.gridStatus === 'approved' && episode.segments.length > 0 &&
+                  ` · ${episode.segments.length} 个片段`}
+              </>
+            ) : (
+              `${episode.segments.length} 个片段`
+            )}
+          </span>
           </div>
 
           {/* 生成分镜按钮 */}
@@ -164,8 +207,46 @@ const EpisodeCard = ({
             </button>
           )}
 
-          {/* 一键审核通过按钮 */}
-          {onApproveAllGrids && isExpanded && (
+          {/* 新流程：九宫格审核按钮 */}
+          {isNewFlow && isExpanded && isGridReview && (
+            <>
+              <button
+                className={styles.generatePanelsBtn}
+                onClick={(e) => { e.stopPropagation(); onApproveEpisodeGrid?.(); }}
+              >
+                通过九宫格
+              </button>
+              <button
+                className={styles.generatePanelsBtn}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const reason = prompt('请输入拒绝原因：');
+                  if (reason?.trim()) onRejectEpisodeGrid?.(reason.trim());
+                }}
+              >
+                退回
+              </button>
+              <button
+                className={styles.generatePanelsBtn}
+                onClick={(e) => { e.stopPropagation(); onRegenerateEpisodeGrid?.(); }}
+              >
+                重新生成
+              </button>
+            </>
+          )}
+
+          {/* 新流程：九宫格被拒绝或生成失败时显示重新生成 */}
+          {isNewFlow && isExpanded && (isGridRejected || isGridFailed) && (
+            <button
+              className={styles.generatePanelsBtn}
+              onClick={(e) => { e.stopPropagation(); onRegenerateEpisodeGrid?.(); }}
+            >
+              重新生成九宫格
+            </button>
+          )}
+
+          {/* 旧流程：一键审核通过按钮 */}
+          {!isNewFlow && onApproveAllGrids && isExpanded && (
             <button
               className={styles.generatePanelsBtn}
               onClick={(e) => { e.stopPropagation(); onApproveAllGrids(); }}
@@ -219,9 +300,32 @@ const EpisodeCard = ({
           )}
 
           {/* 片段完成指示器（折叠时显示） */}
-          {!isExpanded && episode.segments.length > 0 && (
+          {!isExpanded && !isNewFlow && episode.segments.length > 0 && (
             <div className={styles.segmentIndicator}>
               {episode.segments.map((segment) => (
+                <div
+                  key={segment.segmentIndex}
+                  className={styles.segmentDot}
+                  style={{ backgroundColor: getSegmentStatusColor(segment.pipelineStep) }}
+                  title={`片段 ${segment.segmentIndex + 1}: ${segment.pipelineStep}`}
+                />
+              ))}
+            </div>
+          )}
+          {!isExpanded && isNewFlow && (
+            <div className={styles.segmentIndicator}>
+              <div
+                className={styles.segmentDot}
+                style={{
+                  backgroundColor:
+                    episode.gridStatus === 'approved' ? '#4ade80' :
+                    episode.gridStatus === 'generated' ? '#fbbf24' :
+                    episode.gridStatus === 'generating' ? '#fbbf24' :
+                    '#474747',
+                }}
+                title={`九宫格: ${episode.gridStatus || 'pending'}`}
+              />
+              {episode.gridStatus === 'approved' && episode.segments.map((segment) => (
                 <div
                   key={segment.segmentIndex}
                   className={styles.segmentDot}
@@ -237,15 +341,65 @@ const EpisodeCard = ({
       {/* 展开内容 */}
       {isExpanded && (
         <div className={styles.cardContent}>
-          {episode.segments.length === 0 ? (
-            <div className={styles.emptyState}>
-              <p>暂无片段</p>
-            </div>
-          ) : (
-            <div className={styles.segmentList}>
-              {segmentCards}
+          {/* 新流程：九宫格审核阶段 */}
+          {isNewFlow && !isGridApproved && (
+            <div className={styles.episodeGridReview}>
+              {episode.gridImages && episode.gridImages.length > 0 ? (
+                <div className={styles.gridImageList}>
+                  {episode.gridImages.map((url, idx) => (
+                    <div key={idx} className={styles.gridImagePage}>
+                      <div className={styles.gridPageLabel}>第 {idx + 1} 页</div>
+                      <img src={url} alt={`九宫格第${idx + 1}页`} className={styles.gridImage} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.emptyState}>
+                  <p>{isGridPending || episode.gridStatus === 'generating' ? '九宫格正在生成中，请稍候...' : '暂无九宫格'}</p>
+                  {(isGridPending || episode.gridStatus === 'generating') && onRefreshEpisodeGrid && (
+                    <button className={styles.refreshPanelsBtn} onClick={(e) => { e.stopPropagation(); onRefreshEpisodeGrid(); }}>
+                      刷新
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* 分割后的分镜列表 */}
+              {episode.splitShots && episode.splitShots.length > 0 && (
+                <div className={styles.splitShotList}>
+                  <h5 className={styles.splitShotTitle}>分镜列表（共 {episode.splitShots.length} 个）</h5>
+                  <div className={styles.splitShotGrid}>
+                    {episode.splitShots.map((shot, idx) => (
+                      <div key={idx} className={styles.splitShotItem}>
+                        <span className={styles.splitShotNumber}>#{shot.shotNumber}</span>
+                        <span className={styles.splitShotDesc}>{shot.visualDescription}</span>
+                        <span className={styles.splitShotDuration}>{shot.duration}s</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {episode.gridRejectionFeedback && (
+                <div className={styles.rejectionFeedback}>
+                  退回原因：{episode.gridRejectionFeedback}
+                </div>
+              )}
             </div>
           )}
+
+          {/* 新流程已审核通过 → 或旧流程 → 显示 Panel 列表 */}
+          {(isNewFlow && isGridApproved) || !isNewFlow ? (
+            episode.segments.length === 0 ? (
+              <div className={styles.emptyState}>
+                <p>暂无片段</p>
+              </div>
+            ) : (
+              <div className={styles.segmentList}>
+                {segmentCards}
+              </div>
+            )
+          ) : null}
         </div>
       )}
     </div>
