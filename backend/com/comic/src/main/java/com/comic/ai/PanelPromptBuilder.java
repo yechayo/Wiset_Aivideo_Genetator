@@ -448,12 +448,12 @@ public class PanelPromptBuilder {
         if (shots != null) {
             for (Map<String, Object> shot : shots) {
                 int shotNum = ((Number) shot.get("shotNumber")).intValue();
-                sb.append("Shot ").append(shotNum).append(":\n");
+                sb.append("【分镜").append(shotNum).append("】\n");
                 sb.append("duration: ").append(shot.get("duration")).append("s\n");
                 sb.append("Scene: ").append(shot.getOrDefault("shotSize", ""))
-                  .append(", ").append(shot.getOrDefault("cameraAngle", ""))
-                  .append(", ").append(shot.getOrDefault("cameraMovement", ""))
-                  .append(", ").append(shot.getOrDefault("visualDescription", "")).append("\n");
+                  .append("，").append(shot.getOrDefault("cameraAngle", ""))
+                  .append("，").append(shot.getOrDefault("cameraMovement", ""))
+                  .append("，").append(shot.getOrDefault("visualDescription", "")).append("\n");
 
                 String dialogue = (String) shot.get("dialogue");
                 if (dialogue != null && !"无".equals(dialogue)) {
@@ -469,7 +469,7 @@ public class PanelPromptBuilder {
 
         sb.append("## 画面衔接\n视频应从参考图自然展开，多镜头间平滑过渡。\n");
         sb.append("保持角色位置和动作的连贯性。\n");
-        sb.append("参考图中编号①②③对应 Shot 1/2/3 的画面内容。");
+        sb.append("参考图中编号①②③对应【分镜1】【分镜2】【分镜3】的画面内容。");
         return sb.toString();
     }
 }
