@@ -18,6 +18,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -147,6 +148,18 @@ public class PanelController {
         return Result.ok(panelProductionService.getVideoStatusByPanelId(panelId));
     }
 
+    @GetMapping("/{panelId}/video/prompt")
+    @Operation(summary = "获取视频生成提示词")
+    public Result<Map<String, Object>> getVideoPrompt(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        String prompt = panelProductionService.getVideoPrompt(panelId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("prompt", prompt);
+        return Result.ok(result);
+    }
+
     @PostMapping("/{panelId}/video")
     @Operation(summary = "生成视频（九宫格融合图 → 视频大模型）")
     public Result<Void> generateVideo(
@@ -155,7 +168,8 @@ public class PanelController {
             @PathVariable Long panelId,
             @RequestBody(required = false) Map<String, Object> body) {
         boolean offPeak = body != null && Boolean.TRUE.equals(body.get("offPeak"));
-        panelProductionService.generateVideoByPanelId(panelId, offPeak);
+        String customPrompt = body != null ? (String) body.get("customPrompt") : null;
+        panelProductionService.generateVideoByPanelId(panelId, offPeak, customPrompt);
         return Result.ok();
     }
 

@@ -60,6 +60,7 @@ export type ProjectStatus =
   | 'STORYBOARD_GENERATING_FAILED'
   | 'STORYBOARD_REVIEW'
   | 'PRODUCING'
+  | 'MERGING'
   | 'COMPLETED';
 
 /**
@@ -191,7 +192,7 @@ export interface ScriptContentResponse {
  * 生成剧集请求参数
  */
 export interface GenerateEpisodesRequest {
-  chapter: number;
+  chapter: string;
   episodeCount?: number;
   modificationSuggestion?: string;
 }
@@ -215,6 +216,10 @@ export interface ProjectStatusInfo {
   panelTotalEpisodes?: number;
   panelReviewEpisodeId?: string;
   panelAllConfirmed?: boolean;
+  /** 合并阶段：最终视频 URL */
+  finalVideoUrl?: string;
+  /** 合并阶段状态：idle / merging / completed / failed */
+  mergeStatus?: string;
 }
 
 /**

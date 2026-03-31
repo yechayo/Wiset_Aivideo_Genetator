@@ -493,6 +493,21 @@ const Step4page = ({ project }: Step4pageProps) => {
             </button>
           </div>
         </>
+      ) : statusCode === 'COMPLETED' || statusCode === 'MERGING' || statusCode === 'PRODUCING'
+        || statusCode === 'STORYBOARD_REVIEW' || statusCode === 'STORYBOARD_GENERATING'
+        || statusCode === 'EPISODE_SCRIPT_GENERATING' ? (
+        // 已完成图片阶段，只读浏览
+        <>
+          <div className={styles.lockedSection}>
+            <div className={styles.lockedSummary}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+              </svg>
+              素材已锁定
+            </div>
+          </div>
+          <div className={styles.characterGrid}>{characters.map(c => renderCard(c, 'locked'))}</div>
+        </>
       ) : (
         <div className={styles.emptyState}><p>等待进入图片生成阶段</p></div>
       )}

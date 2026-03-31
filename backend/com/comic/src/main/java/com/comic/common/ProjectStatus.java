@@ -51,6 +51,9 @@ public enum ProjectStatus {
     // 生产阶段
     PRODUCING("PRODUCING", "生产中", 5),
 
+    // 合并阶段
+    MERGING("MERGING", "视频合并", 6),
+
     // 完成
     COMPLETED("COMPLETED", "已完成", 6);
 
@@ -173,10 +176,14 @@ public enum ProjectStatus {
 
         // 分镜审核阶段
         put(map, STORYBOARD_REVIEW, "all_grids_approved", PRODUCING);
+        put(map, STORYBOARD_REVIEW, "production_completed", MERGING);
         put(map, STORYBOARD_REVIEW, "regenerate_storyboard", EPISODE_SCRIPT_GENERATING);
 
-        // 生产 → 完成（直接完成，不再需要拼接）
-        put(map, PRODUCING, "production_completed", COMPLETED);
+        // 生产 → 合并
+        put(map, PRODUCING, "production_completed", MERGING);
+
+        // 合并 → 完成
+        put(map, MERGING, "merge_completed", COMPLETED);
 
         ALLOWED_TRANSITIONS = Collections.unmodifiableMap(map);
     }
@@ -228,7 +235,7 @@ public enum ProjectStatus {
         }
         // 当前步骤处于确认态时，当前步骤也算完成
         if (this == SCRIPT_CONFIRMED || this == CHARACTER_CONFIRMED || this == ASSET_LOCKED
-                || this == COMPLETED || this == STORYBOARD_REVIEW) {
+                || this == COMPLETED || this == STORYBOARD_REVIEW || this == MERGING) {
             steps.add(current);
         }
         return steps;
@@ -275,6 +282,8 @@ public enum ProjectStatus {
                 return Arrays.asList("approve_all_grids", "regenerate_storyboard");
             case PRODUCING:
                 return Arrays.asList();
+            case MERGING:
+                return Arrays.asList("merge_videos");
             case COMPLETED:
                 return Arrays.asList("view_result");
             default:

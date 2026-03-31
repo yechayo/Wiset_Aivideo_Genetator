@@ -19,6 +19,7 @@ import {
   approveEpisodeGrid,
   rejectEpisodeGrid,
   regenerateEpisodeGrid,
+  getVideoPrompt,
 } from '../../../services/episodeService';
 import { getCharacterStatus, getCharacters } from '../../../services/characterService';
 import { advanceStatus } from '../../../services/projectService';
@@ -82,6 +83,21 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
       setRetrying(false);
     }
   }, [projectId, retrying, syncStatus]);
+
+  // 下一步：推进后端状态后跳转
+  const [advancing, setAdvancing] = useState(false);
+  const handleNextStep = useCallback(async () => {
+    if (!projectId || advancing) return;
+    setAdvancing(true);
+    try {
+      await advanceStatus(projectId, 'forward', 'production_completed');
+      onNextStep?.();
+    } catch (e: any) {
+      setError(e.message || '状态推进失败');
+    } finally {
+      setAdvancing(false);
+    }
+  }, [projectId, advancing, onNextStep]);
 
   // 数据状态
   const [chapters, setChapters] = useState<ChapterState[]>([]);
@@ -329,16 +345,24 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
       if ((res.code !== 0 && res.code !== 200) || !res.data) return;
       const panels = res.data || [];
 
-      // 收集涉及的角色 ID，修正无效 char_id（如 AI 把名字 "T-1" 填进了 char_id）
+      // 收集涉及的角色 ID（兼容新旧流程）
       charIds = [...new Set(
-        panels.flatMap((p: any) => (p.panelInfo?.characters || []).map((c: any) => {
-          const raw = c.char_id || '';
-          // 如果不是合法 ID，尝试通过 name→ID 映射修正
-          if (raw && !raw.startsWith('CHAR-') && charNameToIdMap[raw]) {
-            return charNameToIdMap[raw];
-          }
-          return raw.startsWith('CHAR-') ? raw : '';
-        }).filter(Boolean))
+        panels.flatMap((p: any) => {
+          const info = p.panelInfo || {};
+          // 旧流程：panelInfo.characters[].char_id
+          const oldChars = (info.characters || []).map((c: any) => {
+            const raw = c.char_id || '';
+            if (raw && !raw.startsWith('CHAR-') && charNameToIdMap[raw]) {
+              return charNameToIdMap[raw];
+            }
+            return raw.startsWith('CHAR-') ? raw : '';
+          }).filter(Boolean);
+          // 新流程：shots[].characterRefs[].charId
+          const newChars = ((info.shots || []) as any[]).flatMap((s: any) =>
+            ((s.characterRefs || []) as any[]).map((ref: any) => ref.charId || '').filter(Boolean)
+          );
+          return [...oldChars, ...newChars];
+        })
       )];
 
       // 获取对应 episode 的 sceneSummaryMap，用于后备获取剧情摘要
@@ -517,6 +541,8 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
                       videoUrl: status.videoUrl ?? seg.videoUrl,
                       videoTaskId: status.videoTaskId ?? seg.videoTaskId,
                       videoOffPeak: status.offPeak ?? seg.videoOffPeak,
+                      videoProgress: status.videoProgress ?? seg.videoProgress,
+                      videoCredits: status.videoCredits ?? seg.videoCredits,
                     };
                   }),
                 }
@@ -708,11 +734,11 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   /**
    * 生成视频
    */
-  const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string) => {
+  const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string, customPrompt?: string) => {
     if (!projectId) return;
     setGeneratingVideoPanelId(panelId);
     try {
-      await generateVideo(projectId, episodeId, Number(panelId), offPeak);
+      await generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt);
       // 基于状态的轮询，检查是否生成完成或失败
       const poll = async () => {
         while (true) {
@@ -727,29 +753,51 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
               const videoStatus = panelStatus.videoStatus;
               // 检查状态
               if (videoStatus === 'completed') {
-                // 生成成功
-                await refreshProductionStatuses(episodeId);
-                setGeneratingVideoPanelId(null);
-                return;
-              }
-              if (videoStatus === 'failed') {
-                // 生成失败
-                alert('视频生成失败');
-                setGeneratingVideoPanelId(null);
-                return;
-              }
-            }
-          } catch {
-            // 继续轮询
+            // 生成成功
+            await refreshProductionStatuses(episodeId);
+            setGeneratingVideoPanelId(null);
+            return;
+          }
+          if (videoStatus === 'failed') {
+            // 生成失败
+            alert('视频生成失败');
+            setGeneratingVideoPanelId(null);
+            return;
           }
         }
-      };
+          } catch {
+        // 继续轮询
+      }
+    }
+  };
       poll();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '生成视频失败');
       setGeneratingVideoPanelId(null);
     }
   }, [projectId, refreshProductionStatuses, offPeak]);
+
+  /**
+   * 加载视频提示词
+   */
+  const handleLoadVideoPrompt = useCallback(async (episodeId: number, segmentIndex: number): Promise<string> => {
+    if (!projectId) return '';
+    try {
+      // 查找对应的 segment 获取 panelId
+      const episode = chapters.flatMap(ch => ch.episodes).find(ep => ep.episodeId === episodeId);
+      const panelId = episode?.segments[segmentIndex]?.panelData?.panelId;
+      if (!panelId) return '(无法找到分镜)';
+
+      const res = await getVideoPrompt(projectId, episodeId, Number(panelId));
+      if ((res.code !== 0 && res.code !== 200) || !res.data?.prompt) {
+        return '(无法加载提示词)';
+      }
+      return res.data.prompt;
+    } catch (err: any) {
+      console.error('加载提示词失败:', err);
+      return '(加载失败)';
+    }
+  }, [projectId, chapters]);
 
   /**
    * 渲染集数卡片
@@ -778,10 +826,11 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
           if (panelId) handleRegenerateGrid(epId, panelId);
         }}
-        onSegmentGenerateVideo={(epId, segIdx) => {
+        onSegmentGenerateVideo={(epId, segIdx, customPrompt) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
-          if (panelId) handleGenerateVideo(epId, panelId);
+          if (panelId) handleGenerateVideo(epId, panelId, customPrompt);
         }}
+        onSegmentLoadVideoPrompt={handleLoadVideoPrompt}
         onRefreshPanels={handleRefreshPanels}
         generatingGridPanelId={generatingGridPanelId}
         generatingVideoPanelId={generatingVideoPanelId}
@@ -974,8 +1023,8 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
       {/* 底部操作栏：所有视频完成时显示下一步按钮 */}
       {totalSegments > 0 && completedSegments === totalSegments && onNextStep && (
         <div className={styles.footerActions}>
-          <button className={styles.nextStepButton} onClick={onNextStep}>
-            下一步：视频拼接 →
+          <button className={styles.nextStepButton} onClick={handleNextStep} disabled={advancing}>
+            {advancing ? '正在跳转...' : '下一步：视频拼接 →'}
           </button>
         </div>
       )}

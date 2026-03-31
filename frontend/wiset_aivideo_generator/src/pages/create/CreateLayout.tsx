@@ -88,10 +88,15 @@ const CreateLayout = () => {
   }, [currentProject?.projectId, startPolling, stopPolling]);
 
   // 路由守卫 + 自动跳转
+  const isCompleted = statusInfo?.statusCode === 'COMPLETED';
+
   useEffect(() => {
     if (!statusInfo || isLoadingStatus) return;
 
     const backendStep = statusInfo.currentStep;
+
+    // COMPLETED 状态允许自由浏览所有步骤，不做路由守卫
+    if (isCompleted) return;
 
     // 跳转到同一个 step 时不重复触发
     if (lastRedirectedStep.current === backendStep) return;
@@ -105,7 +110,7 @@ const CreateLayout = () => {
       lastRedirectedStep.current = backendStep;
       navigate(getStepUrl(backendStep), { replace: true });
     }
-  }, [statusInfo, urlStep, isLoadingStatus, navigate, getStepUrl]);
+  }, [statusInfo, urlStep, isLoadingStatus, navigate, getStepUrl, isCompleted]);
 
   // 步骤切换时的过渡 loading
   useEffect(() => {
@@ -118,16 +123,21 @@ const CreateLayout = () => {
     }
   }, [urlStep, currentProject?.projectId]);
 
-  // 步骤导航栏不可点击跳转（确认后不可回退）
-  const handleStepClick = undefined;
-
   // 如果没有项目数据且不在第一步，重定向到第一步
   if (!currentProject && urlStep > 1) {
     return <Navigate to={getStepUrl(1)} replace />;
   }
 
   // 从 statusInfo 取 completedSteps，无 statusInfo 时为空
-  const effectiveCompletedSteps = statusInfo?.completedSteps ?? [];
+  // COMPLETED 状态时所有步骤都可自由浏览
+  const effectiveCompletedSteps = isCompleted
+    ? [1, 2, 3, 4, 5, 6]
+    : (statusInfo?.completedSteps ?? []);
+
+  // COMPLETED 状态允许点击步骤导航自由浏览
+  const handleStepClick = isCompleted
+    ? (stepId: number) => navigate(getStepUrl(stepId), { replace: true })
+    : undefined;
 
   // 渲染当前步骤内容
   const renderStepContent = () => {
@@ -168,7 +178,9 @@ const CreateLayout = () => {
       && statusInfo?.statusCode !== 'STORYBOARD_GENERATING'
       && statusInfo?.statusCode !== 'EPISODE_SCRIPT_GENERATING'
       && statusInfo?.statusCode !== 'IMAGE_GENERATING'
-      && statusInfo?.statusCode !== 'CHARACTER_EXTRACTING')
+      && statusInfo?.statusCode !== 'CHARACTER_EXTRACTING'
+      && statusInfo?.statusCode !== 'PRODUCING'
+      && statusInfo?.statusCode !== 'MERGING')
     || isStepTransitioning;
 
   // 用 useCallback 稳定函数引用，避免每次渲染都创建新函数导致 Step2page 的 effect 重复触发

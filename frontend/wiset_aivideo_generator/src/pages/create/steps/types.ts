@@ -40,6 +40,8 @@ export interface SegmentState {
   panelData?: PanelData;
   videoTaskId?: string | null;
   videoOffPeak?: boolean | null;
+  videoProgress?: number | null;     // 0-100
+  videoCredits?: number | null;      // 积分消耗
 }
 
 /** Episode 级九宫格状态 */

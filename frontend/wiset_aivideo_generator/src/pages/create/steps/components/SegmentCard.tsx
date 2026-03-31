@@ -14,7 +14,8 @@ export interface SegmentCardProps {
   onApproveGrid: () => void;
   onRejectGrid: (reason: string) => void;
   onRegenerateGrid: () => void;
-  onGenerateVideo: () => void;
+  onGenerateVideo: (customPrompt?: string) => void;
+  onLoadVideoPrompt?: () => Promise<string>;
   isRegeneratingGrid?: boolean;
   isGeneratingVideo?: boolean;
 }
@@ -61,6 +62,7 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
   onRejectGrid,
   onRegenerateGrid,
   onGenerateVideo,
+  onLoadVideoPrompt,
   isRegeneratingGrid,
   isGeneratingVideo,
 }) => {
@@ -272,6 +274,9 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
               isGenerating={isGeneratingVideo}
               videoTaskId={segment.videoTaskId}
               videoOffPeak={segment.videoOffPeak}
+              videoProgress={segment.videoProgress}
+              videoCredits={segment.videoCredits}
+              onLoadPrompt={onLoadVideoPrompt}
             />
           </div>
 

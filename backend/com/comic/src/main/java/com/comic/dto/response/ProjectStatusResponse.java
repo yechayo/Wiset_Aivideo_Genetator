@@ -43,4 +43,10 @@ public class ProjectStatusResponse {
     private String panelReviewEpisodeId;
 
     private boolean panelAllConfirmed;
+
+    /** 合并阶段：最终视频 URL */
+    private String finalVideoUrl;
+
+    /** 合并阶段状态：idle / merging / completed / failed */
+    private String mergeStatus;
 }

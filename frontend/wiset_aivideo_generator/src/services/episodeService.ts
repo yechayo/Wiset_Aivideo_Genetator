@@ -109,16 +109,28 @@ export async function getPanelGridStatus(
 
 // ================= 视频生成 API =================
 
+/** 获取视频生成提示词 */
+export async function getVideoPrompt(
+  projectId: string,
+  episodeId: number,
+  panelId: number,
+): Promise<ApiResponse<{ prompt: string }>> {
+  return get<ApiResponse<{ prompt: string }>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video/prompt`,
+  );
+}
+
 /** 生成视频 */
 export async function generateVideo(
   projectId: string,
   episodeId: number,
   panelId: number,
   offPeak: boolean = false,
+  customPrompt?: string,
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video`,
-    { offPeak },
+    { offPeak, customPrompt },
   );
 }
 

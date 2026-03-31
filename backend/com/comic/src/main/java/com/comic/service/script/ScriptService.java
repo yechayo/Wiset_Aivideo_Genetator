@@ -132,11 +132,17 @@ public class ScriptService {
             // 获取世界观配置
             WorldConfigModel worldConfig = worldRuleService.getWorldConfig(projectId);
 
+            // 计算章节参数
+            ScriptPromptBuilder.ScriptParams params = scriptPromptBuilder.calculateScriptParameters(
+                totalEpisodes != null ? totalEpisodes : 4);
+
             // 构建生成大纲的prompt
             String systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
                 totalEpisodes != null ? totalEpisodes : 4,
                 genre,
-                targetAudience
+                targetAudience,
+                params.chapterCount,
+                params.episodesPerChapter
             );
 
             String userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
@@ -144,7 +150,7 @@ public class ScriptService {
                 genre,
                 worldConfig.getRulesText(),
                 totalEpisodes != null ? totalEpisodes : 4,
-                episodeDuration != null ? episodeDuration / 60 : 1,
+                episodeDuration != null ? episodeDuration : 60,
                 visualStyle != null ? visualStyle : "REAL"
             );
 
@@ -152,7 +158,10 @@ public class ScriptService {
             log.info("userPrompt: {}", userPrompt);
 
             // 调用文本生成服务生成大纲
-            String outlineContent = textGenerationService.generate(systemPrompt, userPrompt);
+            String rawOutlineContent = textGenerationService.generate(systemPrompt, userPrompt);
+
+            // 解析 AI 返回：JSON 格式提取 outline 字段，Markdown 格式直接使用
+            String outlineContent = extractOutlineContent(rawOutlineContent);
 
             // 保存大纲到 projectInfo
             Map<String, Object> info = ensureProjectInfo(project);
@@ -163,8 +172,6 @@ public class ScriptService {
             }
             scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
 
-            ScriptPromptBuilder.ScriptParams params = scriptPromptBuilder.calculateScriptParameters(
-                totalEpisodes != null ? totalEpisodes : 4);
             int fallbackEpisodeCount = params.isSingleEpisode ? 1 : Math.max(1, params.episodesPerChapter);
             info.put(ProjectInfoKeys.EPISODES_PER_CHAPTER, fallbackEpisodeCount);
 
@@ -234,7 +241,7 @@ public class ScriptService {
                 globalItems,
                 previousSummary,
                 resolvedEpisodeCount,
-                episodeDuration != null ? episodeDuration / 60 : 1,
+                episodeDuration != null ? episodeDuration : 60,
                 modificationSuggestion
             );
 
@@ -498,6 +505,47 @@ public class ScriptService {
     }
 
     // ================= 私有方法：解析与提取 =================
+
+    /**
+     * 从 AI 返回内容中提取大纲 Markdown 文本。
+     * 多集模式下 AI 返回 JSON（含 outline 字段），需要解析提取；
+     * 单集模式下 AI 直接返回 Markdown，无需处理。
+     */
+    private String extractOutlineContent(String rawContent) {
+        if (rawContent == null || rawContent.trim().isEmpty()) {
+            return rawContent;
+        }
+        String trimmed = rawContent.trim();
+        // 先剥掉 markdown 代码块标记
+        String clean = trimmed;
+        if (clean.startsWith("```json")) {
+            clean = clean.substring(7);
+        } else if (clean.startsWith("```")) {
+            clean = clean.substring(3);
+        }
+        if (clean.endsWith("```")) {
+            clean = clean.substring(0, clean.length() - 3);
+        }
+        clean = clean.trim();
+
+        // 检测是否为 JSON
+        if (clean.startsWith("{")) {
+            try {
+                JsonNode root = objectMapper.readTree(clean);
+                if (root.has("outline") && !root.get("outline").isNull()) {
+                    String outline = root.get("outline").asText();
+                    if (outline != null && !outline.trim().isEmpty()) {
+                        log.info("从 JSON 中提取 outline 字段，长度: {}", outline.length());
+                        return outline;
+                    }
+                }
+                log.warn("JSON 中未找到 outline 字段，使用原始内容");
+            } catch (Exception e) {
+                log.warn("解析 JSON 失败，使用原始内容: {}", e.getMessage());
+            }
+        }
+        return rawContent;
+    }
 
     private String getScriptOutlineText(Project project) {
         Map<String, Object> scriptMap = getScriptMap(project);
@@ -826,10 +874,15 @@ public class ScriptService {
             Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
             String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
 
+            ScriptPromptBuilder.ScriptParams params = scriptPromptBuilder.calculateScriptParameters(
+                totalEpisodes != null ? totalEpisodes : 4);
+
             String systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
                 totalEpisodes != null ? totalEpisodes : 4,
                 genre,
-                targetAudience
+                targetAudience,
+                params.chapterCount,
+                params.episodesPerChapter
             );
 
             String userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
@@ -837,14 +890,17 @@ public class ScriptService {
                 genre,
                 currentOutline,
                 totalEpisodes != null ? totalEpisodes : 4,
-                episodeDuration != null ? episodeDuration / 60 : 1,
+                episodeDuration != null ? episodeDuration : 60,
                 visualStyle != null ? visualStyle : "REAL"
             );
 
             // 添加修改意见
             userPrompt += "\n\n**修改要求**：" + revisionNote;
 
-            String outlineContent = textGenerationService.generate(systemPrompt, userPrompt);
+            String rawOutlineContent = textGenerationService.generate(systemPrompt, userPrompt);
+
+            // 解析 AI 返回：JSON 格式提取 outline 字段，Markdown 格式直接使用
+            String outlineContent = extractOutlineContent(rawOutlineContent);
 
             // 重新加载 project 以获取最新状态（advancePipeline("revise_outline") 已改为 OUTLINE_GENERATING）
             Project currentProject = projectRepository.findByProjectId(project.getProjectId());

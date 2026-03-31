@@ -241,7 +241,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     setIsGenerating(true);
     try {
       await generateEpisodes(pid, {
-        chapter: parseInt(selectedChapter, 10),
+        chapter: selectedChapter,
         episodeCount,
         modificationSuggestion
       });

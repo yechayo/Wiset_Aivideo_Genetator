@@ -42,11 +42,11 @@ const targetAudienceOptions = [
 
 // 时长选项（单位：秒）
 const durationOptions = [
-  { value: '30', label: '30秒' },
-  { value: '60', label: '1分钟' },
-  { value: '120', label: '2分钟' },
-  { value: '180', label: '3分钟' },
-  { value: '300', label: '5分钟' },
+  { value: 30, label: '30秒' },
+  { value: 60, label: '1分钟' },
+  { value: 120, label: '2分钟' },
+  { value: 180, label: '3分钟' },
+  { value: 300, label: '5分钟' },
 ];
 
 // AI生成图标
@@ -88,7 +88,7 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
   const [visualStyle, setVisualStyle] = useState<VisualStyle | ''>('');
   const [targetAudience, setTargetAudience] = useState('');
   const [totalEpisodes, setTotalEpisodes] = useState(10);
-  const [episodeDuration, setEpisodeDuration] = useState('60');
+  const [episodeDuration, setEpisodeDuration] = useState<number>(60);  // 改为 number 类型
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
   const [generatingPhase, setGeneratingPhase] = useState<'creating' | 'generating' | 'loading'>('creating');
@@ -116,7 +116,7 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
         visualStyle: visualStyle || undefined,
         targetAudience,
         totalEpisodes: generateMode === 'series' ? totalEpisodes : 1,
-        episodeDuration: parseFloat(episodeDuration),
+        episodeDuration: episodeDuration,  // 直接使用 number 类型，不再需要 parseFloat
       };
 
       // 1. 创建项目

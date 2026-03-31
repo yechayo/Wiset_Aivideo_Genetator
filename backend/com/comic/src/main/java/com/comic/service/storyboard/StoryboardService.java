@@ -133,6 +133,8 @@ public class StoryboardService {
 
     /**
      * 贪心分组算法（纯函数，可独立测试）
+     *
+     * 重要：必须深拷贝每个 shot，避免多个 Panel 引用同一个 Map 对象
      */
     public static List<List<Map<String, Object>>> greedyGroup(
             List<Map<String, Object>> shots, int maxDuration) {
@@ -144,7 +146,6 @@ public class StoryboardService {
             int duration = ((Number) shot.get("duration")).intValue();
             if (duration > maxDuration) {
                 duration = maxDuration;
-                shot.put("duration", duration);
             }
 
             if (currentDuration + duration > maxDuration && !currentGroup.isEmpty()) {
@@ -152,7 +153,12 @@ public class StoryboardService {
                 currentGroup = new ArrayList<>();
                 currentDuration = 0;
             }
-            currentGroup.add(shot);
+
+            // 深拷贝 shot，避免多个 Panel 共享同一个 Map 对象
+            @SuppressWarnings("unchecked")
+            Map<String, Object> shotCopy = new HashMap<>(shot);
+            shotCopy.put("duration", duration);
+            currentGroup.add(shotCopy);
             currentDuration += duration;
         }
         if (!currentGroup.isEmpty()) groups.add(currentGroup);

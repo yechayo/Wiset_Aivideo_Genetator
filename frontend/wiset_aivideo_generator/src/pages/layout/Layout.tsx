@@ -1,13 +1,14 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import styles from './Layout.module.less';
 import { useAuthStore } from '../../stores/authStore';
-import { HomeIcon, VideoIcon, FolderIcon, SettingsIcon, LogOutIcon } from '../../components/icons/Icons';
+import { HomeIcon, VideoIcon, FolderIcon, SettingsIcon, LogOutIcon, PanelLeftCloseIcon, PanelLeftOpenIcon } from '../../components/icons/Icons';
 
 function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { userInfo, clearAuth, isAuthenticated } = useAuthStore();
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
     // 检查登录状态
@@ -28,10 +29,15 @@ function Layout() {
     { path: '/settings', icon: SettingsIcon, label: '设置' },
   ];
 
+  const toggleSidebar = () => {
+    setIsCollapsed(!isCollapsed);
+  };
+
   return (
     <div className={styles.layoutContainer}>
       {/* 侧边栏 */}
-      <aside className={styles.sidebar}>
+      <aside className={`${styles.sidebar} ${isCollapsed ? styles.collapsed : ''}`}>
+        {/* Logo 区 */}
         <div className={styles.logo}>
           <div className={styles.logoIcon}>
             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -40,9 +46,23 @@ function Layout() {
               <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <h1>Wiset</h1>
-          <p>AI视频创作平台</p>
+          {!isCollapsed && (
+            <>
+              <h1>Wiset</h1>
+              <p>AI视频创作平台</p>
+            </>
+          )}
         </div>
+
+        {/* 折叠按钮 - 垂直居中靠右 */}
+        <button
+          className={styles.collapseBtn}
+          onClick={toggleSidebar}
+          aria-label={isCollapsed ? '展开侧边栏' : '折叠侧边栏'}
+          title={isCollapsed ? '展开' : '折叠'}
+        >
+          {isCollapsed ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
+        </button>
 
         <nav className={styles.nav}>
           {navItems.map((item) => {
@@ -53,9 +73,10 @@ function Layout() {
                 key={item.path}
                 to={item.path}
                 className={`${styles.navItem} ${isActive ? styles.active : ''}`}
+                title={isCollapsed ? item.label : undefined}
               >
                 <Icon className={styles.navIcon} />
-                <span>{item.label}</span>
+                {!isCollapsed && <span>{item.label}</span>}
               </Link>
             );
           })}
@@ -63,18 +84,24 @@ function Layout() {
 
         {/* 用户信息 */}
         <div className={styles.userSection}>
-          <div className={styles.userInfo}>
-            <div className={styles.avatar}>
-              {userInfo?.username?.charAt(0).toUpperCase() || 'U'}
+          {!isCollapsed && (
+            <div className={styles.userInfo}>
+              <div className={styles.avatar}>
+                {userInfo?.username?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <div className={styles.userDetails}>
+                <span className={styles.username}>{userInfo?.username || '用户'}</span>
+                <span className={styles.userId}>ID: {userInfo?.userId || '-'}</span>
+              </div>
             </div>
-            <div className={styles.userDetails}>
-              <span className={styles.username}>{userInfo?.username || '用户'}</span>
-              <span className={styles.userId}>ID: {userInfo?.userId || '-'}</span>
-            </div>
-          </div>
-          <button className={styles.logoutBtn} onClick={handleLogout}>
+          )}
+          <button
+            className={`${styles.logoutBtn} ${isCollapsed ? styles.collapsedBtn : ''}`}
+            onClick={handleLogout}
+            title={isCollapsed ? '退出登录' : undefined}
+          >
             <LogOutIcon className={styles.logoutIcon} />
-            <span>退出登录</span>
+            {!isCollapsed && <span>退出登录</span>}
           </button>
         </div>
       </aside>

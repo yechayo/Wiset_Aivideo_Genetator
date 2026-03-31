@@ -10,6 +10,7 @@ import com.comic.entity.Panel;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
+import com.comic.service.storyboard.StoryboardService;
 import com.comic.service.oss.OssService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -87,7 +88,11 @@ public class GridImageService {
                 int fromIdx = page * SHOTS_PER_PAGE;
                 for (int i = 0; i < subImages.size() && (fromIdx + i) < shots.size(); i++) {
                     String ossUrl = uploadToOss(subImages.get(i), panelId, fromIdx + i);
-                    shots.get(fromIdx + i).put("splitImageUrl", ossUrl);
+                    // 创建副本并更新 splitImageUrl，避免修改原始 shots
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> shotCopy = new HashMap<>(shots.get(fromIdx + i));
+                    shotCopy.put("splitImageUrl", ossUrl);
+                    shots.set(fromIdx + i, shotCopy);
                 }
             }
 

@@ -14,6 +14,7 @@ import com.comic.entity.Project;
 import com.comic.entity.User;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
+import com.comic.repository.ProjectRepository;
 import com.comic.repository.UserRepository;
 import com.comic.service.pipeline.PipelineService;
 import com.comic.service.production.VideoCompositionService;
@@ -37,6 +38,7 @@ import java.util.stream.Collectors;
 public class ProjectController {
 
     private final PipelineService pipelineService;
+    private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final EpisodeRepository episodeRepository;
     private final PanelRepository panelRepository;
@@ -160,6 +162,22 @@ public class ProjectController {
 
         // 执行拼接
         String finalVideoUrl = videoCompositionService.mergePanelVideos(videoUrls);
+
+        // 存储合并结果到 projectInfo
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project != null) {
+            Map<String, Object> info = project.getProjectInfo();
+            if (info == null) {
+                info = new HashMap<>();
+            }
+            info.put("finalVideoUrl", finalVideoUrl);
+            info.put("mergeStatus", "completed");
+            project.setProjectInfo(info);
+            projectRepository.updateById(project);
+        }
+
+        // 推进状态 MERGING → COMPLETED
+        pipelineService.advancePipeline(projectId, "merge_completed");
 
         Map<String, String> result = new HashMap<>();
         result.put("finalVideoUrl", finalVideoUrl);

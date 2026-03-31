@@ -66,6 +66,7 @@ public class ViduVideoService implements VideoGenerationService {
             requestBody.put("prompt", prompt);
             requestBody.put("duration", duration);
             requestBody.put("resolution", "540p");
+            requestBody.put("aspect_ratio", aspectRatio);  // 添加宽高比参数
             requestBody.put("watermark", false);
             requestBody.put("off_peak", offPeak);
 
@@ -225,8 +226,21 @@ public class ViduVideoService implements VideoGenerationService {
                 }
             }
 
-            int progress = calculateProgress(state);
-            return new TaskStatus(taskId, normalizedStatus, progress, videoUrl, errorMessage);
+            // 解析实际进度（API 返回 0-100 的浮点数）
+            int progress = calculateProgress(state);  // 默认使用状态计算
+            JsonNode progressNode = root.get("progress");
+            if (progressNode != null && !progressNode.isNull()) {
+                progress = (int) Math.round(progressNode.asDouble());
+            }
+
+            // 解析积分消耗
+            Integer credits = null;
+            JsonNode creditsNode = root.get("credits");
+            if (creditsNode != null && !creditsNode.isNull()) {
+                credits = creditsNode.asInt();
+            }
+
+            return new TaskStatus(taskId, normalizedStatus, progress, videoUrl, errorMessage, null, null, credits);
         } catch (Exception e) {
             log.error("解析 Vidu 任务状态失败: {}", responseBody, e);
             return new TaskStatus(taskId, "unknown", 0, null, "解析失败");

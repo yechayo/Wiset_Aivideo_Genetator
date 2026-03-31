@@ -92,6 +92,8 @@ public class PanelProductionService {
         status.put("videoUrl", panelInfo.get("videoUrl"));
         status.put("videoTaskId", panelInfo.get("videoTaskId"));
         status.put("offPeak", panelInfo.getOrDefault("offPeak", false));
+        status.put("videoProgress", panelInfo.get("videoProgress"));
+        status.put("videoCredits", panelInfo.get("videoCredits"));
         return status;
     }
 
@@ -155,10 +157,14 @@ public class PanelProductionService {
         String videoStatus = info != null ? getStr(info, "videoStatus") : null;
         String taskId = info != null ? getStr(info, "videoTaskId") : null;
         String errorMsg = info != null ? getStr(info, "errorMessage") : null;
+        Integer progress = info != null ? getInt(info, "videoProgress") : null;
+        Integer credits = info != null ? getInt(info, "videoCredits") : null;
         response.setVideoUrl(videoUrl);
         response.setStatus(videoStatus != null ? videoStatus : (videoUrl != null ? "completed" : "pending"));
         response.setTaskId(taskId);
         response.setErrorMessage(errorMsg);
+        response.setProgress(progress);
+        response.setCredits(credits);
         return response;
     }
 
@@ -166,10 +172,14 @@ public class PanelProductionService {
      * 生成视频（异步）- 使用融合参考图 + 多镜头提示词
      */
     public void generateVideoByPanelId(Long panelId) {
-        generateVideoByPanelId(panelId, false);
+        generateVideoByPanelId(panelId, false, null);
     }
 
     public void generateVideoByPanelId(Long panelId, boolean offPeak) {
+        generateVideoByPanelId(panelId, offPeak, null);
+    }
+
+    public void generateVideoByPanelId(Long panelId, boolean offPeak, String customPrompt) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
@@ -177,7 +187,24 @@ public class PanelProductionService {
         if (!"approved".equals(gridStatus)) {
             throw new BusinessException("九宫格未审核通过，请先审核");
         }
+        // 如果提供了自定义提示词，保存到 panelInfo
+        if (customPrompt != null && !customPrompt.trim().isEmpty()) {
+            info.put("customVideoPrompt", customPrompt);
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+        }
         self().doGenerateVideoByPanelId(panelId, offPeak);
+    }
+
+    /**
+     * 获取 Panel 的视频生成提示词
+     */
+    public String getVideoPrompt(Long panelId) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
+        Map<String, Object> info = panel.getPanelInfo();
+        String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
+        return panelPromptBuilder.buildMultiShotPrompt(visualStyle, info);
     }
 
     @Async
@@ -195,9 +222,12 @@ public class PanelProductionService {
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
 
-            // 构建多镜头提示词
-            String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
-            String prompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info);
+            // 构建提示词：优先使用自定义提示词，否则自动构建
+            String prompt = (String) info.get("customVideoPrompt");
+            if (prompt == null || prompt.trim().isEmpty()) {
+                String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
+                prompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info);
+            }
 
             // 从 shots 计算总时长
             int totalDuration = 0;
@@ -234,6 +264,23 @@ public class PanelProductionService {
             for (int i = 0; i < maxPolls; i++) {
                 VideoGenerationService.TaskStatus status = videoGenerationService.getTaskStatus(taskId);
                 if (status == null) { Thread.sleep(intervalSeconds * 1000L); continue; }
+
+                // 更新进度和积分（每次轮询都更新）
+                if (status.getProgress() > 0 || status.getCredits() != null) {
+                    Panel progressPanel = panelRepository.selectById(panelId);
+                    if (progressPanel != null) {
+                        Map<String, Object> info = progressPanel.getPanelInfo();
+                        if (status.getProgress() > 0) {
+                            info.put("videoProgress", status.getProgress());
+                        }
+                        if (status.getCredits() != null) {
+                            info.put("videoCredits", status.getCredits());
+                        }
+                        progressPanel.setPanelInfo(info);
+                        panelRepository.updateById(progressPanel);
+                    }
+                }
+
                 switch (status.getStatus()) {
                     case "completed":
                         String videoUrl = status.getVideoUrl();
@@ -255,6 +302,10 @@ public class PanelProductionService {
                             info.put("videoUrl", videoUrl);
                             info.put("videoUrlPermanent", videoUrlPermanent);
                             info.put("videoStatus", "completed");
+                            info.put("videoProgress", 100);
+                            if (status.getCredits() != null) {
+                                info.put("videoCredits", status.getCredits());
+                            }
                             info.put("errorMessage", null);
                             panel.setPanelInfo(info);
                             panelRepository.updateById(panel);
@@ -304,6 +355,17 @@ public class PanelProductionService {
     private String getStr(Map<String, Object> info, String key) {
         Object v = info.get(key);
         return v != null ? v.toString() : null;
+    }
+
+    private Integer getInt(Map<String, Object> info, String key) {
+        Object v = info.get(key);
+        if (v == null) return null;
+        if (v instanceof Number) return ((Number) v).intValue();
+        try {
+            return Integer.parseInt(v.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private void updatePanelInfo(Panel panel, Map<String, Object> info) {

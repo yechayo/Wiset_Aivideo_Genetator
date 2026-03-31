@@ -9,7 +9,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class ScriptPromptBuilder {
 
-    public String buildScriptOutlineSystemPrompt(int totalEpisodes, String genre, String targetAudience) {
+    public String buildScriptOutlineSystemPrompt(int totalEpisodes, String genre, String targetAudience,
+                                                  int chapterCount, int episodesPerChapter) {
         ScriptParams params = calculateScriptParameters(totalEpisodes);
         if (params.isSingleEpisode) {
             return buildSingleEpisodePrompt(genre, params);
@@ -19,7 +20,8 @@ public class ScriptPromptBuilder {
                 + "请根据用户提供的信息生成结构化的剧本大纲。\n"
                 + "题材类型：" + genre + "\n"
                 + "目标受众：" + targetAudience + "\n"
-                + "总集数：" + totalEpisodes + "\n\n"
+                + "总集数：" + totalEpisodes + "\n"
+                + "章节数：" + chapterCount + "（每个章节包含 " + episodesPerChapter + " 集）\n\n"
                 + "输出格式：仅返回 JSON，不要 markdown 代码块标记。\n"
                 + "JSON 结构：\n"
                 + "{\n"
@@ -30,9 +32,11 @@ public class ScriptPromptBuilder {
                 + "}\n\n"
                 + "要求：\n"
                 + "1. outline 包含完整的世界观、角色小传、关键物品设定、章节剧情线\n"
-                + "2. episodes 数组长度必须等于总集数 " + totalEpisodes + "\n"
-                + "3. 每集 synopsis 100-200 字\n"
-                + "4. characters 和 items 尽可能详细";
+                + "2. outline 中的章节剧情线必须使用「### 第X章」格式（如 ### 第一章、### 第二章），每章描述该章包含 " + episodesPerChapter + " 集的剧情走向\n"
+                + "3. 章节标题中必须包含对应集数范围，格式如「### 第一章: 标题（第1-2集）」\n"
+                + "4. episodes 数组长度必须等于总集数 " + totalEpisodes + "\n"
+                + "5. 每集 synopsis 100-200 字\n"
+                + "6. characters 和 items 尽可能详细";
     }
 
     public String buildScriptOutlineUserPrompt(String storyPrompt, String genre, String setting,
@@ -42,7 +46,7 @@ public class ScriptPromptBuilder {
         sb.append("题材类型：").append(genre != null ? genre : "未指定").append("\n");
         sb.append("背景设定：").append(setting != null ? setting : "未指定").append("\n");
         sb.append("集数：").append(totalEpisodes).append("\n");
-        sb.append("每集时长：").append(episodeDuration).append(" 分钟\n");
+        sb.append("每集时长：").append(episodeDuration).append(" 秒\n");
         sb.append("视觉风格：").append(visualStyle != null ? visualStyle : "未指定");
         return sb.toString();
     }
@@ -60,7 +64,7 @@ public class ScriptPromptBuilder {
         sb.append("完整大纲：\n").append(outline).append("\n\n");
         sb.append("目标章节：").append(chapter).append("\n");
         sb.append("拆分集数：").append(splitCount).append("\n");
-        sb.append("时长参考：").append(duration).append(" 分钟\n\n");
+        sb.append("时长参考：").append(duration).append(" 秒\n\n");
         if (modificationSuggestion != null && !modificationSuggestion.isEmpty()) {
             sb.append("修改建议：").append(modificationSuggestion).append("\n\n");
         }

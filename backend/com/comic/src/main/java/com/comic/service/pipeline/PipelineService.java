@@ -350,8 +350,10 @@ public class PipelineService implements StageCompletionCallback {
                 return ProjectStatus.EPISODE_SCRIPT_GENERATING;
             case PRODUCING:
                 return ProjectStatus.STORYBOARD_REVIEW;
-            case COMPLETED:
+            case MERGING:
                 return ProjectStatus.PRODUCING;
+            case COMPLETED:
+                return ProjectStatus.MERGING;
             default:
                 return null;
         }
@@ -406,6 +408,7 @@ public class PipelineService implements StageCompletionCallback {
             case STORYBOARD_GENERATING_FAILED:
             case STORYBOARD_REVIEW:
             case PRODUCING:
+            case MERGING:
                 // 回滚 PRODUCING 时释放生产锁
                 if (from == ProjectStatus.PRODUCING && stringRedisTemplate != null) {
                     try {
@@ -451,6 +454,19 @@ public class PipelineService implements StageCompletionCallback {
                         }
                     }
                 }
+                // 回滚 MERGING/COMPLETED 时清除合并结果
+                if (from == ProjectStatus.MERGING || from == ProjectStatus.COMPLETED) {
+                    Project proj = projectRepository.findByProjectId(projectId);
+                    if (proj != null) {
+                        Map<String, Object> projInfo = proj.getProjectInfo();
+                        if (projInfo != null) {
+                            projInfo.remove("finalVideoUrl");
+                            projInfo.remove("mergeStatus");
+                            proj.setProjectInfo(projInfo);
+                            projectRepository.updateById(proj);
+                        }
+                    }
+                }
                 break;
             default:
                 break;
@@ -485,6 +501,8 @@ public class PipelineService implements StageCompletionCallback {
 
         if (status == ProjectStatus.PRODUCING) {
             enrichProducingStatus(dto, projectId);
+        } else if (status == ProjectStatus.MERGING) {
+            enrichMergingStatus(dto, project);
         } else if (status == ProjectStatus.EPISODE_SCRIPT_GENERATING
                 || status == ProjectStatus.EPISODE_SCRIPT_GENERATING_FAILED
                 || status == ProjectStatus.STORYBOARD_GENERATING
@@ -495,6 +513,14 @@ public class PipelineService implements StageCompletionCallback {
             dto.setStatusCode(status.getCode());
             dto.setStatusDescription(status.getDescription());
             dto.setGenerating(status.isGenerating());
+            // COMPLETED 时附带合并结果
+            if (status == ProjectStatus.COMPLETED) {
+                Map<String, Object> info = project.getProjectInfo();
+                if (info != null) {
+                    dto.setFinalVideoUrl(strVal(info, "finalVideoUrl"));
+                    dto.setMergeStatus("completed");
+                }
+            }
         }
 
         return dto;
@@ -701,6 +727,22 @@ public class PipelineService implements StageCompletionCallback {
     private String strVal(Map<String, Object> map, String key) {
         Object v = map.get(key);
         return v != null ? v.toString() : null;
+    }
+
+    private void enrichMergingStatus(ProjectStatusResponse dto, Project project) {
+        Map<String, Object> info = project.getProjectInfo();
+        String finalVideoUrl = info != null ? strVal(info, "finalVideoUrl") : null;
+        String mergeStatus = info != null ? strVal(info, "mergeStatus") : null;
+        dto.setStatusCode("MERGING");
+        dto.setFinalVideoUrl(finalVideoUrl);
+        dto.setMergeStatus(mergeStatus != null ? mergeStatus : "idle");
+        if (finalVideoUrl != null) {
+            dto.setStatusDescription("视频合并已完成");
+            dto.setGenerating(false);
+        } else {
+            dto.setStatusDescription("视频合并");
+            dto.setGenerating(false);
+        }
     }
 
     private void enrichPanelStatus(ProjectStatusResponse dto, String projectId) {

@@ -10,4 +10,6 @@ public class VideoStatusResponse {
     private String taskId;
     private String errorMessage;
     private Integer duration;
+    private Integer progress;      // 0-100
+    private Integer credits;       // 积分消耗
 }
