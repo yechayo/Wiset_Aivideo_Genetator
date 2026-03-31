@@ -46,4 +46,25 @@ public class ProjectStatusBroadcaster {
             // 广播失败不影响主流程，前端可通过轮询兜底
         }
     }
+
+    /**
+     * 广播集级生成进度事件
+     * @param projectId 项目ID
+     * @param eventType 事件类型 (episode:script_done / episode:storyboard_done / episode:grid_status)
+     * @param data 事件数据（方法内会自动添加 eventType、projectId、timestamp）
+     */
+    public void broadcastEpisodeProgress(String projectId, String eventType, Map<String, Object> data) {
+        try {
+            data.put("eventType", eventType);
+            data.put("projectId", projectId);
+            data.put("timestamp", String.valueOf(System.currentTimeMillis()));
+
+            String json = objectMapper.writeValueAsString(data);
+            redisTemplate.convertAndSend(CHANNEL_PREFIX + projectId, json);
+            log.info("Episode progress broadcast: projectId={}, eventType={}", projectId, eventType);
+        } catch (Exception e) {
+            log.warn("Failed to broadcast episode progress: projectId={}, eventType={}, error={}",
+                projectId, eventType, e.getMessage());
+        }
+    }
 }
