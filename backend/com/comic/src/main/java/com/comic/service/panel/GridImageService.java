@@ -139,6 +139,7 @@ public class GridImageService {
             if (episode == null) throw new BusinessException("Episode 不存在: " + episodeId);
 
             Map<String, Object> episodeInfo = episode.getEpisodeInfo();
+            String initialGridStatus = (String) episodeInfo.getOrDefault("gridStatus", "generating");
             List<String> characterRefUrls = getCharacterReferenceUrls(episodeId);
             int pageCount = calculatePageCount(shots.size(), SHOTS_PER_PAGE);
             List<String> gridImageUrls = new ArrayList<>();
@@ -172,6 +173,16 @@ public class GridImageService {
                     Map<String, Object> splitShot = new HashMap<>(shot);
                     splitShot.put("splitImageUrl", ossUrl);
                     splitShots.add(splitShot);
+                }
+            }
+
+            // 写入前检查：如果 gridStatus 已被重置为 "generating"（说明有更新的重新生成请求），放弃写入
+            Episode freshEpisode = episodeRepository.selectById(episodeId);
+            if (freshEpisode != null) {
+                String freshStatus = (String) freshEpisode.getEpisodeInfo().getOrDefault("gridStatus", "");
+                if (!initialGridStatus.equals(freshStatus)) {
+                    log.warn("Episode {} 九宫格状态已被更新，放弃写入旧结果", episodeId);
+                    return;
                 }
             }
 
