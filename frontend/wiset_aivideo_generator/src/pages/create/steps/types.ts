@@ -82,6 +82,10 @@ export interface EpisodeState {
   gridRejectionFeedback?: string | null;
   /** 是否使用新流程（episodeInfo 中有 gridStatus 字段） */
   isNewFlow?: boolean;
+  /** 分集剧本生成状态（SSE 实时更新） */
+  scriptStatus?: 'pending' | 'generating' | 'done';
+  /** 分镜脚本生成状态（SSE 实时更新） */
+  storyboardStatus?: 'pending' | 'generating' | 'done';
   /** Raw episodeInfo from backend Episode entity */
   episodeInfo?: Record<string, any>;
 }
