@@ -137,8 +137,8 @@ public class EpisodeController {
         if (episode == null) throw new BusinessException("剧集不存在");
         Map<String, Object> info = episode.getEpisodeInfo();
         String gridStatus = (String) info.getOrDefault("gridStatus", "pending");
-        if (!"generated".equals(gridStatus) && !"rejected".equals(gridStatus)) {
-            throw new BusinessException("当前状态不可审核: " + gridStatus);
+        if (!"generated".equals(gridStatus)) {
+            throw new BusinessException("当前状态不可审核: " + gridStatus + "，请先重新生成九宫格");
         }
 
         // 设置 gridStatus = approved
@@ -189,7 +189,8 @@ public class EpisodeController {
                 String fusionUrl = gridImageService.uploadFusionImageForPanel(fusionImage, episodeId, group);
                 panelInfo.put("fusionImageUrl", fusionUrl);
             } catch (Exception e) {
-                // 融合图生成失败不阻断流程
+                // 融合图生成失败不阻断流程，但记录 error 级别日志
+                log.error("Panel 融合图生成失败: episodeId={}, shots={}", episodeId, group.size(), e);
             }
 
             panel.setPanelInfo(panelInfo);
