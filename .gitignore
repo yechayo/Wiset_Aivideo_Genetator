@@ -20,6 +20,9 @@ logs/
 .env.local
 .env.*.local
 
+# Application config (sensitive)
+backend/com/comic/src/main/resources/application.yml
+
 # Maven
 .m2/
 
