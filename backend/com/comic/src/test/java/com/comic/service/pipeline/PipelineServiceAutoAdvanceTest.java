@@ -11,6 +11,7 @@ import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
 import com.comic.service.panel.PanelGenerationService;
 import com.comic.service.script.ScriptService;
+import com.comic.service.storyboard.StoryboardService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,7 +27,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -56,6 +56,7 @@ class PipelineServiceAutoAdvanceTest {
     private CharacterExtractService characterExtractService;
     private CharacterImageGenerationService characterImageGenerationService;
     private PanelGenerationService panelGenerationService;
+    private StoryboardService storyboardService;
     private ProjectStatusBroadcaster broadcaster;
 
     @BeforeEach
@@ -68,6 +69,7 @@ class PipelineServiceAutoAdvanceTest {
         characterExtractService = mock(CharacterExtractService.class);
         characterImageGenerationService = mock(CharacterImageGenerationService.class);
         panelGenerationService = mock(PanelGenerationService.class);
+        storyboardService = mock(StoryboardService.class);
         broadcaster = mock(ProjectStatusBroadcaster.class);
 
         pipelineService = new PipelineService(
@@ -83,6 +85,7 @@ class PipelineServiceAutoAdvanceTest {
 
         // Inject mocked dependencies via reflection
         ReflectionTestUtils.setField(pipelineService, "panelGenerationService", panelGenerationService);
+        ReflectionTestUtils.setField(pipelineService, "storyboardService", storyboardService);
         ReflectionTestUtils.setField(pipelineService, "stringRedisTemplate", mock(StringRedisTemplate.class));
 
         // Inject pipelineServiceSelf spy for auto-advance chain verification
@@ -153,19 +156,17 @@ class PipelineServiceAutoAdvanceTest {
     }
 
     @Test
-    void confirm_images_should_eventually_enter_panel_generating() {
+    void confirm_images_should_transition_to_episode_script_generating() {
         // Setup: Create a project in IMAGE_REVIEW state
         Project project = createTestProject("test-project-3");
         project.setStatus(ProjectStatus.IMAGE_REVIEW.getCode());
 
         when(projectRepository.findByProjectId("test-project-3")).thenReturn(project);
         when(projectRepository.updateById(any(Project.class))).thenReturn(1);
-        doNothing().when(panelGenerationService).startPanelGeneration(anyString());
 
         // When: User confirms the images
         try {
             pipelineService.advancePipeline("test-project-3", "confirm_images");
-            // startPanelGeneration is invoked inside CompletableFuture.runAsync — wait for async thread
             Thread.sleep(200);
         } catch (BusinessException e) {
             fail("Should not throw exception: " + e.getMessage());
@@ -173,15 +174,15 @@ class PipelineServiceAutoAdvanceTest {
             Thread.currentThread().interrupt();
         }
 
-        // Then: Verify panel generation was auto-triggered
-        verify(panelGenerationService, times(1)).startPanelGeneration(eq("test-project-3"));
+        // Then: Status should auto-advance from ASSET_LOCKED to EPISODE_SCRIPT_GENERATING
+        assertEquals(ProjectStatus.EPISODE_SCRIPT_GENERATING.getCode(), project.getStatus());
 
-        // Verify status eventually reached PANEL_GENERATING
-        assertEquals(ProjectStatus.PANEL_GENERATING.getCode(), project.getStatus());
+        // Verify StoryboardService was called to generate episode script and storyboard
+        verify(storyboardService, times(1)).generateEpisodeScriptAndStoryboard(eq("test-project-3"));
     }
 
     @Test
-    void production_completed_should_transition_to_video_assembling() {
+    void production_completed_should_transition_to_completed() {
         // Setup: Create a project in PRODUCING state
         Project project = createTestProject("test-project-4");
         project.setStatus(ProjectStatus.PRODUCING.getCode());
@@ -196,34 +197,6 @@ class PipelineServiceAutoAdvanceTest {
             fail("Should not throw exception: " + e.getMessage());
         }
 
-        // Then: Status should transition to VIDEO_ASSEMBLING
-        ArgumentCaptor<Project> projectCaptor = ArgumentCaptor.forClass(Project.class);
-        verify(projectRepository, times(1)).updateById(projectCaptor.capture());
-        Project updatedProject = projectCaptor.getValue();
-
-        assertEquals(
-            ProjectStatus.VIDEO_ASSEMBLING.getCode(),
-            updatedProject.getStatus(),
-            "After production completes, project should be in VIDEO_ASSEMBLING state"
-        );
-    }
-
-    @Test
-    void assembly_completed_should_transition_to_completed() {
-        // Setup: Create a project in VIDEO_ASSEMBLING state
-        Project project = createTestProject("test-project-6");
-        project.setStatus(ProjectStatus.VIDEO_ASSEMBLING.getCode());
-
-        when(projectRepository.findByProjectId("test-project-6")).thenReturn(project);
-        when(projectRepository.updateById(any(Project.class))).thenReturn(1);
-
-        // When: Assembly is completed
-        try {
-            pipelineService.advancePipeline("test-project-6", "assembly_completed");
-        } catch (BusinessException e) {
-            fail("Should not throw exception: " + e.getMessage());
-        }
-
         // Then: Status should transition to COMPLETED
         ArgumentCaptor<Project> projectCaptor = ArgumentCaptor.forClass(Project.class);
         verify(projectRepository, times(1)).updateById(projectCaptor.capture());
@@ -232,7 +205,7 @@ class PipelineServiceAutoAdvanceTest {
         assertEquals(
             ProjectStatus.COMPLETED.getCode(),
             updatedProject.getStatus(),
-            "After assembly completes, project should be in COMPLETED state"
+            "After production completes, project should be in COMPLETED state"
         );
     }
 

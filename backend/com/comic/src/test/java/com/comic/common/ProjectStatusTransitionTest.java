@@ -27,21 +27,57 @@ class ProjectStatusTransitionTest {
     }
 
     @Test
-    void should_resolve_production_completed_to_video_assembling() {
-        assertEquals(
-            ProjectStatus.VIDEO_ASSEMBLING,
-            ProjectStatus.resolveTransition(ProjectStatus.PRODUCING, "production_completed"),
-            "Production completion should transition to VIDEO_ASSEMBLING state"
-        );
+    void should_resolve_episode_script_generated_to_storyboard_generating() {
+        assertEquals(ProjectStatus.STORYBOARD_GENERATING,
+            ProjectStatus.resolveTransition(ProjectStatus.EPISODE_SCRIPT_GENERATING, "episode_script_generated"));
     }
 
     @Test
-    void should_resolve_assembly_completed_to_completed() {
-        assertEquals(
-            ProjectStatus.COMPLETED,
-            ProjectStatus.resolveTransition(ProjectStatus.VIDEO_ASSEMBLING, "assembly_completed"),
-            "Assembly completion should transition to COMPLETED state"
-        );
+    void should_resolve_storyboard_generated_to_storyboard_review() {
+        assertEquals(ProjectStatus.STORYBOARD_REVIEW,
+            ProjectStatus.resolveTransition(ProjectStatus.STORYBOARD_GENERATING, "storyboard_generated"));
+    }
+
+    @Test
+    void should_resolve_all_grids_approved_to_producing() {
+        assertEquals(ProjectStatus.PRODUCING,
+            ProjectStatus.resolveTransition(ProjectStatus.STORYBOARD_REVIEW, "all_grids_approved"));
+    }
+
+    @Test
+    void should_resolve_production_completed_to_completed() {
+        assertEquals(ProjectStatus.COMPLETED,
+            ProjectStatus.resolveTransition(ProjectStatus.PRODUCING, "production_completed"));
+    }
+
+    @Test
+    void should_resolve_episode_script_failed_to_failed_state() {
+        assertEquals(ProjectStatus.EPISODE_SCRIPT_GENERATING_FAILED,
+            ProjectStatus.resolveTransition(ProjectStatus.EPISODE_SCRIPT_GENERATING, "episode_script_failed"));
+    }
+
+    @Test
+    void should_resolve_storyboard_failed_to_failed_state() {
+        assertEquals(ProjectStatus.STORYBOARD_GENERATING_FAILED,
+            ProjectStatus.resolveTransition(ProjectStatus.STORYBOARD_GENERATING, "storyboard_failed"));
+    }
+
+    @Test
+    void should_resolve_storyboard_review_regenerate_to_episode_script() {
+        assertEquals(ProjectStatus.EPISODE_SCRIPT_GENERATING,
+            ProjectStatus.resolveTransition(ProjectStatus.STORYBOARD_REVIEW, "regenerate_storyboard"));
+    }
+
+    @Test
+    void should_resolve_episode_script_failed_retry_to_itself() {
+        assertEquals(ProjectStatus.EPISODE_SCRIPT_GENERATING,
+            ProjectStatus.resolveTransition(ProjectStatus.EPISODE_SCRIPT_GENERATING_FAILED, "retry"));
+    }
+
+    @Test
+    void should_resolve_storyboard_failed_retry_to_itself() {
+        assertEquals(ProjectStatus.STORYBOARD_GENERATING,
+            ProjectStatus.resolveTransition(ProjectStatus.STORYBOARD_GENERATING_FAILED, "retry"));
     }
 
     @Test
@@ -59,15 +95,6 @@ class ProjectStatusTransitionTest {
             ProjectStatus.CHARACTER_CONFIRMED,
             ProjectStatus.resolveTransition(ProjectStatus.CHARACTER_REVIEW, "confirm_characters"),
             "Confirming characters should transition to CHARACTER_CONFIRMED state"
-        );
-    }
-
-    @Test
-    void should_resolve_all_panels_confirmed_to_producing() {
-        assertEquals(
-            ProjectStatus.PRODUCING,
-            ProjectStatus.resolveTransition(ProjectStatus.PANEL_REVIEW, "all_panels_confirmed"),
-            "Confirming all panels should transition to PRODUCING state"
         );
     }
 

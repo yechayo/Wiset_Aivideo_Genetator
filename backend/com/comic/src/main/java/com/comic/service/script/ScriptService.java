@@ -371,7 +371,8 @@ public class ScriptService {
             throw new BusinessException("项目不存在");
         }
 
-        if (!STATUS_OUTLINE_REVIEW.equals(project.getStatus())) {
+        if (!STATUS_OUTLINE_REVIEW.equals(project.getStatus()) &&
+            !STATUS_SCRIPT_REVIEW.equals(project.getStatus())) {
             throw new BusinessException("当前状态不能修改大纲");
         }
 
@@ -402,7 +403,8 @@ public class ScriptService {
 
         String status = project.getStatus();
 
-        if (!STATUS_OUTLINE_REVIEW.equals(status)) {
+        if (!STATUS_OUTLINE_REVIEW.equals(status) &&
+            !STATUS_SCRIPT_REVIEW.equals(status)) {
             throw new BusinessException("当前状态不能修改大纲");
         }
 

@@ -143,49 +143,45 @@ export interface SceneImageState {
   prompt: string | null;  // 来自分镜 JSON 的 background.scene_desc
 }
 
-// ================= Panel 生产状态 DTO（对应后端 DTO） =================
+// ================= 九宫格分镜相关类型 =================
 
-/** 单 Panel 完整生产状态（对应后端 PanelProductionStatusResponse） */
-export interface PanelProductionStatusResponse {
+/** 分镜数据（对应后端 Panel.panelInfo.shots 数组元素） */
+export interface StoryboardShot {
+  shotNumber: number;
+  duration: number;
+  scene: string;
+  characters: string[];
+  shotSize: string;
+  cameraAngle: string;
+  cameraMovement: string;
+  visualDescription: string;
+  dialogue: string;
+  visualEffects: string;
+  audioEffects: string;
+  splitImageUrl?: string;
+  startTime?: number;
+  endTime?: number;
+}
+
+/** 九宫格审核状态 */
+export type GridStatus = 'pending' | 'generating' | 'generated' | 'approved' | 'rejected' | 'failed';
+
+/** 视频生成状态 */
+export type VideoGenStatus = 'pending' | 'generating' | 'completed' | 'failed';
+
+/** Panel 九宫格+视频完整状态（对应后端 getProductionStatus） */
+export interface PanelGridStatusResponse {
   panelId: number;
-  overallStatus: string;
-  currentStage: string;
-  backgroundStatus: string;
-  backgroundUrl: string | null;
-  comicStatus: string;
-  comicUrl: string | null;
-  videoStatus: string;
+  gridStatus: GridStatus;
+  gridImages: string[];
+  fusionImageUrl: string | null;
+  shots: StoryboardShot[];
+  totalShots: number;
+  totalDuration: number;
+  gridPageCount: number;
+  gridRejectionFeedback: string | null;
+  videoStatus: VideoGenStatus;
   videoUrl: string | null;
-  videoDuration: number | null;
-  videoTaskId?: string | null;
-  offPeak?: boolean | null;
-  errorMessage: string | null;
-}
-
-/** 四宫格漫画状态（对应后端 ComicStatusResponse） */
-export interface ComicStatusResponse {
-  panelId: number;
-  status: string;
-  comicUrl: string | null;
-  backgroundUrl: string | null;
-  errorMessage: string | null;
-}
-
-/** 视频状态（对应后端 VideoStatusResponse） */
-export interface VideoStatusResponse {
-  panelId: number;
-  status: string;
-  videoUrl: string | null;
-  taskId: string | null;
-  errorMessage: string | null;
-  duration: number | null;
-}
-
-/** 背景图状态（对应后端 PanelBackgroundResponse） */
-export interface PanelBackgroundResponse {
-  panelId: number;
-  panelIndex: number;
-  backgroundUrl: string | null;
-  status: string;
-  prompt: string | null;
+  videoTaskId: string | null;
+  offPeak: boolean;
 }

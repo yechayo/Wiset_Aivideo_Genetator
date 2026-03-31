@@ -70,14 +70,13 @@ class ProjectProductionSummaryApiTest {
         info1.put("videoStatus", "completed");
         panel1.setPanelInfo(info1);
 
-        // Panel 2: pending_review
+        // Panel 2: grid generated, awaiting review (pending_review sub-stage)
         Panel panel2 = new Panel();
         panel2.setId(11L);
         panel2.setEpisodeId(1L);
         Map<String, Object> info2 = new HashMap<>();
-        info2.put("backgroundUrl", "http://bg.png");
-        info2.put("backgroundStatus", "completed");
-        info2.put("comicStatus", "pending_review");
+        info2.put("gridStatus", "generated");  // 新流程：grid 生成后等待审核
+        info2.put("videoStatus", "pending");
         panel2.setPanelInfo(info2);
 
         when(panelRepository.findByEpisodeId(1L)).thenReturn(Arrays.asList(panel1, panel2));
@@ -91,7 +90,7 @@ class ProjectProductionSummaryApiTest {
         assertEquals(2, summary.getTotalPanelCount());
         assertEquals(1, summary.getCompletedPanelCount());
         assertEquals("pending_review", summary.getProductionSubStage());
-        assertEquals("awaiting_comic_approval", summary.getBlockedReason());
+        assertEquals("awaiting_grid_approval", summary.getBlockedReason());
     }
 
     @Test

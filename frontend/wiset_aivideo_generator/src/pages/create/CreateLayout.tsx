@@ -152,7 +152,7 @@ const CreateLayout = () => {
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 5:
         return currentProject ? (
-          <Step5page project={currentProject} />
+          <Step5page project={currentProject} onNextStep={() => navigate(getStepUrl(6), { replace: true })} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 6:
         return currentProject ? (
@@ -165,7 +165,8 @@ const CreateLayout = () => {
 
   const showLoadingOverlay =
     ((statusInfo?.isGenerating ?? false)
-      && statusInfo?.statusCode !== 'PANEL_GENERATING'
+      && statusInfo?.statusCode !== 'STORYBOARD_GENERATING'
+      && statusInfo?.statusCode !== 'EPISODE_SCRIPT_GENERATING'
       && statusInfo?.statusCode !== 'IMAGE_GENERATING'
       && statusInfo?.statusCode !== 'CHARACTER_EXTRACTING')
     || isStepTransitioning;

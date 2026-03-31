@@ -26,7 +26,7 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
   videoTaskId,
   videoOffPeak
 }) => {
-  const canGenerate = pipelineStep === 'comic_approved';
+  const canGenerate = pipelineStep === 'grid_approved';
   const isGenerating = isGeneratingProp || pipelineStep === 'video_generating';
   const isCompleted = pipelineStep === 'video_completed' && videoUrl;
   const isFailed = pipelineStep === 'video_failed';
@@ -108,7 +108,7 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
 
     return (
       <div className={styles.placeholder}>
-        <p className={styles.placeholderText}>四宫格审核通过后可生成</p>
+        <p className={styles.placeholderText}>九宫格审核通过后可生成</p>
       </div>
     );
   };

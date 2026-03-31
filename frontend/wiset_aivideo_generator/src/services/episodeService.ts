@@ -2,10 +2,10 @@
  * 剧集生产相关API服务
  */
 
-import { get, post } from './apiClient';
+import { get, post, put } from './apiClient';
 import type { ApiResponse, PaginatedResponse } from './types/auth.types';
 import type {
-  PanelProductionStatusResponse,
+  PanelGridStatusResponse,
   ProductionPipelineResponse,
   VideoSegmentInfo,
   PanelState,
@@ -30,148 +30,80 @@ export async function getPanels(projectId: string, episodeId: number): Promise<A
   return get<ApiResponse<any[]>>(`/api/projects/${projectId}/episodes/${episodeId}/panels`);
 }
 
-/** AI 生成分镜 */
-export async function generatePanels(projectId: string, episodeId: number): Promise<ApiResponse<any>> {
-  return post<ApiResponse<any>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/generate`);
-}
-
-/** 分镜生成任务状态 */
-export async function getPanelGenerateStatus(
-  projectId: string,
-  episodeId: number,
-  jobId: string
-): Promise<ApiResponse<any>> {
-  return get<ApiResponse<any>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/generate/${jobId}/status`);
-}
-
-/** 修改分镜 */
-export async function revisePanel(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-  feedback: string,
-): Promise<ApiResponse<any>> {
-  return post<ApiResponse<any>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/revise`,
-    { feedback },
-  );
-}
-
 // ================= Panel 生产状态 API =================
-
-/** 获取单 Panel 完整生产状态 */
-export async function getPanelProductionStatus(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<PanelProductionStatusResponse>> {
-  return get<ApiResponse<PanelProductionStatusResponse>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/production-status`,
-  );
-}
 
 /** 批量获取所有 Panel 生产状态 */
 export async function getBatchProductionStatuses(
   projectId: string,
   episodeId: number,
-): Promise<ApiResponse<PanelProductionStatusResponse[]>> {
-  return get<ApiResponse<PanelProductionStatusResponse[]>>(
+): Promise<ApiResponse<PanelGridStatusResponse[]>> {
+  return get<ApiResponse<PanelGridStatusResponse[]>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/production-statuses`,
   );
 }
 
-// ================= 背景图 API =================
+// ================= 整集九宫格审核 API（新流程） =================
 
-/** 获取背景图状态 */
-export async function getBackgroundStatus(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<{
-  panelId: number;
-  panelIndex: number;
-  backgroundUrl: string;
-  status: string;
-  prompt: string;
-}>> {
-  return get<ApiResponse<{
-    panelId: number;
-    panelIndex: number;
-    backgroundUrl: string;
-    status: string;
-    prompt: string;
-  }>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/background`,
-  );
-}
-
-/** 生成背景图（自动匹配角色） */
-export async function generateBackground(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<any>> {
-  return post<ApiResponse<any>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/background`,
-  );
-}
-
-/** 重新生成背景图 */
-export async function regenerateBackground(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/background/regenerate`,
-  );
-}
-
-// ================= 四宫格漫画 API =================
-
-/** 获取四宫格漫画状态 */
-export async function getComicStatus(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
+/** 获取整集九宫格状态 */
+export async function getEpisodeGridStatus(
+  projectId: string, episodeId: number,
 ): Promise<ApiResponse<any>> {
   return get<ApiResponse<any>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/comic`,
+    `/api/projects/${projectId}/episodes/${episodeId}/grid`,
   );
 }
 
-/** 生成四宫格漫画 */
-export async function generateComic(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
+/** 审核通过整集九宫格 */
+export async function approveEpisodeGrid(
+  projectId: string, episodeId: number,
 ): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/comic`,
+  return put<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/grid/approve`,
   );
 }
 
-/** 审核通过四宫格漫画 */
-export async function approveComic(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
+/** 拒绝整集九宫格 */
+export async function rejectEpisodeGrid(
+  projectId: string, episodeId: number, reason: string,
 ): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/comic/approve`,
+  return put<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/grid/reject`,
+    { reason },
   );
 }
 
-/** 退回重生成四宫格漫画 */
-export async function reviseComic(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-  feedback: string,
+/** 重新生成整集九宫格 */
+export async function regenerateEpisodeGrid(
+  projectId: string, episodeId: number,
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/comic/revise`,
-    { feedback },
+    `/api/projects/${projectId}/episodes/${episodeId}/grid/regenerate`,
+  );
+}
+
+// ================= 九宫格审核 API =================
+
+/** 审核通过九宫格 */
+export async function approveGrid(projectId: string, episodeId: number, panelId: number): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/grid/approve`);
+}
+
+/** 拒绝九宫格 */
+export async function rejectGrid(projectId: string, episodeId: number, panelId: number, reason: string): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/grid/reject`, { reason });
+}
+
+/** 重新生成九宫格 */
+export async function regenerateGrid(projectId: string, episodeId: number, panelId: number): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/grid/regenerate`);
+}
+
+/** 获取单 Panel 生产状态 */
+export async function getPanelGridStatus(
+  projectId: string, episodeId: number, panelId: number,
+): Promise<ApiResponse<PanelGridStatusResponse>> {
+  return get<ApiResponse<PanelGridStatusResponse>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/production-status`,
   );
 }
 
@@ -198,32 +130,6 @@ export async function retryVideo(
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video/retry`,
-  );
-}
-
-/** AI 修改单个分镜 */
-export async function reviseSinglePanel(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-  feedback: string,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/revise-single`,
-    { feedback },
-  );
-}
-
-/** 更新分镜信息（手动编辑） */
-export async function updatePanel(
-  projectId: string,
-  episodeId: number,
-  panelId: number,
-  panelInfo: Record<string, any>,
-): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}`,
-    { panelInfo },
   );
 }
 
