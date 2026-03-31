@@ -779,41 +779,91 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   // SSE 实时进度订阅（放在 loadPanelsForEpisode 定义之后，确保回调可引用）
   useSseProgress(projectId, {
     onEpisodeScriptDone: (data) => {
-      setChapters(prev =>
-        prev.map(ch => ({
-          ...ch,
-          episodes: ch.episodes.map(ep =>
-            ep.episodeIndex === data.episodeNum
-              ? { ...ep, scriptStatus: 'done' as const, title: data.title || ep.title }
-              : ep
-          ),
-        }))
-      );
+      setChapters(prev => {
+        const epIndex = data.episodeNum;
+        const epTitle = data.title || `第${epIndex}集`;
+        // 确保 chapters 不为空
+        if (prev.length === 0) {
+          return [{
+            chapterIndex: 1,
+            title: '生成中',
+            episodes: [{
+              episodeId: 0,
+              episodeIndex: epIndex,
+              title: epTitle,
+              sceneSummaryMap: {},
+              segments: [],
+              scriptStatus: 'done' as const,
+              storyboardStatus: 'pending' as const,
+            }],
+          }];
+        }
+        // 查找是否已有该 episodeIndex 的 episode
+        let found = false;
+        const updated = prev.map(ch => {
+          const hasEp = ch.episodes.some(ep => ep.episodeIndex === epIndex);
+          if (hasEp) {
+            found = true;
+            return {
+              ...ch,
+              episodes: ch.episodes.map(ep =>
+                ep.episodeIndex === epIndex
+                  ? { ...ep, scriptStatus: 'done' as const, title: epTitle }
+                  : ep
+              ),
+            };
+          }
+          return ch;
+        });
+        if (found) return updated;
+        // 没有 → 在第一个 chapter 中添加占位 episode
+        updated[0] = {
+          ...updated[0],
+          episodes: [...updated[0].episodes, {
+            episodeId: 0,
+            episodeIndex: epIndex,
+            title: epTitle,
+            sceneSummaryMap: {},
+            segments: [],
+            scriptStatus: 'done' as const,
+            storyboardStatus: 'pending' as const,
+          }],
+        };
+        return updated;
+      });
     },
     onEpisodeStoryboardDone: (data) => {
       setChapters(prev =>
         prev.map(ch => ({
           ...ch,
-          episodes: ch.episodes.map(ep =>
-            ep.episodeId === data.episodeId
-              ? { ...ep, storyboardStatus: 'done' as const }
-              : ep
-          ),
+          episodes: ch.episodes.map(ep => {
+            // 先按 episodeId 匹配，再按 episodeNum 匹配
+            if (ep.episodeId === data.episodeId || ep.episodeIndex === data.episodeNum) {
+              return {
+                ...ep,
+                episodeId: data.episodeId || ep.episodeId,
+                storyboardStatus: 'done' as const,
+              };
+            }
+            return ep;
+          }),
         }))
       );
       // 加载该集的分镜（带重试：事务可能尚未提交）
-      const tryLoad = async (retries = 0) => {
-        panelsLoadedRef.current.delete(data.episodeId);
-        try {
-          await loadPanelsForEpisode(data.episodeId);
-        } catch {
-          if (retries < 1) {
-            await new Promise(r => setTimeout(r, 1000));
-            tryLoad(retries + 1);
+      if (data.episodeId) {
+        const tryLoad = async (retries = 0) => {
+          panelsLoadedRef.current.delete(data.episodeId);
+          try {
+            await loadPanelsForEpisode(data.episodeId);
+          } catch {
+            if (retries < 1) {
+              await new Promise(r => setTimeout(r, 1000));
+              tryLoad(retries + 1);
+            }
           }
-        }
-      };
-      tryLoad();
+        };
+        tryLoad();
+      }
     },
     onEpisodeGridStatus: (data) => {
       setChapters(prev =>
