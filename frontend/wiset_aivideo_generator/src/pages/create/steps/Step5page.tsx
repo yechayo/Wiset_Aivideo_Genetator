@@ -318,6 +318,18 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   // 记录已加载过分镜的集数，避免重复请求
   const panelsLoadedRef = useRef<Set<number>>(new Set());
 
+  // 轮询 AbortController 引用，组件卸载时清理
+  const regenerateGridAbortRef = useRef<AbortController | null>(null);
+  const regenerateEpisodeGridAbortRef = useRef<AbortController | null>(null);
+  const generateVideoAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => {
+      regenerateGridAbortRef.current?.abort();
+      regenerateEpisodeGridAbortRef.current?.abort();
+      generateVideoAbortRef.current?.abort();
+    };
+  }, []);
+
   /**
    * 加载分镜中涉及的角色三视图
    */
@@ -623,10 +635,11 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
       await regenerateGrid(projectId, episodeId, Number(panelId));
       // 基于状态的轮询，检查是否生成完成或失败
       const abort = new AbortController();
+      regenerateGridAbortRef.current = abort;
       let retries = 0;
       const poll = async () => {
         while (retries < GRID_POLL_MAX_RETRIES && !abort.signal.aborted) {
-          await new Promise(r => setTimeout(r, VIDEO_POLL_INTERVAL));
+          await new Promise(r => setTimeout(r, GRID_POLL_INTERVAL));
           if (abort.signal.aborted) return;
           retries++;
           try {
@@ -698,6 +711,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     try {
       await regenerateEpisodeGrid(projectId, episodeId);
       const abort = new AbortController();
+      regenerateEpisodeGridAbortRef.current = abort;
       let retries = 0;
       const poll = async () => {
         while (retries < GRID_POLL_MAX_RETRIES && !abort.signal.aborted) {
@@ -771,6 +785,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
       await generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt);
       // 基于状态的轮询，检查是否生成完成或失败
       const abort = new AbortController();
+      generateVideoAbortRef.current = abort;
       let retries = 0;
       const poll = async () => {
         while (retries < VIDEO_POLL_MAX_RETRIES && !abort.signal.aborted) {
