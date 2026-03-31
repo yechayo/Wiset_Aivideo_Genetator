@@ -75,6 +75,18 @@ public class StoryboardService {
                 outline, charactersDesc, targetDuration, visualStyle, totalEpisodes);
             log.info("[Pipeline] Step1完成: 生成 {} 集剧本, projectId={}", scripts.size(), projectId);
 
+            // 广播每集剧本完成事件（分集剧本是一次性批量生成的，此时 episode 尚未创建，只有 episodeNum）
+            totalEpisodes = scripts.size();
+            for (int i = 0; i < scripts.size(); i++) {
+                Map<String, Object> scriptItem = scripts.get(i);
+                Map<String, Object> eventData = new HashMap<>();
+                eventData.put("episodeNum", i + 1);
+                eventData.put("title", scriptItem.get("title"));
+                eventData.put("totalEpisodes", totalEpisodes);
+                eventData.put("completedEpisodes", i + 1);
+                broadcaster.broadcastEpisodeProgress(projectId, "episode:script_done", eventData);
+            }
+
             // 2. 逐集生成分镜并创建Panel
             for (Map<String, Object> script : scripts) {
                 String title = (String) script.get("title");
@@ -96,6 +108,15 @@ public class StoryboardService {
 
                 // 设置 episodeInfo.gridStatus = "generating"，异步生成整集九宫格
                 gridImageService.updateEpisodeGridStatus(episodeId, "generating");
+
+                // 直接广播分镜完成事件
+                Map<String, Object> storyboardDoneData = new HashMap<>();
+                storyboardDoneData.put("episodeId", episodeId);
+                storyboardDoneData.put("episodeNum", scripts.indexOf(script) + 1);
+                storyboardDoneData.put("title", title);
+                storyboardDoneData.put("shotsCount", shots.size());
+                broadcaster.broadcastEpisodeProgress(projectId, "episode:storyboard_done", storyboardDoneData);
+
                 log.info("[Pipeline] Step3: 启动异步九宫格生成: episodeId={}, shotCount={}", episodeId, shots.size());
                 gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle);
             }
