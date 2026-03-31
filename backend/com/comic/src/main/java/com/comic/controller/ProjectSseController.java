@@ -40,16 +40,31 @@ public class ProjectSseController {
     @GetMapping(value = "/{projectId}/status/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "订阅项目状态实时变更")
     public SseEmitter streamProjectStatus(@PathVariable String projectId) {
+        log.info("SSE connection request: projectId={}", projectId);
         SseEmitter emitter = new SseEmitter(300_000L); // 5 分钟超时
 
         emitters.computeIfAbsent(projectId, k -> new CopyOnWriteArraySet<>()).add(emitter);
 
+        // 发送初始连接确认事件，让浏览器知道连接已建立
+        try {
+            java.util.HashMap<String, String> initData = new java.util.HashMap<>();
+            initData.put("type", "connected");
+            initData.put("projectId", projectId);
+            emitter.send(SseEmitter.event().name("status-change").data(initData));
+        } catch (IOException e) {
+            log.warn("Failed to send initial SSE event for project {}", projectId);
+            emitter.complete();
+            return emitter;
+        }
+
         String channel = "project:status:" + projectId;
+        log.info("SSE listening on Redis channel: {}", channel);
 
         MessageListener listener = (message, pattern) -> {
             try {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> data = objectMapper.readValue(message.getBody(), Map.class);
+                log.debug("SSE received Redis message for project {}: {}", projectId, data.get("eventType"));
                 sendToEmitters(projectId, data);
             } catch (Exception e) {
                 log.warn("Failed to parse Redis message for project {}", projectId, e);
@@ -59,16 +74,19 @@ public class ProjectSseController {
         redisContainer.addMessageListener(listener, new ChannelTopic(channel));
 
         emitter.onCompletion(() -> {
+            log.info("SSE connection completed: projectId={}", projectId);
             removeEmitter(projectId, emitter);
             redisContainer.removeMessageListener(listener);
             cleanupIfEmpty(projectId);
         });
         emitter.onTimeout(() -> {
+            log.info("SSE connection timed out: projectId={}", projectId);
             removeEmitter(projectId, emitter);
             redisContainer.removeMessageListener(listener);
             cleanupIfEmpty(projectId);
         });
         emitter.onError(e -> {
+            log.warn("SSE connection error: projectId={}, error={}", projectId, e.getMessage());
             removeEmitter(projectId, emitter);
             redisContainer.removeMessageListener(listener);
             cleanupIfEmpty(projectId);
