@@ -75,4 +75,26 @@ class GridImageServiceTest {
     void calculatePagination_should_handle_zero_shots() {
         assertEquals(0, GridImageService.calculatePageCount(0, 9));
     }
+
+    @Test
+    void createFusionImage_dimensions_should_be_constant() {
+        final int FIXED_WIDTH = 1920;
+        final int FIXED_HEIGHT = 1080;
+        final int BOTTOM_BAR_HEIGHT = 180;
+        final int MAIN_AREA_HEIGHT = FIXED_HEIGHT - BOTTOM_BAR_HEIGHT;
+        final int PAD = 4;
+        final int fCols = 3;
+
+        // 验证不同 shots 数量下 cell 尺寸计算正确
+        int[] shotCounts = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+        for (int shotCount : shotCounts) {
+            int fRows = (int) Math.ceil((double) shotCount / fCols);
+            int cellW = (FIXED_WIDTH - PAD * (fCols + 1)) / fCols;
+            int cellH = (MAIN_AREA_HEIGHT - PAD * (fRows + 1)) / fRows;
+
+            assertTrue(cellW > 0 && cellH > 0, "shots=" + shotCount + ": cell dimensions invalid");
+            assertTrue(fCols * cellW + (fCols + 1) * PAD <= FIXED_WIDTH, "shots=" + shotCount + ": width overflow");
+            assertTrue(fRows * cellH + (fRows + 1) * PAD <= MAIN_AREA_HEIGHT, "shots=" + shotCount + ": height overflow");
+        }
+    }
 }

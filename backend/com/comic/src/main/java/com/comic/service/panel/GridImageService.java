@@ -271,92 +271,84 @@ public class GridImageService {
     }
 
     private BufferedImage createFusionImage(List<Map<String, Object>> shots, List<String> charRefUrls) {
-        int fCols = 3, cellW = 640, cellH = 360, pad = 8, headerH = 60;
+        // 固定输出尺寸：1920x1080 (16:9)
+        final int FIXED_WIDTH = 1920;
+        final int FIXED_HEIGHT = 1080;
+        final int BOTTOM_BAR_HEIGHT = 180;  // 角色参考图底部横条高度
+        final int MAIN_AREA_HEIGHT = FIXED_HEIGHT - BOTTOM_BAR_HEIGHT;
+        final int PAD = 4;
 
-        // 角色参考图侧栏
-        int sidebarW = 0;
-        List<BufferedImage> charImages = new ArrayList<>();
-        if (charRefUrls != null && !charRefUrls.isEmpty()) {
-            sidebarW = 360;
-            for (String url : charRefUrls) {
-                try {
-                    charImages.add(downloadImage(url));
-                } catch (Exception e) {
-                    log.warn("角色参考图下载失败: {}", url);
-                }
-            }
-        }
-
+        // 计算分镜网格布局
+        int fCols = 3;
         int fRows = (int) Math.ceil((double) shots.size() / fCols);
-        int gridW = fCols * (cellW + pad) + pad;
-        int contentH = headerH + fRows * (cellH + pad) + pad;
+        int cellW = (FIXED_WIDTH - PAD * (fCols + 1)) / fCols;
+        int cellH = (MAIN_AREA_HEIGHT - PAD * (fRows + 1)) / fRows;
 
-        // 计算侧栏需要的高度
-        int sidebarH = 0;
-        if (!charImages.isEmpty()) {
-            int charImgSize = 160;
-            int charPad = 8;
-            int charCols = 1;
-            int charRows = (int) Math.ceil((double) charImages.size() / charCols);
-            sidebarH = headerH + charRows * (charImgSize + charPad) + charPad;
-        }
-        int totalH = Math.max(contentH, sidebarH);
-        int totalW = gridW + (sidebarW > 0 ? sidebarW + pad : 0);
-
-        BufferedImage canvas = new BufferedImage(totalW, totalH, BufferedImage.TYPE_INT_RGB);
+        // 创建画布
+        BufferedImage canvas = new BufferedImage(FIXED_WIDTH, FIXED_HEIGHT, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = canvas.createGraphics();
         g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
         g.setColor(FUSION_BG_COLOR);
-        g.fillRect(0, 0, totalW, totalH);
+        g.fillRect(0, 0, FIXED_WIDTH, FIXED_HEIGHT);
 
-        g.setColor(Color.WHITE);
-        g.setFont(new Font("SansSerif", Font.BOLD, 20));
-        g.drawString("分镜融合图 - 共" + shots.size() + "个镜头", pad, headerH - 15);
-
-        // 绘制分镜
+        // 绘制分镜网格
         for (int i = 0; i < shots.size(); i++) {
-            int x = pad + (i % fCols) * (cellW + pad);
-            int y = headerH + pad + (i / fCols) * (cellH + pad);
+            int col = i % fCols;
+            int row = i / fCols;
+            int x = PAD + col * (cellW + PAD);
+            int y = PAD + row * (cellH + PAD);
             String splitUrl = (String) shots.get(i).get("splitImageUrl");
             if (splitUrl != null) {
                 try {
                     BufferedImage sub = downloadImage(splitUrl);
+                    // 等比缩放居中绘制
                     double scale = Math.min((double) cellW / sub.getWidth(), (double) cellH / sub.getHeight());
-                    g.drawImage(sub, x + (cellW - (int)(sub.getWidth()*scale))/2,
-                        y + (cellH - (int)(sub.getHeight()*scale))/2,
-                        (int)(sub.getWidth()*scale), (int)(sub.getHeight()*scale), null);
-                } catch (Exception e) { log.warn("融合图加载失败: shot {}", i); }
+                    int drawW = (int) (sub.getWidth() * scale);
+                    int drawH = (int) (sub.getHeight() * scale);
+                    int drawX = x + (cellW - drawW) / 2;
+                    int drawY = y + (cellH - drawH) / 2;
+                    g.drawImage(sub, drawX, drawY, drawW, drawH, null);
+                } catch (Exception e) {
+                    log.warn("融合图加载失败: shot {}", i);
+                }
             }
+            // 绘制编号
             g.setColor(Color.BLACK);
-            g.fillRect(x+4, y+4, 70, 22);
+            g.fillRect(x + 2, y + 2, 24, 18);
             g.setColor(Color.WHITE);
-            g.setFont(new Font("SansSerif", Font.PLAIN, 12));
+            g.setFont(new Font("SansSerif", Font.PLAIN, 11));
             String label = NumberFormatter.toCircled(i + 1);
-            g.drawString(label, x+10, y+19);
+            g.drawString(label, x + 4, y + 15);
         }
 
-        // 绘制角色参考图侧栏
-        if (!charImages.isEmpty()) {
-            int sidebarX = gridW + pad;
-            g.setColor(Color.WHITE);
-            g.setFont(new Font("SansSerif", Font.BOLD, 16));
-            g.drawString("角色参考", sidebarX + pad, headerH - 15);
+        // 绘制底部角色参考图横条
+        if (charRefUrls != null && !charRefUrls.isEmpty()) {
+            int charCount = charRefUrls.size();
+            int charW = (FIXED_WIDTH - PAD * (charCount + 1)) / charCount;
+            int charH = BOTTOM_BAR_HEIGHT - PAD * 2;
+            int charY = MAIN_AREA_HEIGHT + PAD;
 
-            int charImgSize = 160;
-            for (int i = 0; i < charImages.size(); i++) {
-                int cx = sidebarX + pad;
-                int cy = headerH + pad + i * (charImgSize + pad);
-                BufferedImage cimg = charImages.get(i);
-                double scale = Math.min((double) charImgSize / cimg.getWidth(), (double) charImgSize / cimg.getHeight());
-                int sw = (int)(cimg.getWidth() * scale);
-                int sh = (int)(cimg.getHeight() * scale);
-                g.drawImage(cimg, cx + (charImgSize - sw)/2, cy + (charImgSize - sh)/2, sw, sh, null);
-                // 角色编号
-                g.setColor(Color.BLACK);
-                g.fillRect(cx+2, cy+2, 24, 18);
-                g.setColor(Color.WHITE);
-                g.setFont(new Font("SansSerif", Font.PLAIN, 11));
-                g.drawString("C" + (i+1), cx+4, cy+15);
+            for (int i = 0; i < charRefUrls.size(); i++) {
+                int charX = PAD + i * (charW + PAD);
+                try {
+                    BufferedImage charImg = downloadImage(charRefUrls.get(i));
+                    // 等比缩放
+                    double scale = Math.min((double) charW / charImg.getWidth(), (double) charH / charImg.getHeight());
+                    int drawW = (int) (charImg.getWidth() * scale);
+                    int drawH = (int) (charImg.getHeight() * scale);
+                    int drawX = charX + (charW - drawW) / 2;
+                    int drawY = charY + (charH - drawH) / 2;
+                    g.drawImage(charImg, drawX, drawY, drawW, drawH, null);
+
+                    // 角色编号
+                    g.setColor(Color.BLACK);
+                    g.fillRect(charX + 2, charY + 2, 20, 16);
+                    g.setColor(Color.WHITE);
+                    g.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                    g.drawString("C" + (i + 1), charX + 4, charY + 14);
+                } catch (Exception e) {
+                    log.warn("角色参考图加载失败: {}", charRefUrls.get(i));
+                }
             }
         }
 
