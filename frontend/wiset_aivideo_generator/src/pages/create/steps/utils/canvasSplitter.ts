@@ -2,8 +2,12 @@
  * Canvas 拆分和合成工具
  */
 
+/** 默认分隔线像素，需与后端 GridImageService.GRID_SEPARATOR_PIXELS 保持一致 */
+export const DEFAULT_GRID_SEPARATOR_PIXELS = 4;
+
 /**
  * 将九宫格图拆分为单格面板
+ * 如果 panelWidth 为 0，则自动计算（扣除分隔线后等分）
  */
 export function splitGridToPanels(
   gridImage: HTMLImageElement,
@@ -11,21 +15,37 @@ export function splitGridToPanels(
   gridRows: number,
   panelWidth: number,
   panelHeight: number,
-  separatorPixels: number,
+  separatorPixels: number = DEFAULT_GRID_SEPARATOR_PIXELS,
 ): Map<number, HTMLCanvasElement> {
   const panels = new Map<number, HTMLCanvasElement>();
+  const sep = separatorPixels;
+
+  // 自动计算模式：panelWidth 为 0 时，等分扣除分隔线
+  const cellW = panelWidth > 0
+    ? panelWidth
+    : Math.floor((gridImage.width - (gridColumns - 1) * sep) / gridColumns);
+  const cellH = panelHeight > 0
+    ? panelHeight
+    : Math.floor((gridImage.height - (gridRows - 1) * sep) / gridRows);
 
   for (let row = 0; row < gridRows; row++) {
     for (let col = 0; col < gridColumns; col++) {
       const panelIndex = row * gridColumns + col;
-      const sx = col * (panelWidth + separatorPixels);
-      const sy = row * (panelHeight + separatorPixels);
+      const sx = col * (cellW + sep);
+      const sy = row * (cellH + sep);
+      // 最后一列/行取剩余像素
+      const sw = col === gridColumns - 1
+        ? gridImage.width - sx
+        : cellW;
+      const sh = row === gridRows - 1
+        ? gridImage.height - sy
+        : cellH;
 
       const canvas = document.createElement('canvas');
-      canvas.width = panelWidth;
-      canvas.height = panelHeight;
+      canvas.width = sw;
+      canvas.height = sh;
       const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(gridImage, sx, sy, panelWidth, panelHeight, 0, 0, panelWidth, panelHeight);
+      ctx.drawImage(gridImage, sx, sy, sw, sh, 0, 0, sw, sh);
 
       panels.set(panelIndex, canvas);
     }
