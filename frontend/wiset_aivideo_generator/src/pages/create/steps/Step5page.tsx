@@ -26,6 +26,7 @@ import { advanceStatus } from '../../../services/projectService';
 import { useCreateStore } from '../../../stores/createStore';
 import EpisodeCard from './components/EpisodeCard';
 import { BatchReviewBar } from './components/BatchReviewBar';
+import { useSseProgress } from './hooks/useSseProgress';
 
 /** 轮询配置 */
 const GRID_POLL_INTERVAL = 5000;
@@ -775,6 +776,67 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     }
   }, [projectId]);
 
+  // SSE 实时进度订阅（放在 loadPanelsForEpisode 定义之后，确保回调可引用）
+  useSseProgress(projectId, {
+    onEpisodeScriptDone: (data) => {
+      setChapters(prev =>
+        prev.map(ch => ({
+          ...ch,
+          episodes: ch.episodes.map(ep =>
+            ep.episodeIndex === data.episodeNum
+              ? { ...ep, scriptStatus: 'done' as const, title: data.title || ep.title }
+              : ep
+          ),
+        }))
+      );
+    },
+    onEpisodeStoryboardDone: (data) => {
+      setChapters(prev =>
+        prev.map(ch => ({
+          ...ch,
+          episodes: ch.episodes.map(ep =>
+            ep.episodeId === data.episodeId
+              ? { ...ep, storyboardStatus: 'done' as const }
+              : ep
+          ),
+        }))
+      );
+      // 加载该集的分镜（带重试：事务可能尚未提交）
+      const tryLoad = async (retries = 0) => {
+        panelsLoadedRef.current.delete(data.episodeId);
+        try {
+          await loadPanelsForEpisode(data.episodeId);
+        } catch {
+          if (retries < 1) {
+            await new Promise(r => setTimeout(r, 1000));
+            tryLoad(retries + 1);
+          }
+        }
+      };
+      tryLoad();
+    },
+    onEpisodeGridStatus: (data) => {
+      setChapters(prev =>
+        prev.map(ch => ({
+          ...ch,
+          episodes: ch.episodes.map(ep =>
+            ep.episodeId === data.episodeId
+              ? { ...ep, gridStatus: data.gridStatus as any }
+              : ep
+          ),
+        }))
+      );
+    },
+    onStatusChange: (data) => {
+      if (projectId && data.to) {
+        syncStatus(projectId);
+        if (data.to === 'STORYBOARD_REVIEW') {
+          loadEpisodes();
+        }
+      }
+    },
+  });
+
   /**
    * 生成视频
    */
@@ -908,23 +970,6 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     return <span className={styles.dotPending} />;
   };
 
-  // 流水线生成中状态（分集剧本/分镜正在生成）
-  const isGeneratingScript = statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
-    || statusInfo?.statusCode === 'STORYBOARD_GENERATING';
-  if (isGeneratingScript && !isPipelineFailed) {
-    const label = statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
-      ? '正在生成分集剧本...' : '正在生成分镜脚本...';
-    return (
-      <div className={styles.pageContainer}>
-        <div className={styles.loadingState}>
-          <div className={styles.spinner} />
-          <p>{label}</p>
-          <p style={{ color: '#888', fontSize: 13, marginTop: 4 }}>AI 正在创作中，通常需要 1-3 分钟</p>
-        </div>
-      </div>
-    );
-  }
-
   // 流水线失败状态（分集剧本/分镜生成失败）
   if (isPipelineFailed && !loading) {
     const failedLabel = failedStatusCode === 'EPISODE_SCRIPT_GENERATING_FAILED'
@@ -1010,6 +1055,25 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
           </button>
         </div>
       </div>
+
+      {/* 生成进度提示条（替代原有的阻塞性 spinner） */}
+      {(statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING' || statusInfo?.statusCode === 'STORYBOARD_GENERATING') && (
+        <div className={styles.generationProgress}>
+          <span className={styles.progressSpinner} />
+          <span>
+            {statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
+              ? '正在生成分集剧本...'
+              : '正在生成分镜脚本...'}
+          </span>
+          <span className={styles.generationCount}>
+            {chapters.reduce((sum, ch) => sum + ch.episodes.filter(ep =>
+              ep.storyboardStatus === 'done' || ep.gridStatus
+            ).length, 0)}
+            {' / '}
+            {chapters.reduce((sum, ch) => sum + ch.episodes.length, 0)} 集已完成
+          </span>
+        </div>
+      )}
 
       {/* 批量审核栏 */}
       {newFlowEpisodes.length > 0 && (
