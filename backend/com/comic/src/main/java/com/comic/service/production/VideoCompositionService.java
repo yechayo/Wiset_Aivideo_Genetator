@@ -120,7 +120,7 @@ public class VideoCompositionService {
     }
 
     /**
-     * 合成视频（不带字幕）
+     * 合成视频（不带字幕）— 使用重新编码确保格式兼容
      */
     private void composeWithoutSubtitle(Path concatFile, Path outputPath) throws Exception {
         List<String> command = new ArrayList<>();
@@ -131,8 +131,16 @@ public class VideoCompositionService {
         command.add("0");
         command.add("-i");
         command.add(concatFile.toString());
-        command.add("-c");
-        command.add("copy");
+        command.add("-c:v");
+        command.add("libx264");
+        command.add("-preset");
+        command.add("medium");
+        command.add("-crf");
+        command.add("23");
+        command.add("-c:a");
+        command.add("aac");
+        command.add("-b:a");
+        command.add("128k");
         command.add("-y");
         command.add(outputPath.toString());
 
