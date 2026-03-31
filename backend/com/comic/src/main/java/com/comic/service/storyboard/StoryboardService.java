@@ -3,9 +3,11 @@ package com.comic.service.storyboard;
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.common.BusinessException;
 import com.comic.common.ProjectStatus;
+import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
 import com.comic.entity.Project;
+import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
@@ -42,6 +44,8 @@ public class StoryboardService {
     private ProjectStatusBroadcaster broadcaster;
     @Resource
     private GridImageService gridImageService;
+    @Resource
+    private CharacterRepository characterRepository;
 
     /**
      * 主入口：生成结构化分集剧本 → 分镜脚本 → 异步生成整集九宫格
@@ -153,8 +157,41 @@ public class StoryboardService {
     // --- 私有方法 ---
 
     private String getCharacterDescriptions(String projectId) {
-        // TODO: 实现 CharacterService.getCharacterDescriptions(projectId)
-        return "";
+        List<Character> characters = characterRepository.findByProjectId(projectId);
+        if (characters == null || characters.isEmpty()) {
+            log.warn("项目没有配置角色: projectId={}", projectId);
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (Character c : characters) {
+            Map<String, Object> info = c.getCharacterInfo();
+            if (info == null) continue;
+
+            String name = (String) info.get("name");
+            String appearance = (String) info.get("appearance");
+            String personality = (String) info.get("personality");
+            String role = (String) info.get("role");
+
+            if (name == null || name.isEmpty()) continue;
+
+            sb.append("【").append(name).append("】");
+            if (role != null && !role.isEmpty()) {
+                sb.append(" 角色：").append(role);
+            }
+            if (appearance != null && !appearance.isEmpty()) {
+                sb.append(" 外貌：").append(appearance);
+            }
+            if (personality != null && !personality.isEmpty()) {
+                sb.append(" 性格：").append(personality);
+            }
+            sb.append("\n");
+        }
+
+        String result = sb.toString();
+        log.info("获取角色描述: projectId={}, characters={}, descLength={}",
+            projectId, characters.size(), result.length());
+        return result;
     }
 
     private Long findOrCreateEpisode(String projectId, Map<String, Object> script,
