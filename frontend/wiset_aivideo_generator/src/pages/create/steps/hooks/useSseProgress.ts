@@ -1,5 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { getEpisodes, getBatchProductionStatuses } from '../../../../services/episodeService';
+import { useAuthStore } from '../../../../stores/authStore';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 interface SseProgressCallbacks {
   onEpisodeScriptDone: (data: { episodeNum: number; title: string; totalEpisodes: number; completedEpisodes: number }) => void;
@@ -45,7 +48,9 @@ export function useSseProgress(
   useEffect(() => {
     if (!projectId) return;
 
-    const url = `/api/projects/${projectId}/status/stream`;
+    // EventSource 不支持自定义 Header，通过 query 参数传递 token
+    const token = useAuthStore.getState().accessToken;
+    const url = `${API_BASE_URL}/api/projects/${projectId}/status/stream${token ? '?token=' + encodeURIComponent(token) : ''}`;
     const es = new EventSource(url);
     esRef.current = es;
 
