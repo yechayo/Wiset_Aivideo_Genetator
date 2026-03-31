@@ -1,5 +1,6 @@
 package com.comic.ai;
 
+import com.comic.util.NumberFormatter;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -64,8 +65,9 @@ public class PanelPromptBuilder {
             sb.append("角色参考：").append(String.join("、", charReferences)).append("\n\n");
         }
 
-        for (Map<String, Object> shot : shots) {
-            sb.append("面板 ").append(shot.get("shotNumber")).append(": ");
+        for (int i = 0; i < shots.size(); i++) {
+            Map<String, Object> shot = shots.get(i);
+            sb.append("面板 ").append(i + 1).append(": ");
             sb.append("16:9 - ").append(shot.getOrDefault("visualDescription", ""));
             sb.append(" ").append(shot.getOrDefault("shotSize", ""));
             sb.append(" ").append(shot.getOrDefault("cameraAngle", ""));
@@ -94,9 +96,9 @@ public class PanelPromptBuilder {
         sb.append("多镜头连续拍摄指令，以下 ").append(n).append(" 个镜头必须在同一视频中连续呈现：\n\n");
 
         if (shots != null) {
-            for (Map<String, Object> shot : shots) {
-                int shotNum = ((Number) shot.get("shotNumber")).intValue();
-                sb.append("【分镜").append(shotNum).append("】\n");
+            for (int i = 0; i < shots.size(); i++) {
+                Map<String, Object> shot = shots.get(i);
+                sb.append("【镜头").append(i + 1).append("】\n");
                 sb.append("duration: ").append(shot.get("duration")).append("s\n");
                 sb.append("Scene: ").append(shot.getOrDefault("shotSize", ""))
                   .append("，").append(shot.getOrDefault("cameraAngle", ""))
@@ -117,7 +119,17 @@ public class PanelPromptBuilder {
 
         sb.append("## 画面衔接\n视频应从参考图自然展开，多镜头间平滑过渡。\n");
         sb.append("保持角色位置和动作的连贯性。\n");
-        sb.append("参考图中编号①②③对应【分镜1】【分镜2】【分镜3】的画面内容。");
+        StringBuilder refBuilder = new StringBuilder("参考图中编号");
+        for (int i = 0; i < n; i++) {
+            refBuilder.append(NumberFormatter.toCircled(i + 1));
+        }
+        refBuilder.append("分别对应");
+        for (int i = 0; i < n; i++) {
+            if (i > 0) refBuilder.append("、");
+            refBuilder.append("【镜头").append(i + 1).append("】");
+        }
+        refBuilder.append("的画面内容。");
+        sb.append(refBuilder.toString());
         return sb.toString();
     }
 }

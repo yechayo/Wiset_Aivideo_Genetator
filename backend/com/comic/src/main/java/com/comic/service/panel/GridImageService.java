@@ -11,6 +11,7 @@ import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.service.storyboard.StoryboardService;
+import com.comic.util.NumberFormatter;
 import com.comic.service.oss.OssService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -330,9 +331,7 @@ public class GridImageService {
             g.fillRect(x+4, y+4, 70, 22);
             g.setColor(Color.WHITE);
             g.setFont(new Font("SansSerif", Font.PLAIN, 12));
-            String[] circledNumbers = {"①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨",
-                    "⑩", "⑪", "⑫", "⑬", "⑭", "⑮", "⑯"};
-            String label = i < circledNumbers.length ? circledNumbers[i] : String.valueOf(i + 1);
+            String label = NumberFormatter.toCircled(i + 1);
             g.drawString(label, x+10, y+19);
         }
 

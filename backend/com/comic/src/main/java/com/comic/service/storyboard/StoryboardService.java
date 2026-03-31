@@ -134,7 +134,7 @@ public class StoryboardService {
     /**
      * 贪心分组算法（纯函数，可独立测试）
      *
-     * 重要：必须深拷贝每个 shot，避免多个 Panel 引用同一个 Map 对象
+     * 重要：浅拷贝每个 shot（顶层字段独立，嵌套 List/Map 仍共享引用）
      */
     public static List<List<Map<String, Object>>> greedyGroup(
             List<Map<String, Object>> shots, int maxDuration) {
@@ -154,7 +154,7 @@ public class StoryboardService {
                 currentDuration = 0;
             }
 
-            // 深拷贝 shot，避免多个 Panel 共享同一个 Map 对象
+            // 浅拷贝 shot（顶层字段独立，嵌套 List/Map 仍共享引用）
             @SuppressWarnings("unchecked")
             Map<String, Object> shotCopy = new HashMap<>(shot);
             shotCopy.put("duration", duration);
