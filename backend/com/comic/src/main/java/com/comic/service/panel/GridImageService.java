@@ -36,6 +36,7 @@ public class GridImageService {
     private static final int GRID_COLS = 3;
     private static final int GRID_ROWS = 3;
     private static final int SHOTS_PER_PAGE = GRID_COLS * GRID_ROWS;
+    private static final int GRID_SEPARATOR_PIXELS = 4;
     private static final Color FUSION_BG_COLOR = new Color(0x1a, 0x1a, 0x1c);
 
     @Resource private SeedreamImageService seedreamImageService;
@@ -200,13 +201,33 @@ public class GridImageService {
         }
     }
 
-    /** 切割九宫格（纯函数） */
+    /**
+     * 切割九宫格（纯函数）
+     * 考虑分隔线像素：将 GRID_SEPARATOR_PIXELS 从格子间扣除
+     */
     public static List<BufferedImage> splitGridImage(BufferedImage img, int cols, int rows) {
+        int sep = GRID_SEPARATOR_PIXELS;
         List<BufferedImage> subImages = new ArrayList<>();
-        int pw = (int) Math.floor((double) img.getWidth() / cols);
-        int ph = (int) Math.floor((double) img.getHeight() / rows);
-        for (int i = 0; i < rows * cols; i++) {
-            subImages.add(img.getSubimage((i % cols) * pw, (i / cols) * ph, pw, ph));
+
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                int cellW = (img.getWidth() - (cols - 1) * sep) / cols;
+                int cellH = (img.getHeight() - (rows - 1) * sep) / rows;
+                int x = c * (cellW + sep);
+                int y = r * (cellH + sep);
+                int w = cellW;
+                int h = cellH;
+
+                // 最后一列/行取剩余像素，避免累积偏差
+                if (c == cols - 1) {
+                    w = img.getWidth() - x;
+                }
+                if (r == rows - 1) {
+                    h = img.getHeight() - y;
+                }
+
+                subImages.add(img.getSubimage(x, y, w, h));
+            }
         }
         return subImages;
     }
