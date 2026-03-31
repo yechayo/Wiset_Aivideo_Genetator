@@ -87,6 +87,48 @@ const EpisodeCard = ({
   const isGridRejected = episode.gridStatus === 'rejected';
   const isGridFailed = episode.gridStatus === 'failed';
 
+  const isScriptGenerating = episode.scriptStatus === 'generating';
+  const isStoryboardGenerating = episode.storyboardStatus === 'generating';
+
+  /** 渲染骨架屏分镜条目 */
+  const renderSkeletonSegments = (count: number = 3) => (
+    Array.from({ length: count }).map((_, i) => (
+      <div key={`skeleton-${i}`} className={styles.skeletonSegment}>
+        <div className={styles.skeletonBarTitle} />
+        <div className={styles.skeletonBarDesc} />
+      </div>
+    ))
+  );
+
+  /** 渲染生成进度提示 */
+  const renderGeneratingHint = () => {
+    if (isScriptGenerating) {
+      return (
+        <div className={styles.episodeGenerating}>
+          <span className={styles.miniSpinner} />
+          <span>分集剧本生成中...</span>
+        </div>
+      );
+    }
+    if (isStoryboardGenerating) {
+      return (
+        <div className={styles.episodeGenerating}>
+          <span className={styles.miniSpinner} />
+          <span>分镜脚本生成中...</span>
+        </div>
+      );
+    }
+    if (episode.gridStatus === 'generating') {
+      return (
+        <div className={styles.episodeGenerating}>
+          <span className={styles.miniSpinner} />
+          <span>九宫格生成中...</span>
+        </div>
+      );
+    }
+    return null;
+  };
+
   // Render segment cards using SegmentCard component
   const segmentCards = episode.segments.map((segment) => {
     const segmentKey = `${episode.episodeId}-${segment.segmentIndex}`;
@@ -247,6 +289,14 @@ const EpisodeCard = ({
       {/* 展开内容 */}
       {isExpanded && (
         <div className={styles.cardContent}>
+          {renderGeneratingHint()}
+
+          {isScriptGenerating ? (
+            renderSkeletonSegments(3)
+          ) : isStoryboardGenerating ? (
+            renderSkeletonSegments(5)
+          ) : (
+            <>
           {/* 九宫格审核阶段 */}
           {!isGridApproved && (
             <div className={styles.episodeGridReview}>
@@ -306,6 +356,8 @@ const EpisodeCard = ({
               </div>
             )
           ) : null}
+            </>
+          )}
         </div>
       )}
     </div>
