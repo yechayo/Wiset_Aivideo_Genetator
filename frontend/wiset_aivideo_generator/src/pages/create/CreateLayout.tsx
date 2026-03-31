@@ -152,7 +152,7 @@ const CreateLayout = () => {
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 5:
         return currentProject ? (
-          <Step5page project={currentProject} />
+          <Step5page project={currentProject} onNextStep={() => navigate(getStepUrl(6), { replace: true })} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 6:
         return currentProject ? (

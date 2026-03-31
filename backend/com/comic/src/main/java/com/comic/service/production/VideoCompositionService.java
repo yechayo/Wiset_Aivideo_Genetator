@@ -232,6 +232,92 @@ public class VideoCompositionService {
     }
 
     /**
+     * 拼接项目所有面板视频（去掉前5帧）
+     *
+     * @param videoUrls 视频URL列表（按面板顺序）
+     * @return 最终拼接视频URL
+     */
+    public String mergePanelVideos(List<String> videoUrls) {
+        if (videoUrls == null || videoUrls.isEmpty()) {
+            throw new IllegalArgumentException("视频URL列表为空");
+        }
+
+        try {
+            // 1. 下载视频并去掉前5帧
+            List<Path> processedPaths = new ArrayList<>();
+            for (int i = 0; i < videoUrls.size(); i++) {
+                String url = videoUrls.get(i);
+                if (url == null || url.isEmpty()) {
+                    log.warn("跳过空视频URL: index={}", i);
+                    continue;
+                }
+
+                // 下载原视频
+                Path originalPath = Files.createTempFile(Paths.get(tempDir), "original-" + i + "-", ".mp4");
+                downloadToFile(url, originalPath);
+
+                // 去掉前5帧
+                Path processedPath = Files.createTempFile(Paths.get(tempDir), "processed-" + i + "-", ".mp4");
+                removeFirstFrames(originalPath, processedPath, 5);
+
+                // 删除原视频
+                Files.deleteIfExists(originalPath);
+                processedPaths.add(processedPath);
+
+                log.debug("视频处理完成: index={}, input={}, output={}", i, url, processedPath);
+            }
+
+            if (processedPaths.isEmpty()) {
+                throw new IllegalArgumentException("没有有效的视频可拼接");
+            }
+
+            // 2. 创建concat文件
+            Path concatFile = createConcatFile(processedPaths);
+
+            // 3. 准备输出路径
+            Path outputPath = Files.createTempFile(Paths.get(tempDir), "merged-video-", ".mp4");
+
+            // 4. 执行FFmpeg拼接
+            composeWithoutSubtitle(concatFile, outputPath);
+
+            // 5. 上传到OSS
+            String finalUrl = ossService.uploadFromFile(outputPath.toString(), "videos");
+
+            // 6. 清理临时文件
+            cleanupTempFiles(processedPaths, concatFile, outputPath);
+
+            log.info("视频拼接完成: segments={}, url={}", processedPaths.size(), finalUrl);
+            return finalUrl;
+
+        } catch (Exception e) {
+            log.error("视频拼接失败", e);
+            throw new RuntimeException("视频拼接失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 去掉视频的前N帧
+     *
+     * @param inputPath  输入视频路径
+     * @param outputPath 输出视频路径
+     * @param framesToSkip 要跳过的帧数
+     */
+    private void removeFirstFrames(Path inputPath, Path outputPath, int framesToSkip) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-i");
+        command.add(inputPath.toString());
+        command.add("-vf");
+        command.add("select='gt(n," + (framesToSkip - 1) + ")'");
+        command.add("-vsync");
+        command.add("0");
+        command.add("-y");
+        command.add(outputPath.toString());
+
+        executeFFmpeg(command);
+    }
+
+    /**
      * 从视频中截取指定时间点的帧
      *
      * @param videoUrl   视频URL

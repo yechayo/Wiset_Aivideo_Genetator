@@ -8,10 +8,15 @@ import com.comic.dto.response.PaginatedResponse;
 import com.comic.dto.response.ProjectListItemResponse;
 import com.comic.dto.response.ProjectProductionSummaryResponse;
 import com.comic.dto.response.ProjectStatusResponse;
+import com.comic.entity.Episode;
+import com.comic.entity.Panel;
 import com.comic.entity.Project;
 import com.comic.entity.User;
+import com.comic.repository.EpisodeRepository;
+import com.comic.repository.PanelRepository;
 import com.comic.repository.UserRepository;
 import com.comic.service.pipeline.PipelineService;
+import com.comic.service.production.VideoCompositionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -23,6 +28,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/projects")
@@ -32,6 +38,9 @@ public class ProjectController {
 
     private final PipelineService pipelineService;
     private final UserRepository userRepository;
+    private final EpisodeRepository episodeRepository;
+    private final PanelRepository panelRepository;
+    private final VideoCompositionService videoCompositionService;
 
     @PostMapping
     @Operation(summary = "创建项目")
@@ -125,5 +134,35 @@ public class ProjectController {
                                         @RequestBody AdvanceRequest request) {
         pipelineService.advancePipeline(projectId, request.getDirection(), request.getEvent());
         return Result.ok();
+    }
+
+    @PostMapping("/{projectId}/videos/merge")
+    @Operation(summary = "拼接所有面板视频（去掉前5帧）")
+    public Result<Map<String, String>> mergePanelVideos(@PathVariable String projectId) {
+        // 获取项目所有剧集
+        List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+
+        // 获取所有面板的视频URL
+        List<String> videoUrls = episodes.stream()
+            .flatMap(episode -> panelRepository.findByEpisodeId(episode.getId()).stream())
+            .filter(panel -> panel.getPanelInfo() != null)
+            .filter(panel -> panel.getPanelInfo().containsKey("videoUrl"))
+            .filter(panel -> {
+                String status = (String) panel.getPanelInfo().get("videoStatus");
+                return "completed".equals(status);
+            })
+            .map(panel -> (String) panel.getPanelInfo().get("videoUrl"))
+            .collect(Collectors.toList());
+
+        if (videoUrls.isEmpty()) {
+            return Result.fail("没有已完成的视频可拼接");
+        }
+
+        // 执行拼接
+        String finalVideoUrl = videoCompositionService.mergePanelVideos(videoUrls);
+
+        Map<String, String> result = new HashMap<>();
+        result.put("finalVideoUrl", finalVideoUrl);
+        return Result.ok(result);
     }
 }

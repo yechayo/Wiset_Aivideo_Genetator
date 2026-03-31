@@ -28,6 +28,11 @@ import { BatchReviewBar } from './components/BatchReviewBar';
 
 interface Step5pageProps {
   project: any;
+  onNextStep?: () => void;
+}
+
+interface Step5pageProps {
+  project: any;
 }
 
 /**
@@ -54,7 +59,7 @@ function mapGridToPipelineStep(status: {
  * 展示三级可展开列表（章节 → 集数 → 片段），
  * 顶部显示完成进度统计栏。
  */
-const Step5page = ({ project }: Step5pageProps) => {
+const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   const projectId = project?.projectId;
   const { statusInfo, syncStatus } = useCreateStore();
 
@@ -355,7 +360,7 @@ const Step5page = ({ project }: Step5pageProps) => {
 
         // 新流程：从 shots 中提取角色
         const allCharacters = shots.flatMap((s: any) => s.characters || []);
-        const uniqueCharNames = [...new Set(allCharacters)];
+        const uniqueCharNames = [...new Set(allCharacters)] as string[];
 
         // 新流程：分组显示 "N 个分镜 · Xs"，旧流程用原始字段
         const synopsis = isGroupedPanel
@@ -378,7 +383,7 @@ const Step5page = ({ project }: Step5pageProps) => {
           title: isGroupedPanel ? `分组 ${idx + 1}` : `分镜 ${idx + 1}`,
           synopsis,
           sceneThumbnail: thumbnail,
-          characterAvatars: uniqueCharNames.map(name => ({
+          characterAvatars: uniqueCharNames.map((name: string) => ({
             charId: charNameToIdMap[name] || '',
             name,
             avatarUrl: (charNameToIdMap[name] && charAvatarMap[charNameToIdMap[name]]) || '',
@@ -965,6 +970,15 @@ const Step5page = ({ project }: Step5pageProps) => {
           );
         })}
       </div>
+
+      {/* 底部操作栏：所有视频完成时显示下一步按钮 */}
+      {totalSegments > 0 && completedSegments === totalSegments && onNextStep && (
+        <div className={styles.footerActions}>
+          <button className={styles.nextStepButton} onClick={onNextStep}>
+            下一步：视频拼接 →
+          </button>
+        </div>
+      )}
     </div>
   );
 };

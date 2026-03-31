@@ -193,3 +193,12 @@ export async function retryStoryboard(episodeId: string): Promise<ApiResponse<st
 export async function startProduction(projectId: string): Promise<ApiResponse<string>> {
   return post<ApiResponse<string>>('/api/story/start-production', { projectId });
 }
+
+/**
+ * 拼接所有面板视频（去掉前5帧）
+ * @param projectId 项目ID
+ * @returns 拼接响应，包含最终视频URL
+ */
+export async function mergeVideos(projectId: string): Promise<ApiResponse<{ finalVideoUrl: string }>> {
+  return post<ApiResponse<{ finalVideoUrl: string }>>(`/api/projects/${projectId}/videos/merge`);
+}
