@@ -13,6 +13,7 @@ import com.comic.repository.PanelRepository;
 import com.comic.service.storyboard.StoryboardService;
 import com.comic.util.NumberFormatter;
 import com.comic.service.oss.OssService;
+import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -46,6 +47,7 @@ public class GridImageService {
     @Resource private OssService ossService;
     @Resource private EpisodeRepository episodeRepository;
     @Resource private CharacterRepository characterRepository;
+    @Resource private ProjectStatusBroadcaster broadcaster;
 
     /**
      * 为指定 Panel 生成九宫格图 → 切割 → 融合参考图
@@ -134,9 +136,21 @@ public class GridImageService {
      */
     @Async
     public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle) {
+        // 获取 projectId（在 try 外声明，catch 中也需要用）
+        String gridProjectId = null;
         try {
             Episode episode = episodeRepository.selectById(episodeId);
             if (episode == null) throw new BusinessException("Episode 不存在: " + episodeId);
+
+            gridProjectId = episode.getProjectId();
+
+            // 发布九宫格生成开始事件
+            if (gridProjectId != null) {
+                Map<String, Object> startData = new HashMap<>();
+                startData.put("episodeId", episodeId);
+                startData.put("gridStatus", "generating");
+                broadcaster.broadcastEpisodeProgress(gridProjectId, "episode:grid_status", startData);
+            }
 
             Map<String, Object> episodeInfo = episode.getEpisodeInfo();
             String initialGridStatus = (String) episodeInfo.getOrDefault("gridStatus", "generating");
@@ -194,12 +208,29 @@ public class GridImageService {
             episode.setEpisodeInfo(episodeInfo);
             episodeRepository.updateById(episode);
 
+            // 发布九宫格生成完成事件
+            if (gridProjectId != null) {
+                Map<String, Object> doneData = new HashMap<>();
+                doneData.put("episodeId", episodeId);
+                doneData.put("gridStatus", "generated");
+                broadcaster.broadcastEpisodeProgress(gridProjectId, "episode:grid_status", doneData);
+            }
+
             log.info("Episode {} 整集九宫格完成, {} 页, {} 分镜", episodeId, pageCount, shots.size());
 
         } catch (Exception e) {
             log.error("Episode {} 整集九宫格失败", episodeId, e);
             try {
                 updateEpisodeGridStatus(episodeId, "failed");
+
+                // 发布九宫格生成失败事件
+                if (gridProjectId != null) {
+                    Map<String, Object> failData = new HashMap<>();
+                    failData.put("episodeId", episodeId);
+                    failData.put("gridStatus", "failed");
+                    broadcaster.broadcastEpisodeProgress(gridProjectId, "episode:grid_status", failData);
+                }
+
                 Episode episode = episodeRepository.selectById(episodeId);
                 if (episode != null) {
                     Map<String, Object> info = episode.getEpisodeInfo();
