@@ -19,6 +19,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,6 +34,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Tag(name = "剧集管理")
 @SecurityRequirement(name = "bearerAuth")
+@Slf4j
 public class EpisodeController {
 
     private final EpisodeService episodeService;
