@@ -86,6 +86,10 @@ public class StoryboardService {
                     content, characters, targetDuration, visualStyle);
                 log.info("[Pipeline] Step2完成: 生成 {} 个分镜, projectId={}, episode={}", shots.size(), projectId, title);
 
+                // 注入角色ID
+                Map<String, String> nameToId = buildCharacterIdMap(projectId);
+                injectCharacterIds(shots, nameToId);
+
                 Long episodeId = findOrCreateEpisode(projectId, script, shots, visualStyle);
                 log.info("[Pipeline] Episode创建/更新: episodeId={}, projectId={}", episodeId, projectId);
                 deleteExistingPanels(episodeId);
@@ -230,6 +234,52 @@ public class StoryboardService {
         for (Panel p : existing) {
             p.setDeleted(true);
             panelRepository.updateById(p);
+        }
+    }
+
+    /**
+     * 构建角色名到 charId 的映射
+     */
+    private Map<String, String> buildCharacterIdMap(String projectId) {
+        List<Character> characters = characterRepository.findByProjectId(projectId);
+        Map<String, String> nameToId = new HashMap<>();
+        for (Character c : characters) {
+            Map<String, Object> info = c.getCharacterInfo();
+            if (info != null) {
+                String name = (String) info.get("name");
+                String charId = (String) info.get("charId");
+                if (name != null && charId != null) {
+                    nameToId.put(name.trim(), charId);
+                }
+            }
+        }
+        log.info("构建角色ID映射: projectId={}, mapping={}", projectId, nameToId);
+        return nameToId;
+    }
+
+    /**
+     * 为分镜中的角色注入 charId
+     */
+    private void injectCharacterIds(List<Map<String, Object>> shots, Map<String, String> nameToId) {
+        for (Map<String, Object> shot : shots) {
+            @SuppressWarnings("unchecked")
+            List<String> charNames = (List<String>) shot.get("characters");
+            if (charNames == null || charNames.isEmpty()) continue;
+
+            List<Map<String, String>> charRefs = new ArrayList<>();
+            for (String charName : charNames) {
+                String charId = nameToId.get(charName.trim());
+                Map<String, String> ref = new HashMap<>();
+                ref.put("name", charName);
+                if (charId != null) {
+                    ref.put("charId", charId);
+                    log.debug("角色注入成功: name={}, charId={}", charName, charId);
+                } else {
+                    log.warn("角色未找到匹配: name={}", charName);
+                }
+                charRefs.add(ref);
+            }
+            shot.put("characterRefs", charRefs);
         }
     }
 

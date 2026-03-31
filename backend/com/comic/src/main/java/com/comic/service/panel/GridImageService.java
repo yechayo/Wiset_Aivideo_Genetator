@@ -343,55 +343,118 @@ public class GridImageService {
         List<String> urls = new ArrayList<>();
         try {
             Episode episode = episodeRepository.selectById(episodeId);
-            if (episode == null) return urls;
+            if (episode == null) {
+                log.warn("角色参考图: episodeId={} 不存在", episodeId);
+                return urls;
+            }
 
-            // 从 episodeInfo.shots 收集角色名
             Map<String, Object> episodeInfo = episode.getEpisodeInfo();
-            if (episodeInfo == null) return urls;
+            if (episodeInfo == null) {
+                log.warn("角色参考图: episodeId={} episodeInfo 为空", episodeId);
+                return urls;
+            }
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> shots = (List<Map<String, Object>>) episodeInfo.get("shots");
-            if (shots == null) return urls;
+            if (shots == null) {
+                log.warn("角色参考图: episodeId={} shots 为空", episodeId);
+                return urls;
+            }
 
+            // 收集所有 charId（优先）和角色名（兜底）
+            java.util.Set<String> charIds = new java.util.LinkedHashSet<>();
             java.util.Set<String> charNames = new java.util.LinkedHashSet<>();
+
             for (Map<String, Object> shot : shots) {
+                // 优先从 characterRefs 获取 charId
                 @SuppressWarnings("unchecked")
-                List<String> characters = (List<String>) shot.get("characters");
-                if (characters != null) {
-                    for (String c : characters) {
-                        if (c != null && !c.trim().isEmpty()) charNames.add(c.trim());
+                List<Map<String, String>> charRefs = (List<Map<String, String>>) shot.get("characterRefs");
+                if (charRefs != null) {
+                    for (Map<String, String> ref : charRefs) {
+                        String charId = ref.get("charId");
+                        if (charId != null && !charId.isEmpty()) {
+                            charIds.add(charId);
+                        }
+                        String name = ref.get("name");
+                        if (name != null && !name.trim().isEmpty()) {
+                            charNames.add(name.trim());
+                        }
+                    }
+                } else {
+                    // 兜底：从旧字段 characters 获取
+                    @SuppressWarnings("unchecked")
+                    List<String> characters = (List<String>) shot.get("characters");
+                    if (characters != null) {
+                        for (String c : characters) {
+                            if (c != null && !c.trim().isEmpty()) {
+                                charNames.add(c.trim());
+                            }
+                        }
                     }
                 }
             }
 
-            // 查询项目所有角色，按名字匹配
-            List<Character> allChars = characterRepository.findByProjectId(episode.getProjectId());
-            Map<String, Character> nameToChar = new HashMap<>();
-            for (Character ch : allChars) {
-                Map<String, Object> info = ch.getCharacterInfo();
-                if (info != null) {
-                    String name = (String) info.get(CharacterInfoKeys.NAME);
-                    if (name != null) nameToChar.put(name.trim(), ch);
+            log.info("角色参考图: episodeId={} 收集到 charIds={}, charNames={}", episodeId, charIds, charNames);
+
+            // 优先用 charId 匹配
+            for (String charId : charIds) {
+                Character ch = characterRepository.findByCharId(charId);
+                if (ch == null) {
+                    log.warn("角色参考图: episodeId={} charId '{}' 未找到", episodeId, charId);
+                    continue;
+                }
+                String url = getCharacterImageUrl(ch);
+                if (url != null && !url.isEmpty()) {
+                    urls.add(url);
+                    log.info("角色参考图: episodeId={} charId={} 匹配成功, url={}", episodeId, charId, url);
                 }
             }
 
-            for (String charName : charNames) {
-                Character ch = nameToChar.get(charName);
-                if (ch == null) continue;
-                Map<String, Object> info = ch.getCharacterInfo();
-                if (info == null) continue;
-                String url = (String) info.get(CharacterInfoKeys.THREE_VIEW_GRID_URL);
-                if (url == null || url.isEmpty()) {
-                    url = (String) info.get(CharacterInfoKeys.EXPRESSION_GRID_URL);
+            // 兜底：用角色名匹配未通过 charId 找到的角色
+            if (charNames.size() > charIds.size()) {
+                List<Character> allChars = characterRepository.findByProjectId(episode.getProjectId());
+                Map<String, Character> nameToChar = new HashMap<>();
+                for (Character ch : allChars) {
+                    Map<String, Object> info = ch.getCharacterInfo();
+                    if (info != null) {
+                        String name = (String) info.get(CharacterInfoKeys.NAME);
+                        if (name != null) nameToChar.put(name.trim(), ch);
+                    }
                 }
-                if (url != null && !url.isEmpty()) {
-                    urls.add(url);
+
+                for (String charName : charNames) {
+                    if (charIds.contains(charName)) continue; // 已处理
+                    Character ch = nameToChar.get(charName);
+                    if (ch == null) {
+                        log.warn("角色参考图: episodeId={} 角色名 '{}' 未在数据库中找到匹配", episodeId, charName);
+                        continue;
+                    }
+                    String url = getCharacterImageUrl(ch);
+                    if (url != null && !url.isEmpty()) {
+                        urls.add(url);
+                        log.info("角色参考图: episodeId={} 角色名 '{}' 匹配成功", episodeId, charName);
+                    }
                 }
             }
-            log.info("角色参考图: episodeId={}, charNames={}, urls={}", episodeId, charNames, urls.size());
+
+            log.info("角色参考图: episodeId={} 最终URL数量={}", episodeId, urls.size());
         } catch (Exception e) {
-            log.warn("获取角色参考图失败: episodeId={}", episodeId, e);
+            log.error("获取角色参考图失败: episodeId={}", episodeId, e);
         }
         return urls;
+    }
+
+    /**
+     * 获取角色的参考图 URL（三视图或表情图）
+     */
+    private String getCharacterImageUrl(Character ch) {
+        Map<String, Object> info = ch.getCharacterInfo();
+        if (info == null) return null;
+
+        String url = (String) info.get(CharacterInfoKeys.THREE_VIEW_GRID_URL);
+        if (url == null || url.isEmpty()) {
+            url = (String) info.get(CharacterInfoKeys.EXPRESSION_GRID_URL);
+        }
+        return url;
     }
 
     private BufferedImage downloadImage(String url) {
