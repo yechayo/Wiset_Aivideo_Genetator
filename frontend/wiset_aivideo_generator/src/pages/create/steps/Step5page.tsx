@@ -27,13 +27,15 @@ import { useCreateStore } from '../../../stores/createStore';
 import EpisodeCard from './components/EpisodeCard';
 import { BatchReviewBar } from './components/BatchReviewBar';
 
-interface Step5pageProps {
-  project: any;
-  onNextStep?: () => void;
-}
+/** 轮询配置 */
+const GRID_POLL_INTERVAL = 5000;
+const GRID_POLL_MAX_RETRIES = 360;   // 30 分钟
+const VIDEO_POLL_INTERVAL = 3000;
+const VIDEO_POLL_MAX_RETRIES = 720;  // 1 小时
 
 interface Step5pageProps {
   project: any;
+  onNextStep?: () => void;
 }
 
 /**
@@ -227,18 +229,30 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     const gridEpId = generatingGridEp.episodeId;
     console.info('检测到正在生成中的 episode 九宫格, 恢复轮询: epId=', gridEpId);
     refreshEpisodeGridStatus(gridEpId);
+    const abort = new AbortController();
+    let retries = 0;
     const gridPoll = async () => {
-      while (true) {
-        await new Promise(r => setTimeout(r, 5000));
-        await refreshEpisodeGridStatus(gridEpId);
-        const currentEps = chapters.flatMap(ch => ch.episodes);
-        const currentGridEp = currentEps.find(e => e.episodeId === gridEpId);
-        if (currentGridEp && (currentGridEp.gridStatus === 'generated' || currentGridEp.gridStatus === 'approved' || currentGridEp.gridStatus === 'failed')) {
-          return;
+      while (retries < GRID_POLL_MAX_RETRIES && !abort.signal.aborted) {
+        await new Promise(r => setTimeout(r, GRID_POLL_INTERVAL));
+        if (abort.signal.aborted) return;
+        retries++;
+        try {
+          await refreshEpisodeGridStatus(gridEpId);
+          const currentEps = chapters.flatMap(ch => ch.episodes);
+          const currentGridEp = currentEps.find(e => e.episodeId === gridEpId);
+          if (currentGridEp && (currentGridEp.gridStatus === 'generated' || currentGridEp.gridStatus === 'approved' || currentGridEp.gridStatus === 'failed')) {
+            return;
+          }
+        } catch {
+          // 继续轮询
         }
+      }
+      if (retries >= GRID_POLL_MAX_RETRIES) {
+        console.warn('九宫格轮询超时: epId=', gridEpId);
       }
     };
     gridPoll();
+    return () => { abort.abort(); };
   }, [chapters.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
@@ -608,9 +622,13 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     try {
       await regenerateGrid(projectId, episodeId, Number(panelId));
       // 基于状态的轮询，检查是否生成完成或失败
+      const abort = new AbortController();
+      let retries = 0;
       const poll = async () => {
-        while (true) {
-          await new Promise(r => setTimeout(r, 3000));
+        while (retries < GRID_POLL_MAX_RETRIES && !abort.signal.aborted) {
+          await new Promise(r => setTimeout(r, VIDEO_POLL_INTERVAL));
+          if (abort.signal.aborted) return;
+          retries++;
           try {
             const res = await getBatchProductionStatuses(projectId, episodeId);
             if ((res.code !== 0 && res.code !== 200) || !res.data) continue;
@@ -632,6 +650,10 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
           } catch {
             // 继续轮询
           }
+        }
+        if (retries >= GRID_POLL_MAX_RETRIES) {
+          console.warn('九宫格重新生成轮询超时: panelId=', panelId);
+          setGeneratingGridPanelId(null);
         }
       };
       poll();
@@ -675,9 +697,13 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     if (!projectId) return;
     try {
       await regenerateEpisodeGrid(projectId, episodeId);
+      const abort = new AbortController();
+      let retries = 0;
       const poll = async () => {
-        while (true) {
-          await new Promise(r => setTimeout(r, 5000));
+        while (retries < GRID_POLL_MAX_RETRIES && !abort.signal.aborted) {
+          await new Promise(r => setTimeout(r, GRID_POLL_INTERVAL));
+          if (abort.signal.aborted) return;
+          retries++;
           try {
             const res = await getEpisodeGridStatus(projectId, episodeId);
             const gridStatus = res.data?.gridStatus;
@@ -693,6 +719,10 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
           } catch {
             // 继续轮询
           }
+        }
+        if (retries >= GRID_POLL_MAX_RETRIES) {
+          console.warn('整集九宫格重新生成轮询超时: episodeId=', episodeId);
+          await loadEpisodes();
         }
       };
       poll();
@@ -740,9 +770,13 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     try {
       await generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt);
       // 基于状态的轮询，检查是否生成完成或失败
+      const abort = new AbortController();
+      let retries = 0;
       const poll = async () => {
-        while (true) {
-          await new Promise(r => setTimeout(r, 3000));
+        while (retries < VIDEO_POLL_MAX_RETRIES && !abort.signal.aborted) {
+          await new Promise(r => setTimeout(r, VIDEO_POLL_INTERVAL));
+          if (abort.signal.aborted) return;
+          retries++;
           try {
             // 获取该panel的生产状态
             const res = await getBatchProductionStatuses(projectId, episodeId);
@@ -753,23 +787,27 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
               const videoStatus = panelStatus.videoStatus;
               // 检查状态
               if (videoStatus === 'completed') {
-            // 生成成功
-            await refreshProductionStatuses(episodeId);
-            setGeneratingVideoPanelId(null);
-            return;
-          }
-          if (videoStatus === 'failed') {
-            // 生成失败
-            alert('视频生成失败');
-            setGeneratingVideoPanelId(null);
-            return;
+                // 生成成功
+                await refreshProductionStatuses(episodeId);
+                setGeneratingVideoPanelId(null);
+                return;
+              }
+              if (videoStatus === 'failed') {
+                // 生成失败
+                alert('视频生成失败');
+                setGeneratingVideoPanelId(null);
+                return;
+              }
+            }
+          } catch {
+            // 继续轮询
           }
         }
-          } catch {
-        // 继续轮询
-      }
-    }
-  };
+        if (retries >= VIDEO_POLL_MAX_RETRIES) {
+          console.warn('视频生成轮询超时: panelId=', panelId);
+          setGeneratingVideoPanelId(null);
+        }
+      };
       poll();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '生成视频失败');
