@@ -58,7 +58,10 @@ public class StoryboardService {
             Map<String, Object> projectInfo = project.getProjectInfo();
             String visualStyle = (String) projectInfo.getOrDefault("visualStyle", "ANIME");
             int targetDuration = getIntFromMap(projectInfo, "episodeDuration", 60);
-            String outline = (String) projectInfo.getOrDefault("scriptOutline", "");
+            // 正确读取 projectInfo.script.outline
+            @SuppressWarnings("unchecked")
+            Map<String, Object> scriptMap = (Map<String, Object>) projectInfo.get("script");
+            String outline = scriptMap != null ? (String) scriptMap.getOrDefault("outline", "") : "";
             String charactersDesc = getCharacterDescriptions(projectId);
 
             // 1. 生成结构化分集剧本
