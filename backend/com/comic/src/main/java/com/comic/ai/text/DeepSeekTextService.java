@@ -216,7 +216,7 @@ public class DeepSeekTextService implements TextGenerationService {
      * 生成结构化分集剧本（JSON 格式）
      */
     public List<Map<String, Object>> generateEpisodeScript(
-            String outlineNode, String characters, int durationSeconds, String visualStyle) {
+            String outlineNode, String characters, int durationSeconds, String visualStyle, int totalEpisodes) {
         String systemPrompt = "你是一位专业的影视编剧。请根据提供的大纲和角色信息，生成结构化分集剧本。\n"
             + "输出格式为纯 JSON 数组，不要包含 markdown 代码块标记。\n"
             + "每个元素包含以下字段：\n"
@@ -225,13 +225,15 @@ public class DeepSeekTextService implements TextGenerationService {
             + "- characters: 本集出场角色，逗号分隔\n"
             + "- keyItems: 本集关键道具/场景，逗号分隔\n"
             + "- continuityNote: 连贯性备注\n"
-            + "注意：内容要紧凑，适合" + durationSeconds + "秒的短视频。";
+            + "注意：内容要紧凑，适合" + durationSeconds + "秒的短视频。\n"
+            + "**重要约束**：必须生成恰好 " + totalEpisodes + " 集剧本，不要多也不要少！";
 
         String userPrompt = "大纲节点：" + outlineNode + "\n"
             + "角色：" + characters + "\n"
             + "视觉风格：" + visualStyle + "\n"
             + "目标时长：" + durationSeconds + "秒\n"
-            + "请生成结构化分集剧本 JSON。";
+            + "需要生成的集数：" + totalEpisodes + " 集\n"
+            + "请生成恰好 " + totalEpisodes + " 集结构化分集剧本 JSON。";
 
         String response = generate(systemPrompt, userPrompt);
         return parseJsonArray(response);

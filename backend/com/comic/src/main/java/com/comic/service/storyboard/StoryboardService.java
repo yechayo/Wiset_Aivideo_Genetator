@@ -69,9 +69,10 @@ public class StoryboardService {
             String charactersDesc = getCharacterDescriptions(projectId);
 
             // 1. 生成结构化分集剧本
-            log.info("[Pipeline] Step1: 调用DeepSeek生成分集剧本: projectId={}", projectId);
+            int totalEpisodes = getIntFromMap(projectInfo, "totalEpisodes", 1);
+            log.info("[Pipeline] Step1: 调用DeepSeek生成分集剧本: projectId={}, totalEpisodes={}", projectId, totalEpisodes);
             List<Map<String, Object>> scripts = deepSeekTextService.generateEpisodeScript(
-                outline, charactersDesc, targetDuration, visualStyle);
+                outline, charactersDesc, targetDuration, visualStyle, totalEpisodes);
             log.info("[Pipeline] Step1完成: 生成 {} 集剧本, projectId={}", scripts.size(), projectId);
 
             // 2. 逐集生成分镜并创建Panel
