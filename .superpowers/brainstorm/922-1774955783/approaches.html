@@ -1,0 +1,86 @@
+<h2>实时进度可视化：两种实现方案</h2>
+<p class="subtitle">对比后端改动量和前端体验差异</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">方案 A：SSE 实时推送（推荐）</div>
+    <div class="mockup-body" style="padding: 16px; font-size: 13px;">
+      <div style="margin-bottom: 12px;">
+        <strong>后端改动：</strong>
+        <ul style="margin: 4px 0; padding-left: 18px; color: #aaa;">
+          <li>StoryboardService 中每完成一集，发布 Redis 事件</li>
+          <li>扩展 SSE 端点推送集级事件</li>
+          <li>新增 3 种事件类型</li>
+        </ul>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <strong>前端改动：</strong>
+        <ul style="margin: 4px 0; padding-left: 18px; color: #aaa;">
+          <li>移除阻塞性 spinner</li>
+          <li>监听 SSE 事件，实时更新 UI</li>
+          <li>Episode/SegmentCard 增加加载态</li>
+        </ul>
+      </div>
+      <div style="background: #1a2e1a; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; line-height: 1.6;">
+        <div style="color: #4ade80;">SSE 事件流：</div>
+        <div style="color: #888;">┌ episode:script_done (第1集剧本完成)</div>
+        <div style="color: #888;">├ episode:storyboard_done (第1集分镜完成)</div>
+        <div style="color: #888;">├ episode:grid_status (第1集九宫格 → generating)</div>
+        <div style="color: #888;">├ episode:script_done (第2集剧本完成)</div>
+        <div style="color: #888;">├ episode:grid_status (第1集九宫格 → generated)</div>
+        <div style="color: #888;">└ ...</div>
+      </div>
+      <div style="margin-top: 12px;">
+        <strong style="color: #4ade80;">✅ 优点：</strong>
+        <span style="color: #ccc;">实时性最好，无延迟，利用已有 SSE 基础设施</span><br>
+        <strong style="color: #f87171;">⚠️ 缺点：</strong>
+        <span style="color: #ccc;">后端需改 2 个文件（StoryboardService + SSE Controller）</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">方案 B：生成期间轮询 Episodes API</div>
+    <div class="mockup-body" style="padding: 16px; font-size: 13px;">
+      <div style="margin-bottom: 12px;">
+        <strong>后端改动：</strong>
+        <ul style="margin: 4px 0; padding-left: 18px; color: #aaa;">
+          <li>几乎不需要改后端</li>
+          <li>现有 getEpisodes API 已返回每集状态</li>
+        </ul>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <strong>前端改动：</strong>
+        <ul style="margin: 4px 0; padding-left: 18px; color: #aaa;">
+          <li>移除阻塞性 spinner</li>
+          <li>在生成期间启动轮询（3-5秒间隔）</li>
+          <li>Episode/SegmentCard 增加加载态</li>
+          <li>需要处理"集尚未创建"的情况</li>
+        </ul>
+      </div>
+      <div style="background: #2e2e1a; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; line-height: 1.6;">
+        <div style="color: #fbbf24;">轮询流程：</div>
+        <div style="color: #888;">T+0s:  GET /episodes → [] (空)</div>
+        <div style="color: #888;">T+3s:  GET /episodes → [{ep1: scriptDone}]</div>
+        <div style="color: #888;">T+6s:  GET /episodes → [{ep1: storyboardDone}]</div>
+        <div style="color: #888;">T+9s:  GET /episodes → [{ep1: gridGenerating}]</div>
+        <div style="color: #888;">T+12s: GET /episodes → [{ep1: gridGenerating}, {ep2: scriptDone}]</div>
+        <div style="color: #888;">└ ...</div>
+      </div>
+      <div style="margin-top: 12px;">
+        <strong style="color: #4ade80;">✅ 优点：</strong>
+        <span style="color: #ccc;">后端改动极小，只改前端</span><br>
+        <strong style="color: #f87171;">⚠️ 缺点：</strong>
+        <span style="color: #ccc;">3-5秒延迟，轮询开销，需要处理空状态</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 20px; padding: 16px; background: rgba(99,102,241,0.1); border-radius: 8px; border-left: 3px solid #6366f1;">
+  <strong style="color: #818cf8;">💡 推荐：方案 A（SSE 实时推送）</strong>
+  <p style="color: #ccc; margin: 8px 0 0;">
+    项目已有 SSE 基础设施（Redis Pub/Sub + ProjectSseController），只需扩展事件类型。
+    后端改动量不大（约 30 行代码），但用户体验提升显著——零延迟的实时进度反馈。
+  </p>
+</div>
