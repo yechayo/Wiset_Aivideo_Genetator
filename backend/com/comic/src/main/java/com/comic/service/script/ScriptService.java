@@ -5,7 +5,7 @@ import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.common.EpisodeInfoKeys;
 import com.comic.common.ProjectInfoKeys;
-import com.comic.common.ProjectStatus;
+import com.comic.statemachine.enums.ProjectState;
 import com.comic.dto.model.WorldConfigModel;
 import com.comic.entity.Episode;
 import com.comic.entity.Project;
@@ -46,12 +46,12 @@ public class ScriptService {
     @Autowired
     private PipelineService pipelineService;
 
-    // 状态常量（统一使用 ProjectStatus 枚举）
-    private static final String STATUS_OUTLINE_REVIEW = ProjectStatus.OUTLINE_REVIEW.getCode();
-    private static final String STATUS_SCRIPT_REVIEW = ProjectStatus.SCRIPT_REVIEW.getCode();
-    private static final String STATUS_SCRIPT_CONFIRMED = ProjectStatus.SCRIPT_CONFIRMED.getCode();
-    private static final String STATUS_OUTLINE_FAILED = ProjectStatus.OUTLINE_GENERATING_FAILED.getCode();
-    private static final String STATUS_EPISODE_FAILED = ProjectStatus.EPISODE_GENERATING_FAILED.getCode();
+    // 状态常量（统一使用 ProjectState 枚举）
+    private static final String STATUS_OUTLINE_REVIEW = ProjectState.OUTLINE_REVIEW.getCode();
+    private static final String STATUS_SCRIPT_REVIEW = ProjectState.SCRIPT_REVIEW.getCode();
+    private static final String STATUS_SCRIPT_CONFIRMED = ProjectState.SCRIPT_CONFIRMED.getCode();
+    private static final String STATUS_OUTLINE_FAILED = ProjectState.OUTLINE_GENERATING_FAILED.getCode();
+    private static final String STATUS_EPISODE_FAILED = ProjectState.EPISODE_GENERATING_FAILED.getCode();
     private static final int DEFAULT_EPISODE_COUNT = 4;
 
     // ==================== Map 辅助方法 ====================

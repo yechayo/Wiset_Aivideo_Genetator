@@ -2,7 +2,7 @@ package com.comic.service.storyboard;
 
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.common.BusinessException;
-import com.comic.common.ProjectStatus;
+import com.comic.statemachine.enums.ProjectState;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
@@ -13,7 +13,6 @@ import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.panel.GridImageService;
 import com.comic.service.pipeline.PipelineService;
-import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -41,8 +40,6 @@ public class StoryboardService {
     private ProjectRepository projectRepository;
     @Resource
     private PipelineService pipelineService;
-    @Resource
-    private ProjectStatusBroadcaster broadcaster;
     @Resource
     private GridImageService gridImageService;
     @Resource
@@ -90,7 +87,6 @@ public class StoryboardService {
                 eventData.put("title", scriptItem.get("title"));
                 eventData.put("totalEpisodes", totalEpisodes);
                 eventData.put("completedEpisodes", i + 1);
-                broadcaster.broadcastEpisodeProgress(projectId, "episode:script_done", eventData);
             }
 
             // 2. 逐集生成分镜并创建Panel
@@ -126,7 +122,6 @@ public class StoryboardService {
                 storyboardDoneData.put("episodeNum", episodeNum);
                 storyboardDoneData.put("title", title);
                 storyboardDoneData.put("shotsCount", shots.size());
-                broadcaster.broadcastEpisodeProgress(projectId, "episode:storyboard_done", storyboardDoneData);
 
                 log.info("[Pipeline] Step3: 启动异步九宫格生成: episodeId={}, shotCount={}", episodeId, shots.size());
                 gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle);
@@ -149,9 +144,9 @@ public class StoryboardService {
                 if (current != null) {
                     String status = current.getStatus();
                     log.error("[Pipeline] 当前状态: {}, 尝试推进失败事件: projectId={}", status, projectId);
-                    if (ProjectStatus.EPISODE_SCRIPT_GENERATING.getCode().equals(status)) {
+                    if (ProjectState.EPISODE_SCRIPT_GENERATING.getCode().equals(status)) {
                         pipelineService.advancePipeline(projectId, "episode_script_failed");
-                    } else if (ProjectStatus.STORYBOARD_GENERATING.getCode().equals(status)) {
+                    } else if (ProjectState.STORYBOARD_GENERATING.getCode().equals(status)) {
                         pipelineService.advancePipeline(projectId, "storyboard_failed");
                     } else {
                         log.error("[Pipeline] 无法匹配失败事件: status={}, projectId={}", status, projectId);

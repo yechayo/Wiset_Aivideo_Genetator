@@ -12,8 +12,9 @@ import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.service.episode.EpisodeService;
 import com.comic.service.panel.GridImageService;
-import com.comic.service.pipeline.PipelineService;
 import com.comic.service.storyboard.StoryboardService;
+import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.statemachine.service.ProjectStateMachineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -40,7 +41,7 @@ public class EpisodeController {
     private final EpisodeService episodeService;
     private final StoryboardService storyboardService;
     private final GridImageService gridImageService;
-    private final PipelineService pipelineService;
+    private final ProjectStateMachineService projectStateMachineService;
     private final EpisodeRepository episodeRepository;
     private final PanelRepository panelRepository;
 
@@ -270,7 +271,7 @@ public class EpisodeController {
                 return info != null && "approved".equals(info.get("gridStatus"));
             });
             if (allApproved && !episodes.isEmpty()) {
-                pipelineService.advancePipeline(projectId, "all_grids_approved");
+                projectStateMachineService.sendEvent(projectId, ProjectEventType.START_PRODUCTION);
             }
         } catch (Exception e) {
             // 不阻断主流程

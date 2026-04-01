@@ -5,7 +5,7 @@ import com.comic.common.BusinessException;
 import com.comic.common.CharacterInfoKeys;
 import com.comic.common.EpisodeInfoKeys;
 import com.comic.common.ProjectInfoKeys;
-import com.comic.common.ProjectStatus;
+import com.comic.statemachine.enums.ProjectState;
 import com.comic.dto.request.ProjectCreateRequest;
 import com.comic.dto.response.ProjectListItemResponse;
 import com.comic.dto.response.ProjectProductionSummaryResponse;
@@ -27,7 +27,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -49,7 +48,7 @@ import java.util.concurrent.CompletableFuture;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class PipelineService implements StageCompletionCallback {
+public class PipelineService {
 
     private final ProjectRepository projectRepository;
     private final EpisodeRepository episodeRepository;
@@ -58,7 +57,6 @@ public class PipelineService implements StageCompletionCallback {
     private final ScriptService scriptService;
     private final CharacterExtractService characterExtractService;
     private final CharacterImageGenerationService characterImageGenerationService;
-    private final ProjectStatusBroadcaster broadcaster;
 
     @Lazy
     @Autowired
@@ -68,15 +66,7 @@ public class PipelineService implements StageCompletionCallback {
     @Autowired
     private StoryboardService storyboardService;
 
-    /** 自引用，用于异步线程中调用 advancePipeline（绕过 Spring 代理） */
-    @Lazy
-    @Autowired
-    private PipelineService pipelineServiceSelf;
-
-    /** Redis 操作，用于回滚时释放生产锁 */
-    @Autowired
-    private StringRedisTemplate stringRedisTemplate;
-
+    
     // ==================== Map 辅助方法 ====================
 
     private String getProjectInfoStr(Project project, String key) {
@@ -119,7 +109,7 @@ public class PipelineService implements StageCompletionCallback {
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
         project.setDeleted(false);
-        project.setStatus(ProjectStatus.DRAFT.getCode());
+        project.setStatus(ProjectState.DRAFT.getCode());
 
         Map<String, Object> info = new HashMap<>();
         info.put(ProjectInfoKeys.STORY_PROMPT, storyPrompt);
@@ -167,18 +157,6 @@ public class PipelineService implements StageCompletionCallback {
 
     // ==================== Pipeline 状态转换（唯一入口）====================
 
-    @Override
-    @Transactional
-    public void onStageComplete(String projectId, String event) {
-        advancePipeline(projectId, event);
-    }
-
-    @Override
-    @Transactional
-    public void onStageFailed(String projectId, String event) {
-        advancePipeline(projectId, event);
-    }
-
     @Transactional
     public void advancePipeline(String projectId, String event) {
         Project project = projectRepository.findByProjectId(projectId);
@@ -186,8 +164,8 @@ public class PipelineService implements StageCompletionCallback {
             throw new BusinessException("项目不存在");
         }
 
-        ProjectStatus current = ProjectStatus.fromCode(project.getStatus());
-        ProjectStatus next = ProjectStatus.resolveTransition(current, event);
+        ProjectState current = ProjectState.fromCode(project.getStatus());
+        ProjectState next = ProjectState.resolveTransition(current, event);
 
         if (next == null) {
             log.warn("Illegal transition rejected: projectId={}, current={}, event={}", projectId, current, event);
@@ -230,8 +208,6 @@ public class PipelineService implements StageCompletionCallback {
         projectRepository.updateById(project);
         log.info("Pipeline advanced: projectId={}, {} -> {} (event={})", projectId, oldStatus, next.getCode(), event);
 
-        broadcaster.broadcast(projectId, oldStatus, next.getCode());
-
         // 将自动推进的中间状态合并到当前事务中，避免嵌套 afterCommit 导致回调丢失
         // 例如: confirm_script → SCRIPT_CONFIRMED → 自动推进 → CHARACTER_EXTRACTING
         // 这样整个链路只注册一次 afterCommit，确保 triggerNextStage 一定被触发
@@ -240,7 +216,7 @@ public class PipelineService implements StageCompletionCallback {
         // 延迟到事务提交后再触发下一阶段，避免异步任务读到未提交的旧状态
         if (TransactionSynchronizationManager.isSynchronizationActive()
                 && TransactionSynchronizationManager.isActualTransactionActive()) {
-            ProjectStatus capturedNext = next;
+            ProjectState capturedNext = next;
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
@@ -270,13 +246,13 @@ public class PipelineService implements StageCompletionCallback {
      *
      * @return 最终停留的状态（不再有自动推进的状态）
      */
-    private ProjectStatus collapseAutoAdvance(String projectId, Project project, ProjectStatus current) {
-        ProjectStatus next = current;
+    private ProjectState collapseAutoAdvance(String projectId, Project project, ProjectState current) {
+        ProjectState next = current;
         while (true) {
             String autoEvent = getAutoAdvanceEvent(next);
             if (autoEvent == null) return next;
 
-            ProjectStatus autoNext = ProjectStatus.resolveTransition(next, autoEvent);
+            ProjectState autoNext = ProjectState.resolveTransition(next, autoEvent);
             if (autoNext == null) return next;
 
             String oldCode = next.getCode();
@@ -285,14 +261,13 @@ public class PipelineService implements StageCompletionCallback {
             projectRepository.updateById(project);
             log.info("Pipeline auto-advanced: projectId={}, {} -> {} (event={})",
                     projectId, oldCode, next.getCode(), autoEvent);
-            broadcaster.broadcast(projectId, oldCode, next.getCode());
         }
     }
 
     /**
      * 获取自动推进事件。返回 null 表示该状态没有自动推进。
      */
-    private String getAutoAdvanceEvent(ProjectStatus status) {
+    private String getAutoAdvanceEvent(ProjectState status) {
         switch (status) {
             case SCRIPT_CONFIRMED: return "start_character_extraction";
             case CHARACTER_CONFIRMED: return "start_image_generation";
@@ -302,8 +277,8 @@ public class PipelineService implements StageCompletionCallback {
     }
 
     private void rollbackPipeline(Project project) {
-        ProjectStatus current = ProjectStatus.fromCode(project.getStatus());
-        ProjectStatus previous = getRollbackTarget(current);
+        ProjectState current = ProjectState.fromCode(project.getStatus());
+        ProjectState previous = getRollbackTarget(current);
         if (previous == null) {
             throw new BusinessException("Cannot go back from status " + current.getCode());
         }
@@ -314,51 +289,50 @@ public class PipelineService implements StageCompletionCallback {
         project.setStatus(previous.getCode());
         projectRepository.updateById(project);
         log.info("Pipeline rolled back: projectId={}, {} -> {}", projectId, current.getCode(), previous.getCode());
-        broadcaster.broadcast(projectId, current.getCode(), previous.getCode());
     }
 
-    private ProjectStatus getRollbackTarget(ProjectStatus from) {
+    private ProjectState getRollbackTarget(ProjectState from) {
         switch (from) {
             case OUTLINE_REVIEW:
             case EPISODE_GENERATING:
             case SCRIPT_REVIEW:
-                return ProjectStatus.DRAFT;
+                return ProjectState.DRAFT;
             case SCRIPT_CONFIRMED:
-                return ProjectStatus.SCRIPT_REVIEW;
+                return ProjectState.SCRIPT_REVIEW;
             case CHARACTER_EXTRACTING:
-                return ProjectStatus.SCRIPT_CONFIRMED;
+                return ProjectState.SCRIPT_CONFIRMED;
             case CHARACTER_REVIEW:
-                return ProjectStatus.CHARACTER_EXTRACTING;
+                return ProjectState.CHARACTER_EXTRACTING;
             case CHARACTER_CONFIRMED:
-                return ProjectStatus.CHARACTER_REVIEW;
+                return ProjectState.CHARACTER_REVIEW;
             case IMAGE_GENERATING:
-                return ProjectStatus.CHARACTER_CONFIRMED;
+                return ProjectState.CHARACTER_CONFIRMED;
             case IMAGE_REVIEW:
-                return ProjectStatus.IMAGE_GENERATING;
+                return ProjectState.IMAGE_GENERATING;
             case ASSET_LOCKED:
-                return ProjectStatus.IMAGE_REVIEW;
+                return ProjectState.IMAGE_REVIEW;
             case EPISODE_SCRIPT_GENERATING:
-                return ProjectStatus.ASSET_LOCKED;
+                return ProjectState.ASSET_LOCKED;
             case EPISODE_SCRIPT_GENERATING_FAILED:
-                return ProjectStatus.EPISODE_SCRIPT_GENERATING;
+                return ProjectState.EPISODE_SCRIPT_GENERATING;
             case STORYBOARD_GENERATING:
-                return ProjectStatus.ASSET_LOCKED;
+                return ProjectState.ASSET_LOCKED;
             case STORYBOARD_GENERATING_FAILED:
-                return ProjectStatus.STORYBOARD_GENERATING;
+                return ProjectState.STORYBOARD_GENERATING;
             case STORYBOARD_REVIEW:
-                return ProjectStatus.EPISODE_SCRIPT_GENERATING;
+                return ProjectState.EPISODE_SCRIPT_GENERATING;
             case PRODUCING:
-                return ProjectStatus.STORYBOARD_REVIEW;
+                return ProjectState.STORYBOARD_REVIEW;
             case MERGING:
-                return ProjectStatus.PRODUCING;
+                return ProjectState.PRODUCING;
             case COMPLETED:
-                return ProjectStatus.MERGING;
+                return ProjectState.MERGING;
             default:
                 return null;
         }
     }
 
-    private void cleanupAfterRollback(String projectId, ProjectStatus from) {
+    private void cleanupAfterRollback(String projectId, ProjectState from) {
         switch (from) {
             case OUTLINE_REVIEW:
             case EPISODE_GENERATING:
@@ -408,14 +382,6 @@ public class PipelineService implements StageCompletionCallback {
             case STORYBOARD_REVIEW:
             case PRODUCING:
             case MERGING:
-                // 回滚 PRODUCING 时释放生产锁
-                if (from == ProjectStatus.PRODUCING && stringRedisTemplate != null) {
-                    try {
-                        stringRedisTemplate.delete("lock:production:" + projectId);
-                    } catch (Exception e) {
-                        log.warn("Failed to release production lock during rollback: projectId={}", projectId, e);
-                    }
-                }
                 // 清除分镜和生产数据
                 List<Episode> episodes = episodeRepository.findByProjectId(projectId);
                 for (Episode ep : episodes) {
@@ -454,7 +420,7 @@ public class PipelineService implements StageCompletionCallback {
                     }
                 }
                 // 回滚 MERGING/COMPLETED 时清除合并结果
-                if (from == ProjectStatus.MERGING || from == ProjectStatus.COMPLETED) {
+                if (from == ProjectState.MERGING || from == ProjectState.COMPLETED) {
                     Project proj = projectRepository.findByProjectId(projectId);
                     if (proj != null) {
                         Map<String, Object> projInfo = proj.getProjectInfo();
@@ -475,6 +441,10 @@ public class PipelineService implements StageCompletionCallback {
     // ==================== 状态查询 ====================
 
     public Project getProjectStatus(String projectId) {
+        return getProjectState(projectId);
+    }
+
+    public Project getProjectState(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
             throw new BusinessException("项目不存在");
@@ -483,12 +453,16 @@ public class PipelineService implements StageCompletionCallback {
     }
 
     public ProjectStatusResponse getProjectStatusDetail(String projectId) {
+        return getProjectStateDetail(projectId);
+    }
+
+    public ProjectStatusResponse getProjectStateDetail(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
             throw new BusinessException("项目不存在");
         }
 
-        ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
+        ProjectState status = ProjectState.fromCode(project.getStatus());
 
         ProjectStatusResponse dto = new ProjectStatusResponse();
         dto.setProjectId(project.getProjectId());
@@ -498,22 +472,22 @@ public class PipelineService implements StageCompletionCallback {
         dto.setCompletedSteps(status.getCompletedSteps());
         dto.setAvailableActions(status.getAvailableActions());
 
-        if (status == ProjectStatus.PRODUCING) {
+        if (status == ProjectState.PRODUCING) {
             enrichProducingStatus(dto, projectId);
-        } else if (status == ProjectStatus.MERGING) {
+        } else if (status == ProjectState.MERGING) {
             enrichMergingStatus(dto, project);
-        } else if (status == ProjectStatus.EPISODE_SCRIPT_GENERATING
-                || status == ProjectStatus.EPISODE_SCRIPT_GENERATING_FAILED
-                || status == ProjectStatus.STORYBOARD_GENERATING
-                || status == ProjectStatus.STORYBOARD_GENERATING_FAILED
-                || status == ProjectStatus.STORYBOARD_REVIEW) {
+        } else if (status == ProjectState.EPISODE_SCRIPT_GENERATING
+                || status == ProjectState.EPISODE_SCRIPT_GENERATING_FAILED
+                || status == ProjectState.STORYBOARD_GENERATING
+                || status == ProjectState.STORYBOARD_GENERATING_FAILED
+                || status == ProjectState.STORYBOARD_REVIEW) {
             enrichPanelStatus(dto, projectId);
         } else {
             dto.setStatusCode(status.getCode());
             dto.setStatusDescription(status.getDescription());
             dto.setGenerating(status.isGenerating());
             // COMPLETED 时附带合并结果
-            if (status == ProjectStatus.COMPLETED) {
+            if (status == ProjectState.COMPLETED) {
                 Map<String, Object> info = project.getProjectInfo();
                 if (info != null) {
                     dto.setFinalVideoUrl(strVal(info, "finalVideoUrl"));
@@ -611,7 +585,7 @@ public class PipelineService implements StageCompletionCallback {
     }
 
     public ProjectListItemResponse toListItemDTO(Project project) {
-        ProjectStatus status = ProjectStatus.fromCode(project.getStatus());
+        ProjectState status = ProjectState.fromCode(project.getStatus());
         Map<String, Object> info = project.getProjectInfo();
 
         ProjectListItemResponse dto = new ProjectListItemResponse();
@@ -795,13 +769,13 @@ public class PipelineService implements StageCompletionCallback {
                 dto.setPanelReviewEpisodeId(String.valueOf(currentEpisode.getId()));
             }
 
-            ProjectStatus projectStatus = ProjectStatus.fromCode(project.getStatus());
-            if (failedEpisode != null && projectStatus == ProjectStatus.STORYBOARD_GENERATING) {
-                projectStatus = ProjectStatus.STORYBOARD_GENERATING_FAILED;
-            } else if (failedEpisode == null && projectStatus == ProjectStatus.STORYBOARD_GENERATING_FAILED) {
+            ProjectState projectStatus = ProjectState.fromCode(project.getStatus());
+            if (failedEpisode != null && projectStatus == ProjectState.STORYBOARD_GENERATING) {
+                projectStatus = ProjectState.STORYBOARD_GENERATING_FAILED;
+            } else if (failedEpisode == null && projectStatus == ProjectState.STORYBOARD_GENERATING_FAILED) {
                 // 失败已恢复：有完成/审核中的 episode 则恢复到 STORYBOARD_REVIEW，否则回到 STORYBOARD_GENERATING
                 projectStatus = (completedCount > 0 || reviewEpisode != null)
-                        ? ProjectStatus.STORYBOARD_REVIEW : ProjectStatus.STORYBOARD_GENERATING;
+                        ? ProjectState.STORYBOARD_REVIEW : ProjectState.STORYBOARD_GENERATING;
                 project.setStatus(projectStatus.getCode());
                 projectRepository.updateById(project);
                 log.info("Panel status recovered: projectId={}, STORYBOARD_GENERATING_FAILED -> {}", projectId, projectStatus.getCode());
@@ -813,7 +787,7 @@ public class PipelineService implements StageCompletionCallback {
             dto.setFailed(projectStatus.isFailed());
             dto.setReview(projectStatus.isReview());
 
-            boolean allConfirmed = completedCount == totalEpisodes && projectStatus == ProjectStatus.STORYBOARD_REVIEW;
+            boolean allConfirmed = completedCount == totalEpisodes && projectStatus == ProjectState.STORYBOARD_REVIEW;
             dto.setPanelAllConfirmed(allConfirmed);
             if (allConfirmed) {
                 dto.setPanelReviewEpisodeId(null);
@@ -885,7 +859,7 @@ public class PipelineService implements StageCompletionCallback {
 
     // ==================== 阶段触发 ====================
 
-    private void triggerNextStage(String projectId, ProjectStatus status) {
+    private void triggerNextStage(String projectId, ProjectState status) {
         log.info("triggerNextStage: projectId={}, status={}", projectId, status);
         switch (status) {
             case OUTLINE_GENERATING:
@@ -924,7 +898,7 @@ public class PipelineService implements StageCompletionCallback {
                         try {
                             Project p = projectRepository.findByProjectId(projectId);
                             String currentStatus = p != null ? p.getStatus() : "";
-                            if (ProjectStatus.STORYBOARD_GENERATING.getCode().equals(currentStatus)) {
+                            if (ProjectState.STORYBOARD_GENERATING.getCode().equals(currentStatus)) {
                                 safeAdvanceOnFailure(projectId, "storyboard_failed", currentStatus, e);
                             } else {
                                 safeAdvanceOnFailure(projectId, "episode_script_failed", currentStatus, e);
@@ -953,7 +927,7 @@ public class PipelineService implements StageCompletionCallback {
      */
     private void safeAdvanceOnFailure(String projectId, String failedEvent, String expectedStatus, Exception original) {
         try {
-            pipelineServiceSelf.advancePipeline(projectId, failedEvent);
+            this.advancePipeline(projectId, failedEvent);
             log.info("Status updated to FAILED on recovery: projectId={}, event={}", projectId, failedEvent);
         } catch (Exception ex) {
             log.error("Failed to update status after {} failure: projectId={}, currentStatus may be stuck. "
@@ -992,9 +966,9 @@ public class PipelineService implements StageCompletionCallback {
                 );
 
                 Project project = projectRepository.findByProjectId(projectId);
-                if (project != null && ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
+                if (project != null && ProjectState.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
                     try {
-                        pipelineServiceSelf.advancePipeline(projectId, "images_generated");
+                        this.advancePipeline(projectId, "images_generated");
                     } catch (Exception e2) {
                         log.warn("Failed to advance status after image generation: projectId={}, error={}", projectId, e2.getMessage());
                     }
@@ -1002,9 +976,9 @@ public class PipelineService implements StageCompletionCallback {
             } catch (Exception e) {
                 log.error("Character image batch generation failed: projectId={}", projectId, e);
                 Project project = projectRepository.findByProjectId(projectId);
-                if (project != null && ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
+                if (project != null && ProjectState.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
                     try {
-                        pipelineServiceSelf.advancePipeline(projectId, "images_failed");
+                        this.advancePipeline(projectId, "images_failed");
                     } catch (Exception e2) {
                         log.warn("Failed to set failed status: projectId={}, error={}", projectId, e2.getMessage());
                     }

@@ -4,7 +4,7 @@ import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.common.CharacterInfoKeys;
-import com.comic.common.ProjectStatus;
+import com.comic.statemachine.enums.ProjectState;
 import com.comic.dto.response.CharacterStatusResponse;
 import com.comic.entity.Character;
 import com.comic.entity.Project;
@@ -90,7 +90,7 @@ public class CharacterImageGenerationService {
 
             log.info("九宫格大全图生成完成: charId={}", charId);
 
-            checkAndAdvanceProjectStatus(character);
+            checkAndAdvanceProjectState(character);
 
         } catch (BusinessException e) {
             throw e;
@@ -144,7 +144,7 @@ public class CharacterImageGenerationService {
 
             log.info("三视图大全图生成完成: charId={}", charId);
 
-            checkAndAdvanceProjectStatus(character);
+            checkAndAdvanceProjectState(character);
 
         } catch (BusinessException e) {
             throw e;
@@ -271,8 +271,8 @@ public class CharacterImageGenerationService {
             throw new BusinessException("项目不存在");
         }
 
-        ProjectStatus currentStatus = ProjectStatus.fromCode(project.getStatus());
-        if (currentStatus != ProjectStatus.IMAGE_REVIEW) {
+        ProjectState currentStatus = ProjectState.fromCode(project.getStatus());
+        if (currentStatus != ProjectState.IMAGE_REVIEW) {
             throw new BusinessException("当前状态不允许确认图片: " + currentStatus.getDescription());
         }
 
@@ -300,10 +300,10 @@ public class CharacterImageGenerationService {
 
     // ==================== 状态推进 ====================
 
-    private void checkAndAdvanceProjectStatus(Character character) {
+    private void checkAndAdvanceProjectState(Character character) {
         String projectId = character.getProjectId();
         Project project = projectRepository.findByProjectId(projectId);
-        if (project == null || !ProjectStatus.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
+        if (project == null || !ProjectState.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
             return;
         }
 

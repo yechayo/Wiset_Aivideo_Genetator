@@ -17,7 +17,6 @@ import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.oss.OssService;
 import com.comic.service.panel.GridImageService;
-import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,10 +49,6 @@ public class PanelProductionService {
     private final ViduVideoService viduVideoService;
     private final OssService ossService;
     private final ApplicationContext applicationContext;
-
-    @Lazy
-    @Autowired
-    private ProjectStatusBroadcaster broadcaster;
 
     @Lazy
     @Autowired
@@ -378,7 +373,6 @@ public class PanelProductionService {
                         log.info("视频生成完成: panelId={}", panelId);
                         String projId = getProjectIdByPanelId(panelId);
                         if (projId != null) {
-                            broadcaster.broadcast(projId, "PRODUCING", "PRODUCING");
                         }
                         return;
                     case "failed":

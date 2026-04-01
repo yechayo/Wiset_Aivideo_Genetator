@@ -13,7 +13,6 @@ import com.comic.repository.PanelRepository;
 import com.comic.service.storyboard.StoryboardService;
 import com.comic.util.NumberFormatter;
 import com.comic.service.oss.OssService;
-import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -47,7 +46,6 @@ public class GridImageService {
     @Resource private OssService ossService;
     @Resource private EpisodeRepository episodeRepository;
     @Resource private CharacterRepository characterRepository;
-    @Resource private ProjectStatusBroadcaster broadcaster;
 
     /**
      * 为指定 Panel 生成九宫格图 → 切割 → 融合参考图
@@ -158,7 +156,6 @@ public class GridImageService {
                 Map<String, Object> startData = new HashMap<>();
                 startData.put("episodeId", episodeId);
                 startData.put("gridStatus", "generating");
-                broadcaster.broadcastEpisodeProgress(gridProjectId, "episode:grid_status", startData);
             }
 
             Map<String, Object> episodeInfo = episode.getEpisodeInfo();
@@ -222,7 +219,6 @@ public class GridImageService {
                 Map<String, Object> doneData = new HashMap<>();
                 doneData.put("episodeId", episodeId);
                 doneData.put("gridStatus", "generated");
-                broadcaster.broadcastEpisodeProgress(gridProjectId, "episode:grid_status", doneData);
             }
 
             log.info("Episode {} 整集九宫格完成, {} 页, {} 分镜", episodeId, pageCount, shots.size());
@@ -237,7 +233,6 @@ public class GridImageService {
                     Map<String, Object> failData = new HashMap<>();
                     failData.put("episodeId", episodeId);
                     failData.put("gridStatus", "failed");
-                    broadcaster.broadcastEpisodeProgress(gridProjectId, "episode:grid_status", failData);
                 }
 
                 Episode episode = episodeRepository.selectById(episodeId);

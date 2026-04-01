@@ -6,7 +6,7 @@ import com.comic.ai.text.TextGenerationService;
 import com.comic.common.BusinessException;
 import com.comic.common.CharacterInfoKeys;
 import com.comic.common.ProjectInfoKeys;
-import com.comic.common.ProjectStatus;
+import com.comic.statemachine.enums.ProjectState;
 import com.comic.dto.model.CharacterDraftModel;
 import com.comic.dto.request.CharacterUpdateRequest;
 import com.comic.dto.response.CharacterListItemResponse;
@@ -51,9 +51,9 @@ public class CharacterExtractService {
             throw new BusinessException("项目不存在");
         }
 
-        if (!ProjectStatus.SCRIPT_CONFIRMED.getCode().equals(project.getStatus()) &&
-            !ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus()) &&
-            !ProjectStatus.CHARACTER_EXTRACTING.getCode().equals(project.getStatus())) {
+        if (!ProjectState.SCRIPT_CONFIRMED.getCode().equals(project.getStatus()) &&
+            !ProjectState.CHARACTER_REVIEW.getCode().equals(project.getStatus()) &&
+            !ProjectState.CHARACTER_EXTRACTING.getCode().equals(project.getStatus())) {
             throw new BusinessException("请先确认剧本后再提取角色");
         }
 
@@ -108,7 +108,7 @@ public class CharacterExtractService {
         if (project == null) {
             throw new BusinessException("项目不存在");
         }
-        if (!ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
+        if (!ProjectState.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
             throw new BusinessException("当前状态不能确认角色");
         }
         List<Character> characters = characterRepository.findByProjectId(projectId);
@@ -131,7 +131,7 @@ public class CharacterExtractService {
             throw new BusinessException("角色不存在");
         }
         Project project = projectRepository.findByProjectId(character.getProjectId());
-        if (project == null || !ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
+        if (project == null || !ProjectState.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
             throw new BusinessException("当前状态不能编辑角色");
         }
         Map<String, Object> info = character.getCharacterInfo();
@@ -185,7 +185,7 @@ public class CharacterExtractService {
             throw new BusinessException("角色不存在");
         }
         Project project = projectRepository.findByProjectId(character.getProjectId());
-        if (project == null || !ProjectStatus.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
+        if (project == null || !ProjectState.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
             throw new BusinessException("当前状态不能删除角色");
         }
         characterRepository.deleteById(character.getId());

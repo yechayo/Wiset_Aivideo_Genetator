@@ -17,6 +17,8 @@ import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.repository.UserRepository;
 import com.comic.service.pipeline.PipelineService;
+import com.comic.statemachine.service.ProjectStateMachineService;
+import com.comic.statemachine.enums.ProjectEventType;
 import com.comic.service.production.VideoCompositionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -38,6 +40,7 @@ import java.util.stream.Collectors;
 public class ProjectController {
 
     private final PipelineService pipelineService;
+    private final ProjectStateMachineService projectStateMachineService;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final EpisodeRepository episodeRepository;
@@ -134,8 +137,28 @@ public class ProjectController {
     @Operation(summary = "推进/回退状态")
     public Result<Void> advancePipeline(@PathVariable String projectId,
                                         @RequestBody AdvanceRequest request) {
-        pipelineService.advancePipeline(projectId, request.getDirection(), request.getEvent());
+        if ("backward".equals(request.getDirection())) {
+            projectStateMachineService.sendEvent(projectId, getRollbackEvent(request.getEvent()));
+        } else {
+            projectStateMachineService.sendEvent(projectId, ProjectEventType.valueOf(request.getEvent()));
+        }
         return Result.ok();
+    }
+
+    private ProjectEventType getRollbackEvent(String event) {
+        if ("rollback_outline".equals(event)) {
+            return ProjectEventType.ROLLBACK_OUTLINE;
+        } else if ("rollback_episode".equals(event)) {
+            return ProjectEventType.ROLLBACK_EPISODE;
+        } else if ("rollback_character".equals(event)) {
+            return ProjectEventType.ROLLBACK_CHARACTER;
+        } else if ("rollback_image".equals(event)) {
+            return ProjectEventType.ROLLBACK_IMAGE;
+        } else if ("rollback_storyboard".equals(event)) {
+            return ProjectEventType.ROLLBACK_STORYBOARD;
+        } else {
+            throw new IllegalArgumentException("Unknown rollback event: " + event);
+        }
     }
 
     @PostMapping("/{projectId}/videos/merge")

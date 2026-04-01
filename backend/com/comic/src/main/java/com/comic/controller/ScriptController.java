@@ -3,8 +3,9 @@ package com.comic.controller;
 import com.comic.common.Result;
 import com.comic.dto.request.EpisodeGenerateRequest;
 import com.comic.dto.request.ScriptReviseRequest;
-import com.comic.service.pipeline.PipelineService;
 import com.comic.service.script.ScriptService;
+import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.statemachine.service.ProjectStateMachineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,7 @@ import java.util.Map;
 public class ScriptController {
 
     private final ScriptService scriptService;
-    private final PipelineService pipelineService;
+    private final ProjectStateMachineService projectStateMachineService;
 
     @GetMapping
     @Operation(summary = "获取剧本内容")
@@ -31,7 +32,7 @@ public class ScriptController {
     @Operation(summary = "生成大纲")
     public Result<Void> generateOutline(@PathVariable String projectId) {
         // 通过 Pipeline 推进状态到 OUTLINE_GENERATING，由 triggerNextStage 异步触发生成
-        pipelineService.advancePipeline(projectId, "start_script_generation");
+        projectStateMachineService.sendEvent(projectId, ProjectEventType.GENERATE_OUTLINE);
         return Result.ok();
     }
 
