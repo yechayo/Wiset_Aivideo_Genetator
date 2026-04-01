@@ -120,6 +120,17 @@ export async function getVideoPrompt(
   );
 }
 
+/** 增强视频生成提示词（消耗1积分） */
+export async function enhanceVideoPrompt(
+  projectId: string,
+  episodeId: number,
+  panelId: number,
+): Promise<ApiResponse<{ prompt: string }>> {
+  return post<ApiResponse<{ prompt: string }>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video/prompt/enhance`,
+  );
+}
+
 /** 生成视频 */
 export async function generateVideo(
   projectId: string,

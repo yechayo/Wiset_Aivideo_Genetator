@@ -162,6 +162,18 @@ public class PanelController {
         return Result.ok(result);
     }
 
+    @PostMapping("/{panelId}/video/prompt/enhance")
+    @Operation(summary = "增强视频生成提示词（消耗1积分）")
+    public Result<Map<String, Object>> enhanceVideoPrompt(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        String enhancedPrompt = panelProductionService.enhanceVideoPrompt(panelId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("prompt", enhancedPrompt);
+        return Result.ok(result);
+    }
+
     @PostMapping("/{panelId}/video")
     @Operation(summary = "生成视频（九宫格融合图 → 视频大模型）")
     public Result<Void> generateVideo(

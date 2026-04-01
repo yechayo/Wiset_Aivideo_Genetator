@@ -290,7 +290,8 @@ public class StoryboardService {
     }
 
     /**
-     * 构建角色名到 charId 的映射
+     * 构建角色名到 charId 的映射（精确 + 模糊）
+     * 模糊匹配：将带括号后缀的名字（如 "墨尘（幻影）"）也建立去除括号的映射（"墨尘" → charId）
      */
     private Map<String, String> buildCharacterIdMap(String projectId) {
         List<Character> characters = characterRepository.findByProjectId(projectId);
@@ -301,7 +302,13 @@ public class StoryboardService {
                 String name = (String) info.get("name");
                 String charId = (String) info.get("charId");
                 if (name != null && charId != null) {
-                    nameToId.put(name.trim(), charId);
+                    name = name.trim();
+                    nameToId.put(name, charId);
+                    // 模糊匹配：去除括号后缀，如 "墨尘（幻影）" → "墨尘"
+                    String stripped = name.replaceAll("[（\\(][^）\\)]*[）\\)]$", "").trim();
+                    if (!stripped.isEmpty() && !stripped.equals(name)) {
+                        nameToId.putIfAbsent(stripped, charId);
+                    }
                 }
             }
         }
@@ -320,7 +327,8 @@ public class StoryboardService {
 
             List<Map<String, String>> charRefs = new ArrayList<>();
             for (String charName : charNames) {
-                String charId = nameToId.get(charName.trim());
+                String trimmed = charName.trim();
+                String charId = resolveCharId(trimmed, nameToId);
                 Map<String, String> ref = new HashMap<>();
                 ref.put("name", charName);
                 if (charId != null) {
@@ -333,6 +341,32 @@ public class StoryboardService {
             }
             shot.put("characterRefs", charRefs);
         }
+    }
+
+    /**
+     * 多级模糊匹配角色名到 charId
+     * 1. 精确匹配 → 2. 去除括号后缀匹配 → 3. 去除所有空格匹配
+     */
+    private String resolveCharId(String name, Map<String, String> nameToId) {
+        // 1. 精确匹配
+        String charId = nameToId.get(name);
+        if (charId != null) return charId;
+
+        // 2. 去除括号后缀匹配（AI 可能写了 "墨尘" 而库中是 "墨尘（幻影）"）
+        String stripped = name.replaceAll("[（\\(][^）\\)]*[）\\)]$", "").trim();
+        if (!stripped.isEmpty() && !stripped.equals(name)) {
+            charId = nameToId.get(stripped);
+            if (charId != null) return charId;
+        }
+
+        // 3. 去除所有空格匹配
+        String noSpace = name.replaceAll("\\s+", "");
+        if (!noSpace.equals(name)) {
+            charId = nameToId.get(noSpace);
+            if (charId != null) return charId;
+        }
+
+        return null;
     }
 
     private int getIntFromMap(Map<String, Object> map, String key, int defaultValue) {

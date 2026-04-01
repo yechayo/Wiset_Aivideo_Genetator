@@ -14,6 +14,7 @@ export interface VideoPanelProps {
   videoProgress?: number | null;     // 0-100
   videoCredits?: number | null;      // 积分消耗
   onLoadPrompt?: () => Promise<string>;  // 加载当前提示词
+  onEnhancePrompt?: () => Promise<string>;  // AI 优化提示词（消耗1积分）
 }
 
 // Loading spinner component
@@ -34,7 +35,8 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
   videoOffPeak,
   videoProgress,
   videoCredits,
-  onLoadPrompt
+  onLoadPrompt,
+  onEnhancePrompt
 }) => {
   const canGenerate = pipelineStep === 'grid_approved';
 
@@ -58,6 +60,7 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
   const [promptText, setPromptText] = useState('');
   const [loadingPrompt, setLoadingPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState<'view' | 'edit'>('view');
+  const [enhancing, setEnhancing] = useState(false);
 
   // 换图模态框状态
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
@@ -85,6 +88,20 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
     setShowModal(false);
     setLocalGenerating(true);  // 立即设置本地生成状态
     onGenerateVideo(activeTab === 'edit' ? promptText : undefined);
+  };
+
+  // AI 优化提示词
+  const handleEnhancePrompt = async () => {
+    if (!onEnhancePrompt) return;
+    setEnhancing(true);
+    try {
+      const enhanced = await onEnhancePrompt();
+      setPromptText(enhanced);
+    } catch (e) {
+      console.error('提示词增强失败:', e);
+      alert('提示词增强失败，请稍后重试');
+    }
+    setEnhancing(false);
   };
 
   const renderContent = () => {
@@ -255,6 +272,15 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
                         💡 以下是 AI 根据分镜内容自动生成的提示词，用于视频生成
                       </div>
                       <pre className={styles.promptText}>{promptText || '(暂无提示词)'}</pre>
+                      {onEnhancePrompt && (
+                        <button
+                          className={styles.enhanceButton}
+                          onClick={handleEnhancePrompt}
+                          disabled={enhancing || loadingPrompt}
+                        >
+                          {enhancing ? '⏳ 优化中...' : '✨ AI 优化提示词（消耗1积分）'}
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className={styles.promptEdit}>

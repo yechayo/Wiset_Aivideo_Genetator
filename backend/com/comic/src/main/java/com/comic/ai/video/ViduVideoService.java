@@ -31,6 +31,7 @@ public class ViduVideoService implements VideoGenerationService {
     private static final String IMG2VIDEO_ENDPOINT = "/img2video";
     private static final String QUERY_TASK_ENDPOINT = "/tasks/%s/creations";
     private static final String CANCEL_TASK_ENDPOINT = "/tasks/%s/cancel";
+    private static final int PROMPT_ENHANCE_MAX_LENGTH = 5000;
 
     // Vidu 状态枚举
     private static final String STATE_CREATED = "created";
@@ -193,6 +194,66 @@ public class ViduVideoService implements VideoGenerationService {
         } catch (IOException e) {
             log.error("取消 Vidu 任务 IO 异常: taskId={}", taskId, e);
             return false;
+        }
+    }
+
+    /**
+     * 调用 Vidu 提示词增强 API，优化提示词
+     *
+     * @param prompt 原始提示词
+     * @return 增强后的提示词，如果增强失败则返回原始提示词
+     */
+    public String enhancePrompt(String prompt) {
+        if (prompt == null || prompt.trim().isEmpty()) {
+            return prompt;
+        }
+        if (!viduProperties.isPromptEnhanceEnabled()) {
+            log.debug("提示词增强已禁用，使用原始提示词");
+            return prompt;
+        }
+        if (prompt.length() > PROMPT_ENHANCE_MAX_LENGTH) {
+            log.warn("提示词超过 {} 字符限制（{} 字符），跳过增强", PROMPT_ENHANCE_MAX_LENGTH, prompt.length());
+            return prompt;
+        }
+
+        try {
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("prompt", prompt);
+            String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+            String url = viduProperties.getBaseUrl() + viduProperties.getPromptEnhanceEndpoint();
+            Request request = new Request.Builder()
+                    .url(url)
+                    .addHeader("Authorization", "Token " + viduProperties.getApiKey())
+                    .addHeader("Content-Type", "application/json")
+                    .post(RequestBody.create(jsonBody, MediaType.parse("application/json; charset=utf-8")))
+                    .build();
+
+            try (Response response = httpClient.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    String errorBody = response.body() != null ? response.body().string() : "无响应体";
+                    log.warn("Vidu 提示词增强失败: {} - {}，将使用原始提示词", response.code(), errorBody);
+                    return prompt;
+                }
+
+                String responseBody = response.body().string();
+                JsonNode root = objectMapper.readTree(responseBody);
+                JsonNode resultNode = root.get("result");
+                if (resultNode != null && !resultNode.isNull() && resultNode.asText().trim().length() > 0) {
+                    String enhanced = resultNode.asText();
+                    log.info("提示词增强成功: 原始 {} 字符 → 增强 {} 字符", prompt.length(), enhanced.length());
+                    return enhanced;
+                }
+
+                log.warn("Vidu 提示词增强响应中 result 为空，使用原始提示词。响应: {}", responseBody);
+                return prompt;
+            }
+        } catch (IOException e) {
+            log.error("Vidu 提示词增强 IO 异常，将使用原始提示词", e);
+            return prompt;
+        } catch (Exception e) {
+            log.error("Vidu 提示词增强异常，将使用原始提示词", e);
+            return prompt;
         }
     }
 

@@ -226,7 +226,9 @@ public class DeepSeekTextService implements TextGenerationService {
             + "- keyItems: 本集关键道具/场景，逗号分隔\n"
             + "- continuityNote: 连贯性备注\n"
             + "注意：内容要紧凑，适合" + durationSeconds + "秒的短视频。\n"
-            + "**重要约束**：必须生成恰好 " + totalEpisodes + " 集剧本，不要多也不要少！";
+            + "**重要约束**：必须生成恰好 " + totalEpisodes + " 集剧本，不要多也不要少！\n"
+            + "**角色名称约束**：characters 字段中的角色名必须与提供的角色描述中【】内的名称完全一致，"
+            + "禁止使用昵称、简称、别名或任何变体。";
 
         String userPrompt = "大纲节点：" + outlineNode + "\n"
             + "角色：" + characters + "\n"
@@ -267,7 +269,9 @@ public class DeepSeekTextService implements TextGenerationService {
             + "- speaker: 说话人角色名（无对白则填\"无\"，有对白时必须是 characters 数组中的角色之一）\n"
             + "- visualEffects: 视觉特效（无则填\"无\"）\n"
             + "- audioEffects: 音效（无则填\"无\"）\n\n"
-            + "重要：dialogue 与 speaker 必须严格对应。如果 dialogue 不为\"无\"，则 speaker 必须是 characters 数组中的某个角色名，表示该角色正在说这句台词。";
+            + "重要：dialogue 与 speaker 必须严格对应。如果 dialogue 不为\"无\"，则 speaker 必须是 characters 数组中的某个角色名，表示该角色正在说这句台词。\n\n"
+            + "**角色名称约束**：characters 数组中的每个角色名必须与提供的角色描述中【】内的名称完全一致，"
+            + "禁止使用昵称、简称、别名或任何变体。例如角色描述为【墨尘（幻影）】，则必须写\"墨尘（幻影）\"，不能写\"墨尘\"或\"幻影\"。";
 
         String userPrompt = "剧本内容：\n" + episodeContent + "\n\n"
             + "角色：" + characters + "\n"

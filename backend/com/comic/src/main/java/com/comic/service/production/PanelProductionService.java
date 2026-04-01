@@ -3,6 +3,7 @@ package com.comic.service.production;
 import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.video.VideoGenerationService;
+import com.comic.ai.video.ViduVideoService;
 import com.comic.common.BusinessException;
 import com.comic.common.CharacterInfoKeys;
 import com.comic.dto.response.VideoStatusResponse;
@@ -46,6 +47,7 @@ public class PanelProductionService {
     private final CharacterRepository characterRepository;
     private final PanelPromptBuilder panelPromptBuilder;
     private final VideoGenerationService videoGenerationService;
+    private final ViduVideoService viduVideoService;
     private final OssService ossService;
     private final ApplicationContext applicationContext;
 
@@ -219,9 +221,52 @@ public class PanelProductionService {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
+
+        // 优先返回增强后的提示词
+        String enhanced = (String) info.get("enhancedVideoPrompt");
+        if (enhanced != null && !enhanced.trim().isEmpty()) {
+            return enhanced;
+        }
+
+        // 其次返回用户自定义提示词
+        String custom = (String) info.get("customVideoPrompt");
+        if (custom != null && !custom.trim().isEmpty()) {
+            return custom;
+        }
+
+        // 最后返回自动构建的提示词
         String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
         List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
         return panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos);
+    }
+
+    /**
+     * 手动增强视频生成提示词，存入 panelInfo.enhancedVideoPrompt
+     */
+    public String enhanceVideoPrompt(Long panelId) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
+        Map<String, Object> info = panel.getPanelInfo();
+
+        // 先构建原始 prompt
+        String originalPrompt;
+        String custom = (String) info.get("customVideoPrompt");
+        if (custom != null && !custom.trim().isEmpty()) {
+            originalPrompt = custom;
+        } else {
+            String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
+            List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
+            originalPrompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos);
+        }
+
+        String enhanced = viduVideoService.enhancePrompt(originalPrompt);
+        if (!originalPrompt.equals(enhanced)) {
+            info.put("enhancedVideoPrompt", enhanced);
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+            log.info("手动增强提示词: panelId={}, 原始长度={}, 增强后长度={}", panelId, originalPrompt.length(), enhanced.length());
+        }
+        return enhanced;
     }
 
     @Async
@@ -242,8 +287,11 @@ public class PanelProductionService {
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
 
-            // 构建提示词：优先使用自定义提示词，否则自动构建
-            String prompt = (String) info.get("customVideoPrompt");
+            // 构建提示词：优先使用增强后的提示词，其次自定义，最后自动构建
+            String prompt = (String) info.get("enhancedVideoPrompt");
+            if (prompt == null || prompt.trim().isEmpty()) {
+                prompt = (String) info.get("customVideoPrompt");
+            }
             if (prompt == null || prompt.trim().isEmpty()) {
                 String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
                 List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);

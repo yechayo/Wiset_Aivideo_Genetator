@@ -31,4 +31,14 @@ public class ViduProperties {
      * 错峰模式（积分更低，48小时内生成）
      */
     private boolean offPeak = false;
+
+    /**
+     * 是否启用提示词增强（默认开启）
+     */
+    private boolean promptEnhanceEnabled = true;
+
+    /**
+     * 提示词增强 API 路径
+     */
+    private String promptEnhanceEndpoint = "/prompt-enhance";
 }

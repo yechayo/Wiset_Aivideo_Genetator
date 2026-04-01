@@ -22,6 +22,7 @@ interface EpisodeCardProps {
   onRegenerateEpisodeGrid?: () => void;
   onRefreshEpisodeGrid?: () => void;
   onSegmentLoadVideoPrompt?: (episodeId: number, segmentIndex: number) => Promise<string>;
+  onSegmentEnhanceVideoPrompt?: (episodeId: number, segmentIndex: number) => Promise<string>;
 }
 
 /**
@@ -71,6 +72,7 @@ const EpisodeCard = ({
   onSegmentRegenerateGrid,
   onSegmentGenerateVideo,
   onSegmentLoadVideoPrompt,
+  onSegmentEnhanceVideoPrompt,
   generatingGridPanelId,
   generatingVideoPanelId,
   onRefreshPanels,
@@ -147,6 +149,7 @@ const EpisodeCard = ({
         onRegenerateGrid={(customHint) => onSegmentRegenerateGrid(episode.episodeId, segment.segmentIndex, customHint)}
         onGenerateVideo={(customPrompt) => onSegmentGenerateVideo(episode.episodeId, segment.segmentIndex, customPrompt)}
         onLoadVideoPrompt={onSegmentLoadVideoPrompt ? () => onSegmentLoadVideoPrompt(episode.episodeId, segment.segmentIndex) : undefined}
+        onEnhanceVideoPrompt={onSegmentEnhanceVideoPrompt ? () => onSegmentEnhanceVideoPrompt(episode.episodeId, segment.segmentIndex) : undefined}
         isRegeneratingGrid={generatingGridPanelId === segment.panelData?.panelId}
         isGeneratingVideo={generatingVideoPanelId === segment.panelData?.panelId}
       />

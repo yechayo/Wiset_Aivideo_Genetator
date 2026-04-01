@@ -20,6 +20,7 @@ import {
   rejectEpisodeGrid,
   regenerateEpisodeGrid,
   getVideoPrompt,
+  enhanceVideoPrompt,
 } from '../../../services/episodeService';
 import { getCharacterStatus, getCharacters } from '../../../services/characterService';
 import { advanceStatus } from '../../../services/projectService';
@@ -330,12 +331,18 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
         if (cancelled) return;
         const items = res.data?.items || [];
 
-        // 1. 构建 name→ID 映射
+        // 1. 构建 name→ID 映射（精确 + 模糊：去除括号后缀）
         const nameMap: Record<string, string> = {};
         const allCharIds: string[] = [];
         items.forEach((c: any) => {
           if (c.charId && c.name) {
-            nameMap[c.name] = c.charId;
+            const name = c.name.trim();
+            nameMap[name] = c.charId;
+            // 模糊匹配：如 "墨尘（幻影）" → 也映射 "墨尘"
+            const stripped = name.replace(/[（(][^）)]*[）)]$/, '').trim();
+            if (stripped && stripped !== name) {
+              if (!nameMap[stripped]) nameMap[stripped] = c.charId;
+            }
             allCharIds.push(c.charId);
           }
         });
@@ -1071,6 +1078,27 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   }, [projectId, chapters]);
 
   /**
+   * AI 优化视频提示词（消耗1积分）
+   */
+  const handleEnhanceVideoPrompt = useCallback(async (episodeId: number, segmentIndex: number): Promise<string> => {
+    if (!projectId) return '';
+    try {
+      const episode = chapters.flatMap(ch => ch.episodes).find(ep => ep.episodeId === episodeId);
+      const panelId = episode?.segments[segmentIndex]?.panelData?.panelId;
+      if (!panelId) throw new Error('无法找到分镜');
+
+      const res = await enhanceVideoPrompt(projectId, episodeId, Number(panelId));
+      if ((res.code !== 0 && res.code !== 200) || !res.data?.prompt) {
+        throw new Error('增强失败');
+      }
+      return res.data.prompt;
+    } catch (err: any) {
+      console.error('提示词增强失败:', err);
+      throw err;
+    }
+  }, [projectId, chapters]);
+
+  /**
    * 渲染集数卡片
    */
   const renderEpisodeCard = (chapterIndex: number, episode: EpisodeState) => {
@@ -1102,6 +1130,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
           if (panelId) handleGenerateVideo(epId, panelId, customPrompt);
         }}
         onSegmentLoadVideoPrompt={handleLoadVideoPrompt}
+        onSegmentEnhanceVideoPrompt={handleEnhanceVideoPrompt}
         onRefreshPanels={handleRefreshPanels}
         generatingGridPanelId={generatingGridPanelId}
         generatingVideoPanelId={generatingVideoPanelId}
