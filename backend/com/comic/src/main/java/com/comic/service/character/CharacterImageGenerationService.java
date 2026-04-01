@@ -10,7 +10,8 @@ import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.PipelineService;
+import com.comic.statemachine.service.ProjectStateMachineService;
+import com.comic.statemachine.enums.ProjectEventType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +36,7 @@ public class CharacterImageGenerationService {
 
     @Lazy
     @Autowired
-    private PipelineService pipelineService;
+    private ProjectStateMachineService projectStateMachineService;
 
     public void generateExpressionSheet(String charId) {
         Character character = characterRepository.findByCharId(charId);
@@ -294,7 +295,7 @@ public class CharacterImageGenerationService {
             throw new BusinessException("以下角色图片未完成: " + String.join(", ", incompleteChars));
         }
 
-        pipelineService.advancePipeline(projectId, "confirm_images");
+        projectStateMachineService.sendEvent(projectId, ProjectEventType.CONFIRM_IMAGES);
         log.info("图片确认完成，项目进入素材锁定: projectId={}", projectId);
     }
 
@@ -312,7 +313,7 @@ public class CharacterImageGenerationService {
 
         if (allDone) {
             log.info("所有角色图片生成完成: projectId={}", projectId);
-            pipelineService.advancePipeline(projectId, "images_generated");
+            projectStateMachineService.sendEvent(projectId, ProjectEventType._IMAGES_DONE);
         }
     }
 

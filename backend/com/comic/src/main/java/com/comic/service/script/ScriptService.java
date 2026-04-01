@@ -11,7 +11,8 @@ import com.comic.entity.Episode;
 import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.PipelineService;
+import com.comic.statemachine.service.ProjectStateMachineService;
+import com.comic.statemachine.enums.ProjectEventType;
 import com.comic.service.world.WorldRuleService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,7 +45,7 @@ public class ScriptService {
 
     @Lazy
     @Autowired
-    private PipelineService pipelineService;
+    private ProjectStateMachineService projectStateMachineService;
 
     // 状态常量（统一使用 ProjectState 枚举）
     private static final String STATUS_OUTLINE_REVIEW = ProjectState.OUTLINE_REVIEW.getCode();
@@ -178,13 +179,13 @@ public class ScriptService {
             // 持久化大纲内容到数据库（方法无事务，必须显式 save）
             projectRepository.updateById(project);
 
-            pipelineService.advancePipeline(projectId, "script_generated");
+            projectStateMachineService.sendEvent(projectId, ProjectEventType._OUTLINE_DONE);
 
             log.info("剧本大纲生成完成: projectId={}", projectId);
 
         } catch (Exception e) {
             log.error("剧本大纲生成失败: projectId={}", projectId, e);
-            pipelineService.advancePipeline(projectId, "script_failed");
+            projectStateMachineService.sendEvent(projectId, ProjectEventType._TASK_FAILED);
             throw new BusinessException("剧本大纲生成失败: " + e.getMessage());
         }
     }
@@ -218,7 +219,7 @@ public class ScriptService {
         projectRepository.updateById(project);
 
         // 通过 Pipeline 转到 EPISODE_GENERATING 状态
-        pipelineService.advancePipeline(projectId, "generate_episodes");
+        projectStateMachineService.sendEvent(projectId, ProjectEventType.GENERATE_EPISODES);
 
         try {
             String outline = getScriptOutlineText(project);
@@ -252,14 +253,14 @@ public class ScriptService {
             List<Episode> episodes = parseAndSaveEpisodes(project, episodesJson, chapter);
 
             // 更新状态
-            pipelineService.advancePipeline(projectId, "script_generated");
+            projectStateMachineService.sendEvent(projectId, ProjectEventType._OUTLINE_DONE);
 
             log.info("分集生成完成: projectId={}, chapter={}, episodes={}",
                     projectId, chapter, episodes.size());
 
         } catch (Exception e) {
             log.error("分集生成失败: projectId={}, chapter={}", projectId, chapter, e);
-            pipelineService.advancePipeline(projectId, "script_failed");
+            projectStateMachineService.sendEvent(projectId, ProjectEventType._TASK_FAILED);
             throw new BusinessException("分集生成失败: " + e.getMessage());
         }
     }
@@ -365,7 +366,7 @@ public class ScriptService {
         }
 
         // 推进状态到 SCRIPT_CONFIRMED，然后自动触发角色提取
-        pipelineService.advancePipeline(projectId, "confirm_script");
+        projectStateMachineService.sendEvent(projectId, ProjectEventType.CONFIRM_SCRIPT);
     }
 
     /**
@@ -864,7 +865,7 @@ public class ScriptService {
      * 重新生成大纲
      */
     private void regenerateOutline(Project project, String revisionNote, String currentOutline) {
-        pipelineService.advancePipeline(project.getProjectId(), "revise_outline");
+        projectStateMachineService.sendEvent(project.getProjectId(), ProjectEventType.REQUEST_OUTLINE_REVISION);
 
         try {
             Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
@@ -913,7 +914,7 @@ public class ScriptService {
             scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
             projectRepository.updateById(currentProject);
 
-            pipelineService.advancePipeline(currentProject.getProjectId(), "script_generated");
+            projectStateMachineService.sendEvent(currentProject.getProjectId(), ProjectEventType._OUTLINE_DONE);
 
             // 删除之前生成的所有剧集
             episodeRepository.deleteByProjectId(project.getProjectId());
@@ -922,7 +923,7 @@ public class ScriptService {
 
         } catch (Exception e) {
             log.error("大纲重新生成失败", e);
-            pipelineService.advancePipeline(project.getProjectId(), "script_failed");
+            projectStateMachineService.sendEvent(project.getProjectId(), ProjectEventType._TASK_FAILED);
             throw new BusinessException("大纲重新生成失败: " + e.getMessage());
         }
     }

@@ -12,7 +12,8 @@ import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.panel.GridImageService;
-import com.comic.service.pipeline.PipelineService;
+import com.comic.statemachine.service.ProjectStateMachineService;
+import com.comic.statemachine.enums.ProjectEventType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -39,7 +40,7 @@ public class StoryboardService {
     @Resource
     private ProjectRepository projectRepository;
     @Resource
-    private PipelineService pipelineService;
+    private ProjectStateMachineService projectStateMachineService;
     @Resource
     private GridImageService gridImageService;
     @Resource
@@ -130,10 +131,10 @@ public class StoryboardService {
             // 3. 推进状态：两步推进
             // EPISODE_SCRIPT_GENERATING → "episode_script_generated" → STORYBOARD_GENERATING
             log.info("[Pipeline] Step4: 推进状态 episode_script_generated: projectId={}", projectId);
-            pipelineService.advancePipeline(projectId, "episode_script_generated");
+            projectStateMachineService.sendEvent(projectId, ProjectEventType._EPISODE_SCRIPT_DONE);
             // STORYBOARD_GENERATING → "storyboard_generated" → STORYBOARD_REVIEW
             log.info("[Pipeline] Step5: 推进状态 storyboard_generated → STORYBOARD_REVIEW: projectId={}", projectId);
-            pipelineService.advancePipeline(projectId, "storyboard_generated");
+            projectStateMachineService.sendEvent(projectId, ProjectEventType._STORYBOARD_DONE);
             log.info("[Pipeline] 全部完成: projectId={}, 状态已推进到STORYBOARD_REVIEW", projectId);
 
         } catch (Exception e) {
@@ -145,9 +146,9 @@ public class StoryboardService {
                     String status = current.getStatus();
                     log.error("[Pipeline] 当前状态: {}, 尝试推进失败事件: projectId={}", status, projectId);
                     if (ProjectState.EPISODE_SCRIPT_GENERATING.getCode().equals(status)) {
-                        pipelineService.advancePipeline(projectId, "episode_script_failed");
+                        projectStateMachineService.sendEvent(projectId, ProjectEventType.EPISODE_SCRIPT_GENERATING_FAILED);
                     } else if (ProjectState.STORYBOARD_GENERATING.getCode().equals(status)) {
-                        pipelineService.advancePipeline(projectId, "storyboard_failed");
+                        projectStateMachineService.sendEvent(projectId, ProjectEventType.STORYBOARD_GENERATING_FAILED);
                     } else {
                         log.error("[Pipeline] 无法匹配失败事件: status={}, projectId={}", status, projectId);
                     }

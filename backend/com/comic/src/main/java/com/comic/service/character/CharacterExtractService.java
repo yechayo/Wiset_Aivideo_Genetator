@@ -15,7 +15,8 @@ import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.service.pipeline.PipelineService;
+import com.comic.statemachine.service.ProjectStateMachineService;
+import com.comic.statemachine.enums.ProjectEventType;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -39,7 +40,7 @@ public class CharacterExtractService {
 
     @Lazy
     @Autowired
-    private PipelineService pipelineService;
+    private ProjectStateMachineService projectStateMachineService;
 
     /**
      * 注意：此方法由 PipelineService 在异步线程中调用，使用独立事务确保数据落库
@@ -90,14 +91,14 @@ public class CharacterExtractService {
 
             saveCharacters(projectId, characters);
 
-            pipelineService.advancePipeline(projectId, "characters_extracted");
+            projectStateMachineService.sendEvent(projectId, ProjectEventType._CHARACTERS_DONE);
 
             log.info("角色提取完成: projectId={}, 角色数={}", projectId, characters.size());
             return characters;
 
         } catch (Exception e) {
             log.error("角色提取失败: projectId={}", projectId, e);
-            pipelineService.advancePipeline(projectId, "characters_failed");
+            projectStateMachineService.sendEvent(projectId, ProjectEventType.CHARACTER_EXTRACTING_FAILED);
             throw new BusinessException("角色提取失败: " + e.getMessage());
         }
     }
@@ -120,7 +121,7 @@ public class CharacterExtractService {
                 characterRepository.updateById(character);
             }
         }
-        pipelineService.advancePipeline(projectId, "confirm_characters");
+        projectStateMachineService.sendEvent(projectId, ProjectEventType.CONFIRM_CHARACTERS);
         log.info("角色已确认: projectId={}", projectId);
     }
 
