@@ -94,8 +94,8 @@ export async function rejectGrid(projectId: string, episodeId: number, panelId: 
 }
 
 /** 重新生成九宫格 */
-export async function regenerateGrid(projectId: string, episodeId: number, panelId: number): Promise<ApiResponse<void>> {
-  return post<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/grid/regenerate`);
+export async function regenerateGrid(projectId: string, episodeId: number, panelId: number, customHint?: string): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/grid/regenerate`, customHint ? { customHint } : {});
 }
 
 /** 获取单 Panel 生产状态 */

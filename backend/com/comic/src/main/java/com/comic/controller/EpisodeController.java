@@ -161,12 +161,11 @@ public class EpisodeController {
         // 删除已有 Panel（重新分组）
         List<Panel> existingPanels = panelRepository.findByEpisodeId(episodeId);
         for (Panel p : existingPanels) {
-            p.setDeleted(true);
-            panelRepository.updateById(p);
+            panelRepository.deleteById(p.getId());
         }
 
-        // 贪心分组 splitShots（16s 一组）
-        List<List<Map<String, Object>>> groups = StoryboardService.greedyGroup(splitShots, 16);
+        // 贪心分组 splitShots（10s 一组）
+        List<List<Map<String, Object>>> groups = StoryboardService.greedyGroup(splitShots, 10);
 
         // 每组创建 Panel
         List<String> charRefUrls = gridImageService.getCharacterReferenceUrlsForEpisode(episodeId);
@@ -250,6 +249,12 @@ public class EpisodeController {
         info.put("errorMessage", null);
         episode.setEpisodeInfo(info);
         episodeRepository.updateById(episode);
+
+        // 清理已有的 Panel，避免重新审核后重复创建
+        List<Panel> existingPanels = panelRepository.findByEpisodeId(episodeId);
+        for (Panel p : existingPanels) {
+            panelRepository.deleteById(p.getId());
+        }
 
         // 异步重新生成
         gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle);

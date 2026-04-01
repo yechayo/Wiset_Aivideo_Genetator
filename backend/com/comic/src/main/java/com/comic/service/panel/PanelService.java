@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -38,7 +39,11 @@ public class PanelService {
     }
 
     public List<PanelListItemResponse> getPanels(String projectId, Long episodeId) {
-        validateEpisodeOwnership(projectId, episodeId);
+        Episode episode = episodeRepository.findByProjectIdAndId(projectId, episodeId);
+        if (episode == null) {
+            // episode 可能正在 @Transactional pipeline 中创建但尚未提交，返回空列表而非抛异常
+            return Collections.emptyList();
+        }
         return panelRepository.findByEpisodeId(episodeId).stream()
                 .map(this::toListItemResponse)
                 .collect(Collectors.toList());

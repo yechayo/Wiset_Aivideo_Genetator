@@ -6,7 +6,9 @@ export interface VideoPanelProps {
   videoUrl: string | null;
   pipelineStep: SegmentPipelineStep;
   onGenerateVideo: (customPrompt?: string) => void;
+  onRegenerateGrid?: (customHint?: string) => void;
   isGenerating?: boolean;
+  isRegeneratingGrid?: boolean;
   videoTaskId?: string | null;
   videoOffPeak?: boolean | null;
   videoProgress?: number | null;     // 0-100
@@ -25,7 +27,9 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
   videoUrl,
   pipelineStep,
   onGenerateVideo,
+  onRegenerateGrid,
   isGenerating: isGeneratingProp,
+  isRegeneratingGrid,
   videoTaskId,
   videoOffPeak,
   videoProgress,
@@ -54,6 +58,10 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
   const [promptText, setPromptText] = useState('');
   const [loadingPrompt, setLoadingPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState<'view' | 'edit'>('view');
+
+  // 换图模态框状态
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false);
+  const [regenerateHint, setRegenerateHint] = useState('');
 
   // 打开模态框
   const handleOpenModal = async (tab: 'view' | 'edit' = 'view') => {
@@ -115,6 +123,15 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
       );
     }
 
+    if (isRegeneratingGrid) {
+      return (
+        <div className={styles.placeholder}>
+          <LoadingSpinner />
+          <p className={styles.placeholderText}>正在重新生成九宫格...</p>
+        </div>
+      );
+    }
+
     if (isGenerating) {
       return (
         <div className={styles.placeholder}>
@@ -154,6 +171,15 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
             >
               ✏️ 修改提示词
             </button>
+            {onRegenerateGrid && (
+              <button
+                className={styles.editPromptButton}
+                onClick={() => setShowRegenerateModal(true)}
+                disabled={isRegeneratingGrid}
+              >
+                ⟳ 换图重试
+              </button>
+            )}
           </div>
         </div>
       );
@@ -271,6 +297,50 @@ const VideoPanel: React.FC<VideoPanelProps> = ({
                 disabled={loadingPrompt || (activeTab === 'edit' && !promptText.trim())}
               >
                 {activeTab === 'edit' ? '🎬 使用修改后的提示词生成' : '🎬 使用原提示词生成'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 换图重试模态框 */}
+      {showRegenerateModal && (
+        <div className={styles.modalOverlay} onClick={() => setShowRegenerateModal(false)}>
+          <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h3>⟳ 换图重试</h3>
+              <button className={styles.closeButton} onClick={() => setShowRegenerateModal(false)}>×</button>
+            </div>
+            <div className={styles.promptSection}>
+              <div className={styles.promptEdit}>
+                <div className={styles.promptHint}>
+                  💡 输入修改建议，AI 将根据建议重新生成九宫格参考图。留空则使用原始提示词重新生成。
+                </div>
+                <textarea
+                  className={styles.promptTextarea}
+                  value={regenerateHint}
+                  onChange={e => setRegenerateHint(e.target.value)}
+                  placeholder="例如：避免过于暴露的服装、去掉暴力元素、使用更明亮的色调..."
+                  rows={4}
+                />
+              </div>
+            </div>
+            <div className={styles.modalActions}>
+              <button
+                className={styles.cancelButton}
+                onClick={() => setShowRegenerateModal(false)}
+              >
+                取消
+              </button>
+              <button
+                className={styles.submitButton}
+                onClick={() => {
+                  setShowRegenerateModal(false);
+                  onRegenerateGrid!(regenerateHint.trim() || undefined);
+                  setRegenerateHint('');
+                }}
+              >
+                开始换图
               </button>
             </div>
           </div>

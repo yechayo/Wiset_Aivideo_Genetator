@@ -139,6 +139,9 @@ public class CharacterExtractService {
         if (dto.getName() != null) {
             info.put(CharacterInfoKeys.NAME, dto.getName());
         }
+        if (dto.getRole() != null) {
+            info.put(CharacterInfoKeys.ROLE, dto.getRole());
+        }
         if (dto.getPersonality() != null) {
             info.put(CharacterInfoKeys.PERSONALITY, dto.getPersonality());
         }
@@ -156,8 +159,11 @@ public class CharacterExtractService {
                 info.put(CharacterInfoKeys.SPECIES, dto.getSpecies());
             }
         }
+        if (dto.getVisualStyle() != null) {
+            info.put(CharacterInfoKeys.VISUAL_STYLE, dto.getVisualStyle());
+        }
         character.setCharacterInfo(info);
-        characterRepository.updateById(character);
+        characterRepository.updateCharacterInfo(character);
         log.info("角色已更新: charId={}", charId);
     }
 

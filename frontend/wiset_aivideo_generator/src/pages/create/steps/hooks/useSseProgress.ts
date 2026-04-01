@@ -1,5 +1,4 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { getEpisodes, getBatchProductionStatuses } from '../../../../services/episodeService';
 import { useAuthStore } from '../../../../stores/authStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
@@ -7,8 +6,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080
 interface SseProgressCallbacks {
   onEpisodeScriptDone: (data: { episodeNum: number; title: string; totalEpisodes: number; completedEpisodes: number }) => void;
   onEpisodeStoryboardDone: (data: { episodeId: number; episodeNum: number; shotsCount: number }) => void;
-  onEpisodeGridStatus: (data: { episodeId: number; gridStatus: string }) => void;
+  onEpisodeGridStatus: (data: { episodeId: number; episodeNum?: number; gridStatus: string }) => void;
   onStatusChange: (data: { from?: string; to?: string }) => void;
+  /** SSE 重连后触发全量数据刷新 */
+  onReconnect?: () => void;
 }
 
 /**
@@ -29,20 +30,8 @@ export function useSseProgress(
 
   const handleReconnect = useCallback(async () => {
     if (!projectId) return;
-    try {
-      // 全量同步：重新加载 episodes 和 production statuses
-      const res = await getEpisodes(projectId);
-      if (res.code === 0 || res.code === 200) {
-        const items = res.data?.items || [];
-        for (const ep of items) {
-          if (ep.id) {
-            getBatchProductionStatuses(projectId, ep.id).catch(() => {});
-          }
-        }
-      }
-    } catch {
-      // 静默失败
-    }
+    // 通知调用方做全量刷新（loadEpisodes 等）
+    cbRef.current.onReconnect?.();
   }, [projectId]);
 
   useEffect(() => {

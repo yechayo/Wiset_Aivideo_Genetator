@@ -4,10 +4,13 @@ import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.common.BusinessException;
+import com.comic.common.CharacterInfoKeys;
 import com.comic.dto.response.VideoStatusResponse;
+import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
 import com.comic.entity.Project;
+import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
@@ -40,6 +43,7 @@ public class PanelProductionService {
     private final PanelRepository panelRepository;
     private final EpisodeRepository episodeRepository;
     private final ProjectRepository projectRepository;
+    private final CharacterRepository characterRepository;
     private final PanelPromptBuilder panelPromptBuilder;
     private final VideoGenerationService videoGenerationService;
     private final OssService ossService;
@@ -126,6 +130,10 @@ public class PanelProductionService {
     }
 
     public void regenerateGrid(Long panelId) {
+        regenerateGrid(panelId, null);
+    }
+
+    public void regenerateGrid(Long panelId, String customHint) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("Panel 不存在");
         Map<String, Object> info = panel.getPanelInfo();
@@ -138,8 +146,16 @@ public class PanelProductionService {
         info.put("gridStatus", "generating");
         info.put("fusionImageUrl", null);
         info.put("errorMessage", null);
+        // 清理旧的视频状态（支持从 video_failed 状态换图重试）
+        info.remove("videoStatus");
+        info.remove("videoTaskId");
+        info.remove("videoUrl");
+        info.remove("videoUrlPermanent");
+        info.remove("videoProgress");
+        info.remove("videoCredits");
+        info.remove("customVideoPrompt");
         updatePanelInfo(panel, info);
-        gridImageService.generateGridsForPanel(panelId);
+        gridImageService.generateGridsForPanel(panelId, customHint);
     }
 
     // ==================== 视频 ====================
@@ -204,7 +220,8 @@ public class PanelProductionService {
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
         String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
-        return panelPromptBuilder.buildMultiShotPrompt(visualStyle, info);
+        List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
+        return panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos);
     }
 
     @Async
@@ -219,6 +236,9 @@ public class PanelProductionService {
             }
 
             info.put("videoStatus", "generating");
+            info.remove("videoProgress");
+            info.remove("videoCredits");
+            info.remove("errorMessage");
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
 
@@ -226,7 +246,8 @@ public class PanelProductionService {
             String prompt = (String) info.get("customVideoPrompt");
             if (prompt == null || prompt.trim().isEmpty()) {
                 String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
-                prompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info);
+                List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
+                prompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos);
             }
 
             // 从 shots 计算总时长
@@ -265,20 +286,16 @@ public class PanelProductionService {
                 VideoGenerationService.TaskStatus status = videoGenerationService.getTaskStatus(taskId);
                 if (status == null) { Thread.sleep(intervalSeconds * 1000L); continue; }
 
-                // 更新进度和积分（每次轮询都更新）
-                if (status.getProgress() > 0 || status.getCredits() != null) {
-                    Panel progressPanel = panelRepository.selectById(panelId);
-                    if (progressPanel != null) {
-                        Map<String, Object> info = progressPanel.getPanelInfo();
-                        if (status.getProgress() > 0) {
-                            info.put("videoProgress", status.getProgress());
-                        }
-                        if (status.getCredits() != null) {
-                            info.put("videoCredits", status.getCredits());
-                        }
-                        progressPanel.setPanelInfo(info);
-                        panelRepository.updateById(progressPanel);
+                // 更新进度和积分
+                Panel progressPanel = panelRepository.selectById(panelId);
+                if (progressPanel != null) {
+                    Map<String, Object> info = progressPanel.getPanelInfo();
+                    info.put("videoProgress", status.getProgress());
+                    if (status.getCredits() != null) {
+                        info.put("videoCredits", status.getCredits());
                     }
+                    progressPanel.setPanelInfo(info);
+                    panelRepository.updateById(progressPanel);
                 }
 
                 switch (status.getStatus()) {
@@ -381,5 +398,29 @@ public class PanelProductionService {
         if (errorMsg != null) info.put("errorMessage", errorMsg);
         panel.setPanelInfo(info);
         panelRepository.updateById(panel);
+    }
+
+    /**
+     * 通过 Panel 所属 Episode 收集角色信息（name, voice, appearance）
+     */
+    private List<Map<String, String>> gatherCharacterInfosByPanel(Panel panel) {
+        List<Map<String, String>> result = new ArrayList<>();
+        try {
+            Episode episode = episodeRepository.selectById(panel.getEpisodeId());
+            if (episode == null) return result;
+            List<Character> characters = characterRepository.findByProjectId(episode.getProjectId());
+            for (Character ch : characters) {
+                Map<String, Object> info = ch.getCharacterInfo();
+                if (info == null) continue;
+                Map<String, String> ci = new HashMap<>();
+                ci.put("name", (String) info.getOrDefault(CharacterInfoKeys.NAME, ""));
+                ci.put("voice", (String) info.getOrDefault(CharacterInfoKeys.VOICE, ""));
+                ci.put("appearance", (String) info.getOrDefault(CharacterInfoKeys.APPEARANCE, ""));
+                result.add(ci);
+            }
+        } catch (Exception e) {
+            log.warn("收集角色信息失败: panelId={}", panel.getId(), e);
+        }
+        return result;
     }
 }

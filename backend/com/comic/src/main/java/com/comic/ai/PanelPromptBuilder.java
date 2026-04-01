@@ -87,9 +87,38 @@ public class PanelPromptBuilder {
      */
     @SuppressWarnings("unchecked")
     public String buildMultiShotPrompt(String visualStyle, Map<String, Object> panelInfo) {
+        return buildMultiShotPrompt(visualStyle, panelInfo, null);
+    }
+
+    /**
+     * 构建多镜头视频生成提示词（含角色设定）
+     */
+    @SuppressWarnings("unchecked")
+    public String buildMultiShotPrompt(String visualStyle, Map<String, Object> panelInfo,
+                                        List<Map<String, String>> characterInfos) {
         StringBuilder sb = new StringBuilder();
         sb.append(buildSceneStylePrefix(visualStyle));
         sb.append(" 专业电影级画面。\n\n");
+
+        // 角色设定段
+        if (characterInfos != null && !characterInfos.isEmpty()) {
+            sb.append("## 角色设定\n");
+            for (Map<String, String> ci : characterInfos) {
+                sb.append("- 【").append(ci.getOrDefault("name", ""));
+                String voice = ci.get("voice");
+                if (voice != null && !voice.isEmpty()) {
+                    sb.append("】声音：").append(voice);
+                } else {
+                    sb.append("】");
+                }
+                String appearance = ci.get("appearance");
+                if (appearance != null && !appearance.isEmpty()) {
+                    sb.append("，外貌：").append(appearance);
+                }
+                sb.append("\n");
+            }
+            sb.append("\n");
+        }
 
         List<Map<String, Object>> shots = (List<Map<String, Object>>) panelInfo.get("shots");
         int n = shots != null ? shots.size() : 0;
@@ -106,8 +135,13 @@ public class PanelPromptBuilder {
                   .append("，").append(shot.getOrDefault("visualDescription", "")).append("\n");
 
                 String dialogue = (String) shot.get("dialogue");
-                if (dialogue != null && !"无".equals(dialogue)) {
-                    sb.append("对白: ").append(dialogue).append("\n");
+                if (dialogue != null && !"无".equals(dialogue) && !dialogue.isEmpty()) {
+                    String speaker = (String) shot.get("speaker");
+                    sb.append("对白");
+                    if (speaker != null && !"无".equals(speaker) && !speaker.isEmpty()) {
+                        sb.append("(").append(speaker).append(")");
+                    }
+                    sb.append(": ").append(dialogue).append("\n");
                 }
                 String audioEffects = (String) shot.get("audioEffects");
                 if (audioEffects != null && !"无".equals(audioEffects)) {

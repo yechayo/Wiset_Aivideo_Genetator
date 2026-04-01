@@ -244,19 +244,19 @@ public class DeepSeekTextService implements TextGenerationService {
      */
     public List<Map<String, Object>> generateStoryboard(
             String episodeContent, String characters, int totalDuration, String visualStyle) {
-        int recommendedShots = Math.max(1, totalDuration * 10 / 25);
-        int minShots = Math.max(1, totalDuration / 4);
-        int maxShots = totalDuration;
+        int recommendedShots = Math.max(1, totalDuration / 4);
+        int minShots = Math.max(1, (int) Math.ceil((double) totalDuration / 6));
+        int maxShots = Math.max(minShots, totalDuration / 3);
 
         String systemPrompt = "你是一位专业的影视分镜师。请根据提供的剧本内容，生成详细的分镜脚本。\n"
             + "关键约束：\n"
-            + "- 每个分镜时长：1-4秒\n"
-            + "- 所有分镜时长总和必须 >= " + totalDuration + "秒\n"
+            + "- 每个分镜时长：2-4秒\n"
+            + "- 所有分镜时长总和必须尽量接近 " + totalDuration + "秒，不超过 " + totalDuration + "秒\n"
             + "- 分镜数量范围：" + minShots + " ~ " + maxShots + " 个（推荐：" + recommendedShots + "个）\n"
             + "- 输出纯 JSON 数组，不要包含 markdown 代码块标记\n\n"
             + "每个分镜包含以下字段：\n"
             + "- shotNumber: 镜头编号（从1开始）\n"
-            + "- duration: 时长（秒，1-4）\n"
+            + "- duration: 时长（秒，2-4）\n"
             + "- scene: 场景描述\n"
             + "- characters: 出场角色数组\n"
             + "- shotSize: 景别（大远景/远景/全景/中景/中近景/近景/特写/大特写）\n"
@@ -264,8 +264,10 @@ public class DeepSeekTextService implements TextGenerationService {
             + "- cameraMovement: 运镜（固定/横移/俯仰/横摇/升降/轨道推拉/变焦推拉/正跟随/倒跟随/环绕/滑轨横移）\n"
             + "- visualDescription: 画面描述\n"
             + "- dialogue: 对白（无则填\"无\"）\n"
+            + "- speaker: 说话人角色名（无对白则填\"无\"，有对白时必须是 characters 数组中的角色之一）\n"
             + "- visualEffects: 视觉特效（无则填\"无\"）\n"
-            + "- audioEffects: 音效（无则填\"无\"）";
+            + "- audioEffects: 音效（无则填\"无\"）\n\n"
+            + "重要：dialogue 与 speaker 必须严格对应。如果 dialogue 不为\"无\"，则 speaker 必须是 characters 数组中的某个角色名，表示该角色正在说这句台词。";
 
         String userPrompt = "剧本内容：\n" + episodeContent + "\n\n"
             + "角色：" + characters + "\n"
@@ -280,15 +282,26 @@ public class DeepSeekTextService implements TextGenerationService {
             throw new BusinessException("分镜生成结果为空，请重试");
         }
 
-        // 钳制时长到 1-4 秒，并自动计算 startTime/endTime
+        // 钳制时长到 2-4 秒，并自动计算 startTime/endTime
         int currentTime = 0;
         for (Map<String, Object> shot : shots) {
             int duration = ((Number) shot.get("duration")).intValue();
-            duration = Math.max(1, Math.min(4, duration));
+            duration = Math.max(2, Math.min(4, duration));
             shot.put("duration", duration);
             shot.put("startTime", currentTime);
             currentTime += duration;
             shot.put("endTime", currentTime);
+        }
+
+        // 如果总时长超出目标，从末尾移除多余分镜
+        while (currentTime > totalDuration && !shots.isEmpty()) {
+            Map<String, Object> removed = shots.remove(shots.size() - 1);
+            currentTime -= ((Number) removed.get("duration")).intValue();
+        }
+        // 修正最后一个分镜的 endTime
+        if (!shots.isEmpty()) {
+            Map<String, Object> lastShot = shots.get(shots.size() - 1);
+            lastShot.put("endTime", currentTime);
         }
 
         return shots;

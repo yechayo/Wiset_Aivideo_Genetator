@@ -5,6 +5,10 @@ interface PanelGroupViewProps {
   fusionImageUrl: string | null;
   shots: any[];
   gridStatus: string;
+  onApprove?: () => void;
+  onReject?: (reason: string) => void;
+  onRegenerate?: () => void;
+  isRegenerating?: boolean;
 }
 
 const shotSizeMap: Record<string, string> = {
@@ -19,8 +23,13 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = ({
   fusionImageUrl,
   shots,
   gridStatus,
+  onApprove,
+  onReject,
+  onRegenerate,
+  isRegenerating,
 }) => {
   const isApproved = gridStatus === 'approved';
+  const isGenerated = gridStatus === 'generated';
   const totalDuration = shots.reduce((s: number, sh: any) => s + (sh.duration || 0), 0);
 
   return (
@@ -62,6 +71,41 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = ({
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {isGenerated && (
+        <div className={styles.actionBar}>
+          {onApprove && (
+            <button
+              className={styles.approveBtn}
+              onClick={onApprove}
+              disabled={isRegenerating}
+            >
+              ✓ 通过
+            </button>
+          )}
+          {onReject && (
+            <button
+              className={styles.rejectBtn}
+              onClick={() => {
+                const reason = prompt('请输入退回原因（可选）：') || '';
+                onReject(reason);
+              }}
+              disabled={isRegenerating}
+            >
+              ✗ 退回
+            </button>
+          )}
+          {onRegenerate && (
+            <button
+              className={styles.regenerateBtn}
+              onClick={() => onRegenerate()}
+              disabled={isRegenerating}
+            >
+              ⟳ 重新生成
+            </button>
+          )}
         </div>
       )}
     </div>

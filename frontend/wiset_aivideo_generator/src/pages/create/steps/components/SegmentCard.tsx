@@ -13,7 +13,7 @@ export interface SegmentCardProps {
   onToggle: () => void;
   onApproveGrid: () => void;
   onRejectGrid: (reason: string) => void;
-  onRegenerateGrid: () => void;
+  onRegenerateGrid: (customHint?: string) => void;
   onGenerateVideo: (customPrompt?: string) => void;
   onLoadVideoPrompt?: () => Promise<string>;
   isRegeneratingGrid?: boolean;
@@ -249,6 +249,10 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
                 fusionImageUrl={segment.fusionImageUrl}
                 shots={segment.shots}
                 gridStatus={segment.gridStatus}
+                onApprove={onApproveGrid}
+                onReject={onRejectGrid}
+                onRegenerate={onRegenerateGrid}
+                isRegenerating={isRegeneratingGrid}
               />
             ) : (
               <GridReviewPanel
@@ -271,7 +275,9 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
               videoUrl={segment.videoUrl}
               pipelineStep={segment.pipelineStep}
               onGenerateVideo={onGenerateVideo}
+              onRegenerateGrid={onRegenerateGrid}
               isGenerating={isGeneratingVideo}
+              isRegeneratingGrid={isRegeneratingGrid}
               videoTaskId={segment.videoTaskId}
               videoOffPeak={segment.videoOffPeak}
               videoProgress={segment.videoProgress}

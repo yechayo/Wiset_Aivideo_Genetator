@@ -131,6 +131,11 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     });
   }, []);
 
+  // 生成中状态保护：避免 loadEpisodes 用空数据覆盖 SSE 占位
+  const isGeneratingRef = useRef(false);
+  isGeneratingRef.current = statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
+    || statusInfo?.statusCode === 'STORYBOARD_GENERATING';
+
   /**
    * 加载剧集列表
    */
@@ -145,6 +150,14 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
       }
       const items = res.data.items || [];
 
+      // 生成中后端事务未提交，getEpisodes 返回空 → 保留 SSE 创建的占位数据
+      if (items.length === 0 && isGeneratingRef.current) {
+        // 不覆盖已有数据（SSE 创建的占位 chapters）
+        setChapters(prev => prev.length > 0 ? prev : prev);
+        setLoading(false);
+        return;
+      }
+
       // 按章节分组
       const chapterMap = new Map<string, any[]>();
       items.forEach(ep => {
@@ -154,6 +167,46 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
         }
         chapterMap.get(chapterTitle)!.push(ep);
       });
+
+      // 去重：同一章节内 episodeNum 相同的 episode 合并（后端可能因 title 不匹配而创建新记录）
+      for (const [_, episodeList] of chapterMap.entries()) {
+        if (episodeList.length <= 1) continue;
+        const seen = new Map<number, number>(); // episodeNum → index
+        const deduped: any[] = [];
+        for (const ep of episodeList) {
+          const num = ep.episodeInfo?.episodeNum;
+          if (num == null) {
+            deduped.push(ep);
+            continue;
+          }
+          const prevIdx = seen.get(num);
+          if (prevIdx == null) {
+            seen.set(num, deduped.length);
+            deduped.push(ep);
+          } else {
+            // 合并：优先保留有标题的 episodeInfo，补充缺失字段
+            const prev = deduped[prevIdx];
+            const prevInfo = prev.episodeInfo || {};
+            const curInfo = ep.episodeInfo || {};
+            // 标题取非空的那边
+            if (!prevInfo.title && curInfo.title) prevInfo.title = curInfo.title;
+            // grid 数据取有内容的那边
+            if (!prevInfo.gridStatus && curInfo.gridStatus) prevInfo.gridStatus = curInfo.gridStatus;
+            if ((!prevInfo.gridImages || prevInfo.gridImages.length === 0) && curInfo.gridImages?.length) {
+              prevInfo.gridImages = curInfo.gridImages;
+            }
+            if ((!prevInfo.splitShots || prevInfo.splitShots.length === 0) && curInfo.splitShots?.length) {
+              prevInfo.splitShots = curInfo.splitShots;
+            }
+            if (!prevInfo.panelPlan && curInfo.panelPlan) prevInfo.panelPlan = curInfo.panelPlan;
+            // 保留较大的 id（通常新创建的 id 更大）
+            if (ep.id > prev.id) prev.id = ep.id;
+            prev.episodeInfo = prevInfo;
+          }
+        }
+        episodeList.length = 0;
+        episodeList.push(...deduped);
+      }
 
       const builtChapters: ChapterState[] = [];
       let chapterIndex = 0;
@@ -200,6 +253,8 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
       setChapters(builtChapters);
 
       // 自动加载所有剧集的 panels 和生产状态
+      // 清除缓存，确保事务提交后的新数据能被重新加载
+      panelsLoadedRef.current.clear();
       const allIds = builtChapters.flatMap(ch => ch.episodes.map(ep => ep.episodeId));
       allIds.forEach(eid => {
         loadPanelsForEpisode(eid);
@@ -223,13 +278,12 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     if (chapters.length === 0) return;
     const allEpisodes = chapters.flatMap(ch => ch.episodes);
     const generatingGridEp = allEpisodes.find(ep =>
-      ep.isNewFlow && ep.gridStatus === 'generating'
+      ep.gridStatus === 'generating' && ep.episodeId > 0
     );
     if (!generatingGridEp) return;
 
     const gridEpId = generatingGridEp.episodeId;
     console.info('检测到正在生成中的 episode 九宫格, 恢复轮询: epId=', gridEpId);
-    refreshEpisodeGridStatus(gridEpId);
     const abort = new AbortController();
     let retries = 0;
     const gridPoll = async () => {
@@ -238,10 +292,12 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
         if (abort.signal.aborted) return;
         retries++;
         try {
-          await refreshEpisodeGridStatus(gridEpId);
-          const currentEps = chapters.flatMap(ch => ch.episodes);
-          const currentGridEp = currentEps.find(e => e.episodeId === gridEpId);
-          if (currentGridEp && (currentGridEp.gridStatus === 'generated' || currentGridEp.gridStatus === 'approved' || currentGridEp.gridStatus === 'failed')) {
+          const status = await refreshEpisodeGridStatus(gridEpId);
+          if (status === 'generated' || status === 'approved' || status === 'failed') {
+            // 生成完成后重新加载分镜数据
+            panelsLoadedRef.current.delete(gridEpId);
+            loadPanelsForEpisode(gridEpId);
+            refreshProductionStatuses(gridEpId);
             return;
           }
         } catch {
@@ -254,47 +310,65 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     };
     gridPoll();
     return () => { abort.abort(); };
-  }, [chapters.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    chapters.length,
+    // 包含所有正在 generating 的 episodeId，确保 grid 状态变化时重新触发
+    ...chapters.flatMap(ch => ch.episodes.filter(ep => ep.gridStatus === 'generating').map(ep => ep.episodeId)),
+  ]);
 
   /**
-   * 加载项目角色列表，构建 name→ID 映射
-   * 用于修正老数据中 AI 把角色名字填进 char_id 的问题
+   * 加载项目角色列表，同时构建 name→ID 映射和头像 URL 映射
+   * 提前加载头像 URL，避免面板加载时的竞态条件
    */
   useEffect(() => {
     if (!projectId) return;
+    let cancelled = false;
     (async () => {
       try {
         const res = await getCharacters(projectId, { page: 1, size: 100 });
+        if (cancelled) return;
         const items = res.data?.items || [];
-        const map: Record<string, string> = {};
+
+        // 1. 构建 name→ID 映射
+        const nameMap: Record<string, string> = {};
+        const allCharIds: string[] = [];
         items.forEach((c: any) => {
           if (c.charId && c.name) {
-            map[c.name] = c.charId;
+            nameMap[c.name] = c.charId;
+            allCharIds.push(c.charId);
           }
         });
-        if (Object.keys(map).length > 0) {
-          setCharNameToIdMap(map);
+        if (Object.keys(nameMap).length > 0) {
+          setCharNameToIdMap(nameMap);
+        }
+
+        // 2. 并行加载所有角色头像 URL（提前加载，避免面板加载时的竞态）
+        if (allCharIds.length > 0) {
+          const results = await Promise.allSettled(
+            allCharIds.map(charId => getCharacterStatus(projectId, charId))
+          );
+          if (cancelled) return;
+          const avatarMap: Record<string, string> = {};
+          results.forEach((r, i) => {
+            if (r.status === 'fulfilled' && r.value?.data) {
+              const d = r.value.data;
+              const url = d.threeViewGridUrl || d.expressionGridUrl || '';
+              if (url) {
+                avatarMap[allCharIds[i]] = url;
+              }
+            }
+          });
+          if (Object.keys(avatarMap).length > 0) {
+            setCharAvatarMap(prev => ({ ...prev, ...avatarMap }));
+          }
         }
       } catch {
         // 静默失败
       }
     })();
+    return () => { cancelled = true; };
   }, [projectId]);
-
-  // 当 charNameToIdMap 就绪后，重新加载已展开集的分镜（此时 map 已有数据，可正确修正 char_id）
-  useEffect(() => {
-    if (Object.keys(charNameToIdMap).length === 0) return;
-    // 已有 panels 缓存，清除后让 loadPanelsForEpisode 重新走一遍（map 已生效）
-    const loadedEpisodes = panelsLoadedRef.current;
-    if (loadedEpisodes.size === 0) return;
-    // 短暂延迟确保 loadPanelsForEpisode 的 useCallback 已用新 map 重建
-    const timer = setTimeout(() => {
-      const episodeIds = [...loadedEpisodes];
-      loadedEpisodes.clear();
-      episodeIds.forEach(eid => loadPanelsForEpisode(eid));
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [charNameToIdMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 计算完成统计（兼容新旧流程）
   const totalSegments = chapters.reduce(
@@ -510,9 +584,10 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     });
   }, []);
 
-  // charAvatarMap 更新后，刷新已有 segments 的角色头像
+  // charNameToIdMap 或 charAvatarMap 更新后，统一修正已有 segments 的角色 charId 和头像 URL
+  // 无论面板加载时这两个 map 是否就绪，此 effect 都能正确回填
   useEffect(() => {
-    if (Object.keys(charAvatarMap).length === 0) return;
+    if (Object.keys(charNameToIdMap).length === 0 && Object.keys(charAvatarMap).length === 0) return;
     setChapters(prev =>
       prev.map(ch => ({
         ...ch,
@@ -520,15 +595,17 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
           ...ep,
           segments: ep.segments.map(seg => ({
             ...seg,
-            characterAvatars: seg.characterAvatars.map(a => ({
-              ...a,
-              avatarUrl: charAvatarMap[a.charId] || a.avatarUrl,
-            })),
+            characterAvatars: seg.characterAvatars.map(a => {
+              const charId = a.charId || charNameToIdMap[a.name] || '';
+              const avatarUrl = charAvatarMap[charId] || a.avatarUrl;
+              if (charId === a.charId && avatarUrl === a.avatarUrl) return a;
+              return { ...a, charId, avatarUrl };
+            }),
           })),
         })),
       }))
     );
-  }, [charAvatarMap]);
+  }, [charAvatarMap, charNameToIdMap]);
 
   /**
    * 刷新某集所有 Panel 的生产状态
@@ -629,11 +706,11 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   /**
    * 重新生成九宫格
    */
-  const handleRegenerateGrid = useCallback(async (episodeId: number, panelId: string) => {
+  const handleRegenerateGrid = useCallback(async (episodeId: number, panelId: string, customHint?: string) => {
     if (!projectId) return;
     setGeneratingGridPanelId(panelId);
     try {
-      await regenerateGrid(projectId, episodeId, Number(panelId));
+      await regenerateGrid(projectId, episodeId, Number(panelId), customHint);
       // 基于状态的轮询，检查是否生成完成或失败
       const abort = new AbortController();
       regenerateGridAbortRef.current = abort;
@@ -748,12 +825,13 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
 
   /**
    * 刷新整集九宫格状态（轮询用）
+   * @returns 最新的 gridStatus，失败返回 null
    */
-  const refreshEpisodeGridStatus = useCallback(async (episodeId: number) => {
-    if (!projectId) return;
+  const refreshEpisodeGridStatus = useCallback(async (episodeId: number): Promise<string | null> => {
+    if (!projectId) return null;
     try {
       const res = await getEpisodeGridStatus(projectId, episodeId);
-      if ((res.code !== 0 && res.code !== 200) || !res.data) return;
+      if ((res.code !== 0 && res.code !== 200) || !res.data) return null;
       const data = res.data;
       setChapters(prev =>
         prev.map(ch => ({
@@ -766,13 +844,16 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
                   gridImages: data.gridImages || [],
                   splitShots: data.splitShots || [],
                   gridRejectionFeedback: data.gridRejectionFeedback,
+                  isNewFlow: true,
                 }
               : ep
           ),
         }))
       );
+      return data.gridStatus;
     } catch {
       // 静默失败
+      return null;
     }
   }, [projectId]);
 
@@ -849,15 +930,15 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
           }),
         }))
       );
-      // 加载该集的分镜（带重试：事务可能尚未提交）
+      // 加载该集的分镜（后端已提交事务，episode 可查询）
       if (data.episodeId) {
         const tryLoad = async (retries = 0) => {
           panelsLoadedRef.current.delete(data.episodeId);
           try {
             await loadPanelsForEpisode(data.episodeId);
           } catch {
-            if (retries < 1) {
-              await new Promise(r => setTimeout(r, 1000));
+            if (retries < 2) {
+              await new Promise(r => setTimeout(r, 1500));
               tryLoad(retries + 1);
             }
           }
@@ -870,19 +951,42 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
         prev.map(ch => ({
           ...ch,
           episodes: ch.episodes.map(ep =>
-            ep.episodeId === data.episodeId
-              ? { ...ep, gridStatus: data.gridStatus as any }
+            // 按 episodeId 匹配，再用 episodeNum 兜底
+            (ep.episodeId === data.episodeId || (data.episodeNum && ep.episodeIndex === data.episodeNum))
+              ? {
+                  ...ep,
+                  episodeId: data.episodeId || ep.episodeId,
+                  gridStatus: data.gridStatus as any,
+                  isNewFlow: true,
+                }
               : ep
           ),
         }))
       );
+      // generating/generated/failed 都需要刷新完整 grid 数据
+      if (data.episodeId) {
+        refreshEpisodeGridStatus(data.episodeId);
+      }
+      // generated 或 failed 时还需要重新加载分镜数据
+      if ((data.gridStatus === 'generated' || data.gridStatus === 'failed' || data.gridStatus === 'approved') && data.episodeId) {
+        panelsLoadedRef.current.delete(data.episodeId);
+        loadPanelsForEpisode(data.episodeId);
+        refreshProductionStatuses(data.episodeId);
+      }
     },
     onStatusChange: (data) => {
       if (projectId && data.to) {
         syncStatus(projectId);
-        if (data.to === 'STORYBOARD_REVIEW') {
+        if (data.to === 'STORYBOARD_REVIEW' || data.to === 'PRODUCING') {
           loadEpisodes();
         }
+      }
+    },
+    onReconnect: () => {
+      // SSE 重连后全量刷新
+      if (projectId) {
+        syncStatus(projectId);
+        loadEpisodes();
       }
     },
   });
@@ -893,53 +997,55 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string, customPrompt?: string) => {
     if (!projectId) return;
     setGeneratingVideoPanelId(panelId);
-    try {
-      await generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt);
-      // 基于状态的轮询，检查是否生成完成或失败
-      const abort = new AbortController();
-      generateVideoAbortRef.current = abort;
-      let retries = 0;
-      const poll = async () => {
-        while (retries < VIDEO_POLL_MAX_RETRIES && !abort.signal.aborted) {
-          await new Promise(r => setTimeout(r, VIDEO_POLL_INTERVAL));
-          if (abort.signal.aborted) return;
-          retries++;
-          try {
-            // 获取该panel的生产状态
-            const res = await getBatchProductionStatuses(projectId, episodeId);
-            if ((res.code !== 0 && res.code !== 200) || !res.data) continue;
 
-            const panelStatus = res.data.find((s: any) => s.panelId === Number(panelId));
-            if (panelStatus) {
-              const videoStatus = panelStatus.videoStatus;
-              // 检查状态
-              if (videoStatus === 'completed') {
-                // 生成成功
-                await refreshProductionStatuses(episodeId);
-                setGeneratingVideoPanelId(null);
-                return;
-              }
-              if (videoStatus === 'failed') {
-                // 生成失败
-                alert('视频生成失败');
-                setGeneratingVideoPanelId(null);
-                return;
-              }
+    // 先启动轮询，再发 API 请求 —— 确保即使 API 延迟也不会阻塞进度更新
+    const abort = new AbortController();
+    generateVideoAbortRef.current = abort;
+    let retries = 0;
+    const poll = async () => {
+      while (retries < VIDEO_POLL_MAX_RETRIES && !abort.signal.aborted) {
+        await new Promise(r => setTimeout(r, VIDEO_POLL_INTERVAL));
+        if (abort.signal.aborted) return;
+        retries++;
+        try {
+          // 获取该panel的生产状态
+          const res = await getBatchProductionStatuses(projectId, episodeId);
+          if ((res.code !== 0 && res.code !== 200) || !res.data) continue;
+
+          const panelStatus = res.data.find((s: any) => s.panelId === Number(panelId));
+          if (panelStatus) {
+            const videoStatus = panelStatus.videoStatus;
+            // 每次轮询都刷新 UI，确保 videoProgress 等中间状态实时显示
+            await refreshProductionStatuses(episodeId);
+            // 检查终态
+            if (videoStatus === 'completed') {
+              setGeneratingVideoPanelId(null);
+              return;
             }
-          } catch {
-            // 继续轮询
+            if (videoStatus === 'failed') {
+              alert('视频生成失败');
+              setGeneratingVideoPanelId(null);
+              return;
+            }
           }
+        } catch {
+          // 继续轮询
         }
-        if (retries >= VIDEO_POLL_MAX_RETRIES) {
-          console.warn('视频生成轮询超时: panelId=', panelId);
-          setGeneratingVideoPanelId(null);
-        }
-      };
-      poll();
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || '生成视频失败');
-      setGeneratingVideoPanelId(null);
-    }
+      }
+      if (retries >= VIDEO_POLL_MAX_RETRIES) {
+        console.warn('视频生成轮询超时: panelId=', panelId);
+        setGeneratingVideoPanelId(null);
+      }
+    };
+    poll();
+
+    // 发起视频生成请求（fire-and-forget，不阻塞轮询）
+    generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt)
+      .catch((err: any) => {
+        abort.abort();
+        alert(err?.response?.data?.message || err?.message || '生成视频失败');
+        setGeneratingVideoPanelId(null);
+      });
   }, [projectId, refreshProductionStatuses, offPeak]);
 
   /**
@@ -987,9 +1093,9 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
           if (panelId) handleRejectGrid(epId, panelId, reason);
         }}
-        onSegmentRegenerateGrid={(epId, segIdx) => {
+        onSegmentRegenerateGrid={(epId, segIdx, customHint) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
-          if (panelId) handleRegenerateGrid(epId, panelId);
+          if (panelId) handleRegenerateGrid(epId, panelId, customHint);
         }}
         onSegmentGenerateVideo={(epId, segIdx, customPrompt) => {
           const panelId = episode.segments[segIdx]?.panelData?.panelId;
@@ -1067,8 +1173,10 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     );
   }
 
-  // 空状态
-  if (chapters.length === 0) {
+  // 空状态（生成中不显示"暂无数据"，让进度条可见）
+  const isGenerating = statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
+    || statusInfo?.statusCode === 'STORYBOARD_GENERATING';
+  if (chapters.length === 0 && !isGenerating) {
     return (
       <div className={styles.pageContainer}>
         <div className={styles.emptyState}>

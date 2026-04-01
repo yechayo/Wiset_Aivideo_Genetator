@@ -16,7 +16,8 @@ import com.comic.service.pipeline.PipelineService;
 import com.comic.service.pipeline.ProjectStatusBroadcaster;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
@@ -28,7 +29,7 @@ import java.util.Map;
 @Service
 public class StoryboardService {
 
-    private static final int MAX_PANEL_DURATION = 16;
+    private static final int MAX_PANEL_DURATION = 10;
 
     @Resource
     private DeepSeekTextService deepSeekTextService;
@@ -46,12 +47,17 @@ public class StoryboardService {
     private GridImageService gridImageService;
     @Resource
     private CharacterRepository characterRepository;
+    @Resource
+    private PlatformTransactionManager transactionManager;
 
     /**
      * 主入口：生成结构化分集剧本 → 分镜脚本 → 异步生成整集九宫格
      * 被PipelineService异步调用
+     *
+     * 注意：不使用 @Transactional，因为九宫格生成是 @Async 的，
+     * 需要 episode 创建后立即提交事务，让前端能查询到数据。
+     * 每集的 episode 创建通过 TransactionTemplate 在独立事务中完成。
      */
-    @Transactional
     public void generateEpisodeScriptAndStoryboard(String projectId) {
         log.info("[Pipeline] 开始分集剧本+分镜生成: projectId={}", projectId);
         try {
@@ -102,17 +108,22 @@ public class StoryboardService {
                 Map<String, String> nameToId = buildCharacterIdMap(projectId);
                 injectCharacterIds(shots, nameToId);
 
-                Long episodeId = findOrCreateEpisode(projectId, script, shots, visualStyle);
-                log.info("[Pipeline] Episode创建/更新: episodeId={}, projectId={}", episodeId, projectId);
-                deleteExistingPanels(episodeId);
+                // 在独立事务中创建 episode 并设置状态，确保立即提交让前端可查询
+                TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
+                int episodeNum = scripts.indexOf(script) + 1;
+                Long episodeId = txTemplate.execute(status -> {
+                    Long eid = findOrCreateEpisode(projectId, script, shots, visualStyle, episodeNum);
+                    log.info("[Pipeline] Episode创建/更新: episodeId={}, projectId={}", eid, projectId);
+                    deleteExistingPanels(eid);
+                    gridImageService.updateEpisodeGridStatus(eid, "generating");
+                    return eid;
+                });
+                // 事务已提交，episode 对前端可见
 
-                // 设置 episodeInfo.gridStatus = "generating"，异步生成整集九宫格
-                gridImageService.updateEpisodeGridStatus(episodeId, "generating");
-
-                // 直接广播分镜完成事件
+                // 广播分镜完成事件（在事务提交后，确保前端能查到 episode）
                 Map<String, Object> storyboardDoneData = new HashMap<>();
                 storyboardDoneData.put("episodeId", episodeId);
-                storyboardDoneData.put("episodeNum", scripts.indexOf(script) + 1);
+                storyboardDoneData.put("episodeNum", episodeNum);
                 storyboardDoneData.put("title", title);
                 storyboardDoneData.put("shotsCount", shots.size());
                 broadcaster.broadcastEpisodeProgress(projectId, "episode:storyboard_done", storyboardDoneData);
@@ -182,7 +193,14 @@ public class StoryboardService {
             currentGroup.add(shotCopy);
             currentDuration += duration;
         }
-        if (!currentGroup.isEmpty()) groups.add(currentGroup);
+        if (!currentGroup.isEmpty()) {
+            // 最后一组只有 1 个 shot 且前面有组时，合并到前一组，保证每组至少 2 个 shot
+            if (currentGroup.size() == 1 && !groups.isEmpty()) {
+                groups.get(groups.size() - 1).addAll(currentGroup);
+            } else {
+                groups.add(currentGroup);
+            }
+        }
         return groups;
     }
 
@@ -227,13 +245,20 @@ public class StoryboardService {
     }
 
     private Long findOrCreateEpisode(String projectId, Map<String, Object> script,
-                                       List<Map<String, Object>> shots, String visualStyle) {
+                                       List<Map<String, Object>> shots, String visualStyle,
+                                       int episodeNum) {
         String title = (String) script.get("title");
         List<Episode> episodes = episodeRepository.findByProjectId(projectId);
         for (Episode ep : episodes) {
             Map<String, Object> info = ep.getEpisodeInfo();
-            if (info != null && title.equals(info.get("title"))) {
+            // 优先按 episodeNum 匹配（稳定标识），回退到 title 匹配
+            Object existingNum = info != null ? info.get("episodeNum") : null;
+            boolean numMatch = existingNum != null && Integer.valueOf(episodeNum).equals(existingNum);
+            boolean titleMatch = info != null && title != null && title.equals(info.get("title"));
+            if (numMatch || titleMatch) {
                 info.putAll(script);
+                // 确保写入 episodeNum
+                info.put("episodeNum", episodeNum);
                 // 新流程：shots 存入 episodeInfo
                 info.put("shots", shots);
                 info.put("visualStyle", visualStyle);
@@ -248,6 +273,7 @@ public class StoryboardService {
         episode.setStatus("pending");
         episode.setDeleted(false);
         Map<String, Object> episodeInfo = new HashMap<>(script);
+        episodeInfo.put("episodeNum", episodeNum);
         episodeInfo.put("shots", shots);
         episodeInfo.put("visualStyle", visualStyle);
         episodeInfo.put("gridStatus", "pending");
@@ -259,8 +285,7 @@ public class StoryboardService {
     private void deleteExistingPanels(Long episodeId) {
         List<Panel> existing = panelRepository.findByEpisodeId(episodeId);
         for (Panel p : existing) {
-            p.setDeleted(true);
-            panelRepository.updateById(p);
+            panelRepository.deleteById(p.getId());
         }
     }
 

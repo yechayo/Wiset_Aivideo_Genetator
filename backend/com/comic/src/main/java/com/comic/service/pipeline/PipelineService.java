@@ -162,8 +162,7 @@ public class PipelineService implements StageCompletionCallback {
         if (project == null) {
             throw new BusinessException("项目不存在");
         }
-        project.setDeleted(true);
-        projectRepository.updateById(project);
+        projectRepository.deleteById(project.getId());
     }
 
     // ==================== Pipeline 状态转换（唯一入口）====================

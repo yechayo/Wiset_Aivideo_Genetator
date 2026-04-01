@@ -132,8 +132,10 @@ public class PanelController {
     public Result<Void> regenerateGrid(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
-            @PathVariable Long panelId) {
-        panelProductionService.regenerateGrid(panelId);
+            @PathVariable Long panelId,
+            @RequestBody(required = false) Map<String, String> body) {
+        String customHint = body != null ? body.get("customHint") : null;
+        panelProductionService.regenerateGrid(panelId, customHint);
         return Result.ok();
     }
 

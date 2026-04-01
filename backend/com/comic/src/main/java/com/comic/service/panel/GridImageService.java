@@ -53,6 +53,10 @@ public class GridImageService {
      * 为指定 Panel 生成九宫格图 → 切割 → 融合参考图
      */
     public void generateGridsForPanel(Long panelId) {
+        generateGridsForPanel(panelId, null);
+    }
+
+    public void generateGridsForPanel(Long panelId, String customHint) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("Panel 不存在: " + panelId);
 
@@ -66,6 +70,7 @@ public class GridImageService {
             updatePanelInfo(panel, panelInfo);
 
             List<String> characterRefUrls = getCharacterReferenceUrls(panel.getEpisodeId());
+            List<CharRef> charRefsWithNames = getCharacterReferencesWithNames(panel.getEpisodeId());
             int pageCount = calculatePageCount(shots.size(), SHOTS_PER_PAGE);
             List<String> gridImageUrls = new ArrayList<>();
 
@@ -75,6 +80,10 @@ public class GridImageService {
                 List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
 
                 String prompt = panelPromptBuilder.buildGridPrompt(visualStyleStr, pageShots, characterRefUrls);
+                // 追加用户的修改建议
+                if (customHint != null && !customHint.trim().isEmpty()) {
+                    prompt += "\n\n用户修改要求: " + customHint.trim();
+                }
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
                     imageUrl = seedreamImageService.generateWithMultipleReferences(
@@ -101,7 +110,7 @@ public class GridImageService {
             }
 
             // 融合参考图
-            BufferedImage fusionImage = createFusionImage(shots, characterRefUrls);
+            BufferedImage fusionImage = createFusionImage(shots, charRefsWithNames);
             panelInfo.put("fusionImageUrl", uploadToOss(fusionImage, panelId, "fusion"));
             panelInfo.put("gridImages", gridImageUrls);
             panelInfo.put("gridStatus", "generated");
@@ -284,7 +293,25 @@ public class GridImageService {
      * 为指定 Panel 的 splitShots 创建融合参考图（公开版）
      */
     public BufferedImage createFusionImageForPanel(List<Map<String, Object>> panelShots, List<String> charRefUrls) {
-        return createFusionImage(panelShots, charRefUrls);
+        List<CharRef> charRefs = new ArrayList<>();
+        if (charRefUrls != null) {
+            for (String url : charRefUrls) {
+                charRefs.add(new CharRef(url, null));
+            }
+        }
+        return createFusionImage(panelShots, charRefs);
+    }
+
+    /**
+     * 角色引用（URL + 名字）
+     */
+    public static class CharRef {
+        public final String url;
+        public final String name;
+        public CharRef(String url, String name) {
+            this.url = url;
+            this.name = name;
+        }
     }
 
     /**
@@ -292,6 +319,13 @@ public class GridImageService {
      */
     public List<String> getCharacterReferenceUrlsForEpisode(Long episodeId) {
         return getCharacterReferenceUrls(episodeId);
+    }
+
+    /**
+     * 获取 Episode 的角色参考图（含名字），公开版本
+     */
+    public List<CharRef> getCharacterReferencesWithNamesForEpisode(Long episodeId) {
+        return getCharacterReferencesWithNames(episodeId);
     }
 
     /**
@@ -312,7 +346,7 @@ public class GridImageService {
         }
     }
 
-    private BufferedImage createFusionImage(List<Map<String, Object>> shots, List<String> charRefUrls) {
+    private BufferedImage createFusionImage(List<Map<String, Object>> shots, List<CharRef> charRefs) {
         // 固定输出尺寸：1920x1080 (16:9)
         final int FIXED_WIDTH = 1920;
         final int FIXED_HEIGHT = 1080;
@@ -356,24 +390,25 @@ public class GridImageService {
             }
             // 绘制编号
             g.setColor(Color.BLACK);
-            g.fillRect(x + 2, y + 2, 24, 18);
+            g.fillRect(x + 2, y + 2, 48, 36);
             g.setColor(Color.WHITE);
-            g.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            g.setFont(new Font("SansSerif", Font.BOLD, 26));
             String label = NumberFormatter.toCircled(i + 1);
-            g.drawString(label, x + 4, y + 15);
+            g.drawString(label, x + 6, y + 28);
         }
 
         // 绘制底部角色参考图横条
-        if (charRefUrls != null && !charRefUrls.isEmpty()) {
-            int charCount = charRefUrls.size();
+        if (charRefs != null && !charRefs.isEmpty()) {
+            int charCount = charRefs.size();
             int charW = (FIXED_WIDTH - PAD * (charCount + 1)) / charCount;
-            int charH = BOTTOM_BAR_HEIGHT - PAD * 2;
+            int nameBarH = 24;
+            int charH = BOTTOM_BAR_HEIGHT - PAD * 2 - nameBarH;
             int charY = MAIN_AREA_HEIGHT + PAD;
 
-            for (int i = 0; i < charRefUrls.size(); i++) {
+            for (int i = 0; i < charRefs.size(); i++) {
                 int charX = PAD + i * (charW + PAD);
                 try {
-                    BufferedImage charImg = downloadImage(charRefUrls.get(i));
+                    BufferedImage charImg = downloadImage(charRefs.get(i).url);
                     // 等比缩放
                     double scale = Math.min((double) charW / charImg.getWidth(), (double) charH / charImg.getHeight());
                     int drawW = (int) (charImg.getWidth() * scale);
@@ -384,12 +419,24 @@ public class GridImageService {
 
                     // 角色编号
                     g.setColor(Color.BLACK);
-                    g.fillRect(charX + 2, charY + 2, 20, 16);
+                    g.fillRect(charX + 2, charY + 2, 36, 28);
                     g.setColor(Color.WHITE);
-                    g.setFont(new Font("SansSerif", Font.PLAIN, 10));
-                    g.drawString("C" + (i + 1), charX + 4, charY + 14);
+                    g.setFont(new Font("SansSerif", Font.BOLD, 18));
+                    g.drawString("C" + (i + 1), charX + 5, charY + 22);
+
+                    // 角色名字
+                    String charName = charRefs.get(i).name;
+                    if (charName != null && !charName.isEmpty()) {
+                        int nameY = charY + charH + 2;
+                        g.setColor(Color.WHITE);
+                        g.setFont(new Font("SansSerif", Font.BOLD, 16));
+                        java.awt.FontMetrics fm = g.getFontMetrics();
+                        int nameWidth = fm.stringWidth(charName);
+                        int nameX = charX + (charW - nameWidth) / 2;
+                        g.drawString(charName, nameX, nameY + fm.getAscent());
+                    }
                 } catch (Exception e) {
-                    log.warn("角色参考图加载失败: {}", charRefUrls.get(i));
+                    log.warn("角色参考图加载失败: {}", charRefs.get(i).url);
                 }
             }
         }
@@ -500,6 +547,96 @@ public class GridImageService {
             log.error("获取角色参考图失败: episodeId={}", episodeId, e);
         }
         return urls;
+    }
+
+    /**
+     * 获取角色参考图（含名字），用于融合图绘制
+     */
+    private List<CharRef> getCharacterReferencesWithNames(Long episodeId) {
+        List<CharRef> refs = new ArrayList<>();
+        try {
+            Episode episode = episodeRepository.selectById(episodeId);
+            if (episode == null) {
+                log.warn("角色参考图(含名字): episodeId={} 不存在", episodeId);
+                return refs;
+            }
+
+            Map<String, Object> episodeInfo = episode.getEpisodeInfo();
+            if (episodeInfo == null) {
+                log.warn("角色参考图(含名字): episodeId={} episodeInfo 为空", episodeId);
+                return refs;
+            }
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> shots = (List<Map<String, Object>>) episodeInfo.get("shots");
+            if (shots == null) {
+                log.warn("角色参考图(含名字): episodeId={} shots 为空", episodeId);
+                return refs;
+            }
+
+            // 收集 charId 和角色名
+            java.util.Set<String> charIds = new java.util.LinkedHashSet<>();
+            java.util.Set<String> charNames = new java.util.LinkedHashSet<>();
+
+            for (Map<String, Object> shot : shots) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, String>> charRefs = (List<Map<String, String>>) shot.get("characterRefs");
+                if (charRefs != null) {
+                    for (Map<String, String> ref : charRefs) {
+                        String charId = ref.get("charId");
+                        if (charId != null && !charId.isEmpty()) charIds.add(charId);
+                        String name = ref.get("name");
+                        if (name != null && !name.trim().isEmpty()) charNames.add(name.trim());
+                    }
+                } else {
+                    @SuppressWarnings("unchecked")
+                    List<String> characters = (List<String>) shot.get("characters");
+                    if (characters != null) {
+                        for (String c : characters) {
+                            if (c != null && !c.trim().isEmpty()) charNames.add(c.trim());
+                        }
+                    }
+                }
+            }
+
+            // 用 charId 匹配
+            for (String charId : charIds) {
+                Character ch = characterRepository.findByCharId(charId);
+                if (ch == null) continue;
+                String url = getCharacterImageUrl(ch);
+                if (url != null && !url.isEmpty()) {
+                    String name = ch.getCharacterInfo() != null
+                        ? (String) ch.getCharacterInfo().get(CharacterInfoKeys.NAME) : null;
+                    refs.add(new CharRef(url, name));
+                }
+            }
+
+            // 兜底：用角色名匹配
+            if (charNames.size() > charIds.size()) {
+                List<Character> allChars = characterRepository.findByProjectId(episode.getProjectId());
+                Map<String, Character> nameToChar = new HashMap<>();
+                for (Character ch : allChars) {
+                    Map<String, Object> info = ch.getCharacterInfo();
+                    if (info != null) {
+                        String name = (String) info.get(CharacterInfoKeys.NAME);
+                        if (name != null) nameToChar.put(name.trim(), ch);
+                    }
+                }
+                for (String charName : charNames) {
+                    if (charIds.contains(charName)) continue;
+                    Character ch = nameToChar.get(charName);
+                    if (ch == null) continue;
+                    String url = getCharacterImageUrl(ch);
+                    if (url != null && !url.isEmpty()) {
+                        refs.add(new CharRef(url, charName));
+                    }
+                }
+            }
+
+            log.info("角色参考图(含名字): episodeId={} 最终数量={}", episodeId, refs.size());
+        } catch (Exception e) {
+            log.error("获取角色参考图(含名字)失败: episodeId={}", episodeId, e);
+        }
+        return refs;
     }
 
     /**

@@ -12,7 +12,7 @@ interface EpisodeCardProps {
   onSegmentToggle: (key: string | null) => void;
   onSegmentApproveGrid: (episodeId: number, segmentIndex: number) => void;
   onSegmentRejectGrid: (episodeId: number, segmentIndex: number, reason: string) => void;
-  onSegmentRegenerateGrid: (episodeId: number, segmentIndex: number) => void;
+  onSegmentRegenerateGrid: (episodeId: number, segmentIndex: number, customHint?: string) => void;
   onSegmentGenerateVideo: (episodeId: number, segmentIndex: number, customPrompt?: string) => void;
   generatingGridPanelId?: string | null;
   generatingVideoPanelId?: string | null;
@@ -144,7 +144,7 @@ const EpisodeCard = ({
         onToggle={() => onSegmentToggle(isSegmentExpanded ? null : segmentKey)}
         onApproveGrid={() => onSegmentApproveGrid(episode.episodeId, segment.segmentIndex)}
         onRejectGrid={(reason) => onSegmentRejectGrid(episode.episodeId, segment.segmentIndex, reason)}
-        onRegenerateGrid={() => onSegmentRegenerateGrid(episode.episodeId, segment.segmentIndex)}
+        onRegenerateGrid={(customHint) => onSegmentRegenerateGrid(episode.episodeId, segment.segmentIndex, customHint)}
         onGenerateVideo={(customPrompt) => onSegmentGenerateVideo(episode.episodeId, segment.segmentIndex, customPrompt)}
         onLoadVideoPrompt={onSegmentLoadVideoPrompt ? () => onSegmentLoadVideoPrompt(episode.episodeId, segment.segmentIndex) : undefined}
         isRegeneratingGrid={generatingGridPanelId === segment.panelData?.panelId}
