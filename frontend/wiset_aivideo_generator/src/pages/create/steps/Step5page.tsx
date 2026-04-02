@@ -69,10 +69,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   const { statusInfo, syncStatus } = useCreateStore();
 
   // 检测分集剧本/分镜生成失败状态
-  const failedStatusCode = statusInfo?.isFailed && statusInfo?.statusCode
-    ? statusInfo.statusCode : '';
-  const isPipelineFailed = failedStatusCode === 'EPISODE_SCRIPT_GENERATING_FAILED'
-    || failedStatusCode === 'STORYBOARD_GENERATING_FAILED';
+  const isPipelineFailed = statusInfo?.isFailed ?? false;
   const [retrying, setRetrying] = useState(false);
 
   const handleRetryPipeline = useCallback(async () => {
@@ -135,8 +132,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
 
   // 生成中状态保护：避免 loadEpisodes 用空数据覆盖 SSE 占位
   const isGeneratingRef = useRef(false);
-  isGeneratingRef.current = statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
-    || statusInfo?.statusCode === 'STORYBOARD_GENERATING';
+  isGeneratingRef.current = statusInfo?.isGenerating ?? false;
 
   /**
    * 加载剧集列表
@@ -924,7 +920,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
         return updated;
       });
     },
-    onEpisodeStoryboardDone: (data) => {
+    onEpisodePanelDone: (data) => {
       setChapters(prev =>
         prev.map(ch => ({
           ...ch,
@@ -988,9 +984,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
     onStatusChange: (data) => {
       if (projectId && data.to) {
         syncStatus(projectId);
-        if (data.to === 'STORYBOARD_REVIEW' || data.to === 'PRODUCING') {
-          loadEpisodes();
-        }
+        loadEpisodes();
       }
     },
     onReconnect: () => {
@@ -1162,13 +1156,11 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
 
   // 流水线失败状态（分集剧本/分镜生成失败）
   if (isPipelineFailed && !loading) {
-    const failedLabel = failedStatusCode === 'EPISODE_SCRIPT_GENERATING_FAILED'
-      ? '分集剧本生成失败' : '分镜生成失败';
     return (
       <div className={styles.pageContainer}>
         <div className={styles.errorState}>
-          <h3 style={{ color: '#ef4444', marginBottom: 8 }}>{failedLabel}</h3>
-          <p>{statusInfo?.statusDescription || 'AI 生成过程中出现错误，请重试。'}</p>
+          <h3 style={{ color: '#ef4444', marginBottom: 8 }}>生成失败</h3>
+          <p>{statusInfo?.errorMessage || statusInfo?.statusDescription || 'AI 生成过程中出现错误，请重试。'}</p>
           <button
             onClick={handleRetryPipeline}
             className={styles.retryButton}
@@ -1208,8 +1200,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   }
 
   // 空状态（生成中不显示"暂无数据"，让进度条可见）
-  const isGenerating = statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
-    || statusInfo?.statusCode === 'STORYBOARD_GENERATING';
+  const isGenerating = statusInfo?.isGenerating ?? false;
   if (chapters.length === 0 && !isGenerating) {
     return (
       <div className={styles.pageContainer}>
@@ -1249,13 +1240,11 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
       </div>
 
       {/* 生成进度提示条（替代原有的阻塞性 spinner） */}
-      {(statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING' || statusInfo?.statusCode === 'STORYBOARD_GENERATING') && (
+      {statusInfo?.isGenerating && (
         <div className={styles.generationProgress}>
           <span className={styles.progressSpinner} />
           <span>
-            {statusInfo?.statusCode === 'EPISODE_SCRIPT_GENERATING'
-              ? '正在生成分集剧本...'
-              : '正在生成分镜脚本...'}
+            {statusInfo?.statusDescription || '正在生成中...'}
           </span>
           <span className={styles.generationCount}>
             {chapters.reduce((sum, ch) => sum + ch.episodes.filter(ep =>
