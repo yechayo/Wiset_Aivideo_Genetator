@@ -2,6 +2,7 @@
 .content {
   width: 100%;
   box-sizing: border-box;
+  padding-bottom: 120px; // 为底部固定操作栏留出空间
 }
 
 // 标题区域
@@ -318,6 +319,45 @@
 
   &:disabled {
     opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// 底部固定操作栏（大纲审核阶段）
+.bottomActionBar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 20px 40px;
+  background: var(--color-bg-elevated, #1a1f2e);
+  border-top: 1px solid var(--color-border-light, rgba(255,255,255,0.08));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.bottomActionBar .confirmButton {
+  padding: 16px 48px;
+  background: var(--color-primary, #4f8ef7);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s;
+
+  &:hover:not(:disabled) {
+    background: #3d7de0;
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    opacity: 0.4;
     cursor: not-allowed;
   }
 }

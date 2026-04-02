@@ -489,8 +489,8 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             </div>
           )}
 
-          {/* 确认大纲按钮 */}
-          <div className={styles.buttonContainer}>
+          {/* 底部固定操作栏：确认大纲 */}
+          <div className={styles.bottomActionBar}>
             <button
               className={styles.confirmButton}
               onClick={handleConfirmOutline}
@@ -626,7 +626,7 @@ function derivePhase(
       return 'episode_review';
     case 'draft':
     default:
-      // 如果已经有 outline 数据，说明大纲生成完毕但状态还没同步
+      // statusCode 为 undefined 时（store 未加载），以本地 scriptData 为准
       if (scriptData?.outline) {
         return 'outline_review';
       }
