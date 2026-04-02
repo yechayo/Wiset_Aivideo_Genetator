@@ -352,6 +352,7 @@ public class PanelProductionService {
         } catch (Exception e) {
             log.error("视频生成失败: panelId={}", panelId, e);
             updatePanelState(panelId, "videoStatus", "failed", e.getMessage());
+            publishPanelFailure(panelId, e.getMessage());
             throw new BusinessException("视频生成失败: " + e.getMessage());
         }
     }
@@ -409,7 +410,8 @@ public class PanelProductionService {
                         }
                         log.info("视频生成完成: panelId={}", panelId);
                         String projId = getProjectIdByPanelId(panelId);
-                        if (projId != null) {
+                        if (projId != null && panel != null) {
+                            eventPublisher.publishPanelVideoDone(projId, panel.getEpisodeId(), panelId, videoUrl);
                         }
                         return;
                     case "failed":
@@ -479,8 +481,11 @@ public class PanelProductionService {
     private void publishPanelFailure(Long panelId, String error) {
         String projectId = getProjectIdByPanelId(panelId);
         if (projectId != null) {
+            Panel panel = panelRepository.selectById(panelId);
+            Long episodeId = panel != null ? panel.getEpisodeId() : null;
             progressService.setError(projectId, "面板视频失败: " + error);
             eventPublisher.publishFailure(projectId, "面板视频失败: " + error);
+            eventPublisher.publishPanelVideoFailed(projectId, episodeId, panelId, error);
         }
     }
 
@@ -542,14 +547,13 @@ public class PanelProductionService {
     // ==================== 分集剧本 + 分镜生成 ====================
 
     /**
-     * 主入口：生成结构化分集剧本 → 分镜脚本 → 异步生成整集九宫格
+     * 第一阶段（文本）：生成结构化分集剧本 + 分镜脚本文本，不生成九宫格图片。
+     * 创建 Episode 记录，设置 gridStatus = "text_ready" 等待人工审核。
      *
-     * 注意：不使用 @Transactional，因为九宫格生成是 @Async 的，
-     * 需要 episode 创建后立即提交事务，让前端能查询到数据。
-     * 每集的 episode 创建通过 TransactionTemplate 在独立事务中完成。
+     * 注意：不使用 @Transactional，因为每集的 episode 创建通过 TransactionTemplate 在独立事务中完成。
      */
-    public void generateEpisodeScriptAndStoryboard(String projectId) {
-        log.info("[Pipeline] 开始分集剧本+分镜生成: projectId={}", projectId);
+    public void generateEpisodeScripts(String projectId) {
+        log.info("[Pipeline-Text] 开始分集剧本+分镜文本生成: projectId={}", projectId);
         if (!progressService.tryLock(projectId, "episode")) {
             throw new BusinessException("该项目正在生成中，请稍后再试");
         }
@@ -568,10 +572,10 @@ public class PanelProductionService {
 
             // 1. 生成结构化分集剧本
             int totalEpisodes = getIntFromMap(projectInfo, "totalEpisodes", 1);
-            log.info("[Pipeline] Step1: 调用DeepSeek生成分集剧本: projectId={}, totalEpisodes={}", projectId, totalEpisodes);
+            log.info("[Pipeline-Text] 调用DeepSeek生成分集剧本: projectId={}, totalEpisodes={}", projectId, totalEpisodes);
             List<Map<String, Object>> scripts = deepSeekTextService.generateEpisodeScript(
                 outline, charactersDesc, targetDuration, visualStyle, totalEpisodes);
-            log.info("[Pipeline] Step1完成: 生成 {} 集剧本, projectId={}", scripts.size(), projectId);
+            log.info("[Pipeline-Text] 生成 {} 集剧本, projectId={}", scripts.size(), projectId);
 
             totalEpisodes = scripts.size();
             for (int i = 0; i < scripts.size(); i++) {
@@ -583,51 +587,95 @@ public class PanelProductionService {
                     i + 1);
             }
 
-            // 2. 逐集生成分镜并创建Panel
+            // 2. 逐集生成分镜文本，创建 Episode（不生成九宫格）
             for (Map<String, Object> script : scripts) {
                 String title = (String) script.get("title");
                 String content = (String) script.get("content");
                 String characters = (String) script.getOrDefault("characters", "");
 
-                log.info("[Pipeline] Step2: 调用DeepSeek生成分镜: projectId={}, episode={}", projectId, title);
+                log.info("[Pipeline-Text] 调用DeepSeek生成分镜: projectId={}, episode={}", projectId, title);
                 List<Map<String, Object>> shots = deepSeekTextService.generateStoryboard(
                     content, characters, targetDuration, visualStyle);
-                log.info("[Pipeline] Step2完成: 生成 {} 个分镜, projectId={}, episode={}", shots.size(), projectId, title);
+                log.info("[Pipeline-Text] 生成 {} 个分镜, projectId={}, episode={}", shots.size(), projectId, title);
 
                 // 注入角色ID
                 Map<String, String> nameToId = buildCharacterIdMap(projectId);
                 injectCharacterIds(shots, nameToId);
 
-                // 在独立事务中创建 episode 并设置状态
+                // 在独立事务中创建 episode 并设置状态为 text_ready
                 TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
                 int episodeNum = scripts.indexOf(script) + 1;
                 Long episodeId = txTemplate.execute(status -> {
                     Long eid = findOrCreateEpisode(projectId, script, shots, visualStyle, episodeNum);
-                    log.info("[Pipeline] Episode创建/更新: episodeId={}, projectId={}", eid, projectId);
+                    log.info("[Pipeline-Text] Episode创建/更新: episodeId={}, projectId={}", eid, projectId);
                     deleteExistingPanels(eid);
-                    gridImageService.updateEpisodeGridStatus(eid, "generating");
+                    gridImageService.updateEpisodeGridStatus(eid, "text_ready");
                     return eid;
                 });
 
-                eventPublisher.publishEpisodeStoryboardDone(projectId,
+                eventPublisher.publishEpisodePanelDone(projectId,
                     episodeId, episodeNum, shots.size());
-
-                log.info("[Pipeline] Step3: 启动异步九宫格生成: episodeId={}, shotCount={}", episodeId, shots.size());
-                gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle);
             }
 
             // 3. 完成通知
-            log.info("[Pipeline] Step4: 分集剧本+分镜全部完成: projectId={}", projectId);
+            log.info("[Pipeline-Text] 分集剧本+分镜文本全部完成: projectId={}", projectId);
             progressService.unlock(projectId);
             progressService.clearError(projectId);
             eventPublisher.publishTaskComplete(projectId, "episode", null);
-            log.info("[Pipeline] 全部完成: projectId={}", projectId);
 
         } catch (Exception e) {
-            log.error("[Pipeline] 分镜生成异常: projectId={}, error={}", projectId, e.getMessage(), e);
+            log.error("[Pipeline-Text] 文本生成异常: projectId={}, error={}", projectId, e.getMessage(), e);
             progressService.unlock(projectId);
             progressService.setError(projectId, e.getMessage());
             eventPublisher.publishFailure(projectId, e.getMessage());
+        }
+    }
+
+    /**
+     * 第二阶段（图片）：为所有 gridStatus = "text_ready" 的集数生成九宫格图片。
+     * 人工审核分镜文本后调用。不使用 progress lock，前端通过 SSE 跟踪每集进度。
+     */
+    public void generateGridImagesForProject(String projectId) {
+        log.info("[Pipeline-Grid] 开始九宫格图片生成: projectId={}", projectId);
+        try {
+            Project project = projectRepository.findByProjectId(projectId);
+            if (project == null) {
+                throw new BusinessException("项目不存在: " + projectId);
+            }
+
+            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+            String visualStyle = (String) project.getProjectInfo().getOrDefault("visualStyle", "ANIME");
+            int generatedCount = 0;
+
+            for (Episode episode : episodes) {
+                Map<String, Object> info = episode.getEpisodeInfo();
+                String gridStatus = info != null ? (String) info.get("gridStatus") : null;
+                if (!"text_ready".equals(gridStatus)) continue;
+
+                int episodeNum = info != null ? getIntFromMap(info, "episodeNum", 0) : 0;
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> shots = info != null
+                    ? (List<Map<String, Object>>) info.get("shots") : null;
+                if (shots == null || shots.isEmpty()) {
+                    log.warn("[Pipeline-Grid] 跳过无 shots 的集数: episodeId={}", episode.getId());
+                    continue;
+                }
+
+                log.info("[Pipeline-Grid] 启动九宫格生成: episodeId={}, episodeNum={}, shotCount={}",
+                    episode.getId(), episodeNum, shots.size());
+                gridImageService.updateEpisodeGridStatus(episode.getId(), "generating");
+                gridImageService.generateGridsForEpisode(episode.getId(), shots, visualStyle);
+                generatedCount++;
+            }
+
+            if (generatedCount == 0) {
+                log.warn("[Pipeline-Grid] 没有需要生成九宫格的集数: projectId={}", projectId);
+            } else {
+                log.info("[Pipeline-Grid] 已启动 {} 集九宫格生成: projectId={}", generatedCount, projectId);
+            }
+        } catch (Exception e) {
+            log.error("[Pipeline-Grid] 九宫格生成异常: projectId={}, error={}", projectId, e.getMessage(), e);
+            throw new BusinessException("启动九宫格生成失败: " + e.getMessage());
         }
     }
 

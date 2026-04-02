@@ -87,12 +87,12 @@ public class StateChangeEventPublisher {
         publishToRedis(projectId, "episode:script_done", payload);
     }
 
-    public void publishEpisodeStoryboardDone(String projectId, Long episodeId, int episodeNum, int shotsCount) {
+    public void publishEpisodePanelDone(String projectId, Long episodeId, int episodeNum, int shotsCount) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("episodeId", episodeId);
         payload.put("episodeNum", episodeNum);
         payload.put("shotsCount", shotsCount);
-        publishToRedis(projectId, "episode:storyboard_done", payload);
+        publishToRedis(projectId, "episode:panel_done", payload);
     }
 
     public void publishEpisodeGridStatus(String projectId, Long episodeId, int episodeNum, String gridStatus) {
@@ -101,5 +101,23 @@ public class StateChangeEventPublisher {
         payload.put("episodeNum", episodeNum);
         payload.put("gridStatus", gridStatus);
         publishToRedis(projectId, "episode:grid_status", payload);
+    }
+
+    // ===== Panel 级别事件（视频生成） =====
+
+    public void publishPanelVideoDone(String projectId, Long episodeId, Long panelId, String videoUrl) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeId", episodeId);
+        payload.put("panelId", panelId);
+        payload.put("videoUrl", videoUrl);
+        publishToRedis(projectId, "panel:video_done", payload);
+    }
+
+    public void publishPanelVideoFailed(String projectId, Long episodeId, Long panelId, String error) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeId", episodeId);
+        payload.put("panelId", panelId);
+        payload.put("error", error);
+        publishToRedis(projectId, "panel:video_failed", payload);
     }
 }
