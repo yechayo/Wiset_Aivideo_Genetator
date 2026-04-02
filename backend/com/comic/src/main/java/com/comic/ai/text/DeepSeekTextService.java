@@ -15,8 +15,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.SocketException;
-import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -98,7 +96,7 @@ public class DeepSeekTextService implements TextGenerationService {
                     log.info("DeepSeek text generation complete: {}",
                             content.substring(0, Math.min(100, content.length())));
                     return content;
-                } catch (SocketException | SocketTimeoutException e) {
+                } catch (IOException e) {
                     lastException = e;
                     log.warn("DeepSeek connection issue on attempt {}/{}: {}",
                             attempt, MAX_RETRIES, e.getMessage());
