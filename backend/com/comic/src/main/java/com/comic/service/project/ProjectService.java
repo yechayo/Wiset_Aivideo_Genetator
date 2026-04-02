@@ -33,9 +33,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -193,7 +193,7 @@ public class ProjectService {
             case DRAFT:
                 if (outlineExists(project)) {
                     effectiveState = "outline_review";
-                    frontendStep = 1;
+                    frontendStep = 2;
                     isReview = true;
                     availableActions = Arrays.asList("confirm_outline", "revise_outline");
                 } else {
@@ -222,16 +222,16 @@ public class ProjectService {
                 boolean imagesDone = allCharacterImagesDone(projectId);
                 if (charsExist && imagesDone) {
                     effectiveState = "asset_review";
-                    frontendStep = 3;
+                    frontendStep = 2;
                     isReview = true;
                     availableActions = Arrays.asList("confirm_assets");
                 } else if (charsExist) {
                     effectiveState = "asset_image_pending";
-                    frontendStep = 3;
+                    frontendStep = 2;
                     availableActions = Arrays.asList("generate_images");
                 } else {
                     effectiveState = "episode_confirmed";
-                    frontendStep = 3;
+                    frontendStep = 2;
                     availableActions = Arrays.asList("extract_characters");
                 }
                 completedSteps.add(1);
@@ -240,7 +240,19 @@ public class ProjectService {
             }
 
             case ASSET_CONFIRMED: {
-                // 面板生产阶段
+                // 分镜生产阶段：文本生成 → 文本审核 → 九宫格生成 → 九宫格审核 → 视频生成
+                List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+                int textReadyCount = 0;
+                int gridGeneratingCount = 0;
+                int gridReadyCount = 0;
+                for (Episode ep : episodes) {
+                    Map<String, Object> epInfo = ep.getEpisodeInfo();
+                    String gs = epInfo != null ? (String) epInfo.get("gridStatus") : null;
+                    if ("text_ready".equals(gs)) textReadyCount++;
+                    else if ("generating".equals(gs)) gridGeneratingCount++;
+                    else if ("generated".equals(gs) || "approved".equals(gs)) gridReadyCount++;
+                }
+
                 int[] panelStats = getPanelStats(projectId);
                 int total = panelStats[0];
                 int completed = panelStats[1];
@@ -248,17 +260,27 @@ public class ProjectService {
 
                 if (total > 0 && completed == total) {
                     effectiveState = "panel_review";
-                    frontendStep = 4;
+                    frontendStep = 3;
                     isReview = true;
                     availableActions = Arrays.asList("confirm_panels");
                 } else if (total > 0) {
                     effectiveState = "panel_producing";
-                    frontendStep = 4;
+                    frontendStep = 3;
                     isGenerating = failed == 0;
                     availableActions = Arrays.asList("retry_failed_panels");
+                } else if (gridGeneratingCount > 0) {
+                    effectiveState = "grid_generating";
+                    frontendStep = 3;
+                    isGenerating = false; // 九宫格生成不阻塞页面，前端通过 SSE 跟踪进度
+                    availableActions = Collections.emptyList();
+                } else if (textReadyCount > 0) {
+                    effectiveState = "panel_review";
+                    frontendStep = 3;
+                    isReview = true;
+                    availableActions = Arrays.asList("generate_grids");
                 } else {
                     effectiveState = "asset_confirmed";
-                    frontendStep = 4;
+                    frontendStep = 3;
                     availableActions = Arrays.asList("generate_panels");
                 }
                 completedSteps.add(1);
@@ -269,25 +291,22 @@ public class ProjectService {
 
             case PANEL_CONFIRMED:
                 effectiveState = "panel_confirmed";
-                frontendStep = 5;
+                frontendStep = 4;
                 availableActions = Arrays.asList("start_assembling");
                 completedSteps.add(1);
                 completedSteps.add(2);
                 completedSteps.add(3);
                 completedSteps.add(4);
-                // 如果有最终视频 URL，附带结果
-                Map<String, Object> info5 = project.getProjectInfo();
                 break;
 
             case COMPLETED:
                 effectiveState = "completed";
-                frontendStep = 6;
+                frontendStep = 5;
                 completedSteps.add(1);
                 completedSteps.add(2);
                 completedSteps.add(3);
                 completedSteps.add(4);
                 completedSteps.add(5);
-                completedSteps.add(6);
                 break;
 
             default:
@@ -365,11 +384,15 @@ public class ProjectService {
         for (Character c : characters) {
             Map<String, Object> info = c.getCharacterInfo();
             if (info == null) return false;
-            String threeView = info.get("threeViewGridStatus") != null ? info.get("threeViewGridStatus").toString() : null;
+            // 优先检查 imagesLocked 标记（单角色锁定模式下使用）
+            Object locked = info.get("imagesLocked");
+            if (locked != null && Boolean.TRUE.equals(locked)) continue;
+            // 兼容旧逻辑：检查图片生成状态
+            String threeView = info.get("threeViewStatus") != null ? info.get("threeViewStatus").toString() : null;
             if (!"COMPLETED".equals(threeView)) return false;
             String role = info.get("role") != null ? info.get("role").toString() : null;
             if (!"配角".equals(role)) {
-                String expression = info.get("expressionGridStatus") != null ? info.get("expressionGridStatus").toString() : null;
+                String expression = info.get("expressionStatus") != null ? info.get("expressionStatus").toString() : null;
                 if (!"COMPLETED".equals(expression)) return false;
             }
         }
