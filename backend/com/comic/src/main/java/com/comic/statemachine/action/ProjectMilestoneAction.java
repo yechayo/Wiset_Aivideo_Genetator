@@ -14,6 +14,8 @@ import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
 import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.statemachine.StateContext;
 import org.springframework.statemachine.action.Action;
 import org.springframework.stereotype.Component;
@@ -28,7 +30,6 @@ import java.util.List;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ProjectMilestoneAction {
 
     private final ProjectRepository projectRepository;
@@ -36,8 +37,25 @@ public class ProjectMilestoneAction {
     private final CharacterRepository characterRepository;
     private final PanelRepository panelRepository;
     private final ProgressService progressService;
-    private final ProjectMilestoneStateMachineService milestoneService;
     private final StateChangeEventPublisher eventPublisher;
+
+    @Lazy
+    @Autowired
+    private ProjectMilestoneStateMachineService milestoneService;
+
+    public ProjectMilestoneAction(ProjectRepository projectRepository,
+                                   EpisodeRepository episodeRepository,
+                                   CharacterRepository characterRepository,
+                                   PanelRepository panelRepository,
+                                   ProgressService progressService,
+                                   StateChangeEventPublisher eventPublisher) {
+        this.projectRepository = projectRepository;
+        this.episodeRepository = episodeRepository;
+        this.characterRepository = characterRepository;
+        this.panelRepository = panelRepository;
+        this.progressService = progressService;
+        this.eventPublisher = eventPublisher;
+    }
 
     // ===== 确认操作 =====
 
@@ -96,6 +114,7 @@ public class ProjectMilestoneAction {
     public Action<ProjectMilestone, ProjectMilestoneEventType> rollbackToDraft() {
         return ctx -> {
             String projectId = getProjectId(ctx);
+            guardNotGenerating(projectId);
             log.info("Rollback to draft: projectId={}", projectId);
             progressService.clearAll(projectId);
             cascadeDeleteFromOutline(projectId);
@@ -107,6 +126,7 @@ public class ProjectMilestoneAction {
     public Action<ProjectMilestone, ProjectMilestoneEventType> rollbackToOutlineConfirmed() {
         return ctx -> {
             String projectId = getProjectId(ctx);
+            guardNotGenerating(projectId);
             log.info("Rollback to outline_confirmed: projectId={}", projectId);
             progressService.clearAll(projectId);
             cascadeDeleteFromEpisode(projectId);
@@ -118,6 +138,7 @@ public class ProjectMilestoneAction {
     public Action<ProjectMilestone, ProjectMilestoneEventType> rollbackToEpisodeConfirmed() {
         return ctx -> {
             String projectId = getProjectId(ctx);
+            guardNotGenerating(projectId);
             log.info("Rollback to episode_confirmed: projectId={}", projectId);
             progressService.clearAll(projectId);
             cascadeDeleteFromAsset(projectId);
@@ -129,6 +150,7 @@ public class ProjectMilestoneAction {
     public Action<ProjectMilestone, ProjectMilestoneEventType> rollbackToAssetConfirmed() {
         return ctx -> {
             String projectId = getProjectId(ctx);
+            guardNotGenerating(projectId);
             log.info("Rollback to asset_confirmed: projectId={}", projectId);
             progressService.clearAll(projectId);
             cascadeDeleteFromPanel(projectId);
@@ -190,5 +212,13 @@ public class ProjectMilestoneAction {
     private String getProjectId(StateContext<ProjectMilestone, ProjectMilestoneEventType> ctx) {
         Object pid = ctx.getMessageHeaders().get("projectId");
         return pid != null ? pid.toString() : null;
+    }
+
+    private void guardNotGenerating(String projectId) {
+        if (progressService.isGenerating(projectId)) {
+            String taskType = progressService.getGeneratingTask(projectId);
+            throw new com.comic.exception.BusinessException(
+                "任务正在执行中（" + taskType + "），请等待完成或先清除后再回滚");
+        }
     }
 }

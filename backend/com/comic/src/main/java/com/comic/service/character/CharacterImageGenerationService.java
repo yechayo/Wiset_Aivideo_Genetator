@@ -62,6 +62,9 @@ public class CharacterImageGenerationService {
             throw new BusinessException("表情图正在生成中，请勿重复提交");
         }
 
+        String projectId = character.getProjectId();
+        progressService.clearError(projectId);
+
         Map<String, Object> info = ensureCharInfo(character);
         info.put(CharacterInfoKeys.EXPRESSION_STATUS, "GENERATING");
         info.put(CharacterInfoKeys.IS_GENERATING_EXPRESSION, true);
@@ -123,6 +126,9 @@ public class CharacterImageGenerationService {
         if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_THREE_VIEW))) {
             throw new BusinessException("三视图正在生成中，请勿重复提交");
         }
+
+        String projectId = character.getProjectId();
+        progressService.clearError(projectId);
 
         Map<String, Object> info = ensureCharInfo(character);
         info.put(CharacterInfoKeys.THREE_VIEW_STATUS, "GENERATING");
@@ -317,6 +323,11 @@ public class CharacterImageGenerationService {
         String projectId = character.getProjectId();
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
+            return;
+        }
+
+        // 幂等：仅持有锁时才处理（防止多个角色并发完成时重复触发）
+        if (!progressService.isGenerating(projectId)) {
             return;
         }
 

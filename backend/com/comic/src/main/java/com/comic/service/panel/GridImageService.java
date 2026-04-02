@@ -10,9 +10,9 @@ import com.comic.entity.Panel;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
-import com.comic.service.storyboard.StoryboardService;
-import com.comic.util.NumberFormatter;
 import com.comic.service.oss.OssService;
+import com.comic.statemachine.service.StateChangeEventPublisher;
+import com.comic.util.NumberFormatter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -46,6 +46,7 @@ public class GridImageService {
     @Resource private OssService ossService;
     @Resource private EpisodeRepository episodeRepository;
     @Resource private CharacterRepository characterRepository;
+    @Resource private StateChangeEventPublisher eventPublisher;
 
     /**
      * 为指定 Panel 生成九宫格图 → 切割 → 融合参考图
@@ -153,9 +154,7 @@ public class GridImageService {
 
             // 发布九宫格生成开始事件
             if (gridProjectId != null) {
-                Map<String, Object> startData = new HashMap<>();
-                startData.put("episodeId", episodeId);
-                startData.put("gridStatus", "generating");
+                eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, "generating");
             }
 
             Map<String, Object> episodeInfo = episode.getEpisodeInfo();
@@ -216,9 +215,7 @@ public class GridImageService {
 
             // 发布九宫格生成完成事件
             if (gridProjectId != null) {
-                Map<String, Object> doneData = new HashMap<>();
-                doneData.put("episodeId", episodeId);
-                doneData.put("gridStatus", "generated");
+                eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, "generated");
             }
 
             log.info("Episode {} 整集九宫格完成, {} 页, {} 分镜", episodeId, pageCount, shots.size());
@@ -230,9 +227,7 @@ public class GridImageService {
 
                 // 发布九宫格生成失败事件
                 if (gridProjectId != null) {
-                    Map<String, Object> failData = new HashMap<>();
-                    failData.put("episodeId", episodeId);
-                    failData.put("gridStatus", "failed");
+                    eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, "failed");
                 }
 
                 Episode episode = episodeRepository.selectById(episodeId);

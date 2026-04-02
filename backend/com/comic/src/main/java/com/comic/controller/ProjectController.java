@@ -19,6 +19,7 @@ import com.comic.repository.UserRepository;
 import com.comic.service.project.ProjectService;
 import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
 import com.comic.statemachine.enums.ProjectMilestoneEventType;
+import com.comic.service.production.PanelProductionService;
 import com.comic.service.production.VideoCompositionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -45,6 +46,7 @@ public class ProjectController {
     private final UserRepository userRepository;
     private final EpisodeRepository episodeRepository;
     private final PanelRepository panelRepository;
+    private final PanelProductionService panelProductionService;
     private final VideoCompositionService videoCompositionService;
 
     @PostMapping
@@ -168,6 +170,15 @@ public class ProjectController {
             milestoneStateMachineService.sendEvent(projectId, mapped);
         }
         return Result.ok();
+    }
+
+    @PostMapping("/{projectId}/panels/retry-failed")
+    @Operation(summary = "批量重试项目下所有失败的面板视频")
+    public Result<Map<String, Object>> retryFailedPanels(@PathVariable String projectId) {
+        int retried = panelProductionService.retryAllFailedVideos(projectId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("retried", retried);
+        return Result.ok(result);
     }
 
     @PostMapping("/{projectId}/videos/merge")

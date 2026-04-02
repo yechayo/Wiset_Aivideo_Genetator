@@ -87,7 +87,7 @@ public class StateChangeEventPublisher {
         publishToRedis(projectId, "episode:script_done", payload);
     }
 
-    public void publishEpisodeStoryboardDone(String projectId, int episodeId, int episodeNum, int shotsCount) {
+    public void publishEpisodeStoryboardDone(String projectId, Long episodeId, int episodeNum, int shotsCount) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("episodeId", episodeId);
         payload.put("episodeNum", episodeNum);
@@ -95,7 +95,7 @@ public class StateChangeEventPublisher {
         publishToRedis(projectId, "episode:storyboard_done", payload);
     }
 
-    public void publishEpisodeGridStatus(String projectId, int episodeId, int episodeNum, String gridStatus) {
+    public void publishEpisodeGridStatus(String projectId, Long episodeId, int episodeNum, String gridStatus) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("episodeId", episodeId);
         payload.put("episodeNum", episodeNum);

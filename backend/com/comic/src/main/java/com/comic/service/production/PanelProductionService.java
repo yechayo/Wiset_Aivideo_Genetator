@@ -2,6 +2,7 @@ package com.comic.service.production;
 
 import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.PanelPromptBuilder;
+import com.comic.ai.text.DeepSeekTextService;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.ai.video.ViduVideoService;
 import com.comic.common.BusinessException;
@@ -17,13 +18,16 @@ import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.oss.OssService;
 import com.comic.service.panel.GridImageService;
-import lombok.RequiredArgsConstructor;
+import com.comic.service.redis.ProgressService;
+import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,9 +38,9 @@ import java.util.stream.Collectors;
 /**
  * 单分镜视频生产服务
  * 负责：九宫格生成（GridImageService）→ 审核确认 → 融合参考图 → 视频
+ * 负责：分集剧本 + 分镜生成（原 StoryboardService）
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class PanelProductionService {
 
@@ -49,10 +53,43 @@ public class PanelProductionService {
     private final ViduVideoService viduVideoService;
     private final OssService ossService;
     private final ApplicationContext applicationContext;
+    private final DeepSeekTextService deepSeekTextService;
+    private final ProgressService progressService;
+    private final StateChangeEventPublisher eventPublisher;
+    private final PlatformTransactionManager transactionManager;
 
     @Lazy
     @Autowired
     private GridImageService gridImageService;
+
+    @Autowired
+    public PanelProductionService(PanelRepository panelRepository,
+                                   EpisodeRepository episodeRepository,
+                                   ProjectRepository projectRepository,
+                                   CharacterRepository characterRepository,
+                                   PanelPromptBuilder panelPromptBuilder,
+                                   VideoGenerationService videoGenerationService,
+                                   ViduVideoService viduVideoService,
+                                   OssService ossService,
+                                   ApplicationContext applicationContext,
+                                   DeepSeekTextService deepSeekTextService,
+                                   ProgressService progressService,
+                                   StateChangeEventPublisher eventPublisher,
+                                   PlatformTransactionManager transactionManager) {
+        this.panelRepository = panelRepository;
+        this.episodeRepository = episodeRepository;
+        this.projectRepository = projectRepository;
+        this.characterRepository = characterRepository;
+        this.panelPromptBuilder = panelPromptBuilder;
+        this.videoGenerationService = videoGenerationService;
+        this.viduVideoService = viduVideoService;
+        this.ossService = ossService;
+        this.applicationContext = applicationContext;
+        this.deepSeekTextService = deepSeekTextService;
+        this.progressService = progressService;
+        this.eventPublisher = eventPublisher;
+        this.transactionManager = transactionManager;
+    }
 
     private PanelProductionService self() {
         return applicationContext.getBean(PanelProductionService.class);
@@ -377,6 +414,7 @@ public class PanelProductionService {
                         return;
                     case "failed":
                         updatePanelState(panelId, "videoStatus", "failed", status.getErrorMessage());
+                        publishPanelFailure(panelId, status.getErrorMessage());
                         return;
                     default:
                         Thread.sleep(intervalSeconds * 1000L);
@@ -384,10 +422,13 @@ public class PanelProductionService {
                 }
             }
             updatePanelState(panelId, "videoStatus", "failed", "视频生成超时");
+            publishPanelFailure(panelId, "视频生成超时");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.error("视频任务轮询异常: panelId={}", panelId, e);
+            updatePanelState(panelId, "videoStatus", "failed", "视频生成异常");
+            publishPanelFailure(panelId, "视频生成异常: " + e.getMessage());
         }
     }
 
@@ -409,7 +450,39 @@ public class PanelProductionService {
         generateVideoByPanelId(panelId);
     }
 
+    /**
+     * 批量重试项目下所有失败的视频
+     */
+    public int retryAllFailedVideos(String projectId) {
+        List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        int retried = 0;
+        for (Episode episode : episodes) {
+            List<Panel> panels = panelRepository.findByEpisodeId(episode.getId());
+            for (Panel panel : panels) {
+                Map<String, Object> info = panel.getPanelInfo();
+                if (info != null && "failed".equals(getStr(info, "videoStatus"))) {
+                    info.put("videoStatus", "pending");
+                    info.put("errorMessage", null);
+                    panel.setPanelInfo(info);
+                    panelRepository.updateById(panel);
+                    generateVideoByPanelId(panel.getId());
+                    retried++;
+                }
+            }
+        }
+        progressService.clearError(projectId);
+        return retried;
+    }
+
     // ==================== 内部辅助方法 ====================
+
+    private void publishPanelFailure(Long panelId, String error) {
+        String projectId = getProjectIdByPanelId(panelId);
+        if (projectId != null) {
+            progressService.setError(projectId, "面板视频失败: " + error);
+            eventPublisher.publishFailure(projectId, "面板视频失败: " + error);
+        }
+    }
 
     private String getStr(Map<String, Object> info, String key) {
         Object v = info.get(key);
@@ -464,5 +537,258 @@ public class PanelProductionService {
             log.warn("收集角色信息失败: panelId={}", panel.getId(), e);
         }
         return result;
+    }
+
+    // ==================== 分集剧本 + 分镜生成 ====================
+
+    /**
+     * 主入口：生成结构化分集剧本 → 分镜脚本 → 异步生成整集九宫格
+     *
+     * 注意：不使用 @Transactional，因为九宫格生成是 @Async 的，
+     * 需要 episode 创建后立即提交事务，让前端能查询到数据。
+     * 每集的 episode 创建通过 TransactionTemplate 在独立事务中完成。
+     */
+    public void generateEpisodeScriptAndStoryboard(String projectId) {
+        log.info("[Pipeline] 开始分集剧本+分镜生成: projectId={}", projectId);
+        if (!progressService.tryLock(projectId, "episode")) {
+            throw new BusinessException("该项目正在生成中，请稍后再试");
+        }
+        try {
+            Project project = projectRepository.findByProjectId(projectId);
+            if (project == null) {
+                throw new BusinessException("项目不存在: " + projectId);
+            }
+            Map<String, Object> projectInfo = project.getProjectInfo();
+            String visualStyle = (String) projectInfo.getOrDefault("visualStyle", "ANIME");
+            int targetDuration = getIntFromMap(projectInfo, "episodeDuration", 60);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> scriptMap = (Map<String, Object>) projectInfo.get("script");
+            String outline = scriptMap != null ? (String) scriptMap.getOrDefault("outline", "") : "";
+            String charactersDesc = getCharacterDescriptions(projectId);
+
+            // 1. 生成结构化分集剧本
+            int totalEpisodes = getIntFromMap(projectInfo, "totalEpisodes", 1);
+            log.info("[Pipeline] Step1: 调用DeepSeek生成分集剧本: projectId={}, totalEpisodes={}", projectId, totalEpisodes);
+            List<Map<String, Object>> scripts = deepSeekTextService.generateEpisodeScript(
+                outline, charactersDesc, targetDuration, visualStyle, totalEpisodes);
+            log.info("[Pipeline] Step1完成: 生成 {} 集剧本, projectId={}", scripts.size(), projectId);
+
+            totalEpisodes = scripts.size();
+            for (int i = 0; i < scripts.size(); i++) {
+                Map<String, Object> scriptItem = scripts.get(i);
+                eventPublisher.publishEpisodeScriptDone(projectId,
+                    i + 1,
+                    (String) scriptItem.getOrDefault("title", ""),
+                    totalEpisodes,
+                    i + 1);
+            }
+
+            // 2. 逐集生成分镜并创建Panel
+            for (Map<String, Object> script : scripts) {
+                String title = (String) script.get("title");
+                String content = (String) script.get("content");
+                String characters = (String) script.getOrDefault("characters", "");
+
+                log.info("[Pipeline] Step2: 调用DeepSeek生成分镜: projectId={}, episode={}", projectId, title);
+                List<Map<String, Object>> shots = deepSeekTextService.generateStoryboard(
+                    content, characters, targetDuration, visualStyle);
+                log.info("[Pipeline] Step2完成: 生成 {} 个分镜, projectId={}, episode={}", shots.size(), projectId, title);
+
+                // 注入角色ID
+                Map<String, String> nameToId = buildCharacterIdMap(projectId);
+                injectCharacterIds(shots, nameToId);
+
+                // 在独立事务中创建 episode 并设置状态
+                TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
+                int episodeNum = scripts.indexOf(script) + 1;
+                Long episodeId = txTemplate.execute(status -> {
+                    Long eid = findOrCreateEpisode(projectId, script, shots, visualStyle, episodeNum);
+                    log.info("[Pipeline] Episode创建/更新: episodeId={}, projectId={}", eid, projectId);
+                    deleteExistingPanels(eid);
+                    gridImageService.updateEpisodeGridStatus(eid, "generating");
+                    return eid;
+                });
+
+                eventPublisher.publishEpisodeStoryboardDone(projectId,
+                    episodeId, episodeNum, shots.size());
+
+                log.info("[Pipeline] Step3: 启动异步九宫格生成: episodeId={}, shotCount={}", episodeId, shots.size());
+                gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle);
+            }
+
+            // 3. 完成通知
+            log.info("[Pipeline] Step4: 分集剧本+分镜全部完成: projectId={}", projectId);
+            progressService.unlock(projectId);
+            progressService.clearError(projectId);
+            eventPublisher.publishTaskComplete(projectId, "episode", null);
+            log.info("[Pipeline] 全部完成: projectId={}", projectId);
+
+        } catch (Exception e) {
+            log.error("[Pipeline] 分镜生成异常: projectId={}, error={}", projectId, e.getMessage(), e);
+            progressService.unlock(projectId);
+            progressService.setError(projectId, e.getMessage());
+            eventPublisher.publishFailure(projectId, e.getMessage());
+        }
+    }
+
+    // --- 分镜生成辅助方法 ---
+
+    private String getCharacterDescriptions(String projectId) {
+        List<Character> characters = characterRepository.findByProjectId(projectId);
+        if (characters == null || characters.isEmpty()) {
+            log.warn("项目没有配置角色: projectId={}", projectId);
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (Character c : characters) {
+            Map<String, Object> info = c.getCharacterInfo();
+            if (info == null) continue;
+
+            String name = (String) info.get("name");
+            String appearance = (String) info.get("appearance");
+            String personality = (String) info.get("personality");
+            String role = (String) info.get("role");
+
+            if (name == null || name.isEmpty()) continue;
+
+            sb.append("【").append(name).append("】");
+            if (role != null && !role.isEmpty()) {
+                sb.append(" 角色：").append(role);
+            }
+            if (appearance != null && !appearance.isEmpty()) {
+                sb.append(" 外貌：").append(appearance);
+            }
+            if (personality != null && !personality.isEmpty()) {
+                sb.append(" 性格：").append(personality);
+            }
+            sb.append("\n");
+        }
+
+        String result = sb.toString();
+        log.info("获取角色描述: projectId={}, characters={}, descLength={}",
+            projectId, characters.size(), result.length());
+        return result;
+    }
+
+    private Long findOrCreateEpisode(String projectId, Map<String, Object> script,
+                                       List<Map<String, Object>> shots, String visualStyle,
+                                       int episodeNum) {
+        String title = (String) script.get("title");
+        List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        for (Episode ep : episodes) {
+            Map<String, Object> info = ep.getEpisodeInfo();
+            Object existingNum = info != null ? info.get("episodeNum") : null;
+            boolean numMatch = existingNum != null && Integer.valueOf(episodeNum).equals(existingNum);
+            boolean titleMatch = info != null && title != null && title.equals(info.get("title"));
+            if (numMatch || titleMatch) {
+                info.putAll(script);
+                info.put("episodeNum", episodeNum);
+                info.put("shots", shots);
+                info.put("visualStyle", visualStyle);
+                info.put("gridStatus", "pending");
+                ep.setEpisodeInfo(info);
+                episodeRepository.updateById(ep);
+                return ep.getId();
+            }
+        }
+        Episode episode = new Episode();
+        episode.setProjectId(projectId);
+        episode.setStatus("pending");
+        episode.setDeleted(false);
+        Map<String, Object> episodeInfo = new HashMap<>(script);
+        episodeInfo.put("episodeNum", episodeNum);
+        episodeInfo.put("shots", shots);
+        episodeInfo.put("visualStyle", visualStyle);
+        episodeInfo.put("gridStatus", "pending");
+        episode.setEpisodeInfo(episodeInfo);
+        episodeRepository.insert(episode);
+        return episode.getId();
+    }
+
+    private void deleteExistingPanels(Long episodeId) {
+        List<Panel> existing = panelRepository.findByEpisodeId(episodeId);
+        for (Panel p : existing) {
+            panelRepository.deleteById(p.getId());
+        }
+    }
+
+    /**
+     * 构建角色名到 charId 的映射（精确 + 模糊）
+     */
+    private Map<String, String> buildCharacterIdMap(String projectId) {
+        List<Character> characters = characterRepository.findByProjectId(projectId);
+        Map<String, String> nameToId = new HashMap<>();
+        for (Character c : characters) {
+            Map<String, Object> info = c.getCharacterInfo();
+            if (info != null) {
+                String name = (String) info.get("name");
+                String charId = (String) info.get("charId");
+                if (name != null && charId != null) {
+                    name = name.trim();
+                    nameToId.put(name, charId);
+                    String stripped = name.replaceAll("[（\\(][^）\\)]*[）\\)]$", "").trim();
+                    if (!stripped.isEmpty() && !stripped.equals(name)) {
+                        nameToId.putIfAbsent(stripped, charId);
+                    }
+                }
+            }
+        }
+        log.info("构建角色ID映射: projectId={}, mapping={}", projectId, nameToId);
+        return nameToId;
+    }
+
+    /**
+     * 为分镜中的角色注入 charId
+     */
+    private void injectCharacterIds(List<Map<String, Object>> shots, Map<String, String> nameToId) {
+        for (Map<String, Object> shot : shots) {
+            @SuppressWarnings("unchecked")
+            List<String> charNames = (List<String>) shot.get("characters");
+            if (charNames == null || charNames.isEmpty()) continue;
+
+            List<Map<String, String>> charRefs = new ArrayList<>();
+            for (String charName : charNames) {
+                String trimmed = charName.trim();
+                String charId = resolveCharId(trimmed, nameToId);
+                Map<String, String> ref = new HashMap<>();
+                ref.put("name", charName);
+                if (charId != null) {
+                    ref.put("charId", charId);
+                    log.debug("角色注入成功: name={}, charId={}", charName, charId);
+                } else {
+                    log.warn("角色未找到匹配: name={}", charName);
+                }
+                charRefs.add(ref);
+            }
+            shot.put("characterRefs", charRefs);
+        }
+    }
+
+    /**
+     * 多级模糊匹配角色名到 charId
+     */
+    private String resolveCharId(String name, Map<String, String> nameToId) {
+        String charId = nameToId.get(name);
+        if (charId != null) return charId;
+
+        String stripped = name.replaceAll("[（\\(][^）\\)]*[）\\)]$", "").trim();
+        if (!stripped.isEmpty() && !stripped.equals(name)) {
+            charId = nameToId.get(stripped);
+            if (charId != null) return charId;
+        }
+
+        String noSpace = name.replaceAll("\\s+", "");
+        if (!noSpace.equals(name)) {
+            charId = nameToId.get(noSpace);
+            if (charId != null) return charId;
+        }
+
+        return null;
+    }
+
+    private int getIntFromMap(Map<String, Object> map, String key, int defaultValue) {
+        Object val = map.get(key);
+        return val instanceof Number ? ((Number) val).intValue() : defaultValue;
     }
 }

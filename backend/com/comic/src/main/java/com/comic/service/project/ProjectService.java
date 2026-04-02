@@ -295,11 +295,17 @@ public class ProjectService {
                 frontendStep = 1;
         }
 
-        // Redis 推导：error 存在则失败，generating 锁存在则生成中
+        // Redis 推导：error 存在且无 generating 锁 → 失败；generating 锁存在 → 生成中
         String redisError = progressService.getError(projectId);
         boolean redisGenerating = progressService.isGenerating(projectId);
-        if (redisError != null && !redisError.isEmpty()) {
+        if (redisError != null && !redisError.isEmpty() && !redisGenerating) {
             isFailed = true;
+            // 失败时追加 retry action
+            if (!availableActions.contains("retry")) {
+                List<String> withRetry = new ArrayList<>(availableActions);
+                withRetry.add("retry");
+                availableActions = withRetry;
+            }
         }
         if (redisGenerating) {
             isGenerating = true;
