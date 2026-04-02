@@ -153,7 +153,19 @@ public class ProjectController {
             }
             milestoneStateMachineService.sendEvent(projectId, rollbackEvent);
         } else {
-            milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType.valueOf(request.getEvent()));
+            String event = request.getEvent();
+            ProjectMilestoneEventType mapped;
+            switch (event != null ? event : "") {
+                case "retry":
+                    mapped = ProjectMilestoneEventType.CONFIRM_PANELS;
+                    break;
+                case "production_completed":
+                    mapped = ProjectMilestoneEventType.CONFIRM_PANELS;
+                    break;
+                default:
+                    mapped = ProjectMilestoneEventType.valueOf(event);
+            }
+            milestoneStateMachineService.sendEvent(projectId, mapped);
         }
         return Result.ok();
     }

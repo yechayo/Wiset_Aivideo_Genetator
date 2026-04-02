@@ -49,4 +49,7 @@ public class ProjectStatusResponse {
 
     /** 合并阶段状态：idle / merging / completed / failed */
     private String mergeStatus;
+
+    /** Redis 存储的失败原因（生成中出错时存在） */
+    private String errorMessage;
 }

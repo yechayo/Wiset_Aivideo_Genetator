@@ -20,9 +20,8 @@ import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
+import com.comic.service.redis.ProgressService;
 import com.comic.service.script.ScriptService;
-
-import com.comic.service.storyboard.StoryboardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,14 +57,11 @@ public class ProjectService {
     private final ScriptService scriptService;
     private final CharacterExtractService characterExtractService;
     private final CharacterImageGenerationService characterImageGenerationService;
+    private final ProgressService progressService;
 
     @Lazy
     @Autowired
     private com.comic.service.production.PanelProductionService panelProductionService;
-
-    @Lazy
-    @Autowired
-    private StoryboardService storyboardService;
 
 
     // ==================== Map 辅助方法 ====================
@@ -285,17 +281,28 @@ public class ProjectService {
 
             case COMPLETED:
                 effectiveState = "completed";
-                frontendStep = 5;
+                frontendStep = 6;
                 completedSteps.add(1);
                 completedSteps.add(2);
                 completedSteps.add(3);
                 completedSteps.add(4);
                 completedSteps.add(5);
+                completedSteps.add(6);
                 break;
 
             default:
                 effectiveState = "draft";
                 frontendStep = 1;
+        }
+
+        // Redis 推导：error 存在则失败，generating 锁存在则生成中
+        String redisError = progressService.getError(projectId);
+        boolean redisGenerating = progressService.isGenerating(projectId);
+        if (redisError != null && !redisError.isEmpty()) {
+            isFailed = true;
+        }
+        if (redisGenerating) {
+            isGenerating = true;
         }
 
         ProjectStatusResponse dto = new ProjectStatusResponse();
@@ -308,6 +315,9 @@ public class ProjectService {
         dto.setReview(isReview);
         dto.setCompletedSteps(completedSteps);
         dto.setAvailableActions(availableActions);
+        if (redisError != null) {
+            dto.setErrorMessage(redisError);
+        }
 
         // COMPLETED / PANEL_CONFIRMED 时附带合并结果
         if (pm == ProjectMilestone.COMPLETED || pm == ProjectMilestone.PANEL_CONFIRMED) {
