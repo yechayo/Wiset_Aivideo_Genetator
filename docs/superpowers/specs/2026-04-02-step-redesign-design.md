@@ -8,7 +8,7 @@
 
 | 前端步骤 | 名称 | 对应里程碑 | 操作 |
 |---------|------|-----------|------|
-| Step 1 | 创意与设定 | DRAFT | 只输入创意和设定参数，创建项目 |
+| Step 1 | 创意与设定 | DRAFT（无大纲） | 只输入创意和设定参数，创建项目 |
 | Step 2 | 大纲与剧情 | DRAFT → OUTLINE_CONFIRMED → EPISODE_CONFIRMED | 生成大纲 → 审核 → 生成剧情 → 确认 |
 | Step 3 | 角色与素材 | EPISODE_CONFIRMED → ASSET_CONFIRMED | 提取角色 → 确认设定 → 生成图片 → 锁定 |
 | Step 4 | 分镜生产 | ASSET_CONFIRMED → PANEL_CONFIRMED | 子阶段：脚本 → 九宫格 → 视频 |
@@ -20,7 +20,8 @@
 
 | 里程碑 | 旧 frontendStep | 新 frontendStep |
 |--------|----------------|----------------|
-| DRAFT | 1 | 1 |
+| DRAFT（无大纲） | 1 | 1 |
+| DRAFT（有大纲，outline_review） | 1 | 2 |
 | OUTLINE_CONFIRMED | 2 | 2 |
 | EPISODE_CONFIRMED | 3 | 2 |
 | ASSET_CONFIRMED | 4 | 3 |
@@ -50,29 +51,31 @@
 - 右侧：当前选中集的脚本+故事板文本详情
 - SSE 实时推送 episode 级别生成进度（`episode:script_done`）
 - 每集可单独审核（通过/打回），使用现有 `PUT /episodes/{id}/storyboard/approve|reject` API
-- 全部通过后出现"确认所有脚本"按钮 → 调用 `generateGridImagesForProject()` 触发九宫格生成 → 切换到 4b
+- 全部通过后出现"确认所有脚本"按钮 → 切换到 4b Tab（九宫格生成由用户在 4b 中手动触发）
 
 **API 映射：**
-| 用户操作 | API 调用 |
-|---------|---------|
-| 查看脚本 | `GET /episodes/{id}` |
-| 生成脚本 | `POST /episodes/{id}/script` |
-| 审核通过 | `PUT /episodes/{id}/storyboard/approve` |
-| 审核打回 | `PUT /episodes/{id}/storyboard/reject` |
-| 确认所有脚本 | 前端本地状态切换到 4b + 按需触发九宫格 |
+| 用户操作 | API 调用 | 备注 |
+|---------|---------|------|
+| 查看脚本 | `GET /episodes/{id}` | |
+| 生成所有集脚本 | `POST /episodes/{id}/script` | **项目级操作**：虽然 URL 含 episodeId，但后端实际为整个项目生成所有集的脚本+故事板 |
+| 审核通过 | `PUT /episodes/{id}/storyboard/approve` | 逐集审核，通过后自动检查是否所有集都已通过，如是则不自动触发九宫格（见下） |
+| 审核打回 | `PUT /episodes/{id}/storyboard/reject` | |
+
+**关于九宫格自动触发：** 当前后端 `EpisodeController.approveStoryboard()` 中有 `checkAndStartGridGeneration()` 逻辑，在所有集故事板通过后自动触发九宫格。**需要禁用此自动触发**，改为在 4b 中由用户手动逐集触发生成，以匹配新的交互设计。
 
 ### 4b 九宫格图片
 - 每集展示为卡片，默认折叠
 - 展开显示该集的九宫格图片
-- 每集可单独点击"生成九宫格"（调用 `POST /episodes/{id}/grid/regenerate`）
+- 每集有独立的"生成九宫格"按钮（调用 `POST /episodes/{id}/grid/regenerate`），用户逐集手动触发
 - 支持审核（通过/打回/重新生成）
+- 审核通过时调用 `PUT /episodes/{id}/grid/approve`，后端自动创建 Panel 记录 + fusion image
 - 全部审核通过后出现"进入视频生成"按钮 → 切换到 4c
 
 **API 映射：**
 | 用户操作 | API 调用 |
 |---------|---------|
 | 查看九宫格 | `GET /episodes/{id}/grid` |
-| 生成九宫格 | `POST /episodes/{id}/script`（脚本生成后自动触发）或 `POST /episodes/{id}/grid/regenerate` |
+| 生成九宫格 | `POST /episodes/{id}/grid/regenerate` | 用户手动逐集触发 |
 | 审核通过 | `PUT /episodes/{id}/grid/approve` |
 | 审核打回 | `PUT /episodes/{id}/grid/reject` |
 
@@ -140,23 +143,24 @@
 
 | 事件 | 触发时机 | 数据载荷 | 改动位置 |
 |------|---------|---------|---------|
+| `episode:script_done` | 已有，每集脚本生成完成 | 不变 | 已有 |
 | `episode:grid_status` | 已有，每集九宫格状态变化 | 不变 | 已有 |
-| `panel:grid_done` | 每个 panel 九宫格生成完成 | `{episodeId, panelId, gridUrl}` | GridImageService.splitGridImage() |
-| `panel:video_done` | 每个 panel 视频生成完成 | `{episodeId, panelId, videoUrl}` | PanelProductionService.doGenerateVideoByPanelId() |
-| `panel:video_failed` | 视频生成失败 | `{episodeId, panelId, error}` | PanelProductionService.doGenerateVideoByPanelId() |
+| `panel:video_done` | 每个 panel 视频生成完成 | `{episodeId, panelId, videoUrl}` | PanelProductionService.doGenerateVideoByPanelId() 视频完成回调 |
+| `panel:video_failed` | 视频生成失败 | `{episodeId, panelId, error}` | PanelProductionService.doGenerateVideoByPanelId() 失败回调 |
 
-**注意：** 移除 `panel:script_done` 事件，因为脚本生成时 panel 尚未创建，自然粒度是 episode 级别的 `episode:script_done`（已有）。
+**说明：**
+- `panel:script_done` 不新增：脚本生成时 panel 尚未创建（panel 在九宫格审核通过后才创建），自然粒度是 episode 级别的 `episode:script_done`（已有）
+- `panel:grid_done` 不新增：九宫格生成是 episode 级别操作，Panel 记录在九宫格审核通过后才创建。已有 `episode:grid_status` 足够
 
 **改动文件：**
-- `PanelProductionService.java` — 在视频生成回调中增加 publish
-- `GridImageService.java` — 在 splitGridImage 完成后增加 publish
-- `StateChangeEventPublisher.java` — 增加 3 个 panel 级别 publish 方法
-- SSE 事件常量类 — 增加新事件类型
+- `PanelProductionService.java` — 在视频完成/失败回调中增加 publish 调用
+- `StateChangeEventPublisher.java` — 增加 2 个 panel 级别 publish 方法
+- SSE 事件常量类 — 增加 `panel:video_done`、`panel:video_failed` 类型
 
 ### 不变的部分
 - 状态机：6 里程碑 + events + guards + actions 全部不变
-- Controller API 端点：不变
-- ScriptService、CharacterService：不变
+- Controller API 端点签名：不变（URL、参数、返回值不变）
+- ScriptService、CharacterService、GridImageService：不变
 - 数据库 schema：不变
 
 ## URL 路由
@@ -184,6 +188,8 @@
 | `Step1Content.tsx` | **重写** | 简化为纯输入+设定，去掉大纲生成 |
 | `Step2page.tsx` | **重写** | 合并当前 Step1 大纲部分 + Step2 剧情 |
 | `Step3Merged.tsx` | 微调 | 基本不变（已在工作树中） |
+| `Step3page.tsx` | 删除 | 旧版，已被 Step3Merged 替代 |
+| `Step1Review.module.less` | 删除或复用 | 未使用的样式文件（如 Step2 不需要则删除） |
 | **新建** `Step4Production.tsx` | **新建** | 合并当前 Step4+Step5+Step5Transition，内部 Tab 三阶段 |
 | `Step4page.tsx` | 删除 | 被 Step4Production 替代 |
 | `Step5Transition.tsx` | 删除 | 视频审核移到 Step4 的 4c |
@@ -197,8 +203,8 @@
 
 | 文件 | 改动类型 | 说明 |
 |------|---------|------|
-| `ProjectService.java` | 修改 | `frontendStep` 映射从 1-6 改为 1-5 |
-| `PanelProductionService.java` | 修改 | 视频生成回调增加 panel 级别 SSE 事件发布 |
-| `GridImageService.java` | 修改 | splitGridImage 完成后增加 panel 级别 SSE 发布 |
-| `StateChangeEventPublisher.java` | 修改 | 增加 3 个 panel 级别 publish 方法 |
-| SSE 事件常量类 | 修改 | 增加新事件类型定义 |
+| `ProjectService.java` | 修改 | `frontendStep` 映射从 1-6 改为 1-5，DRAFT+大纲映射到 Step 2 |
+| `PanelProductionService.java` | 修改 | 视频完成/失败回调增加 panel 级别 SSE 事件发布 |
+| `EpisodeController.java` | 修改 | 禁用 `approveStoryboard()` 中的 `checkAndStartGridGeneration()` 自动触发 |
+| `StateChangeEventPublisher.java` | 修改 | 增加 2 个 panel 级别 publish 方法 |
+| SSE 事件常量类 | 修改 | 增加 `panel:video_done`、`panel:video_failed` 类型 |
