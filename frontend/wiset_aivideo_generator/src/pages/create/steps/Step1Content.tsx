@@ -1,14 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styles from '../CreatePage.module.less';
-import styles2 from './Step1Review.module.less';
 import { ChevronDownIcon } from '../../../components/icons/Icons';
-import { createProject, generateScript, getScript, confirmScript, reviseScript, updateScriptOutline, isApiSuccess } from '../../../services';
-import type { CreateProjectRequest, Project, ScriptContentResponse, VisualStyle } from '../../../services';
+import { createProject, isApiSuccess } from '../../../services';
+import type { CreateProjectRequest, Project, VisualStyle } from '../../../services';
 import type { StepContentProps } from '../types';
-import ScriptGeneratingOverlay from '../components/ScriptGeneratingOverlay';
-import OutlineEditor from './components/OutlineEditor';
 import { useProjectStore } from '../../../stores';
-import { useCreateStore } from '../../../stores/createStore';
 
 // 题材类型选项
 const genreOptions = [
@@ -81,43 +78,15 @@ interface Step1ContentProps extends StepContentProps {
 }
 
 /**
- * Step 1: 创意输入 + 大纲审核
+ * Step 1: 创意输入 + 设定
  *
- * - 无项目 / draft 状态：展示创意输入表单
- * - outline_review 状态：展示大纲审核 UI（复用 OutlineEditor）
+ * 纯输入页面：填写故事创意和生成配置，点击创建后跳转 Step 2。
  */
-const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
-  const { statusInfo } = useCreateStore();
-  const projectId = project?.projectId;
-  const isOutlineReview = projectId && statusInfo?.statusCode === 'outline_review';
+const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
+  const navigate = useNavigate();
+  const setCurrentProject = useProjectStore((state) => state.setCurrentProject);
 
-  // ========== 大纲审核状态 ==========
-  const [scriptData, setScriptData] = useState<ScriptContentResponse | null>(null);
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [confirmLoading, setConfirmLoading] = useState(false);
-
-  const loadScript = useCallback(async (pid: string) => {
-    setReviewLoading(true);
-    try {
-      const result = await getScript(pid);
-      if (isApiSuccess(result) && result.data) {
-        setScriptData(result.data);
-      }
-    } catch (err) {
-      console.error('获取剧本失败:', err);
-    } finally {
-      setReviewLoading(false);
-    }
-  }, []);
-
-  // outline_review 时自动加载剧本
-  useEffect(() => {
-    if (isOutlineReview && projectId) {
-      loadScript(projectId);
-    }
-  }, [isOutlineReview, projectId, loadScript]);
-
-  // ========== 创意输入表单状态 ==========
+  // ========== 表单状态 ==========
   const [storyIdea, setStoryIdea] = useState('');
   const [generateMode, setGenerateMode] = useState<'single' | 'series'>('single');
   const [genre, setGenre] = useState('');
@@ -125,72 +94,16 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
   const [targetAudience, setTargetAudience] = useState('');
   const [totalEpisodes, setTotalEpisodes] = useState(10);
   const [episodeDuration, setEpisodeDuration] = useState<number>(60);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isGeneratingScript, setIsGeneratingScript] = useState(false);
-  const [generatingPhase, setGeneratingPhase] = useState<'creating' | 'generating' | 'loading'>('creating');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 使用 projectStore 存储项目数据
-  const setCurrentProject = useProjectStore((state) => state.setCurrentProject);
-  // ========== 大纲审核操作 ==========
-  const handleOutlineSaveDirect = async (content: string) => {
-    if (!projectId) return;
-    setReviewLoading(true);
-    try {
-      await updateScriptOutline(projectId, content);
-      const result = await getScript(projectId);
-      if (isApiSuccess(result) && result.data) {
-        setScriptData(result.data);
-      }
-    } catch (err) {
-      console.error('保存大纲失败:', err);
-    } finally {
-      setReviewLoading(false);
-    }
-  };
-
-  const handleOutlineSaveWithAI = async (content: string, revisionNote: string) => {
-    if (!projectId) return;
-    setReviewLoading(true);
-    try {
-      await reviseScript(projectId, {
-        revisionNote,
-        currentOutline: content,
-      });
-      const result = await getScript(projectId);
-      if (isApiSuccess(result) && result.data) {
-        setScriptData(result.data);
-      }
-    } catch (err) {
-      console.error('AI 重新生成失败:', err);
-    } finally {
-      setReviewLoading(false);
-    }
-  };
-
-  const handleConfirmOutline = async () => {
-    if (!projectId) return;
-    const confirmed = window.confirm('确认大纲后将进入下一步剧本编辑，无法再返回修改。请确认内容无误后再继续。');
-    if (!confirmed) return;
-    setConfirmLoading(true);
-    try {
-      await confirmScript(projectId);
-    } catch (err) {
-      console.error('确认大纲失败:', err);
-      alert('确认大纲失败，请稍后重试');
-    } finally {
-      setConfirmLoading(false);
-    }
-  };
-
-  // ========== 创意输入 - 生成处理 ==========
-  const handleGenerate = async () => {
+  // ========== 提交处理 ==========
+  const handleSubmit = async () => {
     if (!storyIdea.trim() || !visualStyle || !targetAudience) {
       alert('请填写完整的表单信息');
       return;
     }
 
-    setIsGenerating(true);
-    setGeneratingPhase('creating');
+    setIsSubmitting(true);
 
     try {
       const requestData: CreateProjectRequest = {
@@ -205,8 +118,6 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
       const createResult = await createProject(requestData);
 
       if (isApiSuccess(createResult) && createResult.data) {
-        console.log('项目创建成功:', createResult.data);
-
         const newProjectId = createResult.data.projectId;
 
         if (!newProjectId) {
@@ -219,25 +130,8 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
         setCurrentProject(projectData);
         onProjectCreated?.(projectData);
 
-        setGeneratingPhase('generating');
-        setIsGeneratingScript(true);
-        try {
-          const scriptResult = await generateScript(newProjectId);
-          console.log('剧本生成响应:', scriptResult);
-
-          if (isApiSuccess(scriptResult)) {
-            console.log('剧本生成成功');
-            setGeneratingPhase('loading');
-          } else {
-            console.warn('剧本生成返回非成功状态:', scriptResult.message);
-            setGeneratingPhase('loading');
-          }
-        } catch (scriptError) {
-          console.error('剧本生成失败:', scriptError);
-          setGeneratingPhase('loading');
-        }
-        setIsGeneratingScript(false);
-
+        // 创建成功后跳转到 Step 2
+        navigate(`/project/${newProjectId}/step/2`, { replace: true });
       } else {
         console.error('创建失败:', createResult.message);
         alert(`创建失败: ${createResult.message}`);
@@ -246,51 +140,11 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
       console.error('API调用失败:', error);
       alert('API调用失败，请稍后重试');
     } finally {
-      setIsGenerating(false);
+      setIsSubmitting(false);
     }
   };
 
-  // ========== 大纲审核视图 ==========
-  if (isOutlineReview) {
-    return (
-      <div className={styles.content}>
-        <div className={styles.header}>
-          <h1 className={styles.title}>大纲审核</h1>
-          <p className={styles.subtitle}>审核 AI 生成的剧本大纲，确认后进入剧本编辑</p>
-        </div>
-
-        {reviewLoading ? (
-          <div className={styles2.loadingState}>
-            <div className={styles2.spinner}></div>
-            <p>正在加载大纲...</p>
-          </div>
-        ) : scriptData ? (
-          <div className={styles2.reviewContainer}>
-            <OutlineEditor
-              outline={scriptData.outline}
-              onSaveDirect={handleOutlineSaveDirect}
-              onSaveWithAI={handleOutlineSaveWithAI}
-            />
-            <div className={styles2.actionRow}>
-              <button
-                className={styles2.confirmButton}
-                onClick={handleConfirmOutline}
-                disabled={confirmLoading}
-              >
-                {confirmLoading ? '确认中...' : '确认大纲，进入下一步'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className={styles2.loadingState}>
-            <p>暂无大纲数据</p>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ========== 创意输入视图（原始逻辑） ==========
+  // ========== 渲染 ==========
   return (
     <div className={styles.content}>
       {/* 标题区域 */}
@@ -469,23 +323,17 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
         </div>
       </div>
 
-      {/* 生成按钮 */}
+      {/* 提交按钮 */}
       <div className={styles.buttonContainer}>
         <button
           className={styles.generateButton}
-          onClick={handleGenerate}
-          disabled={!storyIdea.trim() || !visualStyle || !targetAudience || isGenerating || isGeneratingScript}
+          onClick={handleSubmit}
+          disabled={!storyIdea.trim() || !visualStyle || !targetAudience || isSubmitting}
         >
           <SparklesIcon className={styles.buttonIcon} />
-          <span>{isGenerating ? '创建中...' : '生成剧本'}</span>
+          <span>{isSubmitting ? '创建中...' : '创建项目'}</span>
         </button>
       </div>
-
-      {/* 剧本生成加载遮罩 */}
-      <ScriptGeneratingOverlay
-        isVisible={isGenerating || isGeneratingScript}
-        phase={generatingPhase}
-      />
     </div>
   );
 };
