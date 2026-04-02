@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.apache.catalina.connector.ClientAbortException;
 
 import javax.validation.ConstraintViolation;
 import javax.validation.ConstraintViolationException;
@@ -89,6 +90,14 @@ public class GlobalExceptionHandler {
     public Result<Void> handleAccessDeniedException(AccessDeniedException ex) {
         log.warn("授权失败: {}", ex.getMessage());
         return Result.fail(403, "没有权限访问此资源");
+    }
+
+    /**
+     * 客户端中断连接（SSE 等长连接场景），无需返回响应
+     */
+    @ExceptionHandler(ClientAbortException.class)
+    public void handleClientAbortException(ClientAbortException ex) {
+        log.debug("客户端已断开连接: {}", ex.getMessage());
     }
 
     /**
