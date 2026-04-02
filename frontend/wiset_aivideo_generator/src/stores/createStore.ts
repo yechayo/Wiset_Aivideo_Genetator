@@ -17,15 +17,10 @@ let pollingTimerId: ReturnType<typeof setTimeout> | null = null;
 
 function normalizeStatusInfo(raw: ProjectStatusInfo | Record<string, any>): ProjectStatusInfo {
   const data = raw as Record<string, any>;
-  const statusCode = typeof data.statusCode === 'string' ? data.statusCode : '';
 
   const generating = data.isGenerating ?? data.generating;
   const failed = data.isFailed ?? data.failed;
   const review = data.isReview ?? data.review;
-
-  const fallbackIsGenerating = statusCode.endsWith('_GENERATING') || statusCode === 'PRODUCING';
-  const fallbackIsFailed = statusCode.endsWith('_FAILED');
-  const fallbackIsReview = statusCode.endsWith('_REVIEW');
 
   const reviewEpisodeId =
     data.panelReviewEpisodeId === null || data.panelReviewEpisodeId === undefined
@@ -34,9 +29,9 @@ function normalizeStatusInfo(raw: ProjectStatusInfo | Record<string, any>): Proj
 
   return {
     ...(data as ProjectStatusInfo),
-    isGenerating: typeof generating === 'boolean' ? generating : fallbackIsGenerating,
-    isFailed: typeof failed === 'boolean' ? failed : fallbackIsFailed,
-    isReview: typeof review === 'boolean' ? review : fallbackIsReview,
+    isGenerating: typeof generating === 'boolean' ? generating : false,
+    isFailed: typeof failed === 'boolean' ? failed : false,
+    isReview: typeof review === 'boolean' ? review : false,
     panelReviewEpisodeId: reviewEpisodeId,
   };
 }

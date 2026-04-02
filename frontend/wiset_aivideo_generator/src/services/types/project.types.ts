@@ -35,33 +35,21 @@ export interface CreateProjectRequest {
 }
 
 /**
- * 项目状态枚举
+ * 项目有效状态码（后端根据里程碑 + 数据存在性推导）
  */
 export type ProjectStatus =
-  | 'DRAFT'
-  | 'OUTLINE_GENERATING'
-  | 'OUTLINE_REVIEW'
-  | 'OUTLINE_GENERATING_FAILED'
-  | 'EPISODE_GENERATING'
-  | 'EPISODE_GENERATING_FAILED'
-  | 'SCRIPT_REVIEW'
-  | 'SCRIPT_CONFIRMED'
-  | 'CHARACTER_EXTRACTING'
-  | 'CHARACTER_REVIEW'
-  | 'CHARACTER_CONFIRMED'
-  | 'CHARACTER_EXTRACTING_FAILED'
-  | 'IMAGE_GENERATING'
-  | 'IMAGE_REVIEW'
-  | 'IMAGE_GENERATING_FAILED'
-  | 'ASSET_LOCKED'
-  | 'EPISODE_SCRIPT_GENERATING'
-  | 'EPISODE_SCRIPT_GENERATING_FAILED'
-  | 'STORYBOARD_GENERATING'
-  | 'STORYBOARD_GENERATING_FAILED'
-  | 'STORYBOARD_REVIEW'
-  | 'PRODUCING'
-  | 'MERGING'
-  | 'COMPLETED';
+  | 'draft'
+  | 'outline_review'
+  | 'outline_confirmed'
+  | 'episode_review'
+  | 'episode_confirmed'
+  | 'asset_image_pending'
+  | 'asset_review'
+  | 'asset_confirmed'
+  | 'panel_producing'
+  | 'panel_review'
+  | 'panel_confirmed'
+  | 'completed';
 
 /**
  * 创建项目响应
@@ -220,6 +208,8 @@ export interface ProjectStatusInfo {
   finalVideoUrl?: string;
   /** 合并阶段状态：idle / merging / completed / failed */
   mergeStatus?: string;
+  /** Redis 存储的失败原因 */
+  errorMessage?: string;
 }
 
 /**
@@ -264,6 +254,8 @@ export interface CharacterListItem {
   threeViewStatus: string | null;
   confirmed: boolean;
   species?: string;            // 物种类型: HUMAN/ANTHRO_ANIMAL/CREATURE/ANIMAL
+  imagesLocked?: boolean;       // 图片是否已锁定
+  charStatus?: string;          // configuring / generating / review / locked
   createdAt: string;
 }
 

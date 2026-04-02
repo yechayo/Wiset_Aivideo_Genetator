@@ -58,6 +58,20 @@ export async function confirmCharacters(projectId: string): Promise<ApiResponse<
 }
 
 /**
+ * 确认单个角色配置并触发生成图片
+ */
+export async function confirmSingleCharacter(projectId: string, charId: string): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}/confirm`);
+}
+
+/**
+ * 锁定单个角色的素材图片
+ */
+export async function lockSingleCharacter(projectId: string, charId: string): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}/lock`);
+}
+
+/**
  * 获取角色生成状态详情
  */
 export async function getCharacterStatus(projectId: string, charId: string): Promise<ApiResponse<CharacterStatus>> {
@@ -111,7 +125,7 @@ export async function setVisualStyle(
 
 /**
  * 确认角色图片，锁定素材
- * 触发状态推进：IMAGE_REVIEW → ASSET_LOCKED → PANEL_GENERATING
+ * 触发状态推进：asset_review → asset_confirmed → panel_producing
  */
 export async function confirmImages(projectId: string): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/images/confirm`);

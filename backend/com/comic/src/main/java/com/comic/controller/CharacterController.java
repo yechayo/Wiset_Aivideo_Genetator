@@ -84,10 +84,28 @@ public class CharacterController {
         return Result.ok();
     }
 
+    @PostMapping("/{charId}/confirm")
+    @Operation(summary = "确认单个角色", description = "确认单个角色配置并触发生成图片（不影响其他角色）")
+    public Result<Void> confirmSingleCharacter(
+            @PathVariable String projectId,
+            @PathVariable String charId) {
+        characterImageGenerationService.confirmSingleCharacter(projectId, charId);
+        return Result.ok();
+    }
+
     @PostMapping("/images/confirm")
     @Operation(summary = "确认图片", description = "确认项目的所有角色图片，锁定素材并进入分镜生成")
     public Result<Void> confirmImages(@PathVariable String projectId) {
         characterImageGenerationService.confirmImages(projectId);
+        return Result.ok();
+    }
+
+    @PostMapping("/{charId}/lock")
+    @Operation(summary = "锁定单个角色图片", description = "锁定单个角色的素材图片，全部锁定后自动推进到分镜阶段")
+    public Result<Void> lockSingleCharacter(
+            @PathVariable String projectId,
+            @PathVariable String charId) {
+        characterImageGenerationService.lockSingleCharacter(projectId, charId);
         return Result.ok();
     }
 

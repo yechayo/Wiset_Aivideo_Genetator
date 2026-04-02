@@ -12,6 +12,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+
 import org.apache.catalina.connector.ClientAbortException;
 
 import javax.validation.ConstraintViolation;
@@ -102,21 +104,38 @@ public class GlobalExceptionHandler {
 
     /**
      * 处理运行时异常
+     * SSE 端点（text/event-stream）异常时无法序列化为 Result，直接关闭连接
      */
     @ExceptionHandler(RuntimeException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Result<Void> handleRuntimeException(RuntimeException ex) {
+    public Object handleRuntimeException(RuntimeException ex, WebRequest request) {
         log.warn("运行时异常: {}", ex.getMessage());
+        if (isSseRequest(request)) {
+            return null;
+        }
         return Result.fail(ex.getMessage());
     }
 
     /**
      * 兜底：未预期的异常，避免把堆栈信息暴露给前端
+     * SSE 端点异常时无法序列化为 Result，直接关闭连接
      */
     @ExceptionHandler(Exception.class)
-    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    public Result<Void> handleException(Exception ex) {
+    public Object handleException(Exception ex, WebRequest request) {
         log.error("系统异常", ex);
+        if (isSseRequest(request)) {
+            return null;
+        }
         return Result.fail(500, "系统错误，请稍后重试");
+    }
+
+    /**
+     * 判断当前请求是否为 SSE（text/event-stream）
+     */
+    private boolean isSseRequest(WebRequest request) {
+        String accept = request.getHeader("Accept");
+        if (accept != null && accept.contains("text/event-stream")) {
+            return true;
+        }
+        return false;
     }
 }

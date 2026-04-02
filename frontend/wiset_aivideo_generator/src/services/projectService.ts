@@ -202,3 +202,10 @@ export async function startProduction(projectId: string): Promise<ApiResponse<st
 export async function mergeVideos(projectId: string): Promise<ApiResponse<{ finalVideoUrl: string }>> {
   return post<ApiResponse<{ finalVideoUrl: string }>>(`/api/projects/${projectId}/videos/merge`);
 }
+
+/**
+ * 重试所有失败的面板视频生成
+ */
+export async function retryFailedPanels(projectId: string): Promise<ApiResponse<{ retried: number }>> {
+  return post<ApiResponse<{ retried: number }>>(`/api/projects/${projectId}/panels/retry-failed`);
+}

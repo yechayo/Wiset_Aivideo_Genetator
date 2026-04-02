@@ -16,7 +16,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -160,5 +162,47 @@ public class PanelService {
         response.setCreatedAt(panel.getCreatedAt());
         response.setUpdatedAt(panel.getUpdatedAt());
         return response;
+    }
+
+    /**
+     * 贪心分组算法（纯函数，可独立测试）
+     *
+     * 将分镜 shots 按最大时长分组，每组不超过 maxDuration 秒。
+     * 最后一组只有 1 个 shot 且前面有组时，合并到前一组，保证每组至少 2 个 shot。
+     */
+    public static List<List<Map<String, Object>>> greedyGroup(
+            List<Map<String, Object>> shots, int maxDuration) {
+        List<List<Map<String, Object>>> groups = new ArrayList<>();
+        List<Map<String, Object>> currentGroup = new ArrayList<>();
+        int currentDuration = 0;
+
+        for (Map<String, Object> shot : shots) {
+            int duration = ((Number) shot.get("duration")).intValue();
+            if (duration > maxDuration) {
+                duration = maxDuration;
+            }
+
+            if (currentDuration + duration > maxDuration && !currentGroup.isEmpty()) {
+                groups.add(currentGroup);
+                currentGroup = new ArrayList<>();
+                currentDuration = 0;
+            }
+
+            // 浅拷贝 shot（顶层字段独立，嵌套 List/Map 仍共享引用）
+            @SuppressWarnings("unchecked")
+            Map<String, Object> shotCopy = new HashMap<>(shot);
+            shotCopy.put("duration", duration);
+            currentGroup.add(shotCopy);
+            currentDuration += duration;
+        }
+        if (!currentGroup.isEmpty()) {
+            // 最后一组只有 1 个 shot 且前面有组时，合并到前一组，保证每组至少 2 个 shot
+            if (currentGroup.size() == 1 && !groups.isEmpty()) {
+                groups.get(groups.size() - 1).addAll(currentGroup);
+            } else {
+                groups.add(currentGroup);
+            }
+        }
+        return groups;
     }
 }

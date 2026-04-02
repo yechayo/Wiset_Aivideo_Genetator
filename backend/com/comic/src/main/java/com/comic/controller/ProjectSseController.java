@@ -101,7 +101,7 @@ public class ProjectSseController {
         for (SseEmitter emitter : set) {
             try {
                 emitter.send(SseEmitter.event().name("status-change").data(data));
-            } catch (IOException e) {
+            } catch (IOException | IllegalStateException e) {
                 removeEmitter(projectId, emitter);
             }
         }

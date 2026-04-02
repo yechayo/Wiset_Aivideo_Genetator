@@ -23,6 +23,10 @@ public final class CharacterInfoKeys {
     public static final String EXPRESSION_GRID_PROMPT = "expressionGridPrompt";
     public static final String THREE_VIEW_GRID_PROMPT = "threeViewGridPrompt";
     public static final String SPECIES = "species";
+    /** 单角色图片是否已锁定（用户手动确认锁定后不可再生成） */
+    public static final String IMAGES_LOCKED = "imagesLocked";
+    /** 单角色所处阶段：configuring / generating / review / locked */
+    public static final String CHAR_STATUS = "charStatus";
 
     private CharacterInfoKeys() {}
 }

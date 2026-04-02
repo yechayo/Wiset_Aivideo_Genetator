@@ -348,6 +348,7 @@ public class ProjectService {
         if (pm == ProjectMilestone.COMPLETED || pm == ProjectMilestone.PANEL_CONFIRMED) {
             Map<String, Object> pInfo = project.getProjectInfo();
             if (pInfo != null) {
+
                 dto.setFinalVideoUrl(strVal(pInfo, "finalVideoUrl"));
                 dto.setMergeStatus(strVal(pInfo, "mergeStatus"));
             }

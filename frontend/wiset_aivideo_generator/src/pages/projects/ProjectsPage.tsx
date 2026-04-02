@@ -10,7 +10,7 @@ function getStatusClass(item: ProjectListItem): string {
   if (item.isFailed) return styles.statusFailed;
   if (item.isGenerating) return styles.statusGenerating;
   if (item.isReview) return styles.statusReview;
-  if (item.statusCode === 'COMPLETED') return styles.statusCompleted;
+  if (item.statusCode === 'completed') return styles.statusCompleted;
   return styles.statusDraft;
 }
 

@@ -99,12 +99,14 @@ public class ProjectMilestoneGuard {
         for (com.comic.entity.Character c : characters) {
             java.util.Map<String, Object> info = c.getCharacterInfo();
             if (info == null) return false;
-            String threeView = info.get("threeViewGridStatus") != null ? info.get("threeViewGridStatus").toString() : null;
+            // 优先检查 imagesLocked 标记（单角色锁定模式下使用）
+            Object locked = info.get("imagesLocked");
+            if (locked != null && Boolean.TRUE.equals(locked)) continue;
+            String threeView = info.get("threeViewStatus") != null ? info.get("threeViewStatus").toString() : null;
             if (!"COMPLETED".equals(threeView)) return false;
-            // 主角/反派还需要表情图
             String role = info.get("role") != null ? info.get("role").toString() : null;
             if (!"配角".equals(role)) {
-                String expression = info.get("expressionGridStatus") != null ? info.get("expressionGridStatus").toString() : null;
+                String expression = info.get("expressionStatus") != null ? info.get("expressionStatus").toString() : null;
                 if (!"COMPLETED".equals(expression)) return false;
             }
         }

@@ -21,6 +21,9 @@ import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
 import com.comic.statemachine.enums.ProjectMilestoneEventType;
 import com.comic.service.production.PanelProductionService;
 import com.comic.service.production.VideoCompositionService;
+import com.comic.service.script.ScriptService;
+import com.comic.service.character.CharacterExtractService;
+import com.comic.service.character.CharacterImageGenerationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -48,6 +51,9 @@ public class ProjectController {
     private final PanelRepository panelRepository;
     private final PanelProductionService panelProductionService;
     private final VideoCompositionService videoCompositionService;
+    private final ScriptService scriptService;
+    private final CharacterExtractService characterExtractService;
+    private final CharacterImageGenerationService characterImageGenerationService;
 
     @PostMapping
     @Operation(summary = "创建项目")
@@ -148,7 +154,7 @@ public class ProjectController {
                 rollbackEvent = ProjectMilestoneEventType.ROLLBACK_TO_OUTLINE_CONFIRMED;
             } else if (event.contains("character") || event.contains("asset")) {
                 rollbackEvent = ProjectMilestoneEventType.ROLLBACK_TO_EPISODE_CONFIRMED;
-            } else if (event.contains("panel") || event.contains("storyboard")) {
+            } else if (event.contains("panel")) {
                 rollbackEvent = ProjectMilestoneEventType.ROLLBACK_TO_ASSET_CONFIRMED;
             } else {
                 throw new IllegalArgumentException("Unknown rollback event: " + event);
@@ -158,14 +164,45 @@ public class ProjectController {
             String event = request.getEvent();
             ProjectMilestoneEventType mapped;
             switch (event != null ? event : "") {
-                case "retry":
+                // ===== 生成类 action（不经过状态机，直接调用 service） =====
+                case "generate_outline":
+                    scriptService.generateScriptOutline(projectId);
+                    return Result.ok();
+                case "generate_episodes":
+                    scriptService.generateAllEpisodes(projectId);
+                    return Result.ok();
+                case "extract_characters":
+                    characterExtractService.extractCharacters(projectId);
+                    return Result.ok();
+                case "generate_images":
+                    characterImageGenerationService.confirmImages(projectId);
+                    return Result.ok();
+                case "generate_panels":
+                    panelProductionService.generateEpisodeScripts(projectId);
+                    return Result.ok();
+                case "generate_grids":
+                    panelProductionService.generateGridImagesForProject(projectId);
+                    return Result.ok();
+
+                // ===== 确认类 action（经过状态机） =====
+                case "confirm_outline":
+                    mapped = ProjectMilestoneEventType.CONFIRM_OUTLINE;
+                    break;
+                case "confirm_episodes":
+                    mapped = ProjectMilestoneEventType.CONFIRM_EPISODE;
+                    break;
+                case "confirm_assets":
+                    mapped = ProjectMilestoneEventType.CONFIRM_ASSETS;
+                    break;
+                case "confirm_panels":
                     mapped = ProjectMilestoneEventType.CONFIRM_PANELS;
                     break;
+                case "retry":
                 case "production_completed":
                     mapped = ProjectMilestoneEventType.CONFIRM_PANELS;
                     break;
                 default:
-                    mapped = ProjectMilestoneEventType.valueOf(event);
+                    throw new IllegalArgumentException("Unknown pipeline event: " + event);
             }
             milestoneStateMachineService.sendEvent(projectId, mapped);
         }

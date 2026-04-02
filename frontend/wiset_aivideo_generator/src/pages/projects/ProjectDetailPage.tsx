@@ -120,7 +120,7 @@ function ProjectDetailPage() {
                 statusInfo?.isFailed ? styles.statusFailed
                   : statusInfo?.isGenerating ? styles.statusGenerating
                   : statusInfo?.isReview ? styles.statusReview
-                  : statusInfo?.statusCode === 'COMPLETED' ? styles.statusCompleted
+                  : statusInfo?.statusCode === 'completed' ? styles.statusCompleted
                   : styles.statusDraft
               }`}
             >

@@ -104,9 +104,6 @@ public class CharacterExtractService {
 
             progressService.unlock(projectId);
 
-            // 触发图片生成：尝试获取 asset_image 锁
-            progressService.tryLock(projectId, "asset_image");
-
             log.info("角色提取完成: projectId={}, 角色数={}", projectId, characters.size());
             return characters;
 
@@ -326,6 +323,7 @@ public class CharacterExtractService {
         resp.setThreeViewStatus(getInfoStr(info, CharacterInfoKeys.THREE_VIEW_STATUS));
         resp.setSpecies(getInfoStr(info, CharacterInfoKeys.SPECIES));
         resp.setConfirmed(getInfoBool(info, CharacterInfoKeys.CONFIRMED));
+        resp.setImagesLocked(getInfoBool(info, CharacterInfoKeys.IMAGES_LOCKED));
         resp.setCreatedAt(character.getCreatedAt());
         return resp;
     }

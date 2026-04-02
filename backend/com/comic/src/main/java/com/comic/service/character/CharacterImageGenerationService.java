@@ -174,6 +174,10 @@ public class CharacterImageGenerationService {
         }
     }
 
+    /**
+     * 生成角色图片（含锁）
+     * 前端手动触发时调用，自动获取锁
+     */
     public void generateAll(String charId) {
         Character character = characterRepository.findByCharId(charId);
         if (character == null) {
@@ -182,6 +186,23 @@ public class CharacterImageGenerationService {
 
         if (!progressService.tryLock(character.getProjectId(), "asset_image")) {
             throw new BusinessException("角色图片生成正在进行中");
+        }
+
+        try {
+            doGenerateAll(charId);
+        } catch (Exception e) {
+            progressService.unlock(character.getProjectId());
+            throw e;
+        }
+    }
+
+    /**
+     * 生成角色图片（不含锁，供内部调用）
+     */
+    public void doGenerateAll(String charId) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在: " + charId);
         }
 
         log.info("开始一键生成: charId={}, name={}, role={}",
@@ -277,6 +298,112 @@ public class CharacterImageGenerationService {
         dto.setExpressionGridUrl(getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_GRID_URL));
         dto.setThreeViewGridUrl(getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_GRID_URL));
         return dto;
+    }
+
+    // ==================== 单角色确认与锁定 ====================
+
+    /**
+     * 确认单个角色的配置并触发生成图片
+     * 不推进项目级状态机，仅标记该角色 confirmed=true 并异步生成图片
+     */
+    @Transactional
+    public void confirmSingleCharacter(String projectId, String charId) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在: " + charId);
+        }
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) {
+            throw new BusinessException("项目不存在");
+        }
+        if (!"episode_confirmed".equals(project.getStatus())) {
+            throw new BusinessException("当前状态不能确认角色");
+        }
+
+        Map<String, Object> info = ensureCharInfo(character);
+        info.put(CharacterInfoKeys.CONFIRMED, true);
+        info.put(CharacterInfoKeys.CHAR_STATUS, "generating");
+        character.setCharacterInfo(info);
+        characterRepository.updateById(character);
+
+        log.info("角色已确认: charId={}, name={}", charId, getCharInfoStr(character, CharacterInfoKeys.NAME));
+
+        // 异步触发图片生成
+        try {
+            progressService.clearError(projectId);
+            progressService.tryLock(projectId, "asset_image");
+            doGenerateAll(charId);
+        } catch (Exception e) {
+            progressService.unlock(projectId);
+            log.warn("角色确认后触发生成失败（用户可手动重试）: charId={}, error={}", charId, e.getMessage());
+        }
+    }
+
+    /**
+     * 锁定单个角色的素材图片
+     * 标记 imagesLocked=true，然后检查是否所有角色都已锁定
+     * 如果全部锁定 → 推进项目状态机到 ASSET_CONFIRMED
+     */
+    @Transactional
+    public void lockSingleCharacter(String projectId, String charId) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在: " + charId);
+        }
+        if (!isCharacterImageComplete(character)) {
+            throw new BusinessException("角色图片未完成，无法锁定");
+        }
+
+        Map<String, Object> info = ensureCharInfo(character);
+        info.put(CharacterInfoKeys.IMAGES_LOCKED, true);
+        info.put(CharacterInfoKeys.CHAR_STATUS, "locked");
+        character.setCharacterInfo(info);
+        characterRepository.updateById(character);
+
+        log.info("角色图片已锁定: charId={}, name={}", charId, getCharInfoStr(character, CharacterInfoKeys.NAME));
+
+        // 检查是否所有角色都已锁定 → 推进状态机
+        List<Character> allCharacters = characterRepository.findByProjectId(projectId);
+        boolean allLocked = allCharacters.stream()
+                .allMatch(c -> Boolean.TRUE.equals(getCharInfoBool(c, CharacterInfoKeys.IMAGES_LOCKED)));
+        if (allLocked) {
+            milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType.CONFIRM_ASSETS);
+            log.info("所有角色已锁定，推进到素材确认: projectId={}", projectId);
+        }
+    }
+
+    /**
+     * 计算角色的当前阶段状态
+     */
+    public String computeCharStatus(Character character) {
+        Map<String, Object> info = character.getCharacterInfo();
+        if (info == null) return "configuring";
+
+        // 已锁定
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IMAGES_LOCKED))) {
+            return "locked";
+        }
+
+        // 生成中
+        boolean isGenExpr = Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_EXPRESSION));
+        boolean isGenThreeView = Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_THREE_VIEW));
+        String exprStatus = getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_STATUS);
+        String threeViewStatus = getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_STATUS);
+        if (isGenExpr || isGenThreeView || "GENERATING".equals(exprStatus) || "GENERATING".equals(threeViewStatus)) {
+            return "generating";
+        }
+
+        // 待审核（图片已生成但未锁定）
+        if (isCharacterImageComplete(character)) {
+            return "review";
+        }
+
+        // 有失败状态也视为待审核（可以重试）
+        if ("FAILED".equals(exprStatus) || "FAILED".equals(threeViewStatus)) {
+            return "review";
+        }
+
+        return "configuring";
     }
 
     // ==================== 图片确认 ====================

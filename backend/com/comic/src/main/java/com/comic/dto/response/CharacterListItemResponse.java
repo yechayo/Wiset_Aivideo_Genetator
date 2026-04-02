@@ -21,5 +21,7 @@ public class CharacterListItemResponse {
     private String threeViewStatus;
     private Boolean confirmed;
     private String species;           // 物种类型
+    private Boolean imagesLocked;     // 图片是否已锁定
+    private String charStatus;        // 角色所处阶段: configuring / generating / review / locked
     private LocalDateTime createdAt;
 }

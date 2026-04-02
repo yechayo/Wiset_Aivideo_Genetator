@@ -81,6 +81,29 @@ export async function regenerateEpisodeGrid(
   );
 }
 
+/**
+ * 审核通过分镜文本
+ */
+export async function approveStoryboard(
+  projectId: string, episodeId: number,
+): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/storyboard/approve`,
+  );
+}
+
+/**
+ * 退回分镜文本
+ */
+export async function rejectStoryboard(
+  projectId: string, episodeId: number, reason: string,
+): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/storyboard/reject`,
+    { reason },
+  );
+}
+
 // ================= 九宫格审核 API =================
 
 /** 审核通过九宫格 */
