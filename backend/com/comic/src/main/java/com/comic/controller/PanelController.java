@@ -1,8 +1,7 @@
 package com.comic.controller;
 
-import com.comic.common.BusinessException;
+import com.comic.exception.BusinessException;
 import com.comic.common.Result;
-import com.comic.statemachine.enums.ProjectState;
 import com.comic.dto.request.PanelCreateRequest;
 import com.comic.dto.request.PanelUpdateRequest;
 import com.comic.dto.response.*;
@@ -204,8 +203,10 @@ public class PanelController {
      */
     private void guardPanelNotInProduction(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
-        if (project != null && (ProjectState.PRODUCING.getCode().equals(project.getStatus())
-                || ProjectState.COMPLETED.getCode().equals(project.getStatus()))) {
+        String status = project != null ? project.getStatus() : null;
+        if (status != null && ("asset_confirmed".equals(status)
+                || "panel_confirmed".equals(status)
+                || "completed".equals(status))) {
             throw new BusinessException("当前项目正在生产或拼接中，无法变更分镜");
         }
     }

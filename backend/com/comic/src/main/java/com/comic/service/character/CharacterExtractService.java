@@ -3,10 +3,9 @@ package com.comic.service.character;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.comic.ai.text.TextGenerationService;
-import com.comic.common.BusinessException;
-import com.comic.common.CharacterInfoKeys;
-import com.comic.common.ProjectInfoKeys;
-import com.comic.statemachine.enums.ProjectState;
+import com.comic.exception.BusinessException;
+import com.comic.constant.CharacterInfoKeys;
+import com.comic.constant.ProjectInfoKeys;
 import com.comic.dto.model.CharacterDraftModel;
 import com.comic.dto.request.CharacterUpdateRequest;
 import com.comic.dto.response.CharacterListItemResponse;
@@ -15,8 +14,10 @@ import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.statemachine.service.ProjectStateMachineService;
-import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.service.redis.ProgressService;
+import com.comic.statemachine.enums.ProjectMilestoneEventType;
+import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
+import com.comic.statemachine.service.StateChangeEventPublisher;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -40,25 +41,35 @@ public class CharacterExtractService {
 
     @Lazy
     @Autowired
-    private ProjectStateMachineService projectStateMachineService;
+    private ProgressService progressService;
+
+    @Lazy
+    @Autowired
+    private ProjectMilestoneStateMachineService milestoneStateMachineService;
+
+    @Lazy
+    @Autowired
+    private StateChangeEventPublisher eventPublisher;
 
     /**
      * 注意：此方法由 PipelineService 在异步线程中调用，使用独立事务确保数据落库
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public List<CharacterDraftModel> extractCharacters(String projectId) {
+        if (!progressService.tryLock(projectId, "asset_extract")) {
+            throw new BusinessException("角色提取正在进行中");
+        }
+
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
+            progressService.unlock(projectId);
             throw new BusinessException("项目不存在");
         }
 
-        if (!ProjectState.SCRIPT_CONFIRMED.getCode().equals(project.getStatus()) &&
-            !ProjectState.CHARACTER_REVIEW.getCode().equals(project.getStatus()) &&
-            !ProjectState.CHARACTER_EXTRACTING.getCode().equals(project.getStatus())) {
+        if (!"episode_confirmed".equals(project.getStatus())) {
+            progressService.unlock(projectId);
             throw new BusinessException("请先确认剧本后再提取角色");
         }
-
-        // 状态已由 triggerNextStage 设置，无需重复设置
 
         try {
             String outline = getScriptOutlineText(project);
@@ -91,14 +102,19 @@ public class CharacterExtractService {
 
             saveCharacters(projectId, characters);
 
-            projectStateMachineService.sendEvent(projectId, ProjectEventType._CHARACTERS_DONE);
+            progressService.unlock(projectId);
+
+            // 触发图片生成：尝试获取 asset_image 锁
+            progressService.tryLock(projectId, "asset_image");
 
             log.info("角色提取完成: projectId={}, 角色数={}", projectId, characters.size());
             return characters;
 
         } catch (Exception e) {
             log.error("角色提取失败: projectId={}", projectId, e);
-            projectStateMachineService.sendEvent(projectId, ProjectEventType.CHARACTER_EXTRACTING_FAILED);
+            progressService.unlock(projectId);
+            progressService.setError(projectId, e.getMessage());
+            eventPublisher.publishFailure(projectId, e.getMessage());
             throw new BusinessException("角色提取失败: " + e.getMessage());
         }
     }
@@ -109,7 +125,7 @@ public class CharacterExtractService {
         if (project == null) {
             throw new BusinessException("项目不存在");
         }
-        if (!ProjectState.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
+        if (!"episode_confirmed".equals(project.getStatus())) {
             throw new BusinessException("当前状态不能确认角色");
         }
         List<Character> characters = characterRepository.findByProjectId(projectId);
@@ -121,7 +137,7 @@ public class CharacterExtractService {
                 characterRepository.updateById(character);
             }
         }
-        projectStateMachineService.sendEvent(projectId, ProjectEventType.CONFIRM_CHARACTERS);
+        milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType.CONFIRM_ASSETS);
         log.info("角色已确认: projectId={}", projectId);
     }
 
@@ -132,7 +148,7 @@ public class CharacterExtractService {
             throw new BusinessException("角色不存在");
         }
         Project project = projectRepository.findByProjectId(character.getProjectId());
-        if (project == null || !ProjectState.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
+        if (project == null || !"episode_confirmed".equals(project.getStatus())) {
             throw new BusinessException("当前状态不能编辑角色");
         }
         Map<String, Object> info = character.getCharacterInfo();
@@ -186,7 +202,7 @@ public class CharacterExtractService {
             throw new BusinessException("角色不存在");
         }
         Project project = projectRepository.findByProjectId(character.getProjectId());
-        if (project == null || !ProjectState.CHARACTER_REVIEW.getCode().equals(project.getStatus())) {
+        if (project == null || !"episode_confirmed".equals(project.getStatus())) {
             throw new BusinessException("当前状态不能删除角色");
         }
         characterRepository.deleteById(character.getId());

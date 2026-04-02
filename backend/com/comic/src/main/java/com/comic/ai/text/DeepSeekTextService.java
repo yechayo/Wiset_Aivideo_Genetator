@@ -1,6 +1,6 @@
 package com.comic.ai.text;
 
-import com.comic.common.BusinessException;
+import com.comic.exception.BusinessException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;

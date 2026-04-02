@@ -1,4 +1,4 @@
-package com.comic.common;
+package com.comic.constant;
 
 public final class EpisodeInfoKeys {
     public static final String EPISODE_NUM = "episodeNum";

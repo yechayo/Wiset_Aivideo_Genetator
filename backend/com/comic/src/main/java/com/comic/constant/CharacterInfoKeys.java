@@ -1,4 +1,4 @@
-package com.comic.common;
+package com.comic.constant;
 
 public final class CharacterInfoKeys {
     public static final String CHAR_ID = "charId";

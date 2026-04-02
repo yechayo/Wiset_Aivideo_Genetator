@@ -1,7 +1,7 @@
 package com.comic.service.panel;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.comic.common.BusinessException;
+import com.comic.exception.BusinessException;
 import com.comic.dto.request.PanelCreateRequest;
 import com.comic.dto.request.PanelUpdateRequest;
 import com.comic.dto.response.PanelListItemResponse;

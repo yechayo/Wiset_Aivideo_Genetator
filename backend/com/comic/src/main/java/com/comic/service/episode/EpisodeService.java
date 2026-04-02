@@ -2,7 +2,7 @@ package com.comic.service.episode;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.comic.common.BusinessException;
+import com.comic.exception.BusinessException;
 import com.comic.dto.request.EpisodeCreateRequest;
 import com.comic.dto.request.EpisodeUpdateRequest;
 import com.comic.dto.response.EpisodeListItemResponse;

@@ -17,8 +17,8 @@ import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.repository.UserRepository;
 import com.comic.service.project.ProjectService;
-import com.comic.statemachine.service.ProjectStateMachineService;
-import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
+import com.comic.statemachine.enums.ProjectMilestoneEventType;
 import com.comic.service.production.VideoCompositionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
 public class ProjectController {
 
     private final ProjectService projectService;
-    private final ProjectStateMachineService projectStateMachineService;
+    private final ProjectMilestoneStateMachineService milestoneStateMachineService;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final EpisodeRepository episodeRepository;
@@ -138,27 +138,24 @@ public class ProjectController {
     public Result<Void> advancePipeline(@PathVariable String projectId,
                                         @RequestBody AdvanceRequest request) {
         if ("backward".equals(request.getDirection())) {
-            projectStateMachineService.sendEvent(projectId, getRollbackEvent(request.getEvent()));
+            String event = request.getEvent();
+            ProjectMilestoneEventType rollbackEvent;
+            if (event.contains("outline")) {
+                rollbackEvent = ProjectMilestoneEventType.ROLLBACK_TO_DRAFT;
+            } else if (event.contains("episode")) {
+                rollbackEvent = ProjectMilestoneEventType.ROLLBACK_TO_OUTLINE_CONFIRMED;
+            } else if (event.contains("character") || event.contains("asset")) {
+                rollbackEvent = ProjectMilestoneEventType.ROLLBACK_TO_EPISODE_CONFIRMED;
+            } else if (event.contains("panel") || event.contains("storyboard")) {
+                rollbackEvent = ProjectMilestoneEventType.ROLLBACK_TO_ASSET_CONFIRMED;
+            } else {
+                throw new IllegalArgumentException("Unknown rollback event: " + event);
+            }
+            milestoneStateMachineService.sendEvent(projectId, rollbackEvent);
         } else {
-            projectStateMachineService.sendEvent(projectId, ProjectEventType.valueOf(request.getEvent()));
+            milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType.valueOf(request.getEvent()));
         }
         return Result.ok();
-    }
-
-    private ProjectEventType getRollbackEvent(String event) {
-        if ("rollback_outline".equals(event)) {
-            return ProjectEventType.ROLLBACK_OUTLINE;
-        } else if ("rollback_episode".equals(event)) {
-            return ProjectEventType.ROLLBACK_EPISODE;
-        } else if ("rollback_character".equals(event)) {
-            return ProjectEventType.ROLLBACK_CHARACTER;
-        } else if ("rollback_image".equals(event)) {
-            return ProjectEventType.ROLLBACK_IMAGE;
-        } else if ("rollback_storyboard".equals(event)) {
-            return ProjectEventType.ROLLBACK_STORYBOARD;
-        } else {
-            throw new IllegalArgumentException("Unknown rollback event: " + event);
-        }
     }
 
     @PostMapping("/{projectId}/videos/merge")
@@ -200,7 +197,7 @@ public class ProjectController {
         }
 
         // 推进状态 MERGING → COMPLETED
-        projectStateMachineService.sendEvent(projectId, ProjectEventType._MERGE_DONE);
+        milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType._ASSEMBLE_DONE);
 
         Map<String, String> result = new HashMap<>();
         result.put("finalVideoUrl", finalVideoUrl);

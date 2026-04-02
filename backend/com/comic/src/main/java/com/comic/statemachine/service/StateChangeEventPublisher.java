@@ -5,6 +5,7 @@ import com.comic.statemachine.dto.ProgressEvent;
 import com.comic.statemachine.dto.StateChangeEvent;
 import com.comic.statemachine.dto.TaskCompleteEvent;
 import com.comic.statemachine.dto.TaskStartEvent;
+import com.comic.statemachine.enums.ProjectMilestone;
 import com.comic.statemachine.enums.ProjectState;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -64,5 +65,19 @@ public class StateChangeEventPublisher {
                 .timestamp(System.currentTimeMillis())
                 .build();
         eventPublisher.publishEvent(event);
+    }
+
+    /**
+     * 发布里程碑变更事件（新状态机使用）
+     * 直接传 milestone code 字符串，SSE 推送给前端
+     */
+    public void publishMilestoneChange(String projectId, String milestoneCode) {
+        StateChangeEvent event = StateChangeEvent.builder()
+                .projectId(projectId)
+                .newState(null) // 不设旧 ProjectState
+                .timestamp(System.currentTimeMillis())
+                .build();
+        eventPublisher.publishEvent(event);
+        log.info("Milestone change event published: projectId={}, milestone={}", projectId, milestoneCode);
     }
 }

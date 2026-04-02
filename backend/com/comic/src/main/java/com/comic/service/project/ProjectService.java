@@ -1,11 +1,11 @@
 package com.comic.service.project;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.comic.common.BusinessException;
-import com.comic.common.CharacterInfoKeys;
-import com.comic.common.EpisodeInfoKeys;
-import com.comic.common.ProjectInfoKeys;
-import com.comic.statemachine.enums.ProjectState;
+import com.comic.exception.BusinessException;
+import com.comic.constant.CharacterInfoKeys;
+import com.comic.constant.EpisodeInfoKeys;
+import com.comic.constant.ProjectInfoKeys;
+import com.comic.statemachine.enums.ProjectMilestone;
 import com.comic.dto.request.ProjectCreateRequest;
 import com.comic.dto.response.ProjectListItemResponse;
 import com.comic.dto.response.ProjectProductionSummaryResponse;
@@ -34,12 +34,13 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Project management service.
@@ -109,7 +110,7 @@ public class ProjectService {
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
         project.setDeleted(false);
-        project.setStatus(ProjectState.DRAFT.getCode());
+        project.setStatus(ProjectMilestone.DRAFT.getCode());
 
         Map<String, Object> info = new HashMap<>();
         info.put(ProjectInfoKeys.STORY_PROMPT, storyPrompt);
@@ -179,41 +180,222 @@ public class ProjectService {
             throw new BusinessException("项目不存在");
         }
 
-        ProjectState status = ProjectState.fromCode(project.getStatus());
+        String milestone = project.getStatus();
+        ProjectMilestone pm = ProjectMilestone.fromCode(milestone);
+
+        // 基于 milestone + 数据存在性推导有效状态和前端步骤
+        String effectiveState;
+        int frontendStep;
+        boolean isGenerating = false;
+        boolean isReview = false;
+        boolean isFailed = false;
+
+        List<Integer> completedSteps = new ArrayList<>();
+        List<String> availableActions = new ArrayList<>();
+
+        switch (pm) {
+            case DRAFT:
+                if (outlineExists(project)) {
+                    effectiveState = "outline_review";
+                    frontendStep = 1;
+                    isReview = true;
+                    availableActions = Arrays.asList("confirm_outline", "revise_outline");
+                } else {
+                    effectiveState = "draft";
+                    frontendStep = 1;
+                    availableActions = Arrays.asList("generate_outline");
+                }
+                break;
+
+            case OUTLINE_CONFIRMED:
+                if (episodesExist(projectId)) {
+                    effectiveState = "episode_review";
+                    frontendStep = 2;
+                    isReview = true;
+                    availableActions = Arrays.asList("confirm_episodes");
+                } else {
+                    effectiveState = "outline_confirmed";
+                    frontendStep = 2;
+                    availableActions = Arrays.asList("generate_episodes");
+                }
+                completedSteps.add(1);
+                break;
+
+            case EPISODE_CONFIRMED: {
+                boolean charsExist = charactersExist(projectId);
+                boolean imagesDone = allCharacterImagesDone(projectId);
+                if (charsExist && imagesDone) {
+                    effectiveState = "asset_review";
+                    frontendStep = 3;
+                    isReview = true;
+                    availableActions = Arrays.asList("confirm_assets");
+                } else if (charsExist) {
+                    effectiveState = "asset_image_pending";
+                    frontendStep = 3;
+                    availableActions = Arrays.asList("generate_images");
+                } else {
+                    effectiveState = "episode_confirmed";
+                    frontendStep = 3;
+                    availableActions = Arrays.asList("extract_characters");
+                }
+                completedSteps.add(1);
+                completedSteps.add(2);
+                break;
+            }
+
+            case ASSET_CONFIRMED: {
+                // 面板生产阶段
+                int[] panelStats = getPanelStats(projectId);
+                int total = panelStats[0];
+                int completed = panelStats[1];
+                int failed = panelStats[2];
+
+                if (total > 0 && completed == total) {
+                    effectiveState = "panel_review";
+                    frontendStep = 4;
+                    isReview = true;
+                    availableActions = Arrays.asList("confirm_panels");
+                } else if (total > 0) {
+                    effectiveState = "panel_producing";
+                    frontendStep = 4;
+                    isGenerating = failed == 0;
+                    availableActions = Arrays.asList("retry_failed_panels");
+                } else {
+                    effectiveState = "asset_confirmed";
+                    frontendStep = 4;
+                    availableActions = Arrays.asList("generate_panels");
+                }
+                completedSteps.add(1);
+                completedSteps.add(2);
+                completedSteps.add(3);
+                break;
+            }
+
+            case PANEL_CONFIRMED:
+                effectiveState = "panel_confirmed";
+                frontendStep = 5;
+                availableActions = Arrays.asList("start_assembling");
+                completedSteps.add(1);
+                completedSteps.add(2);
+                completedSteps.add(3);
+                completedSteps.add(4);
+                // 如果有最终视频 URL，附带结果
+                Map<String, Object> info5 = project.getProjectInfo();
+                break;
+
+            case COMPLETED:
+                effectiveState = "completed";
+                frontendStep = 5;
+                completedSteps.add(1);
+                completedSteps.add(2);
+                completedSteps.add(3);
+                completedSteps.add(4);
+                completedSteps.add(5);
+                break;
+
+            default:
+                effectiveState = "draft";
+                frontendStep = 1;
+        }
 
         ProjectStatusResponse dto = new ProjectStatusResponse();
         dto.setProjectId(project.getProjectId());
-        dto.setCurrentStep(status.getFrontendStep());
-        dto.setFailed(status.isFailed());
-        dto.setReview(status.isReview());
-        dto.setCompletedSteps(status.getCompletedSteps());
-        dto.setAvailableActions(status.getAvailableActions());
+        dto.setStatusCode(effectiveState);
+        dto.setStatusDescription(getStateDescription(effectiveState));
+        dto.setCurrentStep(frontendStep);
+        dto.setGenerating(isGenerating);
+        dto.setFailed(isFailed);
+        dto.setReview(isReview);
+        dto.setCompletedSteps(completedSteps);
+        dto.setAvailableActions(availableActions);
 
-        if (status == ProjectState.PRODUCING) {
-            enrichProducingStatus(dto, projectId);
-        } else if (status == ProjectState.MERGING) {
-            enrichMergingStatus(dto, project);
-        } else if (status == ProjectState.EPISODE_SCRIPT_GENERATING
-                || status == ProjectState.EPISODE_SCRIPT_GENERATING_FAILED
-                || status == ProjectState.STORYBOARD_GENERATING
-                || status == ProjectState.STORYBOARD_GENERATING_FAILED
-                || status == ProjectState.STORYBOARD_REVIEW) {
-            enrichPanelStatus(dto, projectId);
-        } else {
-            dto.setStatusCode(status.getCode());
-            dto.setStatusDescription(status.getDescription());
-            dto.setGenerating(status.isGenerating());
-            // COMPLETED 时附带合并结果
-            if (status == ProjectState.COMPLETED) {
-                Map<String, Object> info = project.getProjectInfo();
-                if (info != null) {
-                    dto.setFinalVideoUrl(strVal(info, "finalVideoUrl"));
-                    dto.setMergeStatus("completed");
-                }
+        // COMPLETED / PANEL_CONFIRMED 时附带合并结果
+        if (pm == ProjectMilestone.COMPLETED || pm == ProjectMilestone.PANEL_CONFIRMED) {
+            Map<String, Object> pInfo = project.getProjectInfo();
+            if (pInfo != null) {
+                dto.setFinalVideoUrl(strVal(pInfo, "finalVideoUrl"));
+                dto.setMergeStatus(strVal(pInfo, "mergeStatus"));
             }
         }
 
         return dto;
+    }
+
+    // ===== 数据存在性检查 =====
+
+    private boolean outlineExists(Project project) {
+        Map<String, Object> info = project.getProjectInfo();
+        if (info == null) return false;
+        Object script = info.get("script");
+        if (script instanceof Map) {
+            Object outline = ((Map<?, ?>) script).get("outline");
+            return outline != null && !outline.toString().trim().isEmpty();
+        }
+        return false;
+    }
+
+    private boolean episodesExist(String projectId) {
+        List<?> episodes = episodeRepository.findByProjectId(projectId);
+        return episodes != null && !episodes.isEmpty();
+    }
+
+    private boolean charactersExist(String projectId) {
+        List<?> characters = characterRepository.findByProjectId(projectId);
+        return characters != null && !characters.isEmpty();
+    }
+
+    private boolean allCharacterImagesDone(String projectId) {
+        List<Character> characters = characterRepository.findByProjectId(projectId);
+        for (Character c : characters) {
+            Map<String, Object> info = c.getCharacterInfo();
+            if (info == null) return false;
+            String threeView = info.get("threeViewGridStatus") != null ? info.get("threeViewGridStatus").toString() : null;
+            if (!"COMPLETED".equals(threeView)) return false;
+            String role = info.get("role") != null ? info.get("role").toString() : null;
+            if (!"配角".equals(role)) {
+                String expression = info.get("expressionGridStatus") != null ? info.get("expressionGridStatus").toString() : null;
+                if (!"COMPLETED".equals(expression)) return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 返回 [total, completed, failed]
+     */
+    private int[] getPanelStats(String projectId) {
+        List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        int total = 0, completed = 0, failed = 0;
+        for (Episode ep : episodes) {
+            List<Panel> panels = panelRepository.findByEpisodeId(ep.getId());
+            for (Panel panel : panels) {
+                total++;
+                Map<String, Object> pinfo = panel.getPanelInfo();
+                if (pinfo == null) continue;
+                String videoStatus = pinfo.get("videoStatus") != null ? pinfo.get("videoStatus").toString() : null;
+                if ("completed".equals(videoStatus)) completed++;
+                else if ("failed".equals(videoStatus)) failed++;
+            }
+        }
+        return new int[]{total, completed, failed};
+    }
+
+    private String getStateDescription(String state) {
+        switch (state) {
+            case "draft": return "草稿";
+            case "outline_review": return "大纲已生成，请审核";
+            case "outline_confirmed": return "大纲已确认";
+            case "episode_review": return "分集剧本已生成，请审核";
+            case "episode_confirmed": return "分集剧本已确认";
+            case "asset_review": return "素材已就绪，请确认";
+            case "asset_image_pending": return "角色图片生成中";
+            case "asset_confirmed": return "素材已确认";
+            case "panel_producing": return "面板生产中";
+            case "panel_review": return "面板已就绪，请确认";
+            case "panel_confirmed": return "面板已确认";
+            case "completed": return "已完成";
+            default: return state;
+        }
     }
 
     /**
@@ -302,7 +484,7 @@ public class ProjectService {
     }
 
     public ProjectListItemResponse toListItemDTO(Project project) {
-        ProjectState status = ProjectState.fromCode(project.getStatus());
+        ProjectMilestone milestone = ProjectMilestone.fromCode(project.getStatus());
         Map<String, Object> info = project.getProjectInfo();
 
         ProjectListItemResponse dto = new ProjectListItemResponse();
@@ -313,265 +495,31 @@ public class ProjectService {
         dto.setTotalEpisodes(getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES));
         dto.setEpisodeDuration(getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION));
         dto.setVisualStyle(getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE));
-        dto.setStatusCode(status.getCode());
-        dto.setStatusDescription(status.getDescription());
-        dto.setCurrentStep(status.getFrontendStep());
-        dto.setGenerating(status.isGenerating());
-        dto.setFailed(status.isFailed());
-        dto.setReview(status.isReview());
-        dto.setCompletedSteps(status.getCompletedSteps());
+        dto.setStatusCode(milestone.getCode());
+        dto.setStatusDescription(milestone.getDescription());
+        dto.setCurrentStep(milestone.ordinal() + 1);
+        dto.setGenerating(false);
+        dto.setFailed(false);
+        dto.setReview(false);
+        dto.setCompletedSteps(completedStepsForMilestone(milestone));
         dto.setCreatedAt(project.getCreatedAt());
         dto.setUpdatedAt(project.getUpdatedAt());
 
         return dto;
     }
 
-    // ==================== 状态增强（Producing / Panel）====================
-    private void enrichProducingStatus(ProjectStatusResponse dto, String projectId) {
-        try {
-            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
-
-            // 聚合所有 Episode 下 Panel 的生产状态
-            int totalPanels = 0;
-            int completedPanels = 0;
-            int failedPanels = 0;
-            int generatingPanels = 0;
-            boolean hasPending = false;
-
-            for (Episode ep : episodes) {
-                List<Panel> panels = panelRepository.findByEpisodeId(ep.getId());
-                totalPanels += panels.size();
-                for (Panel panel : panels) {
-                    String overallStatus = getPanelOverallStatus(panel);
-                    if ("completed".equals(overallStatus)) {
-                        completedPanels++;
-                    } else if ("failed".equals(overallStatus)) {
-                        failedPanels++;
-                    } else if ("in_progress".equals(overallStatus)) {
-                        generatingPanels++;
-                    } else {
-                        hasPending = true;
-                    }
-                }
-            }
-
-            if (totalPanels == 0) {
-                // 没有 Panel，等待用户操作
-                dto.setStatusCode("PRODUCING");
-                dto.setStatusDescription("Ready to start production");
-                dto.setGenerating(false);
-                return;
-            }
-
-            // 所有 Panel 完成 → 等待编排器触发 production_completed 持久化
-            if (completedPanels == totalPanels) {
-                dto.setStatusCode("PRODUCING");
-                dto.setStatusDescription("All panels completed, finalizing...");
-                dto.setGenerating(false);
-                dto.setProductionProgress(100);
-                return;
-            }
-
-            // 计算进度百分比
-            int progress = (int) ((completedPanels * 100.0) / totalPanels);
-            dto.setProductionProgress(progress);
-
-            if (generatingPanels > 0) {
-                dto.setStatusCode("PRODUCING");
-                dto.setStatusDescription("Producing (" + completedPanels + "/" + totalPanels + " panels)");
-                dto.setGenerating(true);
-            } else if (failedPanels > 0) {
-                dto.setStatusCode("PRODUCING");
-                dto.setStatusDescription("Production failed on some panels (" + failedPanels + " failed)");
-                dto.setGenerating(false);
-            } else {
-                dto.setStatusCode("PRODUCING");
-                dto.setStatusDescription(hasPending ? "Ready to start production" : "Producing");
-                dto.setGenerating(false);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to enrich producing status: projectId={}, error={}", projectId, e.getMessage());
-            dto.setStatusCode("PRODUCING");
-            dto.setStatusDescription("Producing");
-            dto.setGenerating(true);
+    private List<Integer> completedStepsForMilestone(ProjectMilestone milestone) {
+        List<Integer> steps = new ArrayList<>();
+        int step = milestone.ordinal(); // 0-based
+        for (int i = 1; i <= step; i++) {
+            steps.add(i);
         }
-    }
-
-    /**
-     * 根据 Panel.panelInfo 推导整体生产状态
-     */
-    private String getPanelOverallStatus(Panel panel) {
-        Map<String, Object> info = panel.getPanelInfo();
-        if (info == null) return "pending";
-
-        String videoStatus = strVal(info, "videoStatus");
-        String gridStatus = strVal(info, "gridStatus");
-
-        if ("completed".equals(videoStatus)) return "completed";
-        if ("failed".equals(videoStatus) || "failed".equals(gridStatus)) return "failed";
-        if ("generating".equals(videoStatus) || "generating".equals(gridStatus)) return "in_progress";
-        if (strVal(info, "fusionImageUrl") != null) return "in_progress";
-        return "pending";
+        return steps;
     }
 
     private String strVal(Map<String, Object> map, String key) {
         Object v = map.get(key);
         return v != null ? v.toString() : null;
-    }
-
-    private void enrichMergingStatus(ProjectStatusResponse dto, Project project) {
-        Map<String, Object> info = project.getProjectInfo();
-        String finalVideoUrl = info != null ? strVal(info, "finalVideoUrl") : null;
-        String mergeStatus = info != null ? strVal(info, "mergeStatus") : null;
-        dto.setStatusCode("MERGING");
-        dto.setFinalVideoUrl(finalVideoUrl);
-        dto.setMergeStatus(mergeStatus != null ? mergeStatus : "idle");
-        if (finalVideoUrl != null) {
-            dto.setStatusDescription("视频合并已完成");
-            dto.setGenerating(false);
-        } else {
-            dto.setStatusDescription("视频合并");
-            dto.setGenerating(false);
-        }
-    }
-
-    private void enrichPanelStatus(ProjectStatusResponse dto, String projectId) {
-        try {
-            Project project = projectRepository.findByProjectId(projectId);
-            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
-            int totalEpisodes = episodes.size();
-
-            Episode failedEpisode = null;
-            Episode generatingEpisode = null;
-            Episode reviewEpisode = null;
-            Episode draftEpisode = null;
-
-            for (Episode ep : episodes) {
-                if (failedEpisode == null
-                        && ("STORYBOARD_FAILED".equals(ep.getStatus())
-                            || isPanelGeneratingWithError(ep)
-                            || isStaleGenerating(ep))) {
-                    failedEpisode = ep;
-                }
-                if (generatingEpisode == null
-                        && "STORYBOARD_GENERATING".equals(ep.getStatus())
-                        && !isPanelGeneratingWithError(ep)
-                        && !isStaleGenerating(ep)) {
-                    generatingEpisode = ep;
-                }
-                if (reviewEpisode == null && "STORYBOARD_DONE".equals(ep.getStatus())) {
-                    reviewEpisode = ep;
-                }
-                if (draftEpisode == null && (ep.getStatus() == null || "DRAFT".equals(ep.getStatus()))) {
-                    draftEpisode = ep;
-                }
-            }
-
-            Episode currentEpisode = failedEpisode != null ? failedEpisode
-                    : generatingEpisode != null ? generatingEpisode
-                    : reviewEpisode != null ? reviewEpisode
-                    : draftEpisode;
-
-            int completedCount = 0;
-            for (Episode ep : episodes) {
-                if ("STORYBOARD_CONFIRMED".equals(ep.getStatus())) {
-                    completedCount++;
-                }
-            }
-
-            dto.setPanelTotalEpisodes(totalEpisodes);
-            if (currentEpisode != null) {
-                Integer epNum = getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM);
-                dto.setPanelCurrentEpisode(epNum);
-                dto.setPanelReviewEpisodeId(String.valueOf(currentEpisode.getId()));
-            }
-
-            ProjectState projectStatus = ProjectState.fromCode(project.getStatus());
-            if (failedEpisode != null && projectStatus == ProjectState.STORYBOARD_GENERATING) {
-                projectStatus = ProjectState.STORYBOARD_GENERATING_FAILED;
-            } else if (failedEpisode == null && projectStatus == ProjectState.STORYBOARD_GENERATING_FAILED) {
-                // 失败已恢复：有完成/审核中的 episode 则恢复到 STORYBOARD_REVIEW，否则回到 STORYBOARD_GENERATING
-                projectStatus = (completedCount > 0 || reviewEpisode != null)
-                        ? ProjectState.STORYBOARD_REVIEW : ProjectState.STORYBOARD_GENERATING;
-                project.setStatus(projectStatus.getCode());
-                projectRepository.updateById(project);
-                log.info("Panel status recovered: projectId={}, STORYBOARD_GENERATING_FAILED -> {}", projectId, projectStatus.getCode());
-            }
-
-            dto.setStatusCode(projectStatus.getCode());
-            dto.setStatusDescription(projectStatus.getDescription());
-            dto.setGenerating(projectStatus.isGenerating());
-            dto.setFailed(projectStatus.isFailed());
-            dto.setReview(projectStatus.isReview());
-
-            boolean allConfirmed = completedCount == totalEpisodes && projectStatus == ProjectState.STORYBOARD_REVIEW;
-            dto.setPanelAllConfirmed(allConfirmed);
-            if (allConfirmed) {
-                dto.setPanelReviewEpisodeId(null);
-                dto.setStatusDescription("All " + totalEpisodes + " panel episodes are confirmed");
-                return;
-            }
-
-            // 根据 projectStatus 设置状态描述
-            Integer epNum = currentEpisode != null
-                    ? getEpisodeInfoInt(currentEpisode, EpisodeInfoKeys.EPISODE_NUM)
-                    : null;
-
-            switch (projectStatus) {
-                case EPISODE_SCRIPT_GENERATING:
-                    dto.setStatusDescription("Generating episode script...");
-                    break;
-                case EPISODE_SCRIPT_GENERATING_FAILED:
-                    dto.setStatusDescription("Episode script generation failed");
-                    break;
-                case STORYBOARD_GENERATING:
-                    dto.setStatusDescription("Generating storyboard for episode " + epNum + "...");
-                    break;
-                case STORYBOARD_REVIEW:
-                    dto.setStatusDescription(
-                            "Review episode " + epNum
-                                    + " storyboard (" + completedCount + "/" + totalEpisodes + ")"
-                    );
-                    break;
-                case STORYBOARD_GENERATING_FAILED:
-                    dto.setStatusDescription(
-                            "Episode " + epNum + " storyboard generation failed"
-                    );
-                    break;
-                default:
-                    break;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to enrich panel status: projectId={}, error={}", projectId, e.getMessage());
-        }
-    }
-
-    private boolean isPanelGeneratingWithError(Episode episode) {
-        if (episode == null) {
-            return false;
-        }
-        if (!"STORYBOARD_GENERATING".equals(episode.getStatus())) {
-            return false;
-        }
-        String errorMsg = getEpisodeInfoStr(episode, EpisodeInfoKeys.ERROR_MSG);
-        boolean hasError = errorMsg != null && !errorMsg.trim().isEmpty();
-        // panelJson 已移除（分镜数据存 Panel 表），只看 errorMsg 判断
-        return hasError;
-    }
-
-    /** Detect episodes stuck in GENERATING for too long (e.g. server restarted). */
-    private boolean isStaleGenerating(Episode episode) {
-        if (episode == null || !"STORYBOARD_GENERATING".equals(episode.getStatus())) {
-            return false;
-        }
-        if (isPanelGeneratingWithError(episode)) {
-            return false;
-        }
-        LocalDateTime updatedAt = episode.getUpdatedAt();
-        if (updatedAt == null) {
-            return false;
-        }
-        return Duration.between(updatedAt, LocalDateTime.now()).toMinutes() >= 10;
     }
 
     private String generateProjectId() {

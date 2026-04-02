@@ -1,8 +1,7 @@
 package com.comic.service.storyboard;
 
 import com.comic.ai.text.DeepSeekTextService;
-import com.comic.common.BusinessException;
-import com.comic.statemachine.enums.ProjectState;
+import com.comic.exception.BusinessException;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
@@ -12,8 +11,8 @@ import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.panel.GridImageService;
-import com.comic.statemachine.service.ProjectStateMachineService;
-import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.service.redis.ProgressService;
+import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -40,7 +39,9 @@ public class StoryboardService {
     @Resource
     private ProjectRepository projectRepository;
     @Resource
-    private ProjectStateMachineService projectStateMachineService;
+    private ProgressService progressService;
+    @Resource
+    private StateChangeEventPublisher eventPublisher;
     @Resource
     private GridImageService gridImageService;
     @Resource
@@ -58,6 +59,9 @@ public class StoryboardService {
      */
     public void generateEpisodeScriptAndStoryboard(String projectId) {
         log.info("[Pipeline] 开始分集剧本+分镜生成: projectId={}", projectId);
+        if (!progressService.tryLock(projectId, "episode")) {
+            throw new BusinessException("该项目正在生成中，请稍后再试");
+        }
         try {
             Project project = projectRepository.findByProjectId(projectId);
             if (project == null) {
@@ -128,34 +132,18 @@ public class StoryboardService {
                 gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle);
             }
 
-            // 3. 推进状态：两步推进
-            // EPISODE_SCRIPT_GENERATING → "episode_script_generated" → STORYBOARD_GENERATING
-            log.info("[Pipeline] Step4: 推进状态 episode_script_generated: projectId={}", projectId);
-            projectStateMachineService.sendEvent(projectId, ProjectEventType._EPISODE_SCRIPT_DONE);
-            // STORYBOARD_GENERATING → "storyboard_generated" → STORYBOARD_REVIEW
-            log.info("[Pipeline] Step5: 推进状态 storyboard_generated → STORYBOARD_REVIEW: projectId={}", projectId);
-            projectStateMachineService.sendEvent(projectId, ProjectEventType._STORYBOARD_DONE);
-            log.info("[Pipeline] 全部完成: projectId={}, 状态已推进到STORYBOARD_REVIEW", projectId);
+            // 3. 完成通知
+            log.info("[Pipeline] Step4: 分集剧本+分镜全部完成: projectId={}", projectId);
+            progressService.unlock(projectId);
+            progressService.clearError(projectId);
+            eventPublisher.publishTaskComplete(projectId, "episode", null);
+            log.info("[Pipeline] 全部完成: projectId={}", projectId);
 
         } catch (Exception e) {
             log.error("[Pipeline] 分镜生成异常: projectId={}, error={}", projectId, e.getMessage(), e);
-            try {
-                // 根据当前状态选择正确的失败事件
-                Project current = projectRepository.findByProjectId(projectId);
-                if (current != null) {
-                    String status = current.getStatus();
-                    log.error("[Pipeline] 当前状态: {}, 尝试推进失败事件: projectId={}", status, projectId);
-                    if (ProjectState.EPISODE_SCRIPT_GENERATING.getCode().equals(status)) {
-                        projectStateMachineService.sendEvent(projectId, ProjectEventType.EPISODE_SCRIPT_GENERATING_FAILED);
-                    } else if (ProjectState.STORYBOARD_GENERATING.getCode().equals(status)) {
-                        projectStateMachineService.sendEvent(projectId, ProjectEventType.STORYBOARD_GENERATING_FAILED);
-                    } else {
-                        log.error("[Pipeline] 无法匹配失败事件: status={}, projectId={}", status, projectId);
-                    }
-                }
-            } catch (Exception ex) {
-                log.error("[Pipeline] 设置失败状态也失败: projectId={}", projectId, ex);
-            }
+            progressService.unlock(projectId);
+            progressService.setError(projectId, e.getMessage());
+            eventPublisher.publishFailure(projectId, e.getMessage());
         }
     }
 

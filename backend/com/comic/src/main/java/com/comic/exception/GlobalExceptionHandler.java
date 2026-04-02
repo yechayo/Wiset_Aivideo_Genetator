@@ -1,7 +1,7 @@
 package com.comic.exception;
 
-import com.comic.common.AiCallException;
-import com.comic.common.BusinessException;
+import com.comic.exception.AiCallException;
+import com.comic.exception.BusinessException;
 import com.comic.common.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

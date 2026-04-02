@@ -2,8 +2,8 @@ package com.comic.service.panel;
 
 import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.image.SeedreamImageService;
-import com.comic.common.BusinessException;
-import com.comic.common.CharacterInfoKeys;
+import com.comic.exception.BusinessException;
+import com.comic.constant.CharacterInfoKeys;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;

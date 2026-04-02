@@ -2,16 +2,17 @@ package com.comic.service.character;
 
 import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.image.ImageGenerationService;
-import com.comic.common.BusinessException;
-import com.comic.common.CharacterInfoKeys;
-import com.comic.statemachine.enums.ProjectState;
+import com.comic.exception.BusinessException;
+import com.comic.constant.CharacterInfoKeys;
 import com.comic.dto.response.CharacterStatusResponse;
 import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.statemachine.service.ProjectStateMachineService;
-import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.service.redis.ProgressService;
+import com.comic.statemachine.enums.ProjectMilestoneEventType;
+import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
+import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,7 +37,15 @@ public class CharacterImageGenerationService {
 
     @Lazy
     @Autowired
-    private ProjectStateMachineService projectStateMachineService;
+    private ProgressService progressService;
+
+    @Lazy
+    @Autowired
+    private ProjectMilestoneStateMachineService milestoneStateMachineService;
+
+    @Lazy
+    @Autowired
+    private StateChangeEventPublisher eventPublisher;
 
     public void generateExpressionSheet(String charId) {
         Character character = characterRepository.findByCharId(charId);
@@ -165,6 +174,10 @@ public class CharacterImageGenerationService {
             throw new BusinessException("角色不存在: " + charId);
         }
 
+        if (!progressService.tryLock(character.getProjectId(), "asset_image")) {
+            throw new BusinessException("角色图片生成正在进行中");
+        }
+
         log.info("开始一键生成: charId={}, name={}, role={}",
                  charId, getCharInfoStr(character, CharacterInfoKeys.NAME), getCharInfoStr(character, CharacterInfoKeys.ROLE));
 
@@ -272,9 +285,8 @@ public class CharacterImageGenerationService {
             throw new BusinessException("项目不存在");
         }
 
-        ProjectState currentStatus = ProjectState.fromCode(project.getStatus());
-        if (currentStatus != ProjectState.IMAGE_REVIEW) {
-            throw new BusinessException("当前状态不允许确认图片: " + currentStatus.getDescription());
+        if (!"episode_confirmed".equals(project.getStatus())) {
+            throw new BusinessException("当前状态不允许确认图片");
         }
 
         // Validate all characters have complete images
@@ -295,7 +307,7 @@ public class CharacterImageGenerationService {
             throw new BusinessException("以下角色图片未完成: " + String.join(", ", incompleteChars));
         }
 
-        projectStateMachineService.sendEvent(projectId, ProjectEventType.CONFIRM_IMAGES);
+        milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType.CONFIRM_ASSETS);
         log.info("图片确认完成，项目进入素材锁定: projectId={}", projectId);
     }
 
@@ -304,7 +316,7 @@ public class CharacterImageGenerationService {
     private void checkAndAdvanceProjectState(Character character) {
         String projectId = character.getProjectId();
         Project project = projectRepository.findByProjectId(projectId);
-        if (project == null || !ProjectState.IMAGE_GENERATING.getCode().equals(project.getStatus())) {
+        if (project == null) {
             return;
         }
 
@@ -313,7 +325,8 @@ public class CharacterImageGenerationService {
 
         if (allDone) {
             log.info("所有角色图片生成完成: projectId={}", projectId);
-            projectStateMachineService.sendEvent(projectId, ProjectEventType._IMAGES_DONE);
+            progressService.unlock(projectId);
+            eventPublisher.publishTaskComplete(projectId, "asset_image", null);
         }
     }
 

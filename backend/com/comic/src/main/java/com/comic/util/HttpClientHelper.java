@@ -1,5 +1,6 @@
-package com.comic.common;
+package com.comic.util;
 
+import com.comic.exception.AiCallException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

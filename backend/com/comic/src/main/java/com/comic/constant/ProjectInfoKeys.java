@@ -1,4 +1,4 @@
-package com.comic.common;
+package com.comic.constant;
 
 public final class ProjectInfoKeys {
     public static final String STORY_PROMPT = "storyPrompt";

@@ -1,4 +1,4 @@
-package com.comic.common;
+package com.comic.exception;
 
 /** AI调用异常 */
 public class AiCallException extends RuntimeException {

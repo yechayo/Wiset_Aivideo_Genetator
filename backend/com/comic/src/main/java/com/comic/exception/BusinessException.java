@@ -1,4 +1,4 @@
-package com.comic.common;
+package com.comic.exception;
 
 import lombok.Getter;
 

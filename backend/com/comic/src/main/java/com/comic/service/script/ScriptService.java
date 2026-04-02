@@ -2,18 +2,19 @@ package com.comic.service.script;
 
 import com.comic.ai.ScriptPromptBuilder;
 import com.comic.ai.text.TextGenerationService;
-import com.comic.common.BusinessException;
-import com.comic.common.EpisodeInfoKeys;
-import com.comic.common.ProjectInfoKeys;
-import com.comic.statemachine.enums.ProjectState;
+import com.comic.exception.BusinessException;
+import com.comic.constant.EpisodeInfoKeys;
+import com.comic.constant.ProjectInfoKeys;
 import com.comic.dto.model.WorldConfigModel;
 import com.comic.entity.Episode;
 import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
-import com.comic.statemachine.service.ProjectStateMachineService;
-import com.comic.statemachine.enums.ProjectEventType;
+import com.comic.service.redis.ProgressService;
 import com.comic.service.world.WorldRuleService;
+import com.comic.statemachine.enums.ProjectMilestoneEventType;
+import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
+import com.comic.statemachine.service.StateChangeEventPublisher;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -45,14 +46,16 @@ public class ScriptService {
 
     @Lazy
     @Autowired
-    private ProjectStateMachineService projectStateMachineService;
+    private ProgressService progressService;
 
-    // 状态常量（统一使用 ProjectState 枚举）
-    private static final String STATUS_OUTLINE_REVIEW = ProjectState.OUTLINE_REVIEW.getCode();
-    private static final String STATUS_SCRIPT_REVIEW = ProjectState.SCRIPT_REVIEW.getCode();
-    private static final String STATUS_SCRIPT_CONFIRMED = ProjectState.SCRIPT_CONFIRMED.getCode();
-    private static final String STATUS_OUTLINE_FAILED = ProjectState.OUTLINE_GENERATING_FAILED.getCode();
-    private static final String STATUS_EPISODE_FAILED = ProjectState.EPISODE_GENERATING_FAILED.getCode();
+    @Lazy
+    @Autowired
+    private ProjectMilestoneStateMachineService milestoneStateMachineService;
+
+    @Lazy
+    @Autowired
+    private StateChangeEventPublisher eventPublisher;
+
     private static final int DEFAULT_EPISODE_COUNT = 4;
 
     // ==================== Map 辅助方法 ====================
@@ -120,16 +123,19 @@ public class ScriptService {
             throw new BusinessException("项目不存在");
         }
 
-        Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
-        String genre = getProjectInfoStr(project, ProjectInfoKeys.GENRE);
-        String targetAudience = getProjectInfoStr(project, ProjectInfoKeys.TARGET_AUDIENCE);
-        String storyPrompt = getProjectInfoStr(project, ProjectInfoKeys.STORY_PROMPT);
-        Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
-        String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
-
-        // 状态已由 triggerNextStage 设置为 OUTLINE_GENERATING，无需重复设置
+        // Redis 锁防止重复提交
+        if (!progressService.tryLock(projectId, "outline")) {
+            throw new BusinessException("正在生成大纲，请勿重复提交");
+        }
 
         try {
+            Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
+            String genre = getProjectInfoStr(project, ProjectInfoKeys.GENRE);
+            String targetAudience = getProjectInfoStr(project, ProjectInfoKeys.TARGET_AUDIENCE);
+            String storyPrompt = getProjectInfoStr(project, ProjectInfoKeys.STORY_PROMPT);
+            Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
+            String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
+
             // 获取世界观配置
             WorldConfigModel worldConfig = worldRuleService.getWorldConfig(projectId);
 
@@ -179,13 +185,19 @@ public class ScriptService {
             // 持久化大纲内容到数据库（方法无事务，必须显式 save）
             projectRepository.updateById(project);
 
-            projectStateMachineService.sendEvent(projectId, ProjectEventType._OUTLINE_DONE);
+            // 成功：释放锁 + 清除错误 + SSE 推送完成
+            progressService.unlock(projectId);
+            progressService.clearError(projectId);
+            eventPublisher.publishTaskComplete(projectId, "outline", null);
 
             log.info("剧本大纲生成完成: projectId={}", projectId);
 
         } catch (Exception e) {
+            // 失败：释放锁 + 设置错误 + SSE 推送失败
+            progressService.unlock(projectId);
+            progressService.setError(projectId, e.getMessage());
+            eventPublisher.publishFailure(projectId, e.getMessage());
             log.error("剧本大纲生成失败: projectId={}", projectId, e);
-            projectStateMachineService.sendEvent(projectId, ProjectEventType._TASK_FAILED);
             throw new BusinessException("剧本大纲生成失败: " + e.getMessage());
         }
     }
@@ -202,10 +214,16 @@ public class ScriptService {
             throw new BusinessException("项目不存在");
         }
 
-        // 验证状态
-        if (!STATUS_OUTLINE_REVIEW.equals(project.getStatus()) &&
-            !STATUS_SCRIPT_REVIEW.equals(project.getStatus())) {
-            throw new BusinessException("当前状态不能生成分集，请先生成并确认大纲");
+        // Redis 锁防止重复提交
+        if (!progressService.tryLock(projectId, "episode")) {
+            throw new BusinessException("正在生成分集，请勿重复提交");
+        }
+
+        // 验证 milestone
+        String status = project.getStatus();
+        if (!"outline_confirmed".equals(status) && !"episode_confirmed".equals(status)) {
+            progressService.unlock(projectId);
+            throw new BusinessException("当前状态不能生成分集，请先确认大纲");
         }
 
         // 验证章节顺序（必须顺序生成，单集只有一个章节，验证天然通过）
@@ -217,9 +235,6 @@ public class ScriptService {
         Map<String, Object> info = ensureProjectInfo(project);
         info.put(ProjectInfoKeys.SELECTED_CHAPTER, chapter);
         projectRepository.updateById(project);
-
-        // 通过 Pipeline 转到 EPISODE_GENERATING 状态
-        projectStateMachineService.sendEvent(projectId, ProjectEventType.GENERATE_EPISODES);
 
         try {
             String outline = getScriptOutlineText(project);
@@ -252,15 +267,19 @@ public class ScriptService {
             // 解析并保存剧集
             List<Episode> episodes = parseAndSaveEpisodes(project, episodesJson, chapter);
 
-            // 更新状态
-            projectStateMachineService.sendEvent(projectId, ProjectEventType._OUTLINE_DONE);
+            // 成功：释放锁 + SSE 推送完成
+            progressService.unlock(projectId);
+            eventPublisher.publishTaskComplete(projectId, "episode", null);
 
             log.info("分集生成完成: projectId={}, chapter={}, episodes={}",
                     projectId, chapter, episodes.size());
 
         } catch (Exception e) {
+            // 失败：释放锁 + 设置错误 + SSE 推送失败
+            progressService.unlock(projectId);
+            progressService.setError(projectId, e.getMessage());
+            eventPublisher.publishFailure(projectId, e.getMessage());
             log.error("分集生成失败: projectId={}, chapter={}", projectId, chapter, e);
-            projectStateMachineService.sendEvent(projectId, ProjectEventType._TASK_FAILED);
             throw new BusinessException("分集生成失败: " + e.getMessage());
         }
     }
@@ -275,9 +294,10 @@ public class ScriptService {
             throw new BusinessException("项目不存在");
         }
 
-        if (!STATUS_OUTLINE_REVIEW.equals(project.getStatus()) &&
-            !STATUS_SCRIPT_REVIEW.equals(project.getStatus())) {
-            throw new BusinessException("当前状态不能生成分集，请先生成并确认大纲");
+        // 验证 milestone
+        String status = project.getStatus();
+        if (!"outline_confirmed".equals(status) && !"episode_confirmed".equals(status)) {
+            throw new BusinessException("当前状态不能生成分集，请先确认大纲");
         }
 
         Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
@@ -344,29 +364,31 @@ public class ScriptService {
         String status = project.getStatus();
 
         // 已经是确认状态，直接返回（幂等操作）
-        if (STATUS_SCRIPT_CONFIRMED.equals(status)) {
+        if ("episode_confirmed".equals(status)) {
             log.info("剧本已确认，跳过: projectId={}", projectId);
             return;
         }
 
-        if (STATUS_OUTLINE_REVIEW.equals(status)) {
+        // 根据 milestone 判断确认操作类型
+        if ("outline_confirmed".equals(status)) {
             if (isAllChaptersGenerated(project)) {
-                log.info("剧本全部确认完成: projectId={}", projectId);
+                // 大纲已确认 + 分集全部生成，确认分集
+                milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType.CONFIRM_EPISODE);
+                log.info("分集剧本确认完成: projectId={}", projectId);
             } else {
                 throw new BusinessException("请先生成所有章节的剧集");
             }
-        } else if (STATUS_SCRIPT_REVIEW.equals(status)) {
-            if (isAllChaptersGenerated(project)) {
-                log.info("剧本全部确认完成: projectId={}", projectId);
+        } else if ("draft".equals(status)) {
+            // draft 下大纲已存在但未确认 → 确认大纲
+            if (getScriptOutlineText(project) != null) {
+                milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType.CONFIRM_OUTLINE);
+                log.info("大纲确认完成: projectId={}", projectId);
             } else {
-                throw new BusinessException("请先生成所有章节的剧集");
+                throw new BusinessException("请先生成大纲");
             }
         } else {
             throw new BusinessException("当前状态不能确认剧本");
         }
-
-        // 推进状态到 SCRIPT_CONFIRMED，然后自动触发角色提取
-        projectStateMachineService.sendEvent(projectId, ProjectEventType.CONFIRM_SCRIPT);
     }
 
     /**
@@ -379,8 +401,9 @@ public class ScriptService {
             throw new BusinessException("项目不存在");
         }
 
-        if (!STATUS_OUTLINE_REVIEW.equals(project.getStatus()) &&
-            !STATUS_SCRIPT_REVIEW.equals(project.getStatus())) {
+        // 验证 milestone：draft（大纲已存在）或 outline_confirmed
+        String status = project.getStatus();
+        if (!"draft".equals(status) && !"outline_confirmed".equals(status) && !"episode_confirmed".equals(status)) {
             throw new BusinessException("当前状态不能修改大纲");
         }
 
@@ -411,8 +434,8 @@ public class ScriptService {
 
         String status = project.getStatus();
 
-        if (!STATUS_OUTLINE_REVIEW.equals(status) &&
-            !STATUS_SCRIPT_REVIEW.equals(status)) {
+        // 验证 milestone：draft（数据存在时即 outline_review）或 outline_confirmed
+        if (!"draft".equals(status) && !"outline_confirmed".equals(status)) {
             throw new BusinessException("当前状态不能修改大纲");
         }
 
@@ -434,7 +457,9 @@ public class ScriptService {
             throw new BusinessException("项目不存在");
         }
 
-        if (!STATUS_SCRIPT_REVIEW.equals(project.getStatus())) {
+        // 验证 milestone：outline_confirmed（分集已生成可修改）或 episode_confirmed
+        String status = project.getStatus();
+        if (!"outline_confirmed".equals(status) && !"episode_confirmed".equals(status)) {
             throw new BusinessException("当前状态不能修改分集");
         }
 
@@ -862,10 +887,15 @@ public class ScriptService {
     }
 
     /**
-     * 重新生成大纲
+     * 重新生成大纲（Redis 锁 + SSE 推送模式）
      */
     private void regenerateOutline(Project project, String revisionNote, String currentOutline) {
-        projectStateMachineService.sendEvent(project.getProjectId(), ProjectEventType.REQUEST_OUTLINE_REVISION);
+        String projectId = project.getProjectId();
+
+        // Redis 锁防止重复提交
+        if (!progressService.tryLock(projectId, "outline")) {
+            throw new BusinessException("正在修改大纲，请勿重复提交");
+        }
 
         try {
             Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
@@ -903,8 +933,8 @@ public class ScriptService {
             // 解析 AI 返回：JSON 格式提取 outline 字段，Markdown 格式直接使用
             String outlineContent = extractOutlineContent(rawOutlineContent);
 
-            // 重新加载 project 以获取最新状态（advancePipeline("revise_outline") 已改为 OUTLINE_GENERATING）
-            Project currentProject = projectRepository.findByProjectId(project.getProjectId());
+            // 重新加载 project 以获取最新状态
+            Project currentProject = projectRepository.findByProjectId(projectId);
             Map<String, Object> info = ensureProjectInfo(currentProject);
             Map<String, Object> scriptMap = getScriptMap(currentProject);
             if (scriptMap == null) {
@@ -914,16 +944,22 @@ public class ScriptService {
             scriptMap.put(ProjectInfoKeys.SCRIPT_OUTLINE, outlineContent);
             projectRepository.updateById(currentProject);
 
-            projectStateMachineService.sendEvent(currentProject.getProjectId(), ProjectEventType._OUTLINE_DONE);
+            // 成功：释放锁 + 清除错误 + SSE 推送完成
+            progressService.unlock(projectId);
+            progressService.clearError(projectId);
+            eventPublisher.publishTaskComplete(projectId, "outline", null);
 
             // 删除之前生成的所有剧集
-            episodeRepository.deleteByProjectId(project.getProjectId());
+            episodeRepository.deleteByProjectId(projectId);
 
-            log.info("大纲重新生成完成: projectId={}", project.getProjectId());
+            log.info("大纲重新生成完成: projectId={}", projectId);
 
         } catch (Exception e) {
+            // 失败：释放锁 + 设置错误 + SSE 推送失败
+            progressService.unlock(projectId);
+            progressService.setError(projectId, e.getMessage());
+            eventPublisher.publishFailure(projectId, e.getMessage());
             log.error("大纲重新生成失败", e);
-            projectStateMachineService.sendEvent(project.getProjectId(), ProjectEventType._TASK_FAILED);
             throw new BusinessException("大纲重新生成失败: " + e.getMessage());
         }
     }

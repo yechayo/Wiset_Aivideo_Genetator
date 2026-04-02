@@ -1,6 +1,6 @@
 package com.comic.controller;
 
-import com.comic.common.BusinessException;
+import com.comic.exception.BusinessException;
 import com.comic.common.Result;
 import com.comic.dto.request.EpisodeCreateRequest;
 import com.comic.dto.request.EpisodeUpdateRequest;
@@ -13,8 +13,6 @@ import com.comic.repository.PanelRepository;
 import com.comic.service.episode.EpisodeService;
 import com.comic.service.panel.GridImageService;
 import com.comic.service.storyboard.StoryboardService;
-import com.comic.statemachine.enums.ProjectEventType;
-import com.comic.statemachine.service.ProjectStateMachineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -41,7 +39,6 @@ public class EpisodeController {
     private final EpisodeService episodeService;
     private final StoryboardService storyboardService;
     private final GridImageService gridImageService;
-    private final ProjectStateMachineService projectStateMachineService;
     private final EpisodeRepository episodeRepository;
     private final PanelRepository panelRepository;
 
@@ -264,17 +261,6 @@ public class EpisodeController {
     }
 
     private void checkAndAdvanceAllGridsApproved(String projectId) {
-        try {
-            List<Episode> episodes = episodeRepository.findByProjectId(projectId);
-            boolean allApproved = episodes.stream().allMatch(ep -> {
-                Map<String, Object> info = ep.getEpisodeInfo();
-                return info != null && "approved".equals(info.get("gridStatus"));
-            });
-            if (allApproved && !episodes.isEmpty()) {
-                projectStateMachineService.sendEvent(projectId, ProjectEventType.START_PRODUCTION);
-            }
-        } catch (Exception e) {
-            // 不阻断主流程
-        }
+        // 新设计中面板审核通过后不再需要推进状态机（面板生产是用户手动触发的）
     }
 }
