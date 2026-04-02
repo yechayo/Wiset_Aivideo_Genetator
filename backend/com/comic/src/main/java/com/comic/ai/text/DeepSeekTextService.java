@@ -14,7 +14,10 @@ import okhttp3.Response;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -57,22 +60,7 @@ public class DeepSeekTextService implements TextGenerationService {
             log.info("DeepSeek text generation: permits={}, queue={}",
                     semaphore.availablePermits(), semaphore.getQueueLength());
 
-            Map<String, Object> requestBody = new HashMap<String, Object>();
-            requestBody.put("model", model);
-
-            List<Map<String, String>> messages = new ArrayList<Map<String, String>>();
-            Map<String, String> systemMsg = new HashMap<String, String>();
-            systemMsg.put("role", "system");
-            systemMsg.put("content", systemPrompt);
-            messages.add(systemMsg);
-
-            Map<String, String> userMsg = new HashMap<String, String>();
-            userMsg.put("role", "user");
-            userMsg.put("content", userPrompt);
-            messages.add(userMsg);
-
-            requestBody.put("messages", messages);
-            requestBody.put("max_tokens", maxTokens);
+            Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt);
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             Request request = new Request.Builder()
@@ -130,7 +118,110 @@ public class DeepSeekTextService implements TextGenerationService {
 
     @Override
     public String generateStream(String systemPrompt, String userPrompt) {
-        return generate(systemPrompt, userPrompt);
+        try {
+            semaphore.acquire();
+            log.info("DeepSeek stream generation: permits={}, queue={}",
+                    semaphore.availablePermits(), semaphore.getQueueLength());
+
+            Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt);
+            requestBody.put("stream", true);
+
+            String jsonBody = objectMapper.writeValueAsString(requestBody);
+            Request request = new Request.Builder()
+                    .url(baseUrl + "/chat/completions")
+                    .addHeader("Authorization", "Bearer " + apiKey)
+                    .addHeader("Content-Type", "application/json")
+                    .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
+                    .build();
+
+            Exception lastException = null;
+            for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                try (Response response = httpClient.newCall(request).execute()) {
+                    if (!response.isSuccessful()) {
+                        String errorBody = response.body() != null ? response.body().string() : "empty body";
+                        log.error("DeepSeek stream API failed: {} - {}", response.code(), errorBody);
+                        throw new RuntimeException("DeepSeek stream failed: " + response.code());
+                    }
+
+                    StringBuilder contentBuilder = new StringBuilder();
+                    StringBuilder reasoningBuilder = new StringBuilder();
+                    String finishReason = null;
+
+                    if (response.body() != null) {
+                        BufferedReader reader = new BufferedReader(
+                                new InputStreamReader(response.body().byteStream(), StandardCharsets.UTF_8));
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            if (!line.startsWith("data: ")) continue;
+                            String data = line.substring(6).trim();
+                            if ("[DONE]".equals(data)) break;
+
+                            try {
+                                JsonNode chunk = objectMapper.readTree(data);
+                                JsonNode choices = chunk.path("choices");
+                                if (choices.isArray() && choices.size() > 0) {
+                                    JsonNode delta = choices.get(0).path("delta");
+                                    if (delta.has("reasoning_content") && !delta.get("reasoning_content").isNull()) {
+                                        reasoningBuilder.append(delta.get("reasoning_content").asText());
+                                    }
+                                    if (delta.has("content") && !delta.get("content").isNull()) {
+                                        contentBuilder.append(delta.get("content").asText());
+                                    }
+                                    if (choices.get(0).hasNonNull("finish_reason")) {
+                                        finishReason = choices.get(0).get("finish_reason").asText();
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.warn("Failed to parse SSE chunk: {}", data);
+                            }
+                        }
+                    }
+
+                    String content = contentBuilder.toString();
+                    if (content.trim().isEmpty() && reasoningBuilder.length() > 0) {
+                        log.info("DeepSeek stream: empty content, falling back to reasoning_content");
+                        content = reasoningBuilder.toString();
+                    }
+                    if (content.trim().isEmpty()) {
+                        throw new RuntimeException("DeepSeek stream returned empty content");
+                    }
+                    if (isTruncatedResponse(finishReason, content)) {
+                        log.warn("DeepSeek stream output truncated (finish_reason=length)");
+                    }
+
+                    log.info("DeepSeek stream complete: {}",
+                            content.substring(0, Math.min(100, content.length())));
+                    return content;
+
+                } catch (IOException e) {
+                    lastException = e;
+                    log.warn("DeepSeek stream IO issue on attempt {}/{}: {}",
+                            attempt, MAX_RETRIES, e.getMessage());
+                    if (attempt < MAX_RETRIES) {
+                        sleepBeforeRetry(attempt);
+                    }
+                } catch (RuntimeException e) {
+                    lastException = e;
+                    if (attempt < MAX_RETRIES) {
+                        log.warn("DeepSeek stream failed on attempt {}/{}: {}",
+                                attempt, MAX_RETRIES, e.getMessage());
+                        sleepBeforeRetry(attempt);
+                        continue;
+                    }
+                    throw e;
+                }
+            }
+
+            throw new RuntimeException("DeepSeek stream failed after retries: "
+                    + (lastException != null ? lastException.getMessage() : "unknown"), lastException);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("DeepSeek stream interrupted", e);
+        } catch (IOException e) {
+            throw new RuntimeException("DeepSeek stream failed: " + e.getMessage(), e);
+        } finally {
+            semaphore.release();
+        }
     }
 
     @Override
@@ -206,6 +297,27 @@ public class DeepSeekTextService implements TextGenerationService {
         return false;
     }
 
+    private Map<String, Object> buildRequestBody(String systemPrompt, String userPrompt) {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", model);
+
+        List<Map<String, String>> messages = new ArrayList<>();
+        Map<String, String> systemMsg = new HashMap<>();
+        systemMsg.put("role", "system");
+        systemMsg.put("content", systemPrompt);
+        messages.add(systemMsg);
+
+        Map<String, String> userMsg = new HashMap<>();
+        userMsg.put("role", "user");
+        userMsg.put("content", userPrompt);
+        messages.add(userMsg);
+
+        requestBody.put("messages", messages);
+        requestBody.put("max_tokens", maxTokens);
+
+        return requestBody;
+    }
+
     private void sleepBeforeRetry(int attempt) throws InterruptedException {
         Thread.sleep(RETRY_DELAY_MS * attempt);
     }
@@ -235,7 +347,7 @@ public class DeepSeekTextService implements TextGenerationService {
             + "需要生成的集数：" + totalEpisodes + " 集\n"
             + "请生成恰好 " + totalEpisodes + " 集结构化分集剧本 JSON。";
 
-        String response = generate(systemPrompt, userPrompt);
+        String response = generateStream(systemPrompt, userPrompt);
         return parseJsonArray(response);
     }
 
@@ -277,7 +389,7 @@ public class DeepSeekTextService implements TextGenerationService {
             + "目标总时长：" + totalDuration + "秒\n\n"
             + "请生成详细的分镜脚本 JSON 数组。";
 
-        String response = generate(systemPrompt, userPrompt);
+        String response = generateStream(systemPrompt, userPrompt);
         List<Map<String, Object>> shots = parseJsonArray(response);
 
         if (shots == null || shots.isEmpty()) {
