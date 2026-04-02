@@ -12,7 +12,8 @@ import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
 import com.comic.service.episode.EpisodeService;
 import com.comic.service.panel.GridImageService;
-import com.comic.service.storyboard.StoryboardService;
+import com.comic.service.panel.PanelService;
+import com.comic.service.production.PanelProductionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -37,7 +38,7 @@ import java.util.Map;
 public class EpisodeController {
 
     private final EpisodeService episodeService;
-    private final StoryboardService storyboardService;
+    private final PanelProductionService panelProductionService;
     private final GridImageService gridImageService;
     private final EpisodeRepository episodeRepository;
     private final PanelRepository panelRepository;
@@ -94,7 +95,7 @@ public class EpisodeController {
     public Result<Void> generateEpisodeScript(
             @PathVariable String projectId,
             @PathVariable Long episodeId) {
-        storyboardService.generateEpisodeScriptAndStoryboard(projectId);
+        panelProductionService.generateEpisodeScripts(projectId);
         return Result.ok();
     }
 
@@ -105,6 +106,90 @@ public class EpisodeController {
             @PathVariable Long episodeId) {
         EpisodeListItemResponse episode = episodeService.getEpisode(projectId, episodeId);
         return Result.ok(episode.getEpisodeInfo());
+    }
+
+    // ================= 分镜文本审核 =================
+
+    @PutMapping("/{episodeId}/panel/approve")
+    @Operation(summary = "审核通过分镜文本", description = "审核通过单集分镜脚本，全部通过后触发九宫格生成")
+    public Result<Void> approvePanel(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) throw new BusinessException("剧集不存在");
+        Map<String, Object> info = episode.getEpisodeInfo();
+        if (info == null) info = new HashMap<>();
+
+        String panelPlan = (String) info.get("panelPlan");
+        if (panelPlan == null || panelPlan.isEmpty()) {
+            throw new BusinessException("分镜数据为空，无法审核");
+        }
+
+        info.put("panelApproved", true);
+        info.put("panelRejectionReason", null);
+        episode.setEpisodeInfo(info);
+        episodeRepository.updateById(episode);
+
+        log.info("分镜文本审核通过: episodeId={}", episodeId);
+
+        // 检查是否所有 episode 的分镜都已审核通过 → 触发九宫格批量生成
+        // 新流程：九宫格由用户在 Step 4b 中手动逐集触发，不再自动批量生成
+        // checkAndStartGridGeneration(projectId);
+
+        return Result.ok();
+    }
+
+    @PutMapping("/{episodeId}/panel/reject")
+    @Operation(summary = "退回分镜文本", description = "退回单集分镜脚本，附带修改意见")
+    public Result<Void> rejectPanel(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @RequestBody Map<String, String> body) {
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) throw new BusinessException("剧集不存在");
+        Map<String, Object> info = episode.getEpisodeInfo();
+        if (info == null) info = new HashMap<>();
+
+        info.put("panelApproved", false);
+        info.put("panelRejectionReason", body.getOrDefault("reason", ""));
+        episode.setEpisodeInfo(info);
+        episodeRepository.updateById(episode);
+
+        log.info("分镜文本已退回: episodeId={}, reason={}", episodeId, body.getOrDefault("reason", ""));
+        return Result.ok();
+    }
+
+    /**
+     * 检查所有 episode 的分镜文本是否都已审核通过，如果是则批量触发九宫格生成
+     */
+    private void checkAndStartGridGeneration(String projectId) {
+        List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        if (episodes.isEmpty()) return;
+
+        boolean allApproved = episodes.stream().allMatch(ep -> {
+            Map<String, Object> info = ep.getEpisodeInfo();
+            if (info == null) return false;
+            Object approved = info.get("panelApproved");
+            if (approved == null) return false;
+            return Boolean.TRUE.equals(approved);
+        });
+
+        if (allApproved) {
+            log.info("所有分镜文本已审核通过，开始批量生成九宫格: projectId={}", projectId);
+            for (Episode ep : episodes) {
+                Map<String, Object> info = ep.getEpisodeInfo();
+                if (info == null) continue;
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
+                String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
+                if (shots != null && !shots.isEmpty()) {
+                    info.put("gridStatus", "generating");
+                    ep.setEpisodeInfo(info);
+                    episodeRepository.updateById(ep);
+                    gridImageService.generateGridsForEpisode(ep.getId(), shots, visualStyle);
+                }
+            }
+        }
     }
 
     // ================= 整集九宫格审核 =================
@@ -163,7 +248,7 @@ public class EpisodeController {
         }
 
         // 贪心分组 splitShots（10s 一组）
-        List<List<Map<String, Object>>> groups = StoryboardService.greedyGroup(splitShots, 10);
+        List<List<Map<String, Object>>> groups = PanelService.greedyGroup(splitShots, 10);
 
         // 每组创建 Panel
         List<String> charRefUrls = gridImageService.getCharacterReferenceUrlsForEpisode(episodeId);
