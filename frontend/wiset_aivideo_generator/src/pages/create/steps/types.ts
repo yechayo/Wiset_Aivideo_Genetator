@@ -45,7 +45,7 @@ export interface SegmentState {
 }
 
 /** Episode 级九宫格状态 */
-export type EpisodeGridStatus = 'pending' | 'generating' | 'generated' | 'approved' | 'rejected' | 'failed';
+export type EpisodeGridStatus = 'pending' | 'text_ready' | 'generating' | 'generated' | 'approved' | 'rejected' | 'failed';
 
 /** 切割后的分镜（带完整元数据） */
 export interface SplitShot {

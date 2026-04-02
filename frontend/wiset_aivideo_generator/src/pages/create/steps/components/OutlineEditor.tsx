@@ -16,7 +16,7 @@ interface OutlineEditorProps {
 const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }: OutlineEditorProps) => {
   const [content, setContent] = useState(outline);
   const [isEditing, setIsEditing] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(readOnly);
 
   const handleDirectSave = () => {
     onSaveDirect?.(content);
