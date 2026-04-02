@@ -84,22 +84,22 @@ export async function regenerateEpisodeGrid(
 /**
  * 审核通过分镜文本
  */
-export async function approveStoryboard(
+export async function approvePanel(
   projectId: string, episodeId: number,
 ): Promise<ApiResponse<void>> {
   return put<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/storyboard/approve`,
+    `/api/projects/${projectId}/episodes/${episodeId}/panel/approve`,
   );
 }
 
 /**
  * 退回分镜文本
  */
-export async function rejectStoryboard(
+export async function rejectPanel(
   projectId: string, episodeId: number, reason: string,
 ): Promise<ApiResponse<void>> {
   return put<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/storyboard/reject`,
+    `/api/projects/${projectId}/episodes/${episodeId}/panel/reject`,
     { reason },
   );
 }

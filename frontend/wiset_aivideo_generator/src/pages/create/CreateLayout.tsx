@@ -143,7 +143,7 @@ const CreateLayout = () => {
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 5:
         return currentProject ? (
-          <Step5Compose project={currentProject} />
+          <Step5Compose projectId={currentProject.projectId} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       default:
         return <Navigate to={getStepUrl(1)} replace />;

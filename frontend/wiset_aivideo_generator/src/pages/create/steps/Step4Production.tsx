@@ -11,8 +11,8 @@ import {
   getEpisodes,
   getPanels,
   getBatchProductionStatuses,
-  approveStoryboard,
-  rejectStoryboard,
+  approvePanel,
+  rejectPanel,
   approveEpisodeGrid,
   rejectEpisodeGrid,
   regenerateEpisodeGrid,
@@ -394,7 +394,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const handleApproveScript = useCallback(async (episodeId: number) => {
     if (!projectId) return;
     try {
-      await approveStoryboard(projectId, episodeId);
+      await approvePanel(projectId, episodeId);
       await loadEpisodes();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '审核失败');
@@ -404,7 +404,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const handleRejectScript = useCallback(async (episodeId: number, reason: string) => {
     if (!projectId) return;
     try {
-      await rejectStoryboard(projectId, episodeId, reason);
+      await rejectPanel(projectId, episodeId, reason);
       await loadEpisodes();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '退回失败');
