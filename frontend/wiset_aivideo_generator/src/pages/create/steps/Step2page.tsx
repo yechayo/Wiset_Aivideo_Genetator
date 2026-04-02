@@ -66,7 +66,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       try {
         const result = await getScript(pid);
 
-        if (isApiSuccess(result) && result.data) {
+        if (isApiSuccess(result) && result.data && result.data.outline) {
           setScriptData(result.data);
           if (pollingRef.current) {
             clearTimeout(pollingRef.current);
@@ -120,8 +120,8 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     const nowGenerating = statusInfo?.isGenerating ?? false;
     prevGeneratingRef.current = nowGenerating;
 
-    // 仅在 从 true 变为 false 时触发
-    if (wasGenerating && !nowGenerating && !scriptData) {
+    // 仅在 从 true 变为 false 且大纲数据缺失时触发
+    if (wasGenerating && !nowGenerating && !scriptData?.outline) {
       const pid = projectIdRef.current;
       if (!pid) return;
       setIsLoading(true);
