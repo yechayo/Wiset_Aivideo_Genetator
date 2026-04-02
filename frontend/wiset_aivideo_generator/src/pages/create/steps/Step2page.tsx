@@ -1,53 +1,118 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import styles from './Step2page.module.less';
 import type { Project, ScriptContentResponse } from '../../../services';
-import { getScript, generateEpisodes, confirmScript, generateAllEpisodes, isApiSuccess } from '../../../services';
+import {
+  getScript,
+  generateScript,
+  generateEpisodes,
+  confirmScript,
+  generateAllEpisodes,
+  reviseScript,
+  updateScriptOutline,
+  isApiSuccess,
+} from '../../../services';
 import type { StepContentProps } from '../types';
 import { useProjectStore } from '../../../stores';
 import { useCreateStore } from '../../../stores/createStore';
+import { useSseProgress } from './hooks/useSseProgress';
 import OutlineEditor from './components/OutlineEditor';
 import ChapterList from './components/ChapterList';
 import GenerateEpisodesDialog from './components/GenerateEpisodesDialog';
 
+// ---------------------------------------------------------------------------
+// Phase constants
+// ---------------------------------------------------------------------------
+type Phase =
+  | 'outline_generating'  // 大纲正在生成（AI 中）
+  | 'outline_review'      // 大纲已生成，等待用户审核
+  | 'episode_generating'  // 剧情正在批量/逐章生成
+  | 'episode_review';     // 剧情已生成，等待用户确认
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 interface Step2pageProps extends StepContentProps {
   project: Project;
 }
 
 /**
- * Step 2: 剧本编辑
+ * Step 2: 大纲生成/审核 + 剧情生成/确认
+ *
+ * 四个阶段完全由后端 statusInfo.statusCode 驱动：
+ *   - draft / null                    → outline_generating
+ *   - outline_review                   → outline_review
+ *   - outline_confirmed                → episode_generating（若还有 pendingChapters）
+ *   - episode_review                   → episode_review
+ *   - episode_confirmed                → 自动跳转 Step 3（由 CreateLayout 处理）
  */
 const Step2page = ({ project, onComplete }: Step2pageProps) => {
+  // ======== 数据状态 ========
   const [scriptData, setScriptData] = useState<ScriptContentResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 轮询相关状态
-  const maxPollingCount = 45; // 最多轮询45次（90秒），覆盖 AI 生成耗时
-  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollingCountRef = useRef(0);
-
-  // 生成剧集对话框状态
+  // 剧集生成对话框
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
 
-  const getProjectId = useProjectStore((state) => state.getProjectId);
+  // 轮询
+  const maxPollingCount = 45;
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingCountRef = useRef(0);
 
-  // 稳定的项目 ID —— 只在首次 mount 时计算，避免 project 对象引用变化触发 effect
+  // Store
+  const getProjectId = useProjectStore((state) => state.getProjectId);
+  const { statusInfo } = useCreateStore();
+
+  // 稳定的项目 ID
   const projectIdRef = useRef<string | null>(
     getProjectId() || project.projectId || (project.id ? String(project.id) : null)
   );
 
+  // ======== Phase 推导 ========
+  const phase: Phase = derivePhase(statusInfo?.statusCode, scriptData);
+
+  // ======== SSE 订阅 ========
+  useSseProgress(projectIdRef.current, {
+    onEpisodeScriptDone(data) {
+      // 某集生成完成，刷新 script 数据
+      refreshScript();
+    },
+    onStatusChange() {
+      // 里程碑变更，刷新 script 数据
+      refreshScript();
+    },
+    onReconnect() {
+      refreshScript();
+    },
+    onEpisodePanelDone() {},
+    onEpisodeGridStatus() {},
+  });
+
+  // ======== 刷新剧本数据 ========
+  const refreshScript = useCallback(async () => {
+    const pid = projectIdRef.current;
+    if (!pid) return;
+    try {
+      const result = await getScript(pid);
+      if (isApiSuccess(result) && result.data) {
+        setScriptData(result.data);
+      }
+    } catch (err) {
+      console.error('刷新剧本失败:', err);
+    }
+  }, []);
+
+  // ======== 轮询拉取（首次加载 / 大纲生成等待） ========
   const fetchScriptWithPolling = useCallback((attempt: number = 0) => {
     const pid = projectIdRef.current;
-
     if (!pid) {
       setError('无法获取项目 ID');
       setIsLoading(false);
       return;
     }
-
     if (attempt === 0) {
       setIsLoading(true);
       pollingCountRef.current = 0;
@@ -66,20 +131,19 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
           }
           setIsLoading(false);
         } else {
+          // 无数据 → 继续轮询（可能还在生成）
           if (pollingCountRef.current < maxPollingCount) {
             pollingCountRef.current++;
             pollingRef.current = setTimeout(() => doFetch(), 2000);
-            return;
           } else {
             setScriptData(null);
             setIsLoading(false);
           }
         }
-      } catch (err) {
+      } catch {
         if (pollingCountRef.current < maxPollingCount) {
           pollingCountRef.current++;
           pollingRef.current = setTimeout(() => doFetch(), 2000);
-          return;
         } else {
           setError('获取剧本失败，请稍后重试');
           setIsLoading(false);
@@ -90,6 +154,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     doFetch();
   }, []);
 
+  // 首次 mount：拉取数据
   useEffect(() => {
     fetchScriptWithPolling();
     return () => {
@@ -98,11 +163,10 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
         pollingRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 监听后端生成状态：isGenerating 从 true → false 时，立即重新拉取剧本数据
-  const { statusInfo } = useCreateStore();
+  // 监听 isGenerating 变化（后端从 generating → idle 时刷新数据）
   const prevGeneratingRef = useRef(statusInfo?.isGenerating ?? false);
   useEffect(() => {
     const wasGenerating = prevGeneratingRef.current;
@@ -127,70 +191,137 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
           setIsLoading(false);
         });
     }
-  }, [statusInfo?.isGenerating, scriptData]);
+  }, [statusInfo?.isGenerating, refreshScript]);
 
-  // 获取当前项目 ID（用于事件处理函数）
-  const getCurrentProjectId = useCallback(() => {
-    return projectIdRef.current;
+  // 当 statusCode 变为 outline_review 且还没 scriptData 时，主动刷新
+  useEffect(() => {
+    if (statusInfo?.statusCode === 'outline_review' && !scriptData) {
+      refreshScript();
+    }
+  }, [statusInfo?.statusCode, scriptData, refreshScript]);
+
+  // ======== Phase 1: 触发大纲生成 ========
+  const handleGenerateOutline = useCallback(async () => {
+    const pid = projectIdRef.current;
+    if (!pid) return;
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await generateScript(pid);
+      if (!isApiSuccess(result)) {
+        setError('触发大纲生成失败');
+        setIsLoading(false);
+        return;
+      }
+      // 生成已提交，开始轮询等待结果
+      fetchScriptWithPolling();
+    } catch (err) {
+      console.error('触发大纲生成失败:', err);
+      setError('触发大纲生成失败，请稍后重试');
+      setIsLoading(false);
+    }
+  }, [fetchScriptWithPolling]);
+
+  // ======== Phase 2: 大纲审核操作 ========
+  const handleSaveOutlineDirect = useCallback(async (content: string) => {
+    const pid = projectIdRef.current;
+    if (!pid) return;
+    try {
+      await updateScriptOutline(pid, content);
+      // 更新本地 scriptData
+      setScriptData((prev) => (prev ? { ...prev, outline: content } : prev));
+    } catch (err) {
+      console.error('保存大纲失败:', err);
+      alert('保存大纲失败，请重试');
+    }
   }, []);
 
-  const handleGenerateAll = async () => {
+  const handleSaveOutlineWithAI = useCallback(async (content: string, revisionNote: string) => {
+    const pid = projectIdRef.current;
+    if (!pid) return;
+    setIsLoading(true);
+    try {
+      await reviseScript(pid, {
+        revisionNote,
+        currentOutline: content,
+      });
+      // AI 修订已提交，轮询等待新大纲
+      fetchScriptWithPolling();
+    } catch (err) {
+      console.error('AI 修订失败:', err);
+      alert('AI 修订失败，请重试');
+      setIsLoading(false);
+    }
+  }, [fetchScriptWithPolling]);
+
+  const handleConfirmOutline = useCallback(async () => {
+    const pid = projectIdRef.current;
+    if (!pid) {
+      setError('无法获取项目 ID');
+      return;
+    }
+    const confirmed = window.confirm('确认大纲后将进入剧情生成阶段，确认内容无误后再继续。');
+    if (!confirmed) return;
+
+    setIsLoading(true);
+    try {
+      await confirmScript(pid);
+      // 后端 milestone 变更会通过 SSE / 轮询自动同步
+      await refreshScript();
+    } catch (err) {
+      console.error('确认大纲失败:', err);
+      setError('确认大纲失败，请稍后重试');
+      setIsLoading(false);
+    }
+  }, [refreshScript]);
+
+  // ======== Phase 3: 剧情生成操作 ========
+  const handleGenerateAll = useCallback(async () => {
     if (!scriptData || scriptData.pendingChapters.length === 0) return;
     const confirmed = window.confirm(
       `即将生成全部 ${scriptData.pendingChapters.length} 个剩余章节，这可能需要几分钟时间。是否继续？`
     );
     if (!confirmed) return;
 
-    const pid = getCurrentProjectId();
+    const pid = projectIdRef.current;
     if (!pid) {
       setError('无法获取项目 ID');
       return;
     }
     setIsBatchGenerating(true);
-    setIsLoading(true);
     try {
       await generateAllEpisodes(pid);
-      const result = await getScript(pid);
-      if (isApiSuccess(result) && result.data) {
-        setScriptData(result.data);
-      }
+      // 生成完成后刷新数据
+      await refreshScript();
     } catch (err) {
       console.error('批量生成失败:', err);
       setError('批量生成失败，请稍后重试或尝试逐章生成。');
     } finally {
       setIsBatchGenerating(false);
-      setIsLoading(false);
     }
-  };
+  }, [scriptData, refreshScript]);
 
-  // 处理生成剧集点击
-  const handleGenerateClick = (chapter: string) => {
+  const handleGenerateClick = useCallback((chapter: string) => {
     setSelectedChapter(chapter);
     setDialogOpen(true);
-  };
+  }, []);
 
-  // 处理生成剧集确认（支持新生成和重新生成）
-  const handleGenerateConfirm = async (episodeCount: number, modificationSuggestion?: string) => {
+  const handleGenerateConfirm = useCallback(async (episodeCount: number, modificationSuggestion?: string) => {
     if (!selectedChapter) return;
-
-    const pid = getCurrentProjectId();
+    const pid = projectIdRef.current;
     if (!pid) {
       setError('无法获取项目 ID');
       return;
     }
-
     setIsGenerating(true);
     try {
       await generateEpisodes(pid, {
         chapter: selectedChapter,
         episodeCount,
-        modificationSuggestion
+        modificationSuggestion,
       });
-      // 重新获取剧本数据
-      const result = await getScript(pid);
-      if (isApiSuccess(result) && result.data) {
-        setScriptData(result.data);
-      }
+      await refreshScript();
       setDialogOpen(false);
     } catch (err) {
       console.error('生成剧集失败:', err);
@@ -198,49 +329,41 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     } finally {
       setIsGenerating(false);
     }
-  };
+  }, [selectedChapter, refreshScript]);
 
-  // 处理确认
-  const handleConfirm = async () => {
-    console.log('确认项目:', project);
-    console.log('当前剧本:', scriptData);
-
-    const pid = getCurrentProjectId();
+  // ======== Phase 4: 确认剧情 ========
+  const handleConfirmEpisodes = useCallback(async () => {
+    const pid = projectIdRef.current;
     if (!pid) {
       setError('无法获取项目 ID');
       return;
     }
-
-    // 确认前提醒用户
-    const confirmed = window.confirm('确认后将进入下一步，无法再返回修改。请确认内容无误后再继续。');
+    const confirmed = window.confirm('确认剧情后将进入下一步，无法再返回修改。请确认内容无误后再继续。');
     if (!confirmed) return;
 
     setIsLoading(true);
     try {
-      // 调用确认剧本接口
       await confirmScript(pid);
-      // 完成此步骤，进入下一步
+      // 后端 milestone 变更会通过 SSE / 轮询自动同步
+      // CreateLayout 检测到 currentStep 变化后会自动跳转到 Step 3
       onComplete?.();
     } catch (err) {
-      console.error('确认剧本失败:', err);
-      setError('确认剧本失败，请稍后重试');
-    } finally {
+      console.error('确认剧情失败:', err);
+      setError('确认剧情失败，请稍后重试');
       setIsLoading(false);
     }
-  };
+  }, [onComplete]);
 
-  // 提取项目信息显示
+  // ======== 辅助函数 ========
   const getProjectInfo = () => {
     if (!scriptData?.project) return null;
     const p = scriptData.project;
-    // 从 outline 中提取剧名（outline 可能为 null，需要做防御判断）
     const outline = scriptData.outline ?? '';
     const titleMatch = outline.match(/^# (.+)$/m);
     const title = titleMatch ? titleMatch[1] : '未命名剧集';
     const genreMatch = outline.match(/\*\*类型\*\*:\s*(.+?)\s*\|/);
     const genre = genreMatch ? genreMatch[1] : p.projectInfo?.genre || '未分类';
     const episodes = p.projectInfo?.totalEpisodes || scriptData.chapters.length || 0;
-
     return { title, genre, episodes };
   };
 
@@ -249,16 +372,10 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     if (rangeMatch) {
       const start = parseInt(rangeMatch[1], 10);
       const end = parseInt(rangeMatch[2], 10);
-      if (end >= start) {
-        return end - start + 1;
-      }
+      if (end >= start) return end - start + 1;
     }
-
     const singleMatch = chapterTitle.match(/(?:第\s*)?(\d+)\s*集/);
-    if (singleMatch) {
-      return 1;
-    }
-
+    if (singleMatch) return 1;
     return null;
   };
 
@@ -266,116 +383,208 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     if (scriptData?.isSingleEpisode || scriptData?.project?.projectInfo?.totalEpisodes === 1) {
       return 1;
     }
-
     const fromChapter = extractEpisodeCountFromChapter(chapterTitle);
-    if (fromChapter && fromChapter > 0) {
-      return fromChapter;
-    }
-
+    if (fromChapter && fromChapter > 0) return fromChapter;
     const fallback = scriptData?.project?.projectInfo?.episodesPerChapter;
-    if (fallback && fallback > 0) {
-      return fallback;
-    }
-
+    if (fallback && fallback > 0) return fallback;
     return 4;
   };
 
   const projectInfo = scriptData ? getProjectInfo() : null;
 
+  // ======== 渲染 ========
   return (
     <div className={styles.content}>
       {/* 标题区域 */}
       <div className={styles.header}>
-        <h1 className={styles.title}>剧本编辑</h1>
+        <h1 className={styles.title}>
+          {phase === 'outline_generating' || phase === 'outline_review'
+            ? '剧本大纲'
+            : '剧情生成'}
+        </h1>
         <p className={styles.subtitle}>
-          编辑 AI 生成的剧本大纲，并生成各章节剧集
+          {phase === 'outline_generating' && 'AI 正在根据你的创意生成剧本大纲...'}
+          {phase === 'outline_review' && '审阅 AI 生成的大纲，确认无误后进入剧情生成'}
+          {phase === 'episode_generating' && 'AI 正在根据大纲生成各章节剧情...'}
+          {phase === 'episode_review' && '审阅生成的剧情内容，确认后进入角色设定'}
         </p>
       </div>
 
-      {/* 加载状态 */}
-      {isLoading && (
-        <div className={styles.loadingState}>
-          <div className={styles.spinner}></div>
-          <p>正在加载剧本...</p>
-        </div>
-      )}
-
-      {/* 错误状态 */}
-      {!isLoading && error && (
-        <div className={styles.errorState}>
-          <p>{error}</p>
-          <button
-            className={styles.retryButton}
-            onClick={() => fetchScriptWithPolling()}
-          >
-            重试
-          </button>
-        </div>
-      )}
-
-      {/* 剧本内容 */}
-      {!isLoading && !error && scriptData && (
-        <div className={styles.scriptContainer}>
-          {/* 项目信息卡片 */}
-          {projectInfo && (
-            <div className={styles.projectInfo}>
-              <div className={styles.infoItem}>
-                <span className={styles.infoLabel}>剧名：</span>
-                <span className={styles.infoValue}>{projectInfo.title}</span>
-              </div>
-              <div className={styles.infoItem}>
-                <span className={styles.infoLabel}>类型：</span>
-                <span className={styles.infoValue}>{projectInfo.genre}</span>
-              </div>
-              <div className={styles.infoItem}>
-                <span className={styles.infoLabel}>集数：</span>
-                <span className={styles.infoValue}>{projectInfo.episodes} 集</span>
-              </div>
+      {/* Phase 1: 大纲生成中 */}
+      {phase === 'outline_generating' && (
+        <>
+          {isLoading && (
+            <div className={styles.loadingState}>
+              <div className={styles.spinner}></div>
+              <p>AI 正在生成剧本大纲，请稍候...</p>
             </div>
           )}
 
-          {/* 大纲编辑器 */}
-          <OutlineEditor
-            outline={scriptData.outline}
-            readOnly
-          />
-
-          {/* 批量生成按钮 */}
-          {scriptData.pendingChapters.length > 0 && (
-            <div className={styles.batchAction}>
-              <button
-                className={styles.batchGenerateButton}
-                onClick={handleGenerateAll}
-                disabled={isBatchGenerating}
-              >
-                {isBatchGenerating ? '批量生成中...' : `一键生成全部剩余章节 (${scriptData.pendingChapters.length} 章)`}
+          {!isLoading && error && (
+            <div className={styles.errorState}>
+              <p>{error}</p>
+              <button className={styles.retryButton} onClick={handleGenerateOutline}>
+                重新生成大纲
               </button>
             </div>
           )}
 
-          {/* 章节列表 */}
-          <ChapterList
-            chapters={scriptData.chapters}
-            generatedChapters={scriptData.generatedChapters}
-            pendingChapters={scriptData.pendingChapters}
-            episodes={scriptData.episodes}
-            onGenerateClick={handleGenerateClick}
-          />
-        </div>
+          {!isLoading && !error && !scriptData && (
+            <div className={styles.emptyState}>
+              <p>暂无大纲数据</p>
+              <p className={styles.emptyHint}>点击下方按钮开始生成</p>
+              <button className={styles.confirmButton} onClick={handleGenerateOutline}>
+                生成剧本大纲
+              </button>
+            </div>
+          )}
+        </>
       )}
 
-      {/* 空状态 */}
-      {!isLoading && !error && !scriptData && (
-        <div className={styles.emptyState}>
-          <p>暂无剧本数据</p>
-          <p className={styles.emptyHint}>剧本可能还在生成中</p>
-          <button
-            className={styles.retryButton}
-            onClick={() => fetchScriptWithPolling()}
-          >
-            重新加载
-          </button>
-        </div>
+      {/* Phase 2: 大纲审核 */}
+      {phase === 'outline_review' && (
+        <>
+          {isLoading && !scriptData && (
+            <div className={styles.loadingState}>
+              <div className={styles.spinner}></div>
+              <p>正在加载大纲...</p>
+            </div>
+          )}
+
+          {error && (
+            <div className={styles.errorState}>
+              <p>{error}</p>
+              <button className={styles.retryButton} onClick={refreshScript}>
+                重试
+              </button>
+            </div>
+          )}
+
+          {scriptData && (
+            <div className={styles.scriptContainer}>
+              {/* 项目信息 */}
+              {projectInfo && (
+                <div className={styles.projectInfo}>
+                  <div className={styles.infoItem}>
+                    <span className={styles.infoLabel}>剧名：</span>
+                    <span className={styles.infoValue}>{projectInfo.title}</span>
+                  </div>
+                  <div className={styles.infoItem}>
+                    <span className={styles.infoLabel}>类型：</span>
+                    <span className={styles.infoValue}>{projectInfo.genre}</span>
+                  </div>
+                  <div className={styles.infoItem}>
+                    <span className={styles.infoLabel}>集数：</span>
+                    <span className={styles.infoValue}>{projectInfo.episodes} 集</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 大纲编辑器（可编辑） */}
+              <OutlineEditor
+                outline={scriptData.outline}
+                onSaveDirect={handleSaveOutlineDirect}
+                onSaveWithAI={handleSaveOutlineWithAI}
+              />
+            </div>
+          )}
+
+          {/* 确认大纲按钮 */}
+          <div className={styles.buttonContainer}>
+            <button
+              className={styles.confirmButton}
+              onClick={handleConfirmOutline}
+              disabled={isLoading || !scriptData}
+            >
+              确认大纲，进入剧情生成
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Phase 3: 剧情生成 */}
+      {(phase === 'episode_generating' || phase === 'episode_review') && (
+        <>
+          {isLoading && !scriptData && (
+            <div className={styles.loadingState}>
+              <div className={styles.spinner}></div>
+              <p>正在加载剧本数据...</p>
+            </div>
+          )}
+
+          {error && (
+            <div className={styles.errorState}>
+              <p>{error}</p>
+              <button className={styles.retryButton} onClick={refreshScript}>
+                重试
+              </button>
+            </div>
+          )}
+
+          {scriptData && (
+            <div className={styles.scriptContainer}>
+              {/* 项目信息 */}
+              {projectInfo && (
+                <div className={styles.projectInfo}>
+                  <div className={styles.infoItem}>
+                    <span className={styles.infoLabel}>剧名：</span>
+                    <span className={styles.infoValue}>{projectInfo.title}</span>
+                  </div>
+                  <div className={styles.infoItem}>
+                    <span className={styles.infoLabel}>类型：</span>
+                    <span className={styles.infoValue}>{projectInfo.genre}</span>
+                  </div>
+                  <div className={styles.infoItem}>
+                    <span className={styles.infoLabel}>集数：</span>
+                    <span className={styles.infoValue}>{projectInfo.episodes} 集</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 大纲（只读展示） */}
+              <OutlineEditor outline={scriptData.outline} readOnly />
+
+              {/* 批量生成按钮（仅在有待生成章节时显示） */}
+              {scriptData.pendingChapters.length > 0 && (
+                <div className={styles.batchAction}>
+                  <button
+                    className={styles.batchGenerateButton}
+                    onClick={handleGenerateAll}
+                    disabled={isBatchGenerating}
+                  >
+                    {isBatchGenerating
+                      ? '批量生成中...'
+                      : `一键生成全部剩余章节 (${scriptData.pendingChapters.length} 章)`}
+                  </button>
+                </div>
+              )}
+
+              {/* 章节列表 */}
+              <ChapterList
+                chapters={scriptData.chapters}
+                generatedChapters={scriptData.generatedChapters}
+                pendingChapters={scriptData.pendingChapters}
+                episodes={scriptData.episodes}
+                onGenerateClick={handleGenerateClick}
+              />
+            </div>
+          )}
+
+          {/* Phase 4: 确认剧情按钮（所有章节已生成时显示） */}
+          {phase === 'episode_review' && (
+            <div className={styles.buttonContainer}>
+              <button
+                className={styles.confirmButton}
+                onClick={handleConfirmEpisodes}
+                disabled={isLoading || !scriptData || scriptData.pendingChapters.length > 0}
+              >
+                {!scriptData || scriptData.pendingChapters.length > 0
+                  ? `全部章节已生成后可确认 (剩余 ${scriptData?.pendingChapters.length || 0} 章)`
+                  : '确认剧情，进入下一步'}
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {/* 生成剧集对话框 */}
@@ -387,21 +596,42 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
         onConfirm={handleGenerateConfirm}
         loading={isGenerating}
       />
-
-      {/* 按钮容器 */}
-      <div className={styles.buttonContainer}>
-        <button
-          className={styles.confirmButton}
-          onClick={handleConfirm}
-          disabled={isLoading || !scriptData || scriptData.pendingChapters.length > 0}
-        >
-          {!scriptData || scriptData.pendingChapters.length > 0
-            ? `全部章节已生成后可确认 (剩余 ${scriptData?.pendingChapters.length || 0} 章)`
-            : '确认剧本，进入下一步'}
-        </button>
-      </div>
     </div>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * 从后端 statusCode + scriptData 推导当前阶段
+ */
+function derivePhase(
+  statusCode: string | undefined,
+  scriptData: ScriptContentResponse | null,
+): Phase {
+  switch (statusCode) {
+    case 'outline_review':
+      return 'outline_review';
+    case 'outline_confirmed':
+      // 大纲已确认 → 如果还有 pendingChapters 则 episode_generating，否则 episode_review
+      // 但 outline_confirmed 时后端 statusCode 会变成 episode_review 生成后
+      // 这里先按 episode_generating 处理，后续 statusCode 更新会自动切换
+      return 'episode_generating';
+    case 'episode_review':
+      return 'episode_review';
+    case 'episode_confirmed':
+      // 已确认 → 由 CreateLayout 路由守卫跳转 Step 3
+      return 'episode_review';
+    case 'draft':
+    default:
+      // 如果已经有 outline 数据，说明大纲生成完毕但状态还没同步
+      if (scriptData?.outline) {
+        return 'outline_review';
+      }
+      return 'outline_generating';
+  }
+}
 
 export default Step2page;
