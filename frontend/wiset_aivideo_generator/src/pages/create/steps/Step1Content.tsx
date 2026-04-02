@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import styles from '../CreatePage.module.less';
+import styles2 from './Step1Review.module.less';
 import { ChevronDownIcon } from '../../../components/icons/Icons';
-import { createProject, generateScript, isApiSuccess } from '../../../services';
-import type { CreateProjectRequest, Project, VisualStyle } from '../../../services';
+import { createProject, generateScript, getScript, confirmScript, reviseScript, updateScriptOutline, isApiSuccess } from '../../../services';
+import type { CreateProjectRequest, Project, ScriptContentResponse, VisualStyle } from '../../../services';
 import type { StepContentProps } from '../types';
 import ScriptGeneratingOverlay from '../components/ScriptGeneratingOverlay';
+import OutlineEditor from './components/OutlineEditor';
 import { useProjectStore } from '../../../stores';
-import { useTransitionOverlay } from '../CreateLayout';
+import { useCreateStore } from '../../../stores/createStore';
 
 // 题材类型选项
 const genreOptions = [
@@ -74,31 +76,113 @@ function SparklesIcon({ className = '' }: { className?: string }) {
 }
 
 interface Step1ContentProps extends StepContentProps {
-  onProjectCreated: (project: Project) => void;
+  onProjectCreated?: (project: Project) => void;
+  project?: Project;
 }
 
 /**
- * Step 1: 创意输入
+ * Step 1: 创意输入 + 大纲审核
+ *
+ * - 无项目 / draft 状态：展示创意输入表单
+ * - outline_review 状态：展示大纲审核 UI（复用 OutlineEditor）
  */
-const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
-  // 表单状态
+const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
+  const { statusInfo } = useCreateStore();
+  const projectId = project?.projectId;
+  const isOutlineReview = projectId && statusInfo?.statusCode === 'outline_review';
+
+  // ========== 大纲审核状态 ==========
+  const [scriptData, setScriptData] = useState<ScriptContentResponse | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
+  const loadScript = useCallback(async (pid: string) => {
+    setReviewLoading(true);
+    try {
+      const result = await getScript(pid);
+      if (isApiSuccess(result) && result.data) {
+        setScriptData(result.data);
+      }
+    } catch (err) {
+      console.error('获取剧本失败:', err);
+    } finally {
+      setReviewLoading(false);
+    }
+  }, []);
+
+  // outline_review 时自动加载剧本
+  useEffect(() => {
+    if (isOutlineReview && projectId) {
+      loadScript(projectId);
+    }
+  }, [isOutlineReview, projectId, loadScript]);
+
+  // ========== 创意输入表单状态 ==========
   const [storyIdea, setStoryIdea] = useState('');
   const [generateMode, setGenerateMode] = useState<'single' | 'series'>('single');
   const [genre, setGenre] = useState('');
   const [visualStyle, setVisualStyle] = useState<VisualStyle | ''>('');
   const [targetAudience, setTargetAudience] = useState('');
   const [totalEpisodes, setTotalEpisodes] = useState(10);
-  const [episodeDuration, setEpisodeDuration] = useState<number>(60);  // 改为 number 类型
+  const [episodeDuration, setEpisodeDuration] = useState<number>(60);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
   const [generatingPhase, setGeneratingPhase] = useState<'creating' | 'generating' | 'loading'>('creating');
 
   // 使用 projectStore 存储项目数据
   const setCurrentProject = useProjectStore((state) => state.setCurrentProject);
-  // 过渡遮罩 context：生成完成后保持遮罩到 Step2 mount
-  const { showTransitionOverlay } = useTransitionOverlay();
+  // ========== 大纲审核操作 ==========
+  const handleOutlineSaveDirect = async (content: string) => {
+    if (!projectId) return;
+    setReviewLoading(true);
+    try {
+      await updateScriptOutline(projectId, content);
+      const result = await getScript(projectId);
+      if (isApiSuccess(result) && result.data) {
+        setScriptData(result.data);
+      }
+    } catch (err) {
+      console.error('保存大纲失败:', err);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
 
-  // 处理生成
+  const handleOutlineSaveWithAI = async (content: string, revisionNote: string) => {
+    if (!projectId) return;
+    setReviewLoading(true);
+    try {
+      await reviseScript(projectId, {
+        revisionNote,
+        currentOutline: content,
+      });
+      const result = await getScript(projectId);
+      if (isApiSuccess(result) && result.data) {
+        setScriptData(result.data);
+      }
+    } catch (err) {
+      console.error('AI 重新生成失败:', err);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  const handleConfirmOutline = async () => {
+    if (!projectId) return;
+    const confirmed = window.confirm('确认大纲后将进入下一步剧本编辑，无法再返回修改。请确认内容无误后再继续。');
+    if (!confirmed) return;
+    setConfirmLoading(true);
+    try {
+      await confirmScript(projectId);
+    } catch (err) {
+      console.error('确认大纲失败:', err);
+      alert('确认大纲失败，请稍后重试');
+    } finally {
+      setConfirmLoading(false);
+    }
+  };
+
+  // ========== 创意输入 - 生成处理 ==========
   const handleGenerate = async () => {
     if (!storyIdea.trim() || !visualStyle || !targetAudience) {
       alert('请填写完整的表单信息');
@@ -109,48 +193,40 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
     setGeneratingPhase('creating');
 
     try {
-      // 映射表单字段到 API 字段
       const requestData: CreateProjectRequest = {
         storyPrompt: storyIdea,
         genre: genre || undefined,
         visualStyle: visualStyle || undefined,
         targetAudience,
         totalEpisodes: generateMode === 'series' ? totalEpisodes : 1,
-        episodeDuration: episodeDuration,  // 直接使用 number 类型，不再需要 parseFloat
+        episodeDuration: episodeDuration,
       };
 
-      // 1. 创建项目
       const createResult = await createProject(requestData);
 
       if (isApiSuccess(createResult) && createResult.data) {
         console.log('项目创建成功:', createResult.data);
 
-        const projectId = createResult.data.projectId;
+        const newProjectId = createResult.data.projectId;
 
-        // 验证 projectId 存在
-        if (!projectId) {
+        if (!newProjectId) {
           console.error('创建成功但缺少项目 ID');
           alert('项目创建成功但缺少 ID，请重试');
           return;
         }
 
-        // 构造 Project 对象存入 store（后端只返回 projectId）
-        const projectData: Project = { projectId };
+        const projectData: Project = { projectId: newProjectId };
         setCurrentProject(projectData);
-        onProjectCreated(projectData);
-
-        // 2. 自动触发剧本生成
-        console.log('开始生成剧本，项目 ID:', projectId);
+        onProjectCreated?.(projectData);
 
         setGeneratingPhase('generating');
         setIsGeneratingScript(true);
         try {
-          const scriptResult = await generateScript(projectId);
+          const scriptResult = await generateScript(newProjectId);
           console.log('剧本生成响应:', scriptResult);
 
           if (isApiSuccess(scriptResult)) {
             console.log('剧本生成成功');
-            // 切换到加载阶段，保持遮罩直到 Step2 接管
             setGeneratingPhase('loading');
           } else {
             console.warn('剧本生成返回非成功状态:', scriptResult.message);
@@ -158,15 +234,10 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
           }
         } catch (scriptError) {
           console.error('剧本生成失败:', scriptError);
-          // 即使剧本生成失败，也继续流程
           setGeneratingPhase('loading');
         }
-        // 通知 CreateLayout 显示全局过渡遮罩，覆盖 Step1→Step2 的空白期
-        showTransitionOverlay();
         setIsGeneratingScript(false);
-        // Step2 mount 后会调用 hideTransitionOverlay 接管
 
-        // 不在这里主动跳转，等待状态轮询/SSE驱动步骤切换
       } else {
         console.error('创建失败:', createResult.message);
         alert(`创建失败: ${createResult.message}`);
@@ -179,6 +250,47 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
     }
   };
 
+  // ========== 大纲审核视图 ==========
+  if (isOutlineReview) {
+    return (
+      <div className={styles.content}>
+        <div className={styles.header}>
+          <h1 className={styles.title}>大纲审核</h1>
+          <p className={styles.subtitle}>审核 AI 生成的剧本大纲，确认后进入剧本编辑</p>
+        </div>
+
+        {reviewLoading ? (
+          <div className={styles2.loadingState}>
+            <div className={styles2.spinner}></div>
+            <p>正在加载大纲...</p>
+          </div>
+        ) : scriptData ? (
+          <div className={styles2.reviewContainer}>
+            <OutlineEditor
+              outline={scriptData.outline}
+              onSaveDirect={handleOutlineSaveDirect}
+              onSaveWithAI={handleOutlineSaveWithAI}
+            />
+            <div className={styles2.actionRow}>
+              <button
+                className={styles2.confirmButton}
+                onClick={handleConfirmOutline}
+                disabled={confirmLoading}
+              >
+                {confirmLoading ? '确认中...' : '确认大纲，进入下一步'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className={styles2.loadingState}>
+            <p>暂无大纲数据</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ========== 创意输入视图（原始逻辑） ==========
   return (
     <div className={styles.content}>
       {/* 标题区域 */}
@@ -189,165 +301,172 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
         </p>
       </div>
 
-      {/* 故事创意卡片 */}
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>故事创意</h2>
-          <p className={styles.cardSubtitle}>Where dreamworld come alive.</p>
-        </div>
-        <textarea
-          className={styles.textarea}
-          placeholder="Write your dreamworld..."
-          value={storyIdea}
-          onChange={(e) => setStoryIdea(e.target.value)}
-          aria-label="故事创意输入框"
-        />
-      </div>
-
-      {/* 生成配置卡片 */}
-      <div className={styles.card}>
-        {/* 生成模式 */}
-        <div className={styles.configSection}>
-          <label className={styles.configLabel}>生成模式</label>
-          <div className={styles.radioGroup}>
-            <div
-              className={`${styles.radioItem} ${generateMode === 'single' ? styles.active : ''}`}
-              onClick={() => setGenerateMode('single')}
-              role="radio"
-              aria-checked={generateMode === 'single'}
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && setGenerateMode('single')}
-            >
-              <span className={styles.radioButton}>
-                <span className={styles.radioButtonInner}></span>
-              </span>
-              <span>单集视频</span>
+      {/* 两栏布局：故事创意 + 生成配置 */}
+      <div className={styles.cardsRow}>
+        {/* 左栏：故事创意 */}
+        <div className={styles.cardStory}>
+          <div className={styles.card}>
+            <div className={styles.cardHeader}>
+              <h2 className={styles.cardTitle}>故事创意</h2>
+              <p className={styles.cardSubtitle}>Where dreamworld come alive.</p>
             </div>
-            <div
-              className={`${styles.radioItem} ${generateMode === 'series' ? styles.active : ''}`}
-              onClick={() => setGenerateMode('series')}
-              role="radio"
-              aria-checked={generateMode === 'series'}
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && setGenerateMode('series')}
-            >
-              <span className={styles.radioButton}>
-                <span className={styles.radioButtonInner}></span>
-              </span>
-              <span>系列漫剧</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 题材类型 */}
-        <div className={styles.configSection}>
-          <label className={styles.configLabel} htmlFor="genre">
-            题材类型
-          </label>
-          <div className={styles.selectWrapper}>
-            <select
-              id="genre"
-              className={styles.select}
-              value={genre}
-              onChange={(e) => setGenre(e.target.value)}
-            >
-              <option value="" disabled>
-                选择题材
-              </option>
-              {genreOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDownIcon className={styles.selectArrow} />
-          </div>
-        </div>
-
-        {/* 画面风格 */}
-        <div className={styles.configSection}>
-          <label className={styles.configLabel} htmlFor="visual-style">
-            画面风格
-          </label>
-          <div className={styles.selectWrapper}>
-            <select
-              id="visual-style"
-              className={styles.select}
-              value={visualStyle}
-              onChange={(e) => setVisualStyle(e.target.value as VisualStyle)}
-            >
-              <option value="" disabled>
-                Select Option
-              </option>
-              {visualStyleOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDownIcon className={styles.selectArrow} />
-          </div>
-        </div>
-
-        {/* 目标受众 */}
-        <div className={styles.configSection}>
-          <label className={styles.configLabel} htmlFor="target-audience">
-            目标受众
-          </label>
-          <div className={styles.selectWrapper}>
-            <select
-              id="target-audience"
-              className={styles.select}
-              value={targetAudience}
-              onChange={(e) => setTargetAudience(e.target.value)}
-            >
-              <option value="" disabled>
-                选择目标受众
-              </option>
-              {targetAudienceOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDownIcon className={styles.selectArrow} />
-          </div>
-        </div>
-
-        {/* 每集时长 */}
-        <div className={styles.configSection}>
-          <label className={styles.configLabel}>每集时长</label>
-          <div className={styles.durationGroup}>
-            {durationOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`${styles.durationButton} ${episodeDuration === option.value ? styles.active : ''}`}
-                onClick={() => setEpisodeDuration(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 系列漫剧集数 */}
-        {generateMode === 'series' && (
-          <div className={styles.configSection}>
-            <label className={styles.configLabel} htmlFor="total-episodes">
-              总集数
-            </label>
-            <input
-              id="total-episodes"
-              type="number"
-              className={styles.input}
-              min="1"
-              max="100"
-              value={totalEpisodes}
-              onChange={(e) => setTotalEpisodes(parseInt(e.target.value) || 1)}
+            <textarea
+              className={styles.textarea}
+              placeholder="Write your dreamworld..."
+              value={storyIdea}
+              onChange={(e) => setStoryIdea(e.target.value)}
+              aria-label="故事创意输入框"
             />
           </div>
-        )}
+        </div>
+
+        {/* 右栏：生成配置 */}
+        <div className={styles.cardConfig}>
+          <div className={styles.card}>
+            {/* 生成模式 */}
+            <div className={styles.configSection}>
+              <label className={styles.configLabel}>生成模式</label>
+              <div className={styles.radioGroup}>
+                <div
+                  className={`${styles.radioItem} ${generateMode === 'single' ? styles.active : ''}`}
+                  onClick={() => setGenerateMode('single')}
+                  role="radio"
+                  aria-checked={generateMode === 'single'}
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && setGenerateMode('single')}
+                >
+                  <span className={styles.radioButton}>
+                    <span className={styles.radioButtonInner}></span>
+                  </span>
+                  <span>单集视频</span>
+                </div>
+                <div
+                  className={`${styles.radioItem} ${generateMode === 'series' ? styles.active : ''}`}
+                  onClick={() => setGenerateMode('series')}
+                  role="radio"
+                  aria-checked={generateMode === 'series'}
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && setGenerateMode('series')}
+                >
+                  <span className={styles.radioButton}>
+                    <span className={styles.radioButtonInner}></span>
+                  </span>
+                  <span>系列漫剧</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 题材类型 */}
+            <div className={styles.configSection}>
+              <label className={styles.configLabel} htmlFor="genre">
+                题材类型
+              </label>
+              <div className={styles.selectWrapper}>
+                <select
+                  id="genre"
+                  className={styles.select}
+                  value={genre}
+                  onChange={(e) => setGenre(e.target.value)}
+                >
+                  <option value="" disabled>
+                    选择题材
+                  </option>
+                  {genreOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDownIcon className={styles.selectArrow} />
+              </div>
+            </div>
+
+            {/* 画面风格 */}
+            <div className={styles.configSection}>
+              <label className={styles.configLabel} htmlFor="visual-style">
+                画面风格
+              </label>
+              <div className={styles.selectWrapper}>
+                <select
+                  id="visual-style"
+                  className={styles.select}
+                  value={visualStyle}
+                  onChange={(e) => setVisualStyle(e.target.value as VisualStyle)}
+                >
+                  <option value="" disabled>
+                    Select Option
+                  </option>
+                  {visualStyleOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDownIcon className={styles.selectArrow} />
+              </div>
+            </div>
+
+            {/* 目标受众 */}
+            <div className={styles.configSection}>
+              <label className={styles.configLabel} htmlFor="target-audience">
+                目标受众
+              </label>
+              <div className={styles.selectWrapper}>
+                <select
+                  id="target-audience"
+                  className={styles.select}
+                  value={targetAudience}
+                  onChange={(e) => setTargetAudience(e.target.value)}
+                >
+                  <option value="" disabled>
+                    选择目标受众
+                  </option>
+                  {targetAudienceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDownIcon className={styles.selectArrow} />
+              </div>
+            </div>
+
+            {/* 每集时长 */}
+            <div className={styles.configSection}>
+              <label className={styles.configLabel}>每集时长</label>
+              <div className={styles.durationGroup}>
+                {durationOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`${styles.durationButton} ${episodeDuration === option.value ? styles.active : ''}`}
+                    onClick={() => setEpisodeDuration(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 系列漫剧集数 */}
+            {generateMode === 'series' && (
+              <div className={styles.configSection}>
+                <label className={styles.configLabel} htmlFor="total-episodes">
+                  总集数
+                </label>
+                <input
+                  id="total-episodes"
+                  type="number"
+                  className={styles.input}
+                  min="1"
+                  max="100"
+                  value={totalEpisodes}
+                  onChange={(e) => setTotalEpisodes(parseInt(e.target.value) || 1)}
+                />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 生成按钮 */}

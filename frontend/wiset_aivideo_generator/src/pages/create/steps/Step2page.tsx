@@ -1,11 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import styles from './Step2page.module.less';
 import type { Project, ScriptContentResponse } from '../../../services';
-import { getScript, generateEpisodes, confirmScript, reviseScript, updateScriptOutline, generateAllEpisodes, isApiSuccess } from '../../../services';
+import { getScript, generateEpisodes, confirmScript, generateAllEpisodes, isApiSuccess } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useProjectStore } from '../../../stores';
 import { useCreateStore } from '../../../stores/createStore';
-import { useTransitionOverlay } from '../CreateLayout';
 import OutlineEditor from './components/OutlineEditor';
 import ChapterList from './components/ChapterList';
 import GenerateEpisodesDialog from './components/GenerateEpisodesDialog';
@@ -35,12 +34,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
 
   const getProjectId = useProjectStore((state) => state.getProjectId);
 
-  // Step2 mount 时通知 CreateLayout 隐藏过渡遮罩
-  const { hideTransitionOverlay } = useTransitionOverlay();
-  // 用 ref 持有最新的 hideTransitionOverlay，避免将其加入 effect 依赖导致重复触发
-  const hideOverlayRef = useRef(hideTransitionOverlay);
-  useEffect(() => { hideOverlayRef.current = hideTransitionOverlay; });
-
   // 稳定的项目 ID —— 只在首次 mount 时计算，避免 project 对象引用变化触发 effect
   const projectIdRef = useRef<string | null>(
     getProjectId() || project.projectId || (project.id ? String(project.id) : null)
@@ -52,7 +45,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     if (!pid) {
       setError('无法获取项目 ID');
       setIsLoading(false);
-      hideOverlayRef.current();
       return;
     }
 
@@ -73,7 +65,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             pollingRef.current = null;
           }
           setIsLoading(false);
-          hideOverlayRef.current();
         } else {
           if (pollingCountRef.current < maxPollingCount) {
             pollingCountRef.current++;
@@ -82,7 +73,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
           } else {
             setScriptData(null);
             setIsLoading(false);
-            hideOverlayRef.current();
           }
         }
       } catch (err) {
@@ -93,7 +83,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
         } else {
           setError('获取剧本失败，请稍后重试');
           setIsLoading(false);
-          hideOverlayRef.current();
         }
       }
     };
@@ -136,7 +125,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
         })
         .finally(() => {
           setIsLoading(false);
-          hideOverlayRef.current();
         });
     }
   }, [statusInfo?.isGenerating, scriptData]);
@@ -145,53 +133,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   const getCurrentProjectId = useCallback(() => {
     return projectIdRef.current;
   }, []);
-
-  // 直接保存用户编辑的大纲
-  const handleOutlineSaveDirect = async (content: string) => {
-    const pid = getCurrentProjectId();
-    if (!pid) {
-      setError('无法获取项目 ID');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await updateScriptOutline(pid, content);
-      const result = await getScript(pid);
-      if (isApiSuccess(result) && result.data) {
-        setScriptData(result.data);
-      }
-    } catch (err) {
-      console.error('保存大纲失败:', err);
-      setError('保存大纲失败，请稍后重试');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // AI 重新生成大纲
-  const handleOutlineSaveWithAI = async (content: string, revisionNote: string) => {
-    const pid = getCurrentProjectId();
-    if (!pid) {
-      setError('无法获取项目 ID');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await reviseScript(pid, {
-        revisionNote: revisionNote,
-        currentOutline: content
-      });
-      const result = await getScript(pid);
-      if (isApiSuccess(result) && result.data) {
-        setScriptData(result.data);
-      }
-    } catch (err) {
-      console.error('AI 重新生成失败:', err);
-      setError('AI 重新生成失败，请稍后重试');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleGenerateAll = async () => {
     if (!scriptData || scriptData.pendingChapters.length === 0) return;
@@ -396,8 +337,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
           {/* 大纲编辑器 */}
           <OutlineEditor
             outline={scriptData.outline}
-            onSaveDirect={handleOutlineSaveDirect}
-            onSaveWithAI={handleOutlineSaveWithAI}
+            readOnly
           />
 
           {/* 批量生成按钮 */}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback, useRef, useState, createContext, useContext } from 'react';
+import { useEffect, useMemo, useCallback, useRef, useState } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import styles from './CreatePage.module.less';
 import { CREATE_STEPS } from './constants/steps';
@@ -7,27 +7,9 @@ import { useCreateStore } from '../../stores/createStore';
 import { useProjectStore } from '../../stores';
 import Step1Content from './steps/Step1Content';
 import Step2page from './steps/Step2page';
-import Step3page from './steps/Step3page';
-import Step4page from './steps/Step4page';
-import Step5page from './steps/Step5page';
-import Step6page from './steps/Step6page';
-import ScriptGeneratingOverlay from './components/ScriptGeneratingOverlay';
-
-/**
- * Step1 → Step2 过渡遮罩 context
- * Step1 生成完成后保持遮罩，直到 Step2 mount 并调用 hideTransitionOverlay
- */
-export const TransitionOverlayContext = createContext<{
-  showTransitionOverlay: () => void;
-  hideTransitionOverlay: () => void;
-  isTransitionOverlayVisible: boolean;
-}>({
-  showTransitionOverlay: () => {},
-  hideTransitionOverlay: () => {},
-  isTransitionOverlayVisible: false,
-});
-
-export const useTransitionOverlay = () => useContext(TransitionOverlayContext);
+import Step3Merged from './steps/Step3Merged';
+import Step4Production from './steps/Step4Production';
+import Step5Compose from './steps/Step5Compose';
 
 /**
  * 创建流程布局组件
@@ -44,8 +26,6 @@ const CreateLayout = () => {
   const { currentProject, setCurrentProject } = useProjectStore();
   const [pollPaused, setPollPaused] = useState(false);
   const [isStepTransitioning, setIsStepTransitioning] = useState(false);
-  // Step1→Step2 过渡遮罩状态
-  const [isTransitionOverlayVisible, setIsTransitionOverlayVisible] = useState(false);
 
   // 手动暂停/恢复轮询（测试用）
   const togglePolling = useCallback(() => {
@@ -88,14 +68,14 @@ const CreateLayout = () => {
   }, [currentProject?.projectId, startPolling, stopPolling]);
 
   // 路由守卫 + 自动跳转
-  const isCompleted = statusInfo?.statusCode === 'COMPLETED';
+  const isCompleted = statusInfo?.statusCode === 'completed';
 
   useEffect(() => {
     if (!statusInfo || isLoadingStatus) return;
 
     const backendStep = statusInfo.currentStep;
 
-    // COMPLETED 状态允许自由浏览所有步骤，不做路由守卫
+    // completed 状态允许自由浏览所有步骤，不做路由守卫
     if (isCompleted) return;
 
     // 跳转到同一个 step 时不重复触发
@@ -131,7 +111,7 @@ const CreateLayout = () => {
   // 从 statusInfo 取 completedSteps，无 statusInfo 时为空
   // COMPLETED 状态时所有步骤都可自由浏览
   const effectiveCompletedSteps = isCompleted
-    ? [1, 2, 3, 4, 5, 6]
+    ? [1, 2, 3, 4, 5]
     : (statusInfo?.completedSteps ?? []);
 
   // COMPLETED 状态允许点击步骤导航自由浏览
@@ -145,6 +125,7 @@ const CreateLayout = () => {
       case 1:
         return (
           <Step1Content
+            project={currentProject ?? undefined}
             onProjectCreated={(project) => setCurrentProject(project)}
           />
         );
@@ -154,19 +135,15 @@ const CreateLayout = () => {
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 3:
         return currentProject ? (
-          <Step3page project={currentProject} />
+          <Step3Merged project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 4:
         return currentProject ? (
-          <Step4page project={currentProject} />
+          <Step4Production project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 5:
         return currentProject ? (
-          <Step5page project={currentProject} onNextStep={() => navigate(getStepUrl(6), { replace: true })} />
-        ) : <Navigate to={getStepUrl(1)} replace />;
-      case 6:
-        return currentProject ? (
-          <Step6page project={currentProject} />
+          <Step5Compose project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       default:
         return <Navigate to={getStepUrl(1)} replace />;
@@ -174,27 +151,10 @@ const CreateLayout = () => {
   };
 
   const showLoadingOverlay =
-    ((statusInfo?.isGenerating ?? false)
-      && statusInfo?.statusCode !== 'STORYBOARD_GENERATING'
-      && statusInfo?.statusCode !== 'EPISODE_SCRIPT_GENERATING'
-      && statusInfo?.statusCode !== 'IMAGE_GENERATING'
-      && statusInfo?.statusCode !== 'CHARACTER_EXTRACTING'
-      && statusInfo?.statusCode !== 'PRODUCING'
-      && statusInfo?.statusCode !== 'MERGING')
-    || isStepTransitioning;
-
-  // 用 useCallback 稳定函数引用，避免每次渲染都创建新函数导致 Step2page 的 effect 重复触发
-  const showTransitionOverlay = useCallback(() => setIsTransitionOverlayVisible(true), []);
-  const hideTransitionOverlay = useCallback(() => setIsTransitionOverlayVisible(false), []);
-  const transitionOverlayCtx = useMemo(() => ({
-    showTransitionOverlay,
-    hideTransitionOverlay,
-    isTransitionOverlayVisible,
-  }), [showTransitionOverlay, hideTransitionOverlay, isTransitionOverlayVisible]);
+    (statusInfo?.isGenerating ?? false) || isStepTransitioning;
 
   return (
-    <TransitionOverlayContext.Provider value={transitionOverlayCtx}>
-      <div className={styles.createContainer}>
+    <div className={styles.createContainer}>
         {/* Step 指示器 */}
         <StepIndicator
           steps={CREATE_STEPS}
@@ -224,13 +184,7 @@ const CreateLayout = () => {
           </div>
         )}
 
-        {/* Step1→Step2 过渡遮罩：无缝覆盖步骤切换空白期 */}
-        <ScriptGeneratingOverlay
-          isVisible={isTransitionOverlayVisible}
-          phase="loading"
-        />
       </div>
-    </TransitionOverlayContext.Provider>
   );
 };
 
