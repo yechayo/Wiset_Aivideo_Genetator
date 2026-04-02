@@ -112,6 +112,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
   const [charNameToIdMap, setCharNameToIdMap] = useState<Record<string, string>>({});
   const [generatingGridPanelId, setGeneratingGridPanelId] = useState<string | null>(null);
   const [generatingVideoPanelId, setGeneratingVideoPanelId] = useState<string | null>(null);
+  const [approvingEpisodeId, setApprovingEpisodeId] = useState<number | null>(null);
 
   // UI 状态：当前展开的集数/片段（手风琴模式）
   const [expansion, setExpansion] = useState<ExpansionState>({
@@ -766,12 +767,15 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
    */
   const handleApproveEpisodeGrid = useCallback(async (episodeId: number) => {
     if (!projectId) return;
+    setApprovingEpisodeId(episodeId);
     try {
       await approveEpisodeGrid(projectId, episodeId);
       panelsLoadedRef.current.delete(episodeId);
       await loadEpisodes();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '审核失败');
+    } finally {
+      setApprovingEpisodeId(null);
     }
   }, [projectId, loadEpisodes]);
 
@@ -1134,6 +1138,7 @@ const Step5page = ({ project, onNextStep }: Step5pageProps) => {
         onRefreshPanels={handleRefreshPanels}
         generatingGridPanelId={generatingGridPanelId}
         generatingVideoPanelId={generatingVideoPanelId}
+        isApprovingGrid={approvingEpisodeId === episode.episodeId}
         onApproveEpisodeGrid={() => handleApproveEpisodeGrid(episode.episodeId)}
         onRejectEpisodeGrid={(reason: string) => handleRejectEpisodeGrid(episode.episodeId, reason)}
         onRegenerateEpisodeGrid={() => handleRegenerateEpisodeGrid(episode.episodeId)}

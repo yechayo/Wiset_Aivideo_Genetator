@@ -18,6 +18,7 @@ interface EpisodeCardProps {
   generatingVideoPanelId?: string | null;
   onRefreshPanels?: (episodeId: number) => void;
   onApproveEpisodeGrid?: () => void;
+  isApprovingGrid?: boolean;
   onRejectEpisodeGrid?: (reason: string) => void;
   onRegenerateEpisodeGrid?: () => void;
   onRefreshEpisodeGrid?: () => void;
@@ -77,6 +78,7 @@ const EpisodeCard = ({
   generatingVideoPanelId,
   onRefreshPanels,
   onApproveEpisodeGrid,
+  isApprovingGrid,
   onRejectEpisodeGrid,
   onRegenerateEpisodeGrid,
   onRefreshEpisodeGrid,
@@ -188,8 +190,9 @@ const EpisodeCard = ({
               <button
                 className={styles.generatePanelsBtn}
                 onClick={(e) => { e.stopPropagation(); onApproveEpisodeGrid?.(); }}
+                disabled={isApprovingGrid}
               >
-                通过九宫格
+                {isApprovingGrid ? '通过中...' : '通过九宫格'}
               </button>
               <button
                 className={styles.generatePanelsBtn}
