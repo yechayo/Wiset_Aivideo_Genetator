@@ -5,8 +5,10 @@ import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.ai.video.ViduVideoService;
-import com.comic.common.BusinessException;
-import com.comic.common.CharacterInfoKeys;
+import com.comic.config.AiServiceConfiguration;
+import com.comic.constant.ProjectInfoKeys;
+import com.comic.exception.BusinessException;
+import com.comic.constant.CharacterInfoKeys;
 import com.comic.dto.response.VideoStatusResponse;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
@@ -49,6 +51,7 @@ public class PanelProductionService {
     private final ProjectRepository projectRepository;
     private final CharacterRepository characterRepository;
     private final PanelPromptBuilder panelPromptBuilder;
+    private final AiServiceConfiguration aiServiceConfig;
     private final VideoGenerationService videoGenerationService;
     private final ViduVideoService viduVideoService;
     private final OssService ossService;
@@ -68,6 +71,7 @@ public class PanelProductionService {
                                    ProjectRepository projectRepository,
                                    CharacterRepository characterRepository,
                                    PanelPromptBuilder panelPromptBuilder,
+                                   AiServiceConfiguration aiServiceConfig,
                                    VideoGenerationService videoGenerationService,
                                    ViduVideoService viduVideoService,
                                    OssService ossService,
@@ -81,6 +85,7 @@ public class PanelProductionService {
         this.projectRepository = projectRepository;
         this.characterRepository = characterRepository;
         this.panelPromptBuilder = panelPromptBuilder;
+        this.aiServiceConfig = aiServiceConfig;
         this.videoGenerationService = videoGenerationService;
         this.viduVideoService = viduVideoService;
         this.ossService = ossService;
@@ -93,6 +98,29 @@ public class PanelProductionService {
 
     private PanelProductionService self() {
         return applicationContext.getBean(PanelProductionService.class);
+    }
+
+    // ==================== Provider 分发辅助 ====================
+
+    private String getImageProvider(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null || project.getProjectInfo() == null) return "seedream";
+        Object provider = project.getProjectInfo().get(ProjectInfoKeys.IMAGE_PROVIDER);
+        return provider != null ? provider.toString() : "seedream";
+    }
+
+    private String getVideoProvider(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null || project.getProjectInfo() == null) return "vidu";
+        Object provider = project.getProjectInfo().get(ProjectInfoKeys.VIDEO_PROVIDER);
+        return provider != null ? provider.toString() : "vidu";
+    }
+
+    private String getProjectIdByPanelIdForProvider(Long panelId) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) return null;
+        Episode episode = episodeRepository.selectById(panel.getEpisodeId());
+        return episode != null ? episode.getProjectId() : null;
     }
 
     // ==================== 项目级生产编排 ====================
@@ -189,7 +217,9 @@ public class PanelProductionService {
         info.remove("videoCredits");
         info.remove("customVideoPrompt");
         updatePanelInfo(panel, info);
-        gridImageService.generateGridsForPanel(panelId, customHint);
+        String projectId = getProjectIdByPanelIdForProvider(panelId);
+        String imageProvider = getImageProvider(projectId != null ? projectId : "");
+        gridImageService.generateGridsForPanel(panelId, imageProvider, customHint);
     }
 
     // ==================== 视频 ====================
@@ -345,7 +375,10 @@ public class PanelProductionService {
             }
             if (totalDuration <= 0) totalDuration = 5;
 
-            String taskId = videoGenerationService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak);
+            String projectId = getProjectIdByPanelIdForProvider(panelId);
+            VideoGenerationService videoService = aiServiceConfig.getVideoService(
+                getVideoProvider(projectId != null ? projectId : ""));
+            String taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak);
             info.put("videoTaskId", taskId);
             info.put("offPeak", offPeak);
             panel.setPanelInfo(info);
@@ -362,12 +395,17 @@ public class PanelProductionService {
 
     @Async
     public void pollNewVideoTask(Long panelId, String taskId, boolean offPeak) {
-        // 错峰模式：48小时内生成，轮询间隔60秒，最多2880次(48h)；即时模式：5秒间隔，最多720次(1h)
+        // 错峰模式：48小时内生成，轮询间隔60秒，最多2880次(48h)；即时模式：5秒间隔，最多120次(10min)
         int intervalSeconds = offPeak ? 60 : 5;
         int maxPolls = offPeak ? 2880 : 120;
+
+        String projectId = getProjectIdByPanelIdForProvider(panelId);
+        VideoGenerationService videoService = aiServiceConfig.getVideoService(
+            getVideoProvider(projectId != null ? projectId : ""));
+
         try {
             for (int i = 0; i < maxPolls; i++) {
-                VideoGenerationService.TaskStatus status = videoGenerationService.getTaskStatus(taskId);
+                VideoGenerationService.TaskStatus status = videoService.getTaskStatus(taskId);
                 if (status == null) { Thread.sleep(intervalSeconds * 1000L); continue; }
 
                 // 更新进度和积分
@@ -385,7 +423,7 @@ public class PanelProductionService {
                 switch (status.getStatus()) {
                     case "completed":
                         String videoUrl = status.getVideoUrl();
-                        if (videoUrl == null) videoUrl = videoGenerationService.downloadVideo(status.getTaskId());
+                        if (videoUrl == null) videoUrl = videoService.downloadVideo(status.getTaskId());
                         // 将 Vidu 返回的临时 URL 上传到阿里云 OSS，获得永久 URL
                         boolean videoUrlPermanent = false;
                         try {
@@ -694,7 +732,8 @@ public class PanelProductionService {
                 log.info("[Pipeline-Grid] 启动九宫格生成: episodeId={}, episodeNum={}, shotCount={}",
                     episode.getId(), episodeNum, shots.size());
                 gridImageService.updateEpisodeGridStatus(episode.getId(), "generating");
-                gridImageService.generateGridsForEpisode(episode.getId(), shots, visualStyle);
+                String imageProvider = getImageProvider(projectId);
+                gridImageService.generateGridsForEpisode(episode.getId(), shots, visualStyle, imageProvider);
                 generatedCount++;
             }
 
