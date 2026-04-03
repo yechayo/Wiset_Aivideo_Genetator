@@ -2,8 +2,10 @@ package com.comic.service.character;
 
 import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.image.ImageGenerationService;
+import com.comic.config.AiServiceConfiguration;
 import com.comic.exception.BusinessException;
 import com.comic.constant.CharacterInfoKeys;
+import com.comic.constant.ProjectInfoKeys;
 import com.comic.dto.response.CharacterStatusResponse;
 import com.comic.entity.Character;
 import com.comic.entity.Project;
@@ -32,6 +34,7 @@ public class CharacterImageGenerationService {
 
     private final CharacterRepository characterRepository;
     private final ProjectRepository projectRepository;
+    private final AiServiceConfiguration aiServiceConfig;
     private final ImageGenerationService imageGenerationService;
     private final CharacterPromptManager characterPromptManager;
 
@@ -84,14 +87,16 @@ public class CharacterImageGenerationService {
             String prompt = characterPromptManager.buildExpressionGridPrompt(character, visualStyle);
             log.info("九宫格提示词长度: {} char", prompt.length());
 
+            ImageGenerationService imageService = resolveImageService(projectId);
+
             String imageUrl;
             String threeViewGridUrl = getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_GRID_URL);
             if (threeViewGridUrl != null && !threeViewGridUrl.isEmpty()) {
                 log.info("使用三视图作为参考图生成表情: {}", threeViewGridUrl);
-                imageUrl = imageGenerationService.generateWithReference(
+                imageUrl = imageService.generateWithReference(
                     prompt, threeViewGridUrl, 2048, 2048);
             } else {
-                imageUrl = imageGenerationService.generate(prompt, 2048, 2048, visualStyle.getCode().toLowerCase());
+                imageUrl = imageService.generate(prompt, 2048, 2048, visualStyle.getCode().toLowerCase());
             }
             log.info("九宫格大全图生成完成: {}", imageUrl);
 
@@ -149,7 +154,8 @@ public class CharacterImageGenerationService {
             String prompt = characterPromptManager.buildThreeViewGridPrompt(character, visualStyle);
             log.info("三视图提示词长度: {} char", prompt.length());
 
-            String imageUrl = imageGenerationService.generate(prompt, 2848, 1600, visualStyle.getCode().toLowerCase());
+            ImageGenerationService imageService = resolveImageService(projectId);
+            String imageUrl = imageService.generate(prompt, 2848, 1600, visualStyle.getCode().toLowerCase());
             log.info("三视图大全图生成完成: {}", imageUrl);
 
             info.put(CharacterInfoKeys.THREE_VIEW_GRID_URL, imageUrl);
@@ -488,6 +494,15 @@ public class CharacterImageGenerationService {
     }
 
     // ==================== 辅助方法 ====================
+
+    private ImageGenerationService resolveImageService(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project != null && project.getProjectInfo() != null) {
+            Object provider = project.getProjectInfo().get(ProjectInfoKeys.IMAGE_PROVIDER);
+            if (provider != null) return aiServiceConfig.getImageService(provider.toString());
+        }
+        return imageGenerationService;
+    }
 
     private String getCharInfoStr(Character character, String key) {
         Map<String, Object> info = character.getCharacterInfo();
