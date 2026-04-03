@@ -198,7 +198,7 @@ public class EpisodeController {
                     info.put("gridStatus", "generating");
                     ep.setEpisodeInfo(info);
                     episodeRepository.updateById(ep);
-                    gridImageService.generateGridsForEpisode(ep.getId(), shots, visualStyle);
+                    gridImageService.generateGridsForEpisode(ep.getId(), shots, visualStyle, "seedream");
                 }
             }
         }
@@ -352,7 +352,7 @@ public class EpisodeController {
         }
 
         // 异步重新生成
-        gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle);
+        gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle, "seedream");
 
         return Result.ok();
     }

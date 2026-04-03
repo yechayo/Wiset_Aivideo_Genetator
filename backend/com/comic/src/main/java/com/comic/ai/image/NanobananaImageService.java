@@ -37,9 +37,9 @@ public class NanobananaImageService implements ImageGenerationService {
     private static final long TIMEOUT_MS = 180_000;
 
     // 支持的宽高比
-    private static final Set<String> SUPPORTED_ASPECT_RATIOS = Set.of(
+    private static final Set<String> SUPPORTED_ASPECT_RATIOS = new HashSet<>(java.util.Arrays.asList(
             "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9"
-    );
+    ));
 
     @Override
     public String generate(String prompt, int width, int height, String style) {
@@ -48,7 +48,7 @@ public class NanobananaImageService implements ImageGenerationService {
 
     @Override
     public String generateWithReference(String prompt, String referenceImage, int width, int height) {
-        List<String> urls = referenceImage != null ? List.of(referenceImage) : null;
+        List<String> urls = referenceImage != null ? Collections.singletonList(referenceImage) : null;
         return doGenerate(prompt, width, height, urls);
     }
 
