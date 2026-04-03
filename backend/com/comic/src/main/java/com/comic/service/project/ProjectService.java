@@ -101,7 +101,8 @@ public class ProjectService {
     @Transactional
     public String createProject(String userId, String storyPrompt, String genre,
                                 String targetAudience, Integer totalEpisodes,
-                                Integer episodeDuration, String visualStyle) {
+                                Integer episodeDuration, String visualStyle,
+                                String imageProvider, String videoProvider) {
         Project project = new Project();
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
@@ -115,6 +116,8 @@ public class ProjectService {
         info.put(ProjectInfoKeys.TOTAL_EPISODES, totalEpisodes);
         info.put(ProjectInfoKeys.EPISODE_DURATION, episodeDuration);
         info.put(ProjectInfoKeys.VISUAL_STYLE, visualStyle);
+        info.put(ProjectInfoKeys.IMAGE_PROVIDER, imageProvider != null ? imageProvider : "seedream");
+        info.put(ProjectInfoKeys.VIDEO_PROVIDER, videoProvider != null ? videoProvider : "vidu");
         project.setProjectInfo(info);
 
         projectRepository.insert(project);
@@ -139,6 +142,8 @@ public class ProjectService {
         if (request.getTotalEpisodes() != null) info.put(ProjectInfoKeys.TOTAL_EPISODES, request.getTotalEpisodes());
         if (request.getEpisodeDuration() != null) info.put(ProjectInfoKeys.EPISODE_DURATION, request.getEpisodeDuration());
         if (request.getVisualStyle() != null) info.put(ProjectInfoKeys.VISUAL_STYLE, request.getVisualStyle());
+        if (request.getImageProvider() != null) info.put(ProjectInfoKeys.IMAGE_PROVIDER, request.getImageProvider());
+        if (request.getVideoProvider() != null) info.put(ProjectInfoKeys.VIDEO_PROVIDER, request.getVideoProvider());
         project.setProjectInfo(info);
         projectRepository.updateById(project);
     }

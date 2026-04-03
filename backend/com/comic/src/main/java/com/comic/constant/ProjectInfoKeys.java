@@ -15,6 +15,8 @@ public final class ProjectInfoKeys {
     public static final String EPISODES_PER_CHAPTER = "episodesPerChapter";
     public static final String SCRIPT_REVISION_NOTE = "scriptRevisionNote";
     public static final String SELECTED_CHAPTER = "selectedChapter";
+    public static final String IMAGE_PROVIDER = "imageProvider";
+    public static final String VIDEO_PROVIDER = "videoProvider";
 
     private ProjectInfoKeys() {}
 }
