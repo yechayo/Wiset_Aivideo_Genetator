@@ -53,32 +53,96 @@ public class PanelPromptBuilder {
     }
 
     /**
-     * 构建九宫格图片生成提示词
+     * 构建九宫格图片生成提示词（含角色描述锚定）
+     * @param visualStyle 风格
+     * @param shots 分镜列表
+     * @param charRefs 角色参考（含物种、外貌等描述），可为 null
      */
     public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots,
-                                   List<String> charReferences) {
+                                   List<?> charRefs) {
         StringBuilder sb = new StringBuilder();
         sb.append(buildSceneStylePrefix(visualStyle));
-        sb.append("\n\n生成一张 3x3 分镜九宫格图片。图片比例 16:9，黑色细边框分隔。保持角色外观一致性，图片中不包含任何文字。\n\n");
+        sb.append("\n\n");
 
-        if (charReferences != null && !charReferences.isEmpty()) {
-            sb.append("角色参考：").append(String.join("、", charReferences)).append("\n\n");
+        // ===== 布局要求 =====
+        sb.append("【布局要求 - 必须严格遵守】\n");
+        sb.append("输出一张严格 3×3 九宫格分镜图，图片宽高比 16:9。\n");
+        sb.append("图片必须被 2 条黑色竖线（约 4px 宽）和 2 条黑色横线（约 4px 宽）均匀分割为 3 行 3 列，共 9 个等大的格子。\n");
+        sb.append("每个格子是一个完全独立的分镜画面，场景、人物、时间可以不同。\n");
+        sb.append("绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。\n");
+        sb.append("图片中不包含任何文字、数字、标号或水印。\n\n");
+
+        // ===== 角色锚定 =====
+        if (charRefs != null && !charRefs.isEmpty()) {
+            sb.append("【角色设定 - 必须严格遵守】\n");
+            sb.append("只允许绘制以下角色，绝对不要出现列表之外的角色、路人或背景人物。\n");
+            sb.append("每个角色在不同格子中必须保持外貌、体型比例、服装、发型完全一致。\n\n");
+
+            for (Object refObj : charRefs) {
+                String name = null;
+                String species = null;
+                String appearance = null;
+                String role = null;
+                // 兼容 CharRef 对象和纯 String
+                if (refObj instanceof com.comic.service.panel.GridImageService.CharRef) {
+                    com.comic.service.panel.GridImageService.CharRef cr =
+                            (com.comic.service.panel.GridImageService.CharRef) refObj;
+                    name = cr.name;
+                    species = cr.species;
+                    appearance = cr.appearance;
+                    role = cr.role;
+                }
+                if (name == null || name.isEmpty()) continue;
+
+                sb.append("- ").append(name);
+                if (role != null && !role.isEmpty()) {
+                    sb.append("（").append(role).append("）");
+                }
+                if (species != null && !species.isEmpty()) {
+                    sb.append("：物种=").append(species);
+                    // 针对拟人化物种，强调保持拟人形态
+                    if (species.contains("拟人") || species.contains("ANTHRO")) {
+                        sb.append("，始终为拟人化形态（直立行走、人形身体比例、兽耳兽尾等特征，非四足野兽形态）");
+                    }
+                }
+                if (appearance != null && !appearance.isEmpty()) {
+                    sb.append("，外貌特征: ").append(appearance);
+                }
+                sb.append("\n");
+            }
+            sb.append("\n");
         }
 
+        // ===== 分镜内容 =====
+        sb.append("【分镜内容 - 按从左到右、从上到下填入九宫格】\n");
         for (int i = 0; i < shots.size(); i++) {
             Map<String, Object> shot = shots.get(i);
-            sb.append("面板 ").append(i + 1).append(": ");
-            sb.append("16:9 - ").append(shot.getOrDefault("visualDescription", ""));
-            sb.append(" ").append(shot.getOrDefault("shotSize", ""));
-            sb.append(" ").append(shot.getOrDefault("cameraAngle", ""));
-            sb.append(" camera: ").append(shot.getOrDefault("cameraMovement", ""));
-            sb.append(" environment: ").append(shot.getOrDefault("scene", ""));
+            int row = i / 3 + 1;
+            int col = i % 3 + 1;
+            sb.append("第").append(row).append("行第").append(col).append("列: ");
+            sb.append(shot.getOrDefault("visualDescription", ""));
+            String shotSize = (String) shot.getOrDefault("shotSize", "");
+            if (shotSize != null && !shotSize.isEmpty()) {
+                sb.append("，").append(shotSize);
+            }
+            String cameraAngle = (String) shot.getOrDefault("cameraAngle", "");
+            if (cameraAngle != null && !cameraAngle.isEmpty()) {
+                sb.append("，").append(cameraAngle);
+            }
+            String cameraMovement = (String) shot.getOrDefault("cameraMovement", "");
+            if (cameraMovement != null && !cameraMovement.isEmpty()) {
+                sb.append("，").append(cameraMovement);
+            }
+            String scene = (String) shot.getOrDefault("scene", "");
+            if (scene != null && !scene.isEmpty()) {
+                sb.append("，场景: ").append(scene);
+            }
             sb.append("\n");
         }
 
         int emptySlots = 9 - shots.size();
         if (emptySlots > 0) {
-            sb.append("剩余 ").append(emptySlots).append(" 个面板: (empty panel - storyboard end)");
+            sb.append("剩余 ").append(emptySlots).append(" 个格子留空（纯黑色填充，不绘制任何内容）。");
         }
         return sb.toString();
     }

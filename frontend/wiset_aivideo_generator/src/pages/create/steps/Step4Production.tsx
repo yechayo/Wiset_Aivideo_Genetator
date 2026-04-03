@@ -116,6 +116,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [promptEnhancing, setPromptEnhancing] = useState(false);
   const [batchEnhancingEpisodeId, setBatchEnhancingEpisodeId] = useState<number | null>(null);
   const [generatingScript, setGeneratingScript] = useState<number | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [generatingGrid, setGeneratingGrid] = useState<number | null>(null);
   const [generatingVideoKeys, setGeneratingVideoKeys] = useState<Set<string>>(new Set()); // "episodeId-panelId"
   const [approvingEpisodeId, setApprovingEpisodeId] = useState<number | null>(null);
@@ -802,11 +803,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       <div className={styles.pageHeader}>
         <div className={styles.titleSection}>
           <h1 className={styles.pageTitle}>分镜生产</h1>
-          <p className={styles.pageSubtitle}>
-            4a 脚本生成 <span className={styles.subtitleArrow}>&rarr;</span>
-            4b 九宫格图片 <span className={styles.subtitleArrow}>&rarr;</span>
-            4c 视频生成
-          </p>
         </div>
       </div>
 
@@ -914,7 +910,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                 <button
                                   className={styles.btnDanger}
                                   onClick={() => {
-                                    const reason = prompt('请输入退回原因:');
+                                    const reason = prompt('请给出你的优化建议:');
                                     if (reason) handleRejectScript(ep.episodeId, reason!);
                                   }}
                                   disabled={approvingEpisodeId === ep.episodeId || rejectingEpisodeId === ep.episodeId}
@@ -1028,7 +1024,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                   <button
                                     className={styles.btnDanger}
                                     onClick={() => {
-                                      const reason = prompt('请输入退回原因:');
+                                      const reason = prompt('请给出你的优化建议:');
                                       if (reason) handleRejectGrid(ep.episodeId, reason!);
                                     }}
                                     disabled={approvingEpisodeId === ep.episodeId || rejectingEpisodeId === ep.episodeId}
@@ -1049,6 +1045,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                   src={url}
                                   alt={`九宫格 ${idx + 1}`}
                                   className={styles.gridImage}
+                                  onClick={() => setLightboxUrl(url)}
                                 />
                               ))}
                             </div>
@@ -1363,6 +1360,14 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             </div>
           );
         })()}
+
+        {/* Lightbox */}
+        {lightboxUrl && (
+          <div className={styles.lightboxOverlay} onClick={() => setLightboxUrl(null)}>
+            <img className={styles.lightboxImg} src={lightboxUrl} alt="九宫格大图" onClick={e => e.stopPropagation()} />
+            <button className={styles.lightboxClose} onClick={() => setLightboxUrl(null)}>&times;</button>
+          </div>
+        )}
       </div>
     </div>
   );

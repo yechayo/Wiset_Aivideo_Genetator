@@ -78,7 +78,7 @@ public class GridImageService {
                 int toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, shots.size());
                 List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
 
-                String prompt = panelPromptBuilder.buildGridPrompt(visualStyleStr, pageShots, characterRefUrls);
+                String prompt = panelPromptBuilder.buildGridPrompt(visualStyleStr, pageShots, charRefsWithNames);
                 // 追加用户的修改建议
                 if (customHint != null && !customHint.trim().isEmpty()) {
                     prompt += "\n\n用户修改要求: " + customHint.trim();
@@ -160,6 +160,7 @@ public class GridImageService {
             Map<String, Object> episodeInfo = episode.getEpisodeInfo();
             String initialGridStatus = (String) episodeInfo.getOrDefault("gridStatus", "generating");
             List<String> characterRefUrls = getCharacterReferenceUrls(episodeId);
+            List<CharRef> charRefsWithNames = getCharacterReferencesWithNames(episodeId);
             int pageCount = calculatePageCount(shots.size(), SHOTS_PER_PAGE);
             List<String> gridImageUrls = new ArrayList<>();
 
@@ -169,7 +170,7 @@ public class GridImageService {
                 int toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, shots.size());
                 List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
 
-                String prompt = panelPromptBuilder.buildGridPrompt(visualStyle, pageShots, characterRefUrls);
+                String prompt = panelPromptBuilder.buildGridPrompt(visualStyle, pageShots, charRefsWithNames);
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
                     imageUrl = seedreamImageService.generateWithMultipleReferences(
@@ -298,9 +299,18 @@ public class GridImageService {
     public static class CharRef {
         public final String url;
         public final String name;
-        public CharRef(String url, String name) {
+        public final String species;
+        public final String appearance;
+        public final String role;
+        public CharRef(String url, String name, String species, String appearance, String role) {
             this.url = url;
             this.name = name;
+            this.species = species;
+            this.appearance = appearance;
+            this.role = role;
+        }
+        public CharRef(String url, String name) {
+            this(url, name, null, null, null);
         }
     }
 
@@ -592,11 +602,9 @@ public class GridImageService {
             for (String charId : charIds) {
                 Character ch = characterRepository.findByCharId(charId);
                 if (ch == null) continue;
-                String url = getCharacterImageUrl(ch);
-                if (url != null && !url.isEmpty()) {
-                    String name = ch.getCharacterInfo() != null
-                        ? (String) ch.getCharacterInfo().get(CharacterInfoKeys.NAME) : null;
-                    refs.add(new CharRef(url, name));
+                CharRef ref = buildCharRef(ch);
+                if (ref.url != null && !ref.url.isEmpty()) {
+                    refs.add(ref);
                 }
             }
 
@@ -615,9 +623,9 @@ public class GridImageService {
                     if (charIds.contains(charName)) continue;
                     Character ch = nameToChar.get(charName);
                     if (ch == null) continue;
-                    String url = getCharacterImageUrl(ch);
-                    if (url != null && !url.isEmpty()) {
-                        refs.add(new CharRef(url, charName));
+                    CharRef ref = buildCharRef(ch);
+                    if (ref.url != null && !ref.url.isEmpty()) {
+                        refs.add(ref);
                     }
                 }
             }
@@ -641,6 +649,19 @@ public class GridImageService {
             url = (String) info.get(CharacterInfoKeys.EXPRESSION_GRID_URL);
         }
         return url;
+    }
+
+    /**
+     * 从 Character 实体构建完整的 CharRef（含物种、外貌、角色定位）
+     */
+    private CharRef buildCharRef(Character ch) {
+        Map<String, Object> info = ch.getCharacterInfo();
+        String name = info != null ? (String) info.get(CharacterInfoKeys.NAME) : null;
+        String species = info != null ? (String) info.get(CharacterInfoKeys.SPECIES) : null;
+        String appearance = info != null ? (String) info.get(CharacterInfoKeys.APPEARANCE) : null;
+        String role = info != null ? (String) info.get(CharacterInfoKeys.ROLE) : null;
+        String url = getCharacterImageUrl(ch);
+        return new CharRef(url, name, species, appearance, role);
     }
 
     private BufferedImage downloadImage(String url) {
