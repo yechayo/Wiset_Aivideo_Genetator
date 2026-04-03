@@ -1,7 +1,8 @@
 package com.comic.service.panel;
 
 import com.comic.ai.PanelPromptBuilder;
-import com.comic.ai.image.SeedreamImageService;
+import com.comic.ai.image.ImageGenerationService;
+import com.comic.config.AiServiceConfiguration;
 import com.comic.exception.BusinessException;
 import com.comic.constant.CharacterInfoKeys;
 import com.comic.entity.Character;
@@ -40,7 +41,7 @@ public class GridImageService {
     private static final int GRID_SEPARATOR_PIXELS = 4;
     private static final Color FUSION_BG_COLOR = new Color(0x1a, 0x1a, 0x1c);
 
-    @Resource private SeedreamImageService seedreamImageService;
+    @Resource private AiServiceConfiguration aiServiceConfig;
     @Resource private PanelPromptBuilder panelPromptBuilder;
     @Resource private PanelRepository panelRepository;
     @Resource private OssService ossService;
@@ -52,10 +53,10 @@ public class GridImageService {
      * 为指定 Panel 生成九宫格图 → 切割 → 融合参考图
      */
     public void generateGridsForPanel(Long panelId) {
-        generateGridsForPanel(panelId, null);
+        generateGridsForPanel(panelId, "seedream", null);
     }
 
-    public void generateGridsForPanel(Long panelId, String customHint) {
+    public void generateGridsForPanel(Long panelId, String imageProvider, String customHint) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("Panel 不存在: " + panelId);
 
@@ -63,6 +64,8 @@ public class GridImageService {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> shots = (List<Map<String, Object>>) panelInfo.get("shots");
         String visualStyleStr = (String) panelInfo.getOrDefault("visualStyle", "ANIME");
+
+        ImageGenerationService imageService = aiServiceConfig.getImageService(imageProvider != null ? imageProvider : "seedream");
 
         try {
             panelInfo.put("gridStatus", "generating");
@@ -85,10 +88,10 @@ public class GridImageService {
                 }
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
-                    imageUrl = seedreamImageService.generateWithMultipleReferences(
+                    imageUrl = imageService.generateWithMultipleReferences(
                         prompt, characterRefUrls, 1920, 1080);
                 } else {
-                    imageUrl = seedreamImageService.generate(prompt, 1920, 1080, visualStyleStr);
+                    imageUrl = imageService.generate(prompt, 1920, 1080, visualStyleStr);
                 }
                 gridImageUrls.add(imageUrl);
             }
@@ -143,7 +146,7 @@ public class GridImageService {
      * 与 generateGridsForPanel 逻辑类似，但操作的是 episodeInfo 而非 panelInfo
      */
     @Async
-    public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle) {
+    public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle, String imageProvider) {
         // 获取 projectId（在 try 外声明，catch 中也需要用）
         String gridProjectId = null;
         try {
@@ -156,6 +159,8 @@ public class GridImageService {
             if (gridProjectId != null) {
                 eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, "generating");
             }
+
+            ImageGenerationService imageService = aiServiceConfig.getImageService(imageProvider != null ? imageProvider : "seedream");
 
             Map<String, Object> episodeInfo = episode.getEpisodeInfo();
             String initialGridStatus = (String) episodeInfo.getOrDefault("gridStatus", "generating");
@@ -173,10 +178,10 @@ public class GridImageService {
                 String prompt = panelPromptBuilder.buildGridPrompt(visualStyle, pageShots, charRefsWithNames);
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
-                    imageUrl = seedreamImageService.generateWithMultipleReferences(
+                    imageUrl = imageService.generateWithMultipleReferences(
                         prompt, characterRefUrls, 1920, 1080);
                 } else {
-                    imageUrl = seedreamImageService.generate(prompt, 1920, 1080, visualStyle);
+                    imageUrl = imageService.generate(prompt, 1920, 1080, visualStyle);
                 }
                 gridImageUrls.add(imageUrl);
             }
