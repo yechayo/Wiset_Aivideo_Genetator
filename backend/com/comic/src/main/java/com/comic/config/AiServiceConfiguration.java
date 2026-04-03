@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -32,14 +33,15 @@ public class AiServiceConfiguration {
             ViduVideoService viduVideoService,
             SoraVideoService soraVideoService
     ) {
-        this.imageServices = Map.of(
-                "seedream", seedreamImageService,
-                "nanobanana", nanobananaImageService
-        );
-        this.videoServices = Map.of(
-                "vidu", viduVideoService,
-                "sora", soraVideoService
-        );
+        Map<String, ImageGenerationService> imageMap = new HashMap<>();
+        imageMap.put("seedream", seedreamImageService);
+        imageMap.put("nanobanana", nanobananaImageService);
+        this.imageServices = imageMap;
+
+        Map<String, VideoGenerationService> videoMap = new HashMap<>();
+        videoMap.put("vidu", viduVideoService);
+        videoMap.put("sora", soraVideoService);
+        this.videoServices = videoMap;
         log.info("AI 服务配置初始化: 图片={}, 视频={}", imageServices.keySet(), videoServices.keySet());
     }
 
