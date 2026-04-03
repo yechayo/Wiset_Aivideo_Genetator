@@ -1,93 +1,87 @@
 package com.comic.config;
 
-import com.comic.ai.image.SeedreamImageService;
 import com.comic.ai.image.ImageGenerationService;
+import com.comic.ai.image.NanobananaImageService;
+import com.comic.ai.image.SeedreamImageService;
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.ai.text.TextGenerationService;
-import com.comic.ai.video.ViduVideoService;
+import com.comic.ai.video.SoraVideoService;
 import com.comic.ai.video.VideoGenerationService;
+import com.comic.ai.video.ViduVideoService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+import java.util.Map;
+
 /**
  * AI 服务配置
- * 根据配置文件自动选择对应的服务实现
+ * 根据项目配置动态选择对应的图片/视频生成服务实现
  */
 @Configuration
 @Slf4j
 public class AiServiceConfiguration {
 
-    // ========== 文本生成服务配置 ==========
+    private final Map<String, ImageGenerationService> imageServices;
+    private final Map<String, VideoGenerationService> videoServices;
+
+    public AiServiceConfiguration(
+            SeedreamImageService seedreamImageService,
+            NanobananaImageService nanobananaImageService,
+            ViduVideoService viduVideoService,
+            SoraVideoService soraVideoService
+    ) {
+        this.imageServices = Map.of(
+                "seedream", seedreamImageService,
+                "nanobanana", nanobananaImageService
+        );
+        this.videoServices = Map.of(
+                "vidu", viduVideoService,
+                "sora", soraVideoService
+        );
+        log.info("AI 服务配置初始化: 图片={}, 视频={}", imageServices.keySet(), videoServices.keySet());
+    }
+
+    // ========== 文本生成服务（保持不变） ==========
 
     @Bean
     @Primary
-    public TextGenerationService textGenerationService(
-            DeepSeekTextService deepSeekTextService
-    ) {
-        log.info("=================================================");
-        log.info("🤖 文本生成服务配置");
-        log.info("=================================================");
-        log.info("✅ 使用 DeepSeek（思考模式）进行文本生成（剧本、对话等）");
+    public TextGenerationService textGenerationService(DeepSeekTextService deepSeekTextService) {
+        log.info("文本生成服务: DeepSeek");
         return deepSeekTextService;
     }
 
-    // ========== 图片生成服务配置 ==========
-
-    @Value("${comic.ai.image.provider:seedream}")
-    private String imageProvider;
+    // ========== 默认 Bean（向后兼容，不确定 provider 时使用） ==========
 
     @Bean
     @Primary
-    public ImageGenerationService imageGenerationService(
-            SeedreamImageService seedreamImageService
-    ) {
-        log.info("=================================================");
-        log.info("🎨 图片生成服务配置");
-        log.info("=================================================");
-        log.info("提供商: {}", imageProvider);
+    public ImageGenerationService imageGenerationService(SeedreamImageService seedreamImageService) {
+        return seedreamImageService;
+    }
 
-        ImageGenerationService service;
-        switch (imageProvider.toLowerCase()) {
-            case "seedream":
-                log.info("✅ 使用 Seedream 进行图片生成（角色立绘、分镜图等）");
-                service = seedreamImageService;
-                break;
-            default:
-                log.warn("⚠️  未知的图片提供商: {}，使用默认的 Seedream", imageProvider);
-                service = seedreamImageService;
-                break;
+    @Bean
+    @Primary
+    public VideoGenerationService videoGenerationService(ViduVideoService viduVideoService) {
+        return viduVideoService;
+    }
+
+    // ========== Provider 分发 ==========
+
+    public ImageGenerationService getImageService(String provider) {
+        ImageGenerationService service = imageServices.get(provider);
+        if (service == null) {
+            log.warn("未知的图片 provider: {}, 使用默认 seedream", provider);
+            return imageServices.get("seedream");
         }
         return service;
     }
 
-    // ========== 视频生成服务配置 ==========
-
-    @Value("${comic.ai.video.provider:vidu}")
-    private String videoProvider;
-
-    @Bean
-    @Primary
-    public VideoGenerationService videoGenerationService(
-            ViduVideoService viduVideoService
-    ) {
-        log.info("=================================================");
-        log.info("🎬 视频生成服务配置");
-        log.info("=================================================");
-        log.info("提供商: {}", videoProvider);
-
-        VideoGenerationService service;
-        switch (videoProvider.toLowerCase()) {
-            case "vidu":
-                log.info("✅ 使用 Vidu 进行视频生成（图生视频）");
-                service = viduVideoService;
-                break;
-            default:
-                log.warn("⚠️  未知的视频提供商: {}，使用默认的 Vidu", videoProvider);
-                service = viduVideoService;
-                break;
+    public VideoGenerationService getVideoService(String provider) {
+        VideoGenerationService service = videoServices.get(provider);
+        if (service == null) {
+            log.warn("未知的视频 provider: {}, 使用默认 vidu", provider);
+            return videoServices.get("vidu");
         }
         return service;
     }
