@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import styles from './Step3Merged.module.less';
 import type { Project, CharacterListItem, CharacterStatus } from '../../../services';
 import { isApiSuccess } from '../../../services';
+import { advanceStatus } from '../../../services/projectService';
 import {
   getCharacters,
   getCharacterStatus,
@@ -51,6 +52,7 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
   const [characters, setCharacters] = useState<CharacterListItem[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
   const extractCalledRef = useRef(false);
+  const initialSyncRef = useRef(false);
   const [statusMap, setStatusMap] = useState<Map<string, CharacterStatus>>(new Map());
   const [error, setError] = useState('');
   const [expandedCharId, setExpandedCharId] = useState<string | null>(null);
@@ -79,16 +81,27 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
         statuses.forEach((s, i) => { if (s) map.set(items[i].charId, s); });
         setStatusMap(map);
 
-        // 回收本地生成集合
-        const nextGeneratingIds = new Set<string>();
-        items.forEach((char, i) => {
-          const st = statuses[i];
-          if (st?.isGeneratingExpression || st?.isGeneratingThreeView
-            || char.expressionStatus === 'GENERATING' || char.threeViewStatus === 'GENERATING') {
-            nextGeneratingIds.add(char.charId);
-          }
+        // 合并：后端 GENERATING + 本地标记（防止后端状态延迟导致丢失）
+        setGeneratingIds(prev => {
+          const next = new Set<string>();
+          items.forEach((char, i) => {
+            const st = statuses[i];
+            if (st?.isGeneratingExpression || st?.isGeneratingThreeView
+              || char.expressionStatus === 'GENERATING' || char.threeViewStatus === 'GENERATING') {
+              next.add(char.charId);
+            }
+          });
+          // 保留本地标记但后端还没反映的 ID（除非后端已完成/失败）
+          prev.forEach(id => {
+            const char = items.find(c => c.charId === id);
+            if (!char) return; // 角色已删除，移除
+            const done = char.threeViewStatus === 'COMPLETED'
+              && (char.role === '配角' || char.expressionStatus === 'COMPLETED');
+            const failed = char.threeViewStatus === 'FAILED' || char.expressionStatus === 'FAILED';
+            if (!done && !failed) next.add(id);
+          });
+          return next;
         });
-        setGeneratingIds(nextGeneratingIds);
         setError('');
       }
     } catch (err: any) {
@@ -111,18 +124,29 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
 
   useEffect(() => {
     loadCharacters();
+  }, [loadCharacters]);
+
+  // Watch backend generating flag to control polling
+  useEffect(() => {
     if (statusInfo?.isGenerating) {
-      pollingRef.current = setInterval(loadCharacters, 3000);
+      startPolling();
     } else {
       stopPolling();
     }
     return () => stopPolling();
-  }, [statusInfo?.isGenerating, loadCharacters, stopPolling]);
+  }, [statusInfo?.isGenerating, startPolling, stopPolling]);
+
+  // 进入页面时先同步一次最新状态
+  useEffect(() => {
+    if (!projectId || initialSyncRef.current) return;
+    initialSyncRef.current = true;
+    syncStatus(projectId);
+  }, [projectId, syncStatus]);
 
   // 角色列表为空时自动提取角色
   useEffect(() => {
     if (!projectId || extractCalledRef.current) return;
-    if (characters.length === 0 && !isExtracting && (statusCode === 'episode_confirmed' || !statusCode)) {
+    if (characters.length === 0 && !isExtracting) {
       extractCalledRef.current = true;
       setIsExtracting(true);
       extractCharacters(projectId)
@@ -130,7 +154,7 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
         .catch((err) => console.error('提取角色失败:', err))
         .finally(() => setIsExtracting(false));
     }
-  }, [projectId, characters.length, statusCode, isExtracting, extractCharacters, loadCharacters]);
+  }, [projectId, characters.length, isExtracting, extractCharacters, loadCharacters]);
 
   useEffect(() => {
     if (generatingIds.size > 0) startPolling();
@@ -450,6 +474,11 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
           {!isSupporting && renderImageItem('九宫格表情', st?.expressionGridUrl, char.expressionStatus ?? undefined, st?.expressionError, 'expression')}
           {renderImageItem('三视图', st?.threeViewGridUrl, char.threeViewStatus ?? undefined, st?.threeViewError, 'threeView')}
         </div>
+        {phase === 'review' && (
+          <button className={styles.confirmCharBtn} onClick={() => projectId && lockSingleCharacter(projectId, char.charId).then(loadCharacters)}>
+            确认锁定
+          </button>
+        )}
       </div>
     );
 
@@ -482,15 +511,20 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
     const unconfirmed = characters.filter(c => getCharPhase(c) === 'configuring');
     if (unconfirmed.length === 0) return;
     setBatchLoading(true);
-    const ids = new Set<string>();
+    // 立即标记所有为生成中，让 UI 展示动画
+    setGeneratingIds(prev => {
+      const next = new Set(prev);
+      unconfirmed.forEach(c => next.add(c.charId));
+      return next;
+    });
     try {
-      for (const char of unconfirmed) {
-        ids.add(char.charId);
-        try { await confirmSingleCharacter(projectId, char.charId); } catch { /* 单个失败不阻断 */ }
-      }
+      await Promise.all(
+        unconfirmed.map(char =>
+          confirmSingleCharacter(projectId, char.charId).catch(() => { /* 单个失败不阻断 */ })
+        )
+      );
     } finally {
       setBatchLoading(false);
-      setGeneratingIds(prev => { const next = new Set(prev); ids.forEach(id => next.add(id)); return next; });
     }
   };
 
@@ -512,6 +546,20 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
   const hasConfiguring = phaseCount.configuring > 0;
   const hasReview = phaseCount.review > 0;
   const allLocked = characters.length > 0 && characters.every(c => getCharPhase(c) === 'locked');
+
+  const [advancing, setAdvancing] = useState(false);
+
+  const handleAdvance = async () => {
+    if (!projectId) return;
+    setAdvancing(true);
+    try {
+      await advanceStatus(projectId, 'forward', 'confirm_assets');
+    } catch (err: any) {
+      alert(err.message || '确认素材失败');
+    } finally {
+      setAdvancing(false);
+    }
+  };
 
   // ========== 主渲染 ==========
   const isFailed = statusInfo?.isFailed ?? false;
@@ -566,7 +614,9 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
               </button>
             )}
             {allLocked && (
-              <span style={{ color: 'var(--color-success)', fontSize: 14, fontWeight: 500 }}>全部角色素材已锁定</span>
+              <button className={styles.confirmButton} onClick={handleAdvance} disabled={advancing}>
+                {advancing ? '确认中...' : '确认素材，进入下一步'}
+              </button>
             )}
           </div>
         </>

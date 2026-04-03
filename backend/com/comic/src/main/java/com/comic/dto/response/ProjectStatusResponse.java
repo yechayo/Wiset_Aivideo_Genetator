@@ -52,4 +52,7 @@ public class ProjectStatusResponse {
 
     /** Redis 存储的失败原因（生成中出错时存在） */
     private String errorMessage;
+
+    /** 当前生成任务类型（来自 Redis generating 锁值） */
+    private String generatingTaskType;
 }

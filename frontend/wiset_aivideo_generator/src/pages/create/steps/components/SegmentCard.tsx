@@ -314,14 +314,31 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
                   videoParts.push(`duration: ${shot.duration}s\n`);
                   videoParts.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || ''}\n`);
                   const dialogue = shot.dialogue;
-                  if (dialogue && dialogue !== '无') videoParts.push(`对白: ${dialogue}\n`);
+                  if (dialogue && dialogue !== '无') {
+                    const speaker = shot.speaker;
+                    const tone = shot.dialogueTone;
+                    let dialogueLine = '对白';
+                    if (speaker && speaker !== '无') {
+                      dialogueLine += `(${speaker}`;
+                      if (tone && tone !== '无') dialogueLine += `，${tone}`;
+                      dialogueLine += ')';
+                    } else if (tone && tone !== '无') {
+                      dialogueLine += `(${tone})`;
+                    }
+                    dialogueLine += `: ${dialogue}\n`;
+                    videoParts.push(dialogueLine);
+                  }
                   const audioEffects = shot.audioEffects;
                   if (audioEffects && audioEffects !== '无') videoParts.push(`音效: [${audioEffects}]\n`);
+                  const transition = shot.transitionHint;
+                  if (transition && transition !== '无' && !transition.includes('最后一个镜头') && idx < shots.length - 1) {
+                    videoParts.push(`衔接: ${transition}\n`);
+                  }
                   videoParts.push('\n');
                 });
 
-                videoParts.push('## 画面衔接\n视频应从参考图自然展开，多镜头间平滑过渡。\n');
-                videoParts.push('保持角色位置和动作的连贯性。\n');
+                videoParts.push('## 画面衔接\n多镜头间必须平滑过渡，严格遵循每个镜头的衔接提示。\n');
+                videoParts.push('保持角色位置、动作、表情和情绪的连贯性。\n');
                 videoParts.push(`参考图中编号①②③对应【分镜1】【分镜2】【分镜3】的画面内容。`);
                 const videoPrompt = videoParts.join('');
 
@@ -349,7 +366,7 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
                             <div key={idx} className={`${styles.promptFieldItem} ${styles.promptFieldItemFull}`}>
                               <span className={styles.pfLabel}>分镜 {shot.shotNumber || idx + 1}</span>
                               <span className={styles.pfValue}>
-                                {shot.duration}s · {shot.shotSize || ''} · {shot.cameraAngle || ''} · {shot.visualDescription || ''}
+                                {shot.duration}s · {shot.shotSize || ''} · {shot.cameraAngle || ''} · {shot.cameraMovement || ''} · {shot.visualDescription || ''}
                               </span>
                             </div>
                           ))

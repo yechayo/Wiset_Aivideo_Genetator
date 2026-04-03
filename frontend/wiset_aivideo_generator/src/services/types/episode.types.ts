@@ -156,6 +156,8 @@ export interface StoryboardShot {
   cameraMovement: string;
   visualDescription: string;
   dialogue: string;
+  dialogueTone?: string;
+  transitionHint?: string;
   visualEffects: string;
   audioEffects: string;
   splitImageUrl?: string;

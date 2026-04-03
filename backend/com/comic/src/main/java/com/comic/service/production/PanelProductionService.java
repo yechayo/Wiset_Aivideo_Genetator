@@ -269,7 +269,8 @@ public class PanelProductionService {
         // 最后返回自动构建的提示词
         String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
         List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
-        return panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos);
+        Map<String, Object> prevPanelLastShot = getPreviousPanelLastShot(panel);
+        return panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos, prevPanelLastShot);
     }
 
     /**
@@ -288,7 +289,8 @@ public class PanelProductionService {
         } else {
             String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
             List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
-            originalPrompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos);
+            Map<String, Object> prevPanelLastShot = getPreviousPanelLastShot(panel);
+            originalPrompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos, prevPanelLastShot);
         }
 
         String enhanced = viduVideoService.enhancePrompt(originalPrompt);
@@ -327,7 +329,8 @@ public class PanelProductionService {
             if (prompt == null || prompt.trim().isEmpty()) {
                 String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
                 List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
-                prompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos);
+                Map<String, Object> prevPanelLastShot = getPreviousPanelLastShot(panel);
+                prompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos, prevPanelLastShot);
             }
 
             // 从 shots 计算总时长
@@ -477,6 +480,33 @@ public class PanelProductionService {
     }
 
     // ==================== 内部辅助方法 ====================
+
+    /**
+     * 获取同一 Episode 中前一个 Panel 的最后一个镜头信息，用于跨面板衔接
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getPreviousPanelLastShot(Panel currentPanel) {
+        try {
+            List<Panel> siblingPanels = panelRepository.findByEpisodeId(currentPanel.getEpisodeId());
+            Panel prevPanel = null;
+            for (Panel p : siblingPanels) {
+                if (p.getId().equals(currentPanel.getId())) break;
+                prevPanel = p;
+            }
+            if (prevPanel == null) return null;
+
+            Map<String, Object> prevInfo = prevPanel.getPanelInfo();
+            if (prevInfo == null) return null;
+
+            List<Map<String, Object>> prevShots = (List<Map<String, Object>>) prevInfo.get("shots");
+            if (prevShots == null || prevShots.isEmpty()) return null;
+
+            return prevShots.get(prevShots.size() - 1);
+        } catch (Exception e) {
+            log.warn("获取前一个面板上下文失败: panelId={}, error={}", currentPanel.getId(), e.getMessage());
+            return null;
+        }
+    }
 
     private void publishPanelFailure(Long panelId, String error) {
         String projectId = getProjectIdByPanelId(panelId);

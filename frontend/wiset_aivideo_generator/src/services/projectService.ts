@@ -70,6 +70,19 @@ export async function generateEpisodes(
 }
 
 /**
+ * 重新生成指定章节的剧集（会先删除旧剧集）
+ * @param projectId 项目ID
+ * @param data 生成参数
+ * @returns 生成响应
+ */
+export async function reviseEpisodes(
+  projectId: string,
+  data: GenerateEpisodesRequest
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/script/episodes/revise`, data);
+}
+
+/**
  * 确认剧本，进入下一阶段
  * @param projectId 项目ID
  * @returns 确认响应

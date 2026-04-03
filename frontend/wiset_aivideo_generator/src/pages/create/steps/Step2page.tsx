@@ -5,6 +5,7 @@ import {
   getScript,
   generateScript,
   generateEpisodes,
+  reviseEpisodes,
   confirmScript,
   generateAllEpisodes,
   reviseScript,
@@ -61,6 +62,8 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   const maxPollingCount = 45;
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingCountRef = useRef(0);
+  // 防止重复自动触发大纲生成
+  const autoTriggerRef = useRef(false);
 
   // Store
   const getProjectId = useProjectStore((state) => state.getProjectId);
@@ -106,7 +109,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   }, []);
 
   // ======== 轮询拉取（首次加载 / 大纲生成等待） ========
-  const fetchScriptWithPolling = useCallback((attempt: number = 0) => {
+  const fetchScriptWithPolling = useCallback((attempt: number = 0, quickCheck: boolean = false) => {
     const pid = projectIdRef.current;
     if (!pid) {
       setError('无法获取项目 ID');
@@ -119,6 +122,9 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     }
     setError(null);
 
+    // quickCheck 模式：最多尝试 2 次（4秒），快速判断是否有已有数据
+    const maxAttempts = quickCheck ? 2 : maxPollingCount;
+
     const doFetch = async () => {
       try {
         const result = await getScript(pid);
@@ -130,9 +136,18 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             pollingRef.current = null;
           }
           setIsLoading(false);
+        } else if (isApiSuccess(result) && result.data) {
+          // 有 scriptData 但无大纲 → 更新数据（用于 pendingChapters 等信息），继续轮询等待大纲
+          setScriptData(result.data);
+          if (pollingCountRef.current < maxAttempts) {
+            pollingCountRef.current++;
+            pollingRef.current = setTimeout(() => doFetch(), 2000);
+          } else {
+            setIsLoading(false);
+          }
         } else {
           // 无数据 → 继续轮询（可能还在生成）
-          if (pollingCountRef.current < maxPollingCount) {
+          if (pollingCountRef.current < maxAttempts) {
             pollingCountRef.current++;
             pollingRef.current = setTimeout(() => doFetch(), 2000);
           } else {
@@ -141,7 +156,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
           }
         }
       } catch {
-        if (pollingCountRef.current < maxPollingCount) {
+        if (pollingCountRef.current < maxAttempts) {
           pollingCountRef.current++;
           pollingRef.current = setTimeout(() => doFetch(), 2000);
         } else {
@@ -154,9 +169,9 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     doFetch();
   }, []);
 
-  // 首次 mount：拉取数据
+  // 首次 mount：快速检查是否有已有数据（最多 4 秒），随后 autoTrigger effect 负责自动生成
   useEffect(() => {
-    fetchScriptWithPolling();
+    fetchScriptWithPolling(0, true);
     return () => {
       if (pollingRef.current) {
         clearTimeout(pollingRef.current);
@@ -223,6 +238,20 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     }
   }, [fetchScriptWithPolling]);
 
+  // 自动触发大纲生成：首次进入且无大纲时自动生成
+  useEffect(() => {
+    if (
+      phase === 'outline_generating' &&
+      !isLoading &&
+      !scriptData?.outline &&
+      !error &&
+      !autoTriggerRef.current
+    ) {
+      autoTriggerRef.current = true;
+      handleGenerateOutline();
+    }
+  }, [phase, isLoading, scriptData, error, handleGenerateOutline]);
+
   // ======== Phase 2: 大纲审核操作 ========
   const handleSaveOutlineDirect = useCallback(async (content: string) => {
     const pid = projectIdRef.current;
@@ -272,6 +301,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     } catch (err) {
       console.error('确认大纲失败:', err);
       setError('确认大纲失败，请稍后重试');
+    } finally {
       setIsLoading(false);
     }
   }, [refreshScript]);
@@ -316,11 +346,20 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     }
     setIsGenerating(true);
     try {
-      await generateEpisodes(pid, {
-        chapter: selectedChapter,
-        episodeCount,
-        modificationSuggestion,
-      });
+      const isRegenerate = scriptData?.generatedChapters?.includes(selectedChapter);
+      if (isRegenerate) {
+        await reviseEpisodes(pid, {
+          chapter: selectedChapter,
+          episodeCount,
+          modificationSuggestion,
+        });
+      } else {
+        await generateEpisodes(pid, {
+          chapter: selectedChapter,
+          episodeCount,
+          modificationSuggestion,
+        });
+      }
       await refreshScript();
       setDialogOpen(false);
     } catch (err) {
@@ -329,9 +368,11 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     } finally {
       setIsGenerating(false);
     }
-  }, [selectedChapter, refreshScript]);
+  }, [selectedChapter, scriptData, refreshScript]);
 
   // ======== Phase 4: 确认剧情 ========
+  const { syncStatus } = useCreateStore();
+
   const handleConfirmEpisodes = useCallback(async () => {
     const pid = projectIdRef.current;
     if (!pid) {
@@ -344,15 +385,16 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     setIsLoading(true);
     try {
       await confirmScript(pid);
-      // 后端 milestone 变更会通过 SSE / 轮询自动同步
-      // CreateLayout 检测到 currentStep 变化后会自动跳转到 Step 3
+      // 立即同步状态，确保 statusInfo 更新后再导航
+      await syncStatus(pid);
       onComplete?.();
     } catch (err) {
       console.error('确认剧情失败:', err);
       setError('确认剧情失败，请稍后重试');
+    } finally {
       setIsLoading(false);
     }
-  }, [onComplete]);
+  }, [onComplete, syncStatus]);
 
   // ======== 辅助函数 ========
   const getProjectInfo = () => {
@@ -429,7 +471,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             </div>
           )}
 
-          {!isLoading && !error && !scriptData && (
+          {!isLoading && !error && !scriptData?.outline && (
             <div className={styles.emptyState}>
               <p>暂无大纲数据</p>
               <p className={styles.emptyHint}>点击下方按钮开始生成</p>
@@ -566,6 +608,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
                 pendingChapters={scriptData.pendingChapters}
                 episodes={scriptData.episodes}
                 onGenerateClick={handleGenerateClick}
+                isBatchGenerating={isBatchGenerating || !!statusInfo?.isGenerating}
               />
             </div>
           )}

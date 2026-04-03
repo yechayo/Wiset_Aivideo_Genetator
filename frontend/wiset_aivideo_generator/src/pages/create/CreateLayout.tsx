@@ -131,7 +131,7 @@ const CreateLayout = () => {
         );
       case 2:
         return currentProject ? (
-          <Step2page project={currentProject} onComplete={() => navigate(getStepUrl(3), { replace: true })} />
+          <Step2page project={currentProject} onComplete={() => { lastRedirectedStep.current = null; navigate(getStepUrl(3), { replace: true }); }} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 3:
         return currentProject ? (
@@ -150,8 +150,7 @@ const CreateLayout = () => {
     }
   };
 
-  const showLoadingOverlay =
-    (statusInfo?.isGenerating ?? false) || isStepTransitioning;
+  const showLoadingOverlay = isStepTransitioning;
 
   return (
     <div className={styles.createContainer}>

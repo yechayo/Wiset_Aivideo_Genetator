@@ -9,6 +9,7 @@ interface ChapterListProps {
   pendingChapters: string[];
   episodes: Episode[];
   onGenerateClick?: (chapter: string) => void;
+  isBatchGenerating?: boolean;
 }
 
 /**
@@ -20,7 +21,8 @@ const ChapterList = ({
   generatedChapters,
   pendingChapters,
   episodes,
-  onGenerateClick
+  onGenerateClick,
+  isBatchGenerating,
 }: ChapterListProps) => {
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set());
 
@@ -103,20 +105,54 @@ const ChapterList = ({
                   {chapterEpisodes.map((episode) => (
                     <EpisodeCard key={episode.id || episode.episodeInfo?.episodeNum} episode={episode} />
                   ))}
+                  {/* 展开状态下也显示重新生成按钮 */}
+                  {generated && (
+                    <div className={styles.regenerateActions}>
+                      <button
+                        className={styles.regenerateButton}
+                        onClick={() => onGenerateClick?.(chapter)}
+                        disabled={isBatchGenerating}
+                      >
+                        <svg className={styles.icon} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        重新生成
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* 生成按钮 */}
+              {/* 生成按钮（折叠状态） */}
               {pending && !expanded && (
                 <div className={styles.chapterActions}>
                   <button
                     className={styles.generateButton}
                     onClick={() => onGenerateClick?.(chapter)}
+                    disabled={isBatchGenerating}
                   >
                     <svg className={styles.icon} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M12 4V16M12 4L8 8M12 4L16 8M4 20H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                     生成剧集
+                  </button>
+                </div>
+              )}
+
+              {/* 重新生成按钮（已生成章节，折叠状态） */}
+              {generated && !expanded && (
+                <div className={styles.chapterActions}>
+                  <button
+                    className={styles.regenerateButton}
+                    onClick={(e) => { e.stopPropagation(); onGenerateClick?.(chapter); }}
+                    disabled={isBatchGenerating}
+                  >
+                    <svg className={styles.icon} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    重新生成
                   </button>
                 </div>
               )}

@@ -120,8 +120,12 @@ public class EpisodeController {
         Map<String, Object> info = episode.getEpisodeInfo();
         if (info == null) info = new HashMap<>();
 
+        // 支持脚本阶段审核：检查 shots 或 panelPlan 是否存在
+        Object shots = info.get("shots");
         String panelPlan = (String) info.get("panelPlan");
-        if (panelPlan == null || panelPlan.isEmpty()) {
+        boolean hasData = (shots instanceof java.util.List && !((java.util.List<?>) shots).isEmpty())
+                || (panelPlan != null && !panelPlan.isEmpty());
+        if (!hasData) {
             throw new BusinessException("分镜数据为空，无法审核");
         }
 
@@ -150,6 +154,14 @@ public class EpisodeController {
         Map<String, Object> info = episode.getEpisodeInfo();
         if (info == null) info = new HashMap<>();
 
+        // 支持脚本阶段退回
+        Object shots = info.get("shots");
+        String panelPlan = (String) info.get("panelPlan");
+        boolean hasData = (shots instanceof java.util.List && !((java.util.List<?>) shots).isEmpty())
+                || (panelPlan != null && !panelPlan.isEmpty());
+        if (!hasData) {
+            throw new BusinessException("分镜数据为空，无法退回");
+        }
         info.put("panelApproved", false);
         info.put("panelRejectionReason", body.getOrDefault("reason", ""));
         episode.setEpisodeInfo(info);

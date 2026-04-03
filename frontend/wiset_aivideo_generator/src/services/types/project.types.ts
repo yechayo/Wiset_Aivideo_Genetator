@@ -210,6 +210,8 @@ export interface ProjectStatusInfo {
   mergeStatus?: string;
   /** Redis 存储的失败原因 */
   errorMessage?: string;
+  /** 当前生成任务类型：outline / episode / asset_extract / asset_image / panel / assembling */
+  generatingTaskType?: string;
 }
 
 /**

@@ -36,11 +36,11 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }
   };
 
   return (
-    <div className={styles.outlineEditor}>
+    <div className={`${styles.outlineEditor} ${collapsed ? styles.collapsed : ''}`}>
       {/* 工具栏 */}
       <div className={styles.toolbar} onClick={() => !isEditing && setCollapsed(!collapsed)}>
         <div className={styles.toolbarLeft}>
-          <button className={styles.collapseButton} onClick={() => setCollapsed(!collapsed)}>
+          <button className={styles.collapseButton} onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed); }}>
             {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
           </button>
           <h3 className={styles.title}>剧本大纲</h3>

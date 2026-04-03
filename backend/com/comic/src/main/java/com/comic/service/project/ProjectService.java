@@ -198,7 +198,7 @@ public class ProjectService {
                     availableActions = Arrays.asList("confirm_outline", "revise_outline");
                 } else {
                     effectiveState = "draft";
-                    frontendStep = 1;
+                    frontendStep = 2;
                     availableActions = Arrays.asList("generate_outline");
                 }
                 break;
@@ -222,16 +222,16 @@ public class ProjectService {
                 boolean imagesDone = allCharacterImagesDone(projectId);
                 if (charsExist && imagesDone) {
                     effectiveState = "asset_review";
-                    frontendStep = 2;
+                    frontendStep = 3;
                     isReview = true;
                     availableActions = Arrays.asList("confirm_assets");
                 } else if (charsExist) {
                     effectiveState = "asset_image_pending";
-                    frontendStep = 2;
+                    frontendStep = 3;
                     availableActions = Arrays.asList("generate_images");
                 } else {
                     effectiveState = "episode_confirmed";
-                    frontendStep = 2;
+                    frontendStep = 3;
                     availableActions = Arrays.asList("extract_characters");
                 }
                 completedSteps.add(1);
@@ -260,27 +260,27 @@ public class ProjectService {
 
                 if (total > 0 && completed == total) {
                     effectiveState = "panel_review";
-                    frontendStep = 3;
+                    frontendStep = 4;
                     isReview = true;
                     availableActions = Arrays.asList("confirm_panels");
                 } else if (total > 0) {
                     effectiveState = "panel_producing";
-                    frontendStep = 3;
+                    frontendStep = 4;
                     isGenerating = failed == 0;
                     availableActions = Arrays.asList("retry_failed_panels");
                 } else if (gridGeneratingCount > 0) {
                     effectiveState = "grid_generating";
-                    frontendStep = 3;
+                    frontendStep = 4;
                     isGenerating = false; // 九宫格生成不阻塞页面，前端通过 SSE 跟踪进度
                     availableActions = Collections.emptyList();
                 } else if (textReadyCount > 0) {
                     effectiveState = "panel_review";
-                    frontendStep = 3;
+                    frontendStep = 4;
                     isReview = true;
                     availableActions = Arrays.asList("generate_grids");
                 } else {
                     effectiveState = "asset_confirmed";
-                    frontendStep = 3;
+                    frontendStep = 4;
                     availableActions = Arrays.asList("generate_panels");
                 }
                 completedSteps.add(1);
@@ -291,7 +291,7 @@ public class ProjectService {
 
             case PANEL_CONFIRMED:
                 effectiveState = "panel_confirmed";
-                frontendStep = 4;
+                frontendStep = 5;
                 availableActions = Arrays.asList("start_assembling");
                 completedSteps.add(1);
                 completedSteps.add(2);
@@ -330,6 +330,8 @@ public class ProjectService {
             isGenerating = true;
         }
 
+        String generatingTaskType = progressService.getGeneratingTask(projectId);
+
         ProjectStatusResponse dto = new ProjectStatusResponse();
         dto.setProjectId(project.getProjectId());
         dto.setStatusCode(effectiveState);
@@ -342,6 +344,9 @@ public class ProjectService {
         dto.setAvailableActions(availableActions);
         if (redisError != null) {
             dto.setErrorMessage(redisError);
+        }
+        if (generatingTaskType != null) {
+            dto.setGeneratingTaskType(generatingTaskType);
         }
 
         // COMPLETED / PANEL_CONFIRMED 时附带合并结果

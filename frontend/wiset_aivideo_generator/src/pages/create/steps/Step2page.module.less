@@ -2,12 +2,17 @@
 .content {
   width: 100%;
   box-sizing: border-box;
-  padding-bottom: 120px; // 为底部固定操作栏留出空间
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 // 标题区域
 .header {
-  margin-bottom: 40px;
+  flex-shrink: 0;
+  margin-bottom: 2%;
 }
 
 .title {
@@ -27,7 +32,7 @@
 
 // 加载状态
 .loadingState {
-  min-height: 400px;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -54,7 +59,7 @@
 
 // 错误状态
 .errorState {
-  min-height: 400px;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -83,10 +88,27 @@
 
 // 剧本容器
 .scriptContainer {
-  min-height: 400px;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-subtle) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-border-subtle);
+    border-radius: 3px;
+  }
 }
 
 // 项目信息卡片
@@ -219,7 +241,7 @@
 
 // 空状态
 .emptyState {
-  min-height: 400px;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -248,10 +270,11 @@
 
 // 按钮容器
 .buttonContainer {
+  flex-shrink: 0;
   display: flex;
   gap: 16px;
-  margin-top: 40px;
-  padding-bottom: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 // 返回按钮
@@ -323,21 +346,15 @@
   }
 }
 
-// 底部固定操作栏（大纲审核阶段）
+// 底部操作栏（大纲审核阶段）- 内联布局
 .bottomActionBar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 20px 40px;
-  background: var(--color-bg-elevated, #1a1f2e);
-  border-top: 1px solid var(--color-border-light, rgba(255,255,255,0.08));
+  flex-shrink: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-subtle);
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 16px;
-  z-index: 100;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .bottomActionBar .confirmButton {

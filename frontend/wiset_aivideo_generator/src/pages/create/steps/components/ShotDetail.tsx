@@ -47,11 +47,17 @@ export const ShotDetail: React.FC<ShotDetailProps> = ({
         <FieldRow label="角色" value={shot.characters?.join('、')} />
         <FieldRow label="景别" value={shot.shotSize} />
         <FieldRow label="镜头角度" value={shot.cameraAngle} />
-        <FieldRow label="镜头运动" value={shot.cameraMovement} />
-        <FieldRow label="视觉描述" value={shot.visualDescription} />
+        <FieldRow label="运镜描述" value={shot.cameraMovement} />
+        <FieldRow label="画面描述" value={shot.visualDescription} />
         <FieldRow label="台词" value={shot.dialogue} />
+        {shot.dialogueTone && shot.dialogueTone !== '无' && (
+          <FieldRow label="对白语气" value={shot.dialogueTone} />
+        )}
         <FieldRow label="视觉效果" value={shot.visualEffects} />
         <FieldRow label="音效" value={shot.audioEffects} />
+        {shot.transitionHint && shot.transitionHint !== '无' && !shot.transitionHint.includes('最后一个镜头') && (
+          <FieldRow label="镜头衔接" value={shot.transitionHint} />
+        )}
         <FieldRow label="时长" value={`${shot.duration}s`} />
         {shot.startTime !== undefined && (
           <FieldRow label="开始时间" value={`${shot.startTime}s`} />

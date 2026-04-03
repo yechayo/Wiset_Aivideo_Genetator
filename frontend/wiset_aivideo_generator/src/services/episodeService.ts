@@ -42,6 +42,18 @@ export async function getBatchProductionStatuses(
   );
 }
 
+// ================= 脚本生成 API =================
+
+/** 生成所有集的脚本（项目级操作，episodeId 参数会被忽略） */
+export async function generateEpisodeScripts(
+  projectId: string,
+  episodeId: number,
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/script`,
+  );
+}
+
 // ================= 整集九宫格审核 API（新流程） =================
 
 /** 获取整集九宫格状态 */

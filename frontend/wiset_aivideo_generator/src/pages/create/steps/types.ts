@@ -9,8 +9,10 @@ export interface PanelData {
   composition: string;
   shotType: string;
   cameraAngle: string;
+  cameraMovement: string;
   pacing: string;
   dialogue: string;
+  scene: string;
   characters: any[];
   background: any;
   imagePromptHint: string;
@@ -80,6 +82,8 @@ export interface EpisodeState {
   splitShots?: SplitShot[];
   /** 九宫格拒绝原因 */
   gridRejectionFeedback?: string | null;
+  /** 分镜脚本审核通过标记（4a 审核通过后由后端设置） */
+  panelApproved?: boolean;
   /** 是否使用新流程（episodeInfo 中有 gridStatus 字段） */
   isNewFlow?: boolean;
   /** 分集剧本生成状态（SSE 实时更新） */

@@ -71,6 +71,7 @@ public class PanelPromptBuilder {
             sb.append("16:9 - ").append(shot.getOrDefault("visualDescription", ""));
             sb.append(" ").append(shot.getOrDefault("shotSize", ""));
             sb.append(" ").append(shot.getOrDefault("cameraAngle", ""));
+            sb.append(" camera: ").append(shot.getOrDefault("cameraMovement", ""));
             sb.append(" environment: ").append(shot.getOrDefault("scene", ""));
             sb.append("\n");
         }
@@ -96,9 +97,42 @@ public class PanelPromptBuilder {
     @SuppressWarnings("unchecked")
     public String buildMultiShotPrompt(String visualStyle, Map<String, Object> panelInfo,
                                         List<Map<String, String>> characterInfos) {
+        return buildMultiShotPrompt(visualStyle, panelInfo, characterInfos, null);
+    }
+
+    /**
+     * 构建多镜头视频生成提示词（含角色设定 + 前一个面板上下文）
+     */
+    @SuppressWarnings("unchecked")
+    public String buildMultiShotPrompt(String visualStyle, Map<String, Object> panelInfo,
+                                        List<Map<String, String>> characterInfos,
+                                        Map<String, Object> previousPanelLastShot) {
         StringBuilder sb = new StringBuilder();
         sb.append(buildSceneStylePrefix(visualStyle));
         sb.append(" 专业电影级画面。\n\n");
+
+        // 前一个面板的承接上下文
+        if (previousPanelLastShot != null && !previousPanelLastShot.isEmpty()) {
+            sb.append("## 承接上一段画面\n");
+            sb.append("此视频必须从上一段画面自然衔接开始。上一段画面结束时的状态：\n");
+            String prevScene = (String) previousPanelLastShot.get("scene");
+            if (prevScene != null && !prevScene.isEmpty()) {
+                sb.append("- 结束场景：").append(prevScene).append("\n");
+            }
+            String prevDesc = (String) previousPanelLastShot.get("visualDescription");
+            if (prevDesc != null && !prevDesc.isEmpty()) {
+                sb.append("- 画面状态：").append(prevDesc).append("\n");
+            }
+            String prevCamera = (String) previousPanelLastShot.get("cameraMovement");
+            if (prevCamera != null && !prevCamera.isEmpty()) {
+                sb.append("- 结束运镜：").append(prevCamera).append("\n");
+            }
+            String prevTransition = (String) previousPanelLastShot.get("transitionHint");
+            if (prevTransition != null && !"无".equals(prevTransition) && !prevTransition.contains("最后一个镜头")) {
+                sb.append("- 衔接方式：").append(prevTransition).append("\n");
+            }
+            sb.append("请确保本段视频的开头在画面内容、角色位置、情绪氛围上与上述结束状态保持连贯。\n\n");
+        }
 
         // 角色设定段
         if (characterInfos != null && !characterInfos.isEmpty()) {
@@ -137,9 +171,16 @@ public class PanelPromptBuilder {
                 String dialogue = (String) shot.get("dialogue");
                 if (dialogue != null && !"无".equals(dialogue) && !dialogue.isEmpty()) {
                     String speaker = (String) shot.get("speaker");
+                    String tone = (String) shot.get("dialogueTone");
                     sb.append("对白");
                     if (speaker != null && !"无".equals(speaker) && !speaker.isEmpty()) {
-                        sb.append("(").append(speaker).append(")");
+                        sb.append("(").append(speaker);
+                        if (tone != null && !"无".equals(tone) && !tone.isEmpty()) {
+                            sb.append("，").append(tone);
+                        }
+                        sb.append(")");
+                    } else if (tone != null && !"无".equals(tone) && !tone.isEmpty()) {
+                        sb.append("(").append(tone).append(")");
                     }
                     sb.append(": ").append(dialogue).append("\n");
                 }
@@ -147,12 +188,22 @@ public class PanelPromptBuilder {
                 if (audioEffects != null && !"无".equals(audioEffects)) {
                     sb.append("音效: [").append(audioEffects).append("]\n");
                 }
+                // 镜头衔接提示（非最后一个镜头时输出）
+                String transition = (String) shot.get("transitionHint");
+                if (transition != null && !"无".equals(transition) && !transition.isEmpty()
+                        && !transition.contains("最后一个镜头") && i < shots.size() - 1) {
+                    sb.append("衔接: ").append(transition).append("\n");
+                }
                 sb.append("\n");
             }
         }
 
-        sb.append("## 画面衔接\n视频应从参考图自然展开，多镜头间平滑过渡。\n");
-        sb.append("保持角色位置和动作的连贯性。\n");
+        sb.append("## 画面衔接\n");
+        if (previousPanelLastShot != null && !previousPanelLastShot.isEmpty()) {
+            sb.append("视频开头必须与上一段画面的结束状态自然衔接，保持角色位置、动作和情绪的连贯。\n");
+        }
+        sb.append("多镜头间必须平滑过渡，严格遵循每个镜头的衔接提示。\n");
+        sb.append("保持角色位置、动作、表情和情绪的连贯性。\n");
         StringBuilder refBuilder = new StringBuilder("参考图中编号");
         for (int i = 0; i < n; i++) {
             refBuilder.append(NumberFormatter.toCircled(i + 1));
