@@ -83,19 +83,76 @@ panelHasAnyDialogue = panel.shots 中任意一个 shot.hasDialogue == true
   - 第一人称 → narration 以主角口吻叙述（"我..."）
   - 第三人称 → narration 以旁观者口吻叙述
 
+### 视频生成 Prompt 改动
+
+#### 1. 移除旁白文本（防止侵入）
+
+视频生成 prompt 中**不得包含 narration 旁白文本**，否则视频模型可能尝试生成旁白音频导致侵入。
+
+需修改：
+- **后端** `ComicCommentaryPanelPromptBuilder.java`：移除 `解说旁白: ${nar}` 和 `解说旁白(口播): ${nar}`
+- **前端** `Step4Production.tsx`：移除 `buildMultiShotPromptText()` 和 `buildGridPromptText()` 中的 narration 输出块
+
+保留其他解说模式约束（闭嘴、慢运镜、字幕安全区等），仅移除 narration 文本。
+
+#### 2. 音色特征匹配（第一人称模式）
+
+当 `narrationPerspective === first_person` 时，视频 prompt 对白部分增加主角音色特征描述，让视频角色对白声音接近 TTS 旁白音色。
+
+建立 voice_id → 音色描述映射：
+
+| voice_id | 音色描述（写入视频 prompt） |
+|----------|--------------------------|
+| `male-qn-jingying` | 角色说话声音为年轻精英男性，声线沉稳自信、清晰有力 |
+| `male-qn-badao` | 角色说话声音为霸道青年男性，声线低沉威严、气场强大 |
+| `male-qn-qingse` | 角色说话声音为青涩年轻男性，声线清新自然 |
+| `male-qn-daxuesheng` | 角色说话声音为青年大学生，声线阳光爽朗 |
+| `female-yujie` | 角色说话声音为成熟御姐女性，声线优雅从容 |
+| `female-tianmei` | 角色说话声音为甜美年轻女性，声线清脆悦耳 |
+| `female-shaonv` | 角色说话声音为少女，声线活泼灵动 |
+| `female-chengshu` | 角色说话声音为成熟女性，声线温婉知性 |
+
+- 第三人称模式 → 不加音色描述（旁白是画外音）
+- 第一人称模式 → 对白行格式：`对白(主角，音色描述): "台词内容"`
+
 ## 三、后端 — Vidu TTS 服务
 
 ### 新建 ViduTtsService
 
 调用 `POST https://api.vidu.cn/ent/v2/audio-tts`（同步接口，直接返回 file_url）。
 
-### TTS 文本拼接逻辑
+### TTS 文本拼接与停顿控制
 
-对每个 panel：
-1. 过滤出无台词的 shot（hasDialogue == false）
-2. 拼接这些 shot 的 narration 文本（换行分隔）
-3. 如果拼接结果为空（所有 shot 都有台词），跳过不生成
-4. 否则调用 ViduTtsService 生成音频
+Vidu TTS API 支持 `<#x#>` 标签控制语音间隔（x 为秒数，范围 [0.01, 99.99]），用于在有台词的 shot 位置插入静音，避免旁白与视频中角色对白重合。
+
+对每个 panel，按 shot 顺序拼接 TTS 文本：
+
+```
+遍历 panel.shots:
+  if shot.hasDialogue:
+    // 有台词的 shot：插入与该 shot 时长相等的静音停顿
+    ttsText += "<#${shot.duration}#>"
+  else:
+    // 无台词的 shot：输出 narration 旁白
+    ttsText += shot.narration
+
+如果 ttsText 最终为空（所有 shot 都有台词）→ 跳过不生成
+如果 ttsText 以停顿标记开头 → 移除首段停顿（前面没有语音）
+```
+
+示例（某 panel 5 个 shot，shot2 和 shot4 有台词）：
+```
+"这是开场的旁白解说。<#5.0#>这是中间的旁白。<#3.0#>这是结尾的旁白。"
+```
+
+对应时间线：
+- shot1(3s, 无台词): TTS 朗读 "这是开场的旁白解说。"
+- shot2(5s, 有台词): TTS 静音 5s（视频播放角色对白）
+- shot3(4s, 无台词): TTS 朗读 "这是中间的旁白。"
+- shot4(3s, 有台词): TTS 静音 3s（视频播放角色对白）
+- shot5(4s, 无台词): TTS 朗读 "这是结尾的旁白。"
+
+注意：TTS 实际朗读时长与 shot 时长不一定完全匹配，但通过停顿可以避免旁白与对白直接重合。
 
 ### 音色选择
 
