@@ -123,11 +123,10 @@ public class SoraVideoService implements VideoGenerationService {
     @Override
     public TaskStatus getTaskStatus(String taskId) {
         try {
-            String url = wuyinkejiProperties.getSoraQueryBaseUrl() + QUERY_ENDPOINT + "?id=" + taskId;
+            String url = wuyinkejiProperties.getSoraQueryBaseUrl() + QUERY_ENDPOINT + "?key=" + wuyinkejiProperties.getApiKey() + "&id=" + taskId;
 
             Request request = new Request.Builder()
                     .url(url)
-                    .addHeader("Authorization", wuyinkejiProperties.getApiKey())
                     .get()
                     .build();
 
@@ -208,19 +207,31 @@ public class SoraVideoService implements VideoGenerationService {
                 case 1: // 生成成功
                     normalizedStatus = "completed";
                     progress = 100;
-                    // 提取视频 URL
-                    if (dataNode.has("remote_url") && !dataNode.get("remote_url").isNull()) {
-                        videoUrl = dataNode.get("remote_url").asText();
+                    videoUrl = extractResultUrl(dataNode);
+                    if (videoUrl == null) {
+                        normalizedStatus = "failed";
+                        errorMessage = "任务成功但无视频URL";
                     }
                     break;
-                case 2: // 生成失败
-                    normalizedStatus = "failed";
-                    progress = 0;
-                    // 提取失败原因
-                    if (dataNode.has("fail_reason") && !dataNode.get("fail_reason").isNull()) {
-                        errorMessage = dataNode.get("fail_reason").asText();
+                case 2: {
+                    // 可能是成功（result 数组有视频）也可能是失败
+                    String url = extractResultUrl(dataNode);
+                    if (url != null) {
+                        normalizedStatus = "completed";
+                        progress = 100;
+                        videoUrl = url;
+                    } else {
+                        normalizedStatus = "failed";
+                        progress = 0;
+                        if (dataNode.has("fail_reason") && !dataNode.get("fail_reason").isNull()) {
+                            errorMessage = dataNode.get("fail_reason").asText();
+                        }
+                        if (errorMessage == null && dataNode.has("message") && !dataNode.get("message").isNull()) {
+                            errorMessage = dataNode.get("message").asText();
+                        }
                     }
                     break;
+                }
                 default:
                     normalizedStatus = "unknown";
                     progress = 0;
@@ -232,5 +243,24 @@ public class SoraVideoService implements VideoGenerationService {
             log.error("解析 Sora2 任务状态失败: {}", responseBody, e);
             return new TaskStatus(taskId, "unknown", 0, null, "解析失败");
         }
+    }
+
+    /**
+     * 从 API 响应中提取结果 URL
+     * 优先取 remote_url，其次取 result 数组第一个元素
+     */
+    private String extractResultUrl(JsonNode dataNode) {
+        if (dataNode.has("remote_url") && !dataNode.get("remote_url").isNull()) {
+            String url = dataNode.get("remote_url").asText();
+            if (!url.isEmpty()) return url;
+        }
+        if (dataNode.has("result") && dataNode.get("result").isArray()) {
+            JsonNode result = dataNode.get("result");
+            if (result.size() > 0 && !result.get(0).isNull()) {
+                String url = result.get(0).asText();
+                if (!url.isEmpty()) return url;
+            }
+        }
+        return null;
     }
 }

@@ -102,7 +102,7 @@ public class PanelProductionService {
 
     // ==================== Provider 分发辅助 ====================
 
-    private String getImageProvider(String projectId) {
+    public String getImageProvider(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null || project.getProjectInfo() == null) return "seedream";
         Object provider = project.getProjectInfo().get(ProjectInfoKeys.IMAGE_PROVIDER);
@@ -114,6 +114,13 @@ public class PanelProductionService {
         if (project == null || project.getProjectInfo() == null) return "vidu";
         Object provider = project.getProjectInfo().get(ProjectInfoKeys.VIDEO_PROVIDER);
         return provider != null ? provider.toString() : "vidu";
+    }
+
+    private String getVideoModel(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null || project.getProjectInfo() == null) return null;
+        Object model = project.getProjectInfo().get(ProjectInfoKeys.VIDEO_MODEL);
+        return model != null ? model.toString() : null;
     }
 
     private String getProjectIdByPanelIdForProvider(Long panelId) {
@@ -219,6 +226,7 @@ public class PanelProductionService {
         updatePanelInfo(panel, info);
         String projectId = getProjectIdByPanelIdForProvider(panelId);
         String imageProvider = getImageProvider(projectId != null ? projectId : "");
+        log.info("Panel 九宫格生成: panelId={}, projectId={}, imageProvider={}", panelId, projectId, imageProvider);
         gridImageService.generateGridsForPanel(panelId, imageProvider, customHint);
     }
 
@@ -378,7 +386,8 @@ public class PanelProductionService {
             String projectId = getProjectIdByPanelIdForProvider(panelId);
             VideoGenerationService videoService = aiServiceConfig.getVideoService(
                 getVideoProvider(projectId != null ? projectId : ""));
-            String taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak);
+            String videoModel = projectId != null ? getVideoModel(projectId) : null;
+            String taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
             info.put("videoTaskId", taskId);
             info.put("offPeak", offPeak);
             panel.setPanelInfo(info);
@@ -395,8 +404,8 @@ public class PanelProductionService {
 
     @Async
     public void pollNewVideoTask(Long panelId, String taskId, boolean offPeak) {
-        // 错峰模式：48小时内生成，轮询间隔60秒，最多2880次(48h)；即时模式：5秒间隔，最多120次(10min)
-        int intervalSeconds = offPeak ? 60 : 5;
+        // 轮询间隔5秒，错峰模式最多2880次(4h)，即时模式最多120次(10min)
+        int intervalSeconds = 5;
         int maxPolls = offPeak ? 2880 : 120;
 
         String projectId = getProjectIdByPanelIdForProvider(panelId);

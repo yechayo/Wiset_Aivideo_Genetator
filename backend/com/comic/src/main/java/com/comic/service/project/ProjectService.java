@@ -102,7 +102,8 @@ public class ProjectService {
     public String createProject(String userId, String storyPrompt, String genre,
                                 String targetAudience, Integer totalEpisodes,
                                 Integer episodeDuration, String visualStyle,
-                                String imageProvider, String videoProvider) {
+                                String imageProvider, String videoProvider,
+                                String videoModel) {
         Project project = new Project();
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
@@ -118,6 +119,7 @@ public class ProjectService {
         info.put(ProjectInfoKeys.VISUAL_STYLE, visualStyle);
         info.put(ProjectInfoKeys.IMAGE_PROVIDER, imageProvider != null ? imageProvider : "seedream");
         info.put(ProjectInfoKeys.VIDEO_PROVIDER, videoProvider != null ? videoProvider : "vidu");
+        info.put(ProjectInfoKeys.VIDEO_MODEL, videoModel != null ? videoModel : "viduq3-pro");
         project.setProjectInfo(info);
 
         projectRepository.insert(project);
@@ -144,6 +146,7 @@ public class ProjectService {
         if (request.getVisualStyle() != null) info.put(ProjectInfoKeys.VISUAL_STYLE, request.getVisualStyle());
         if (request.getImageProvider() != null) info.put(ProjectInfoKeys.IMAGE_PROVIDER, request.getImageProvider());
         if (request.getVideoProvider() != null) info.put(ProjectInfoKeys.VIDEO_PROVIDER, request.getVideoProvider());
+        if (request.getVideoModel() != null) info.put(ProjectInfoKeys.VIDEO_MODEL, request.getVideoModel());
         project.setProjectInfo(info);
         projectRepository.updateById(project);
     }

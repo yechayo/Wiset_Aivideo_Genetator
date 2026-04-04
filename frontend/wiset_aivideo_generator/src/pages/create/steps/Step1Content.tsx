@@ -48,6 +48,24 @@ const durationOptions = [
   { value: 300, label: '5分钟' },
 ];
 
+// 图片生成商选项
+const imageProviderOptions = [
+  { value: 'seedream', label: 'Seedream' },
+  { value: 'nanobanana', label: 'Nanobanana2' },
+];
+
+// 视频生成商选项
+const videoProviderOptions = [
+  { value: 'vidu', label: 'Vidu' },
+  { value: 'sora', label: 'Sora2' },
+];
+
+// Vidu 模型选项
+const viduModelOptions = [
+  { value: 'viduq3-pro', label: 'Vidu Q3 Pro（效果好）' },
+  { value: 'viduq3-turbo', label: 'Vidu Q3 Turbo（速度快）' },
+];
+
 // AI生成图标
 function SparklesIcon({ className = '' }: { className?: string }) {
   return (
@@ -88,12 +106,14 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
 
   // ========== 表单状态 ==========
   const [storyIdea, setStoryIdea] = useState('');
-  const [generateMode, setGenerateMode] = useState<'single' | 'series'>('single');
   const [genre, setGenre] = useState('');
   const [visualStyle, setVisualStyle] = useState<VisualStyle | ''>('');
   const [targetAudience, setTargetAudience] = useState('');
   const [totalEpisodes, setTotalEpisodes] = useState(10);
   const [episodeDuration, setEpisodeDuration] = useState<number>(60);
+  const [imageProvider, setImageProvider] = useState('seedream');
+  const [videoProvider, setVideoProvider] = useState('vidu');
+  const [videoModel, setVideoModel] = useState('viduq3-pro');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ========== 提交处理 ==========
@@ -111,8 +131,11 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
         genre: genre || undefined,
         visualStyle: visualStyle || undefined,
         targetAudience,
-        totalEpisodes: generateMode === 'series' ? totalEpisodes : 1,
+        totalEpisodes,
         episodeDuration: episodeDuration,
+        imageProvider,
+        videoProvider,
+        videoModel,
       };
 
       const createResult = await createProject(requestData);
@@ -177,39 +200,6 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
         {/* 右栏：生成配置 */}
         <div className={styles.cardConfig}>
           <div className={styles.card}>
-            {/* 生成模式 */}
-            <div className={styles.configSection}>
-              <label className={styles.configLabel}>生成模式</label>
-              <div className={styles.radioGroup}>
-                <div
-                  className={`${styles.radioItem} ${generateMode === 'single' ? styles.active : ''}`}
-                  onClick={() => setGenerateMode('single')}
-                  role="radio"
-                  aria-checked={generateMode === 'single'}
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && setGenerateMode('single')}
-                >
-                  <span className={styles.radioButton}>
-                    <span className={styles.radioButtonInner}></span>
-                  </span>
-                  <span>单集视频</span>
-                </div>
-                <div
-                  className={`${styles.radioItem} ${generateMode === 'series' ? styles.active : ''}`}
-                  onClick={() => setGenerateMode('series')}
-                  role="radio"
-                  aria-checked={generateMode === 'series'}
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && setGenerateMode('series')}
-                >
-                  <span className={styles.radioButton}>
-                    <span className={styles.radioButtonInner}></span>
-                  </span>
-                  <span>系列漫剧</span>
-                </div>
-              </div>
-            </div>
-
             {/* 题材类型 */}
             <div className={styles.configSection}>
               <label className={styles.configLabel} htmlFor="genre">
@@ -302,21 +292,87 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
               </div>
             </div>
 
-            {/* 系列漫剧集数 */}
-            {generateMode === 'series' && (
+            {/* 集数 */}
+            <div className={styles.configSection}>
+              <label className={styles.configLabel} htmlFor="total-episodes">
+                集数
+              </label>
+              <input
+                id="total-episodes"
+                type="number"
+                className={styles.input}
+                min="1"
+                max="100"
+                value={totalEpisodes}
+                onChange={(e) => setTotalEpisodes(parseInt(e.target.value) || 1)}
+              />
+            </div>
+
+            {/* 图片生成商 */}
+            <div className={styles.configSection}>
+              <label className={styles.configLabel} htmlFor="image-provider">
+                图片生成商
+              </label>
+              <div className={styles.selectWrapper}>
+                <select
+                  id="image-provider"
+                  className={styles.select}
+                  value={imageProvider}
+                  onChange={(e) => setImageProvider(e.target.value)}
+                >
+                  {imageProviderOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDownIcon className={styles.selectArrow} />
+              </div>
+            </div>
+
+            {/* 视频生成商 */}
+            <div className={styles.configSection}>
+              <label className={styles.configLabel} htmlFor="video-provider">
+                视频生成商
+              </label>
+              <div className={styles.selectWrapper}>
+                <select
+                  id="video-provider"
+                  className={styles.select}
+                  value={videoProvider}
+                  onChange={(e) => setVideoProvider(e.target.value)}
+                >
+                  {videoProviderOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDownIcon className={styles.selectArrow} />
+              </div>
+            </div>
+
+            {/* Vidu 模型选择 */}
+            {videoProvider === 'vidu' && (
               <div className={styles.configSection}>
-                <label className={styles.configLabel} htmlFor="total-episodes">
-                  总集数
+                <label className={styles.configLabel} htmlFor="video-model">
+                  视频模型
                 </label>
-                <input
-                  id="total-episodes"
-                  type="number"
-                  className={styles.input}
-                  min="1"
-                  max="100"
-                  value={totalEpisodes}
-                  onChange={(e) => setTotalEpisodes(parseInt(e.target.value) || 1)}
-                />
+                <div className={styles.selectWrapper}>
+                  <select
+                    id="video-model"
+                    className={styles.select}
+                    value={videoModel}
+                    onChange={(e) => setVideoModel(e.target.value)}
+                  >
+                    {viduModelOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDownIcon className={styles.selectArrow} />
+                </div>
               </div>
             )}
           </div>

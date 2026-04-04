@@ -25,7 +25,7 @@ public class ViduProperties {
     /**
      * 视频模型
      */
-    private String model = "viduq3-turbo";
+    private String model = "viduq3-pro";
 
     /**
      * 错峰模式（积分更低，48小时内生成）

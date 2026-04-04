@@ -32,6 +32,9 @@ export interface CreateProjectRequest {
   targetAudience: string;
   totalEpisodes: number;
   episodeDuration: number;
+  imageProvider?: string;
+  videoProvider?: string;
+  videoModel?: string;
 }
 
 /**
@@ -159,6 +162,8 @@ export interface ProjectInfoData {
   episodeDuration?: number;
   selectedChapter?: string;
   episodesPerChapter?: number;
+  imageProvider?: string;
+  videoProvider?: string;
 }
 
 /**

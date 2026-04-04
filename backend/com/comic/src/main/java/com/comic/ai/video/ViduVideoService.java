@@ -49,11 +49,16 @@ public class ViduVideoService implements VideoGenerationService {
 
     @Override
     public String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage) {
-        return generateAsync(prompt, duration, aspectRatio, referenceImage, viduProperties.isOffPeak());
+        return generateAsync(prompt, duration, aspectRatio, referenceImage, viduProperties.isOffPeak(), viduProperties.getModel());
     }
 
     @Override
     public String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage, boolean offPeak) {
+        return generateAsync(prompt, duration, aspectRatio, referenceImage, offPeak, viduProperties.getModel());
+    }
+
+    @Override
+    public String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage, boolean offPeak, String model) {
         boolean acquired = false;
         try {
             semaphore.acquire();
@@ -61,8 +66,9 @@ public class ViduVideoService implements VideoGenerationService {
             log.info("Vidu 视频生成: 并发槽位 {}/{}", semaphore.availablePermits(), semaphore.getQueueLength());
 
             // 构建请求体
+            String effectiveModel = (model != null && !model.isEmpty()) ? model : viduProperties.getModel();
             Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", viduProperties.getModel());
+            requestBody.put("model", effectiveModel);
             requestBody.put("images", Collections.singletonList(referenceImage));
             requestBody.put("prompt", prompt);
             requestBody.put("duration", duration);
@@ -98,7 +104,7 @@ public class ViduVideoService implements VideoGenerationService {
                 }
                 String taskId = taskIdNode.asText();
 
-                log.info("Vidu 视频生成任务已提交: taskId={}, model={}", taskId, viduProperties.getModel());
+                log.info("Vidu 视频生成任务已提交: taskId={}, model={}", taskId, effectiveModel);
                 return taskId;
             }
 

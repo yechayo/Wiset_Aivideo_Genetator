@@ -71,7 +71,8 @@ public class ProjectController {
             dto.getEpisodeDuration(),
             dto.getVisualStyle(),
             dto.getImageProvider(),
-            dto.getVideoProvider()
+            dto.getVideoProvider(),
+            dto.getVideoModel()
         );
 
         Map<String, String> result = new HashMap<>();

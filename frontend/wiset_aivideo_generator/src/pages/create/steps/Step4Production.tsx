@@ -1117,6 +1117,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                             {ep.segments.map((seg, idx) => {
                               const panelId = seg.panelData?.panelId;
                               const isGenerating = generatingVideoKeys.has(`${ep.episodeId}-${panelId}`);
+                              const isFailed = seg.pipelineStep === 'video_failed';
                               const isDone = !!seg.videoUrl || seg.pipelineStep === 'video_completed';
                               const panelKey = `${ep.episodeId}-${panelId}`;
                               const isExpanded = expandedPanelKey === panelKey;
@@ -1134,9 +1135,21 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                     </span>
                                     {isDone ? (
                                       <span className={styles.panelVideoStatus}>已完成</span>
-                                    ) : isGenerating ? (
+                                    ) : isGenerating && !isFailed ? (
                                       <span className={styles.panelVideoGenerating}>
                                         <SpinIcon /> {seg.videoProgress != null ? `${seg.videoProgress}%` : '生成中...'}
+                                      </span>
+                                    ) : isFailed ? (
+                                      <span className={styles.panelVideoFailed}>
+                                        生成失败
+                                        <button
+                                          className={styles.btnPrimary}
+                                          style={{ marginLeft: 8 }}
+                                          onClick={() => panelId && handleGenerateVideo(ep.episodeId, panelId)}
+                                          disabled={!panelId}
+                                        >
+                                          重试
+                                        </button>
                                       </span>
                                     ) : (
                                       <button
