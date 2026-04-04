@@ -9,6 +9,8 @@ interface SseProgressCallbacks {
   onEpisodeGridStatus: (data: { episodeId: number; episodeNum?: number; gridStatus: string }) => void;
   onPanelVideoDone?: (data: { episodeId: number; panelId: number; videoUrl: string }) => void;
   onPanelVideoFailed?: (data: { episodeId: number; panelId: number; error: string }) => void;
+  onPanelTtsDone?: (data: { episodeId: number; panelId: number; ttsAudioUrl: string }) => void;
+  onPanelTtsFailed?: (data: { episodeId: number; panelId: number; error: string }) => void;
   onStatusChange: (data: { from?: string; to?: string }) => void;
   /** SSE 重连后触发全量数据刷新 */
   onReconnect?: () => void;
@@ -60,6 +62,10 @@ export function useSseProgress(
           cbRef.current.onPanelVideoDone?.(JSON.parse(event.data));
         } else if (eventType === 'panel:video_failed') {
           cbRef.current.onPanelVideoFailed?.(JSON.parse(event.data));
+        } else if (eventType === 'panel:tts_done') {
+          cbRef.current.onPanelTtsDone?.(JSON.parse(event.data));
+        } else if (eventType === 'panel:tts_failed') {
+          cbRef.current.onPanelTtsFailed?.(JSON.parse(event.data));
         } else if (eventType === 'milestone-change') {
           // 里程碑变更：同步状态并刷新数据
           cbRef.current.onStatusChange(data);

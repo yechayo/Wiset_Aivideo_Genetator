@@ -21,6 +21,8 @@ import {
   generateEpisodeScripts,
   getVideoPrompt,
   enhanceVideoPrompt as enhanceVideoPromptApi,
+  generatePanelTts,
+  batchGenerateTts,
 } from '../../../services/episodeService';
 import { advanceStatus } from '../../../services/projectService';
 import { useCreateStore } from '../../../stores/createStore';
@@ -77,12 +79,194 @@ const STEPS = [
   { key: 'video' as SubPhase, number: 'c', label: '视频生成' },
 ];
 
+// ==================== Prompt 构建器（与后端 PanelPromptBuilder 保持一致）====================
+
+const STYLE_PREFIX_MAP: Record<string, string> = {
+  REAL: '写实风格，电影级摄影质感，8K超高清分辨率，专业摄影级别，自然光效，体积光，柔和阴影，景深效果，色彩真实。',
+  '3D': '3D渲染风格，Octane渲染，光线追踪，全局光照，8K超高清分辨率，影棚灯光，HDRI环境光，环境光遮蔽，PBR材质质感。',
+  ANIME: '日系动漫风格，动漫背景艺术，高质量，杰作级别，精细插画，柔光效果，轮廓光，色彩鲜艳丰富，干净线条，清晰轮廓。',
+  MANGA: '日系动漫风格，动漫背景艺术，高质量，杰作级别，精细插画，柔光效果，轮廓光，色彩鲜艳丰富，干净线条，清晰轮廓。',
+  INK: '中国水墨画风格，水墨写意，高质量，杰作级别，精细插画，柔光效果，意境深远，墨色浓淡有致。',
+  CYBERPUNK: '赛博朋克动漫风格，霓虹灯光，未来感，高质量，杰作级别，精细插画，柔光效果，轮廓光，色彩鲜艳丰富，暗色调对比。',
+};
+
+const toCircledNumber = (n: number): string => {
+  const circled = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
+  return n >= 1 && n <= 9 ? circled[n - 1] : String(n);
+};
+
+/** 构建九宫格图片生成提示词（与后端 PanelPromptBuilder / ComicCommentaryPanelPromptBuilder 一致） */
+const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentary?: boolean): string => {
+  const stylePrefix = STYLE_PREFIX_MAP[visualStyle] || '高质量，杰作级别，精细插画，柔光效果，色彩鲜艳。';
+  const lines: string[] = [];
+
+  lines.push(stylePrefix + '专业动画关键帧级别，电影级画面构图，精致光影与色彩。');
+  lines.push('');
+
+  lines.push('【布局要求 - 必须严格遵守】');
+  lines.push('输出一张严格 3×3 九宫格分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。');
+  lines.push('图片必须被 2 条黑色竖线（约 4px 宽）和 2 条黑色横线（约 4px 宽）均匀分割为 3 行 3 列，共 9 个等大的格子。');
+  lines.push('每个格子是一个完全独立的分镜画面，场景、人物、时间可以不同。');
+  lines.push('绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。');
+  lines.push('图片中不包含任何文字、数字、标号或水印。');
+  lines.push('');
+
+  if (isComicCommentary) {
+    lines.push('【景别约束】解说模式以中景、近景、特写为主；远景/大远景仅用于开场或转场，总数不超过 2 格。');
+    lines.push('【字幕安全区】构图需留出上方约 1/4 区域，避免关键内容被花字遮挡。');
+    lines.push('');
+  }
+
+  // 角色锚定（4a 阶段只有角色名，无外貌详情）
+  const allChars = new Set<string>();
+  shots.forEach(s => (s.characters || []).forEach((c: any) => {
+    allChars.add(typeof c === 'string' ? c : c.name || '');
+  }));
+  if (allChars.size > 0) {
+    lines.push('【角色设定 - 必须严格遵守】');
+    lines.push('只允许绘制以下角色，绝对不要出现列表之外的角色、路人或背景人物。');
+    lines.push('每个角色在不同格子中必须保持外貌、体型比例、服装、发型完全一致。');
+    lines.push('');
+    allChars.forEach(name => { if (name) lines.push(`- ${name}`); });
+    lines.push('');
+  }
+
+  lines.push('【分镜内容 - 按从左到右、从上到下填入九宫格，每个格子必须是精致的关键帧画面】');
+  lines.push('每个分镜必须包含：完整的场景环境细节（光影、色调、空间纵深）、角色的精确外貌与服装、细腻的面部表情和肢体语言、精心设计的构图与景深关系。画面要有电影级质感。');
+  lines.push('');
+
+  shots.forEach((shot, i) => {
+    const row = Math.floor(i / 3) + 1;
+    const col = i % 3 + 1;
+    let line = `第${row}行第${col}列: ${shot.visualDescription || shot.visual_description || ''}`;
+    if (shot.shotSize) line += `，${shot.shotSize}`;
+    if (shot.cameraAngle) line += `，${shot.cameraAngle}`;
+    if (shot.cameraMovement) line += `，${shot.cameraMovement}`;
+    if (shot.scene) line += `，场景: ${shot.scene}`;
+    lines.push(line);
+    if (isComicCommentary) {
+      const nar = shot.narration || (shot.speaker === '旁白' ? shot.dialogue : '');
+      if (nar && nar !== '无') lines.push(`  解说旁白(口播): ${nar}`);
+    }
+  });
+
+  const emptySlots = 9 - shots.length;
+  if (emptySlots > 0) {
+    lines.push(`剩余 ${emptySlots} 个格子留空（纯黑色填充，不绘制任何内容）。`);
+    lines.push('');
+  }
+
+  lines.push('负面提示词：文字、水印、标签、签名、人体结构错误、肢体融合、多余手指、多余肢体、面部变形、眼睛异常、模糊、低质量、色块 artefact、粗糙线条、草稿感。');
+
+  return lines.join('\n');
+};
+
+/** 构建多镜头视频生成提示词（与后端 PanelPromptBuilder / ComicCommentaryPanelPromptBuilder 一致） */
+const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicCommentary?: boolean): string => {
+  const stylePrefix = STYLE_PREFIX_MAP[visualStyle] || '高质量，杰作级别，精细插画，柔光效果，色彩鲜艳。';
+  const lines: string[] = [];
+  const n = shots.length;
+
+  lines.push(isComicCommentary
+    ? stylePrefix + ' 漫剧解说向连续视频：画面服务于旁白节奏，镜头以清晰叙事与情绪递进为主。'
+    : stylePrefix + ' 专业电影级画面。');
+  lines.push('');
+
+  lines.push(`多镜头连续拍摄指令，以下 ${n} 个镜头必须在同一视频中连续呈现：`);
+  lines.push('');
+
+  shots.forEach((shot, i) => {
+    lines.push(`【镜头${i + 1}】`);
+    lines.push(`duration: ${shot.duration || 5}s`);
+    lines.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || shot.visual_description || ''}`);
+
+    // 解说模式下：显示 narration 旁白
+    if (isComicCommentary) {
+      const nar = shot.narration || (shot.speaker === '旁白' ? shot.dialogue : '');
+      if (nar && nar !== '无') {
+        lines.push(`解说旁白: ${nar}`);
+      }
+    }
+
+    const dialogue = typeof shot.dialogue === 'string' ? shot.dialogue : '';
+    if (dialogue && dialogue !== '无') {
+      const speaker = shot.speaker && shot.speaker !== '无' ? shot.speaker : '';
+      const tone = shot.dialogueTone && shot.dialogueTone !== '无' ? shot.dialogueTone : '';
+      let dLine = '对白';
+      if (speaker) {
+        dLine += `(${speaker}${tone ? `，${tone}` : ''})`;
+      } else if (tone) {
+        dLine += `(${tone})`;
+      }
+      dLine += `: ${dialogue}`;
+      lines.push(dLine);
+    }
+
+    const audioEffects = shot.audioEffects;
+    if (audioEffects && audioEffects !== '无') {
+      lines.push(`音效: [${audioEffects}]`);
+    }
+
+    const transition = shot.transitionHint;
+    if (transition && transition !== '无' && !transition.includes('最后一个镜头') && i < n - 1) {
+      lines.push(`衔接: ${transition}`);
+    }
+    lines.push('');
+  });
+
+  if (isComicCommentary) {
+    lines.push('## 口型与声画约束（漫剧解说 - 最高优先级）');
+    lines.push('解说模式下画面不出现角色对白口型，所有角色保持自然闭嘴。');
+    lines.push('- 画面中所有角色的嘴巴必须始终保持自然闭合，不得有任何嘴唇开合、蠕动或口型运动。角色只能通过眼神、表情、头部动作传达情绪。');
+    lines.push('- 解说旁白为画外音，画面内角色一律闭嘴，保持倾听、沉思或自然状态，绝对禁止任何嘴部运动。');
+    lines.push('- 角色嘴巴的自然静止状态：嘴唇自然闭合或微笑时嘴角微扬（不露齿）。允许的短暂微张仅限惊讶表情（一条细缝，不伴随蠕动）。');
+    lines.push('- 禁止任何嘴部动作：嘴唇开合、舌头运动、露齿、口型蠕动、咀嚼、吞咽。');
+  } else {
+    lines.push('## 嘴巴运动与说话人约束（最高优先级）');
+    lines.push('本视频为音画同步生成，只有对白中标注的说话人可以产生嘴部动作，其他所有角色必须保持闭嘴。');
+    lines.push('- 仅当说话人正在画面中可见时，该说话人可以有适度的嘴部开合动作来配合对白，但动作幅度必须自然克制。');
+    lines.push('- 画面中所有非说话人的角色，嘴巴必须始终保持自然闭合，不得有任何嘴唇开合、蠕动或口型运动。非说话人只能通过眼神、表情、头部动作表达反应。');
+    lines.push('- 当对白说话人为旁白、画外音、内心独白、或不在画面中的角色时，画面内所有角色的嘴巴必须完全闭合静止，保持倾听或自然状态，绝对禁止任何嘴部运动。');
+    lines.push('- 角色嘴巴的自然静止状态：嘴唇自然闭合或微笑时嘴角微扬（不露齿）。允许的短暂微张仅限惊讶表情（一条细缝，不伴随蠕动）。');
+    lines.push('- 绝对禁止非说话人的任何嘴部动作：嘴唇开合、舌头运动、露齿、口型蠕动、咀嚼、吞咽、不自主的面部肌肉运动。');
+  }
+  lines.push('');
+
+  lines.push('## 画面衔接');
+  lines.push('多镜头间必须平滑过渡，严格遵循每个镜头的衔接提示。');
+  lines.push('保持角色位置、动作、表情和情绪的连贯性。');
+
+  let refLine = '参考图中编号';
+  for (let i = 0; i < n; i++) refLine += toCircledNumber(i + 1);
+  refLine += '分别对应';
+  for (let i = 0; i < n; i++) {
+    if (i > 0) refLine += '、';
+    refLine += `【镜头${i + 1}】`;
+  }
+  refLine += '的画面内容。';
+  lines.push(refLine);
+
+  lines.push('');
+  lines.push('## 负面提示词（严格遵守，违反任何一条即为失败）');
+  lines.push('文字、水印、签名、logo、人体结构错误、肢体融合、多余手指、多余肢体、面部变形、眼睛异常、模糊、闪烁、低质量、色块 artefact。');
+  if (isComicCommentary) {
+    lines.push('【嘴巴运动约束 - 最强约束】漫剧解说模式下所有角色一律闭嘴，绝对禁止任何嘴部运动：张嘴、嘴唇开合蠕动、露齿、口型运动、舌头活动、咀嚼吞咽。画面角色不得出现说话口型，所有角色嘴巴保持完全静止闭合。表情只能通过眼睛、眉毛、头部姿态传达。');
+    lines.push('禁止快速奔跑、剧烈运动、突然变向——运镜以缓慢推拉和微平移为主，用剪辑快切体现节奏。');
+  } else {
+    lines.push('【嘴巴运动约束 - 最强约束】非说话人角色绝对禁止任何嘴部运动：张嘴、嘴唇开合蠕动、露齿、口型运动、舌头活动、咀嚼吞咽。仅对白中标注的说话人且在画面中可见时可以有嘴部动作，其余角色嘴巴必须完全静止闭合。当说话人为旁白或不在画面中时，画面内所有角色一律闭嘴，不得有任何嘴部反应。非说话人的表情只能通过眼睛、眉毛、头部姿态传达。');
+    lines.push('禁止两人以上同框互动（拥抱、打斗、接触），多人互动必须拆分为单人反应镜头。');
+    lines.push('禁止快速奔跑、剧烈运动、突然变向——镜头运动必须缓慢（缓慢推镜头、微平移、静止），用剪辑快切体现激烈而非画面快动。');
+  }
+
+  return lines.join('\n');
+};
+
 function getGridStatusBadge(status: string) {
   switch (status) {
     case 'approved': return { text: '已通过', className: styles.statusApproved };
     case 'generated': return { text: '待审核', className: styles.statusGenerated };
     case 'rejected': return { text: '已退回', className: styles.statusRejected };
-    case 'generating': return { text: '生成中', className: styles.statusGenerating, pulse: true };
+    case 'generating': return { text: '排队中', className: styles.statusGenerating, pulse: true };
     default: return { text: '待生成', className: styles.statusPending };
   }
 }
@@ -124,6 +308,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [generatingVideoKeys, setGeneratingVideoKeys] = useState<Set<string>>(new Set()); // "episodeId-panelId"
   const [approvingEpisodeId, setApprovingEpisodeId] = useState<number | null>(null);
   const [rejectingEpisodeId, setRejectingEpisodeId] = useState<number | null>(null);
+  const [isBatchTtsLoading, setIsBatchTtsLoading] = useState(false);
 
   // ==================== Script Polling ====================
   const scriptPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -158,6 +343,19 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     setOffPeak(prev => {
       const next = !prev;
       localStorage.setItem('video_off_peak', String(next));
+      return next;
+    });
+  }, []);
+
+  // Video model toggle (pro/turbo), only for Vidu
+  const isVidu = (project?.projectInfo?.videoProvider || '').toLowerCase() === 'vidu';
+  const [videoModel, setVideoModel] = useState<'pro' | 'turbo'>(() =>
+    (localStorage.getItem('video_model') as 'pro' | 'turbo') || 'turbo'
+  );
+  const toggleVideoModel = useCallback(() => {
+    setVideoModel(prev => {
+      const next = prev === 'pro' ? 'turbo' : 'pro';
+      localStorage.setItem('video_model', next);
       return next;
     });
   }, []);
@@ -471,6 +669,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                     videoOffPeak: status.offPeak ?? seg.videoOffPeak,
                     videoProgress: status.videoProgress ?? seg.videoProgress,
                     videoCredits: status.videoCredits ?? seg.videoCredits,
+                    ttsAudioUrl: status.ttsAudioUrl ?? seg.ttsAudioUrl,
+                    ttsStatus: status.ttsStatus ?? seg.ttsStatus,
+                    ttsCredits: status.ttsCredits ?? seg.ttsCredits,
                   };
                 }),
               }
@@ -532,6 +733,12 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       if (data.episodeId) refreshProductionStatuses(data.episodeId);
     },
     onPanelVideoFailed: (data) => {
+      if (data.episodeId) refreshProductionStatuses(data.episodeId);
+    },
+    onPanelTtsDone: (data) => {
+      if (data.episodeId) refreshProductionStatuses(data.episodeId);
+    },
+    onPanelTtsFailed: (data) => {
       if (data.episodeId) refreshProductionStatuses(data.episodeId);
     },
     onStatusChange: (data) => {
@@ -707,7 +914,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     };
     poll();
 
-    generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt)
+    generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt, isVidu ? videoModel : undefined)
       .catch((err: any) => {
         abort.abort();
         alert(err?.response?.data?.message || err?.message || '生成视频失败');
@@ -775,6 +982,77 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId, advancing, onNextStep, statusInfo?.statusCode]);
 
+  // Generate TTS for a single panel
+  const handleGenerateTts = useCallback(async (episodeId: number, panelId: string) => {
+    if (!projectId) return;
+    // Optimistically update local state to 'generating'
+    setChapters(prev => prev.map(ch => ({
+      ...ch,
+      episodes: ch.episodes.map(ep =>
+        ep.episodeId === episodeId
+          ? {
+              ...ep,
+              segments: ep.segments.map(seg =>
+                seg.panelData?.panelId === panelId
+                  ? { ...seg, ttsStatus: 'generating' as const }
+                  : seg
+              ),
+            }
+          : ep
+      ),
+    })));
+    try {
+      await generatePanelTts(projectId, episodeId, Number(panelId));
+    } catch (err: any) {
+      // Revert to failed on error
+      setChapters(prev => prev.map(ch => ({
+        ...ch,
+        episodes: ch.episodes.map(ep =>
+          ep.episodeId === episodeId
+            ? {
+                ...ep,
+                segments: ep.segments.map(seg =>
+                  seg.panelData?.panelId === panelId
+                    ? { ...seg, ttsStatus: 'failed' as const }
+                    : seg
+                ),
+              }
+            : ep
+        ),
+      })));
+      alert(err?.response?.data?.message || err?.message || '旁白生成失败');
+    }
+  }, [projectId]);
+
+  // Batch generate TTS for an entire episode
+  const handleBatchGenerateTts = useCallback(async (episodeId: number) => {
+    if (!projectId || isBatchTtsLoading) return;
+    setIsBatchTtsLoading(true);
+    try {
+      await batchGenerateTts(projectId, episodeId);
+      // After batch request is accepted, set all pending segments to generating
+      setChapters(prev => prev.map(ch => ({
+        ...ch,
+        episodes: ch.episodes.map(ep =>
+          ep.episodeId === episodeId
+            ? {
+                ...ep,
+                segments: ep.segments.map(seg =>
+                  !seg.ttsAudioUrl && seg.ttsStatus !== 'generating'
+                    ? { ...seg, ttsStatus: 'generating' as const }
+                    : seg
+                ),
+              }
+            : ep
+        ),
+      })));
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '批量旁白生成失败');
+    } finally {
+      setIsBatchTtsLoading(false);
+    }
+  }, [projectId, isBatchTtsLoading]);
+
   // ==================== Render Helpers ====================
 
   const toggleChapter = useCallback((chapterIndex: number) => {
@@ -800,6 +1078,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const totalPanels = allEpisodes.reduce((sum, ep) => sum + ep.segments.length, 0);
   const completedVideos = allEpisodes.reduce((sum, ep) =>
     sum + ep.segments.filter(seg => seg.pipelineStep === 'video_completed').length, 0);
+  const ttsCompletedCount = allEpisodes.reduce((sum, ep) =>
+    sum + ep.segments.filter(seg => seg.ttsStatus === 'completed' || !!seg.ttsAudioUrl).length, 0);
+  const ttsTotalCount = allEpisodes.reduce((sum, ep) => sum + ep.segments.length, 0);
 
   // ==================== Render ====================
 
@@ -881,13 +1162,26 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             <span className={styles.totalCount}>{totalPanels}</span>
             <span className={styles.statsLabel}>分镜视频已完成</span>
           </div>
-          <button
-            className={`${styles.offPeakToggle} ${offPeak ? styles.offPeakActive : ''}`}
-            onClick={toggleOffPeak}
-          >
-            <span className={styles.toggleTrack}><span className={styles.toggleThumb} /></span>
-            <span className={styles.toggleLabel}>错峰</span>
-          </button>
+          <div className={styles.toolbarToggles}>
+            <button
+              className={`${styles.offPeakToggle} ${offPeak ? styles.offPeakActive : ''}`}
+              onClick={toggleOffPeak}
+            >
+              <span className={styles.toggleTrack}><span className={styles.toggleThumb} /></span>
+              <span className={styles.toggleLabel}>错峰</span>
+            </button>
+            {isVidu && (
+              <button
+                className={styles.modelToggle}
+                onClick={toggleVideoModel}
+              >
+                <span className={styles.modelToggleTrack}>
+                  <span className={styles.modelToggleThumb} style={{ left: videoModel === 'pro' ? '2px' : 'auto', right: videoModel === 'turbo' ? '2px' : 'auto' }} />
+                </span>
+                <span className={styles.toggleLabel}>{videoModel === 'pro' ? 'Pro' : 'Turbo'}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -997,6 +1291,50 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                 )}
                               </div>
                             ))}
+
+                            {/* 集 Prompt 预览 */}
+                            {expandedEpisodeId === ep.episodeId && ep.segments.length > 0 && (() => {
+                              const allShots = ep.segments.map(s => s.shots?.[0]).filter(Boolean);
+                              const visualStyle = ep.segments[0]?.panelData?.visualStyle || 'ANIME';
+                              const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
+                              if (allShots.length === 0) return null;
+                              return (
+                                <div className={styles.episodePromptPreview}>
+                                  <button
+                                    className={styles.episodePromptToggle}
+                                    onClick={() => setExpandedPanelKey(
+                                      expandedPanelKey === `prompt-image-${ep.episodeId}` ? null : `prompt-image-${ep.episodeId}`
+                                    )}
+                                  >
+                                    图片生成 Prompt（九宫格）
+                                    <span className={styles.episodePromptArrow}>
+                                      {expandedPanelKey === `prompt-image-${ep.episodeId}` ? '▾' : '▸'}
+                                    </span>
+                                  </button>
+                                  {expandedPanelKey === `prompt-image-${ep.episodeId}` && (
+                                    <pre className={styles.episodePromptBlock}>
+                                      {buildGridPromptText(visualStyle, allShots, isComicCommentary)}
+                                    </pre>
+                                  )}
+                                  <button
+                                    className={styles.episodePromptToggle}
+                                    onClick={() => setExpandedPanelKey(
+                                      expandedPanelKey === `prompt-video-${ep.episodeId}` ? null : `prompt-video-${ep.episodeId}`
+                                    )}
+                                  >
+                                    视频生成 Prompt（多镜头）
+                                    <span className={styles.episodePromptArrow}>
+                                      {expandedPanelKey === `prompt-video-${ep.episodeId}` ? '▾' : '▸'}
+                                    </span>
+                                  </button>
+                                  {expandedPanelKey === `prompt-video-${ep.episodeId}` && (
+                                    <pre className={styles.episodePromptBlock}>
+                                      {buildMultiShotPromptText(visualStyle, allShots, isComicCommentary)}
+                                    </pre>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -1053,7 +1391,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                 onClick={() => handleGenerateGrid(ep.episodeId)}
                                 disabled={generatingGrid === ep.episodeId}
                               >
-                                {generatingGrid === ep.episodeId ? <><SpinIcon /> 生成中...</> : '生成九宫格'}
+                                {generatingGrid === ep.episodeId ? <><SpinIcon /> 排队中...</> : '生成九宫格'}
                               </button>
                               )}
                               {(ep.gridStatus === 'generated' || ep.gridStatus === 'rejected') && (
@@ -1159,6 +1497,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                   {batchEnhancingEpisodeId === ep.episodeId ? <><SpinIcon /> 润色中...</> : '批量润色'}
                                 </button>
                               )}
+                              <button
+                                className={styles.btnGhost}
+                                onClick={() => handleBatchGenerateTts(ep.episodeId)}
+                                disabled={isBatchTtsLoading}
+                              >
+                                {isBatchTtsLoading ? <><SpinIcon /> 生成中...</> : `批量旁白 (${ttsCompletedCount}/${ttsTotalCount})`}
+                              </button>
                             </div>
                           </div>
 
@@ -1274,7 +1619,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                     </div>
                                   )}
                                   {isExpanded && (
-                                    <div className={styles.panelDetailContent}>
+                                    <div className={`${styles.panelDetailContent} ${styles.twoColumn}`}>
+                                      {/* Left column: existing video content */}
+                                      <div className={styles.leftColumn}>
                                       {seg.fusionImageUrl && (
                                         <div className={styles.panelDetailSection}>
                                           <span className={styles.panelDetailLabel}>融合参考图</span>
@@ -1294,6 +1641,45 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                           </div>
                                         </div>
                                       )}
+                                      </div>
+
+                                      {/* Right column: TTS narration management */}
+                                      <div className={styles.rightColumn}>
+                                        <div className={styles.narrationHeader}>
+                                          <span>旁白语音</span>
+                                          <button
+                                            className={styles.btnPrimary}
+                                            disabled={seg.ttsStatus === 'generating' || !panelId}
+                                            onClick={() => panelId && handleGenerateTts(ep.episodeId, panelId)}
+                                          >
+                                            {seg.ttsStatus === 'generating' ? <><SpinIcon /> 生成中...</> : seg.ttsStatus === 'completed' || seg.ttsAudioUrl ? '重新生成' : '生成旁白'}
+                                          </button>
+                                        </div>
+                                        <div className={styles.shotList}>
+                                          {(seg.shots || []).map((shot: any, sIdx: number) => {
+                                            const hasDialogue = !!(shot.dialogue && shot.dialogue !== '无' && shot.dialogue !== '');
+                                            const narration = shot.narration || (shot.speaker === '旁白' ? shot.dialogue : '') || '';
+                                            return (
+                                              <div key={sIdx} className={styles.shotItem}>
+                                                <span className={styles.shotLabel}>分镜{sIdx + 1}</span>
+                                                <span className={hasDialogue ? styles.hasDialogue : styles.hasNarration}>
+                                                  {hasDialogue ? `[台词] ${shot.dialogue}` : `[旁白] ${narration || '—'}`}
+                                                </span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                        {(seg.ttsStatus === 'completed' || seg.ttsAudioUrl) && (
+                                          <div className={styles.ttsPlayer}>
+                                            <audio controls src={seg.ttsAudioUrl!} style={{ width: '100%' }} />
+                                          </div>
+                                        )}
+                                        {seg.ttsStatus === 'failed' && (
+                                          <div className={styles.gridRejectionFeedback}>
+                                            旁白生成失败，请重试
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
                                   )}
                                 </div>

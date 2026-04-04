@@ -140,6 +140,13 @@
   margin-left: var(--space-1);
 }
 
+// Toolbar toggles wrapper
+.toolbarToggles {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 // Off-peak toggle
 .offPeakToggle {
   display: flex;
@@ -202,6 +209,51 @@
 .toggleLabel {
   font-size: 13px;
   font-weight: var(--font-weight-medium);
+}
+
+// Video model toggle (pro/turbo) - only for Vidu
+.modelToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--easing-standard);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+
+  &:hover {
+    border-color: var(--color-border-strong);
+    color: var(--color-text-secondary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+.modelToggleTrack {
+  display: inline-block;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--color-border-subtle);
+  position: relative;
+  transition: background var(--duration-fast) var(--easing-standard);
+}
+
+.modelToggleThumb {
+  position: absolute;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-text-primary);
+  transition: left var(--duration-fast) var(--easing-standard), right var(--duration-fast) var(--easing-standard);
 }
 
 // Generation progress bar
@@ -526,6 +578,54 @@
   span:first-child {
     color: var(--color-text-muted);
   }
+}
+
+// Episode prompt preview (4a stage)
+.episodePromptPreview {
+  margin-top: 12px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+}
+
+.episodePromptToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+
+  &:hover {
+    background: var(--color-bg-hover, #f5f5f5);
+  }
+}
+
+.episodePromptArrow {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.episodePromptBlock {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin: 0 0 10px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: inherit;
+  max-height: 500px;
+  overflow-y: auto;
 }
 
 // Footer actions
@@ -1322,6 +1422,25 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+
+  // Two-column layout for TTS narration panel
+  &.twoColumn {
+    flex-direction: row;
+    gap: var(--space-4);
+
+    .leftColumn {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+
+    .rightColumn {
+      flex: 1;
+      min-width: 0;
+    }
+  }
 }
 
 .panelDetailSection {
@@ -1676,6 +1795,96 @@
   }
 }
 
+// ============================================================
+// Tab 4c: TTS Narration (right column)
+// ============================================================
+
+.narrationHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.shotList {
+  display: flex;
+  flex-direction: column;
+}
+
+.shotItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(247, 249, 252, 0.04);
+  font-size: 13px;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.shotLabel {
+  flex-shrink: 0;
+  width: 48px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.shotText {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.hasDialogue {
+  color: var(--color-success);
+}
+
+.hasNarration {
+  color: var(--color-accent);
+}
+
+.ttsPlayer {
+  margin-top: var(--space-3);
+}
+
+.ttsStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  margin-left: var(--space-2);
+
+  &.ttsPending {
+    background: rgba(247, 249, 252, 0.05);
+    color: var(--color-text-muted);
+  }
+
+  &.ttsGenerating {
+    background: rgba(114, 183, 255, 0.1);
+    color: var(--color-accent);
+  }
+
+  &.ttsCompleted {
+    background: rgba(82, 209, 159, 0.1);
+    color: var(--color-success);
+  }
+
+  &.ttsFailed {
+    background: rgba(242, 119, 123, 0.1);
+    color: var(--color-danger);
+  }
+}
+
 // Accessibility
 @media (prefers-reduced-motion: reduce) {
   .miniSpinner,
@@ -1757,5 +1966,9 @@
   .modalContent {
     width: 95%;
     max-height: 90vh;
+  }
+
+  .panelDetailContent.twoColumn {
+    flex-direction: column;
   }
 }

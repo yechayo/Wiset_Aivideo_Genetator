@@ -186,4 +186,8 @@ export interface PanelGridStatusResponse {
   videoUrl: string | null;
   videoTaskId: string | null;
   offPeak: boolean;
+  // === TTS 旁白语音 ===
+  ttsAudioUrl: string | null;
+  ttsStatus: 'pending' | 'generating' | 'completed' | 'failed';
+  ttsCredits: number | null;
 }
