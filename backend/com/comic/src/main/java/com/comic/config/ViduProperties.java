@@ -41,4 +41,9 @@ public class ViduProperties {
      * 提示词增强 API 路径
      */
     private String promptEnhanceEndpoint = "/prompt-enhance";
+
+    /**
+     * TTS API 路径
+     */
+    private String ttsEndpoint = "/audio-tts";
 }
