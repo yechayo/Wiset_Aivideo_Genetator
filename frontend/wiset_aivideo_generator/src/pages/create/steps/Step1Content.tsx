@@ -3,9 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import styles from '../CreatePage.module.less';
 import { ChevronDownIcon } from '../../../components/icons/Icons';
 import { createProject, isApiSuccess } from '../../../services';
-import type { CreateProjectRequest, Project, VisualStyle } from '../../../services';
+import type { CreateProjectRequest, ProductionMode, Project, VisualStyle } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useProjectStore } from '../../../stores';
+
+const productionModeOptions: { value: ProductionMode; label: string }[] = [
+  { value: 'realtime_animation', label: '实时动画漫剧' },
+  { value: 'comic_commentary', label: '漫剧解说' },
+];
 
 // 题材类型选项
 const genreOptions = [
@@ -58,6 +63,26 @@ const imageProviderOptions = [
 const videoProviderOptions = [
   { value: 'vidu', label: 'Vidu' },
   { value: 'sora', label: 'Sora2' },
+];
+
+// 旁白音色选项
+const VOICE_OPTIONS = [
+  { voiceId: 'Chinese (Mandarin)_Male_Announcer', name: '播报男声' },
+  { voiceId: 'Chinese (Mandarin)_News_Anchor', name: '新闻女声' },
+  { voiceId: 'Chinese (Mandarin)_Radio_Host', name: '电台男主播' },
+  { voiceId: 'Chinese (Mandarin)_Lyrical_Voice', name: '抒情男声' },
+  { voiceId: 'Chinese (Mandarin)_Gentleman', name: '温润男声' },
+  { voiceId: 'Chinese (Mandarin)_Sweet_Lady', name: '甜美女声' },
+  { voiceId: 'male-qn-jingying', name: '精英青年音色' },
+  { voiceId: 'male-qn-badao', name: '霸道青年音色' },
+  { voiceId: 'female-yujie', name: '御姐音色' },
+  { voiceId: 'female-tianmei', name: '甜美女性音色' },
+];
+
+// 旁白视角选项
+const narrationPerspectiveOptions = [
+  { value: 'first_person', label: '第一人称（主角旁白）' },
+  { value: 'third_person', label: '第三人称（画外音旁白）' },
 ];
 
 // Vidu 模型选项
@@ -114,7 +139,18 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
   const [imageProvider, setImageProvider] = useState('seedream');
   const [videoProvider, setVideoProvider] = useState('vidu');
   const [videoModel, setVideoModel] = useState('viduq3-pro');
+  const [productionMode, setProductionMode] = useState<ProductionMode>('realtime_animation');
+  const [narrationPerspective, setNarrationPerspective] = useState<'first_person' | 'third_person' | ''>('');
+  const [narrationVoiceId, setNarrationVoiceId] = useState('');
+  const [protagonistVoiceId, setProtagonistVoiceId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 切换旁白视角时清除已选音色
+  const handleNarrationPerspectiveChange = (value: 'first_person' | 'third_person') => {
+    setNarrationPerspective(value);
+    setNarrationVoiceId('');
+    setProtagonistVoiceId('');
+  };
 
   // ========== 提交处理 ==========
   const handleSubmit = async () => {
@@ -136,6 +172,10 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
         imageProvider,
         videoProvider,
         videoModel,
+        productionMode,
+        narrationPerspective: narrationPerspective || undefined,
+        narrationVoiceId: narrationPerspective === 'third_person' ? narrationVoiceId || undefined : undefined,
+        protagonistVoiceId: narrationPerspective === 'first_person' ? protagonistVoiceId || undefined : undefined,
       };
 
       const createResult = await createProject(requestData);
@@ -200,6 +240,83 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
         {/* 右栏：生成配置 */}
         <div className={styles.cardConfig}>
           <div className={styles.card}>
+            {/* 制作模式 */}
+            <div className={styles.configSection}>
+              <label className={styles.configLabel} htmlFor="production-mode">
+                制作模式
+              </label>
+              <div className={styles.selectWrapper}>
+                <select
+                  id="production-mode"
+                  className={styles.select}
+                  value={productionMode}
+                  onChange={(e) => setProductionMode(e.target.value as ProductionMode)}
+                >
+                  {productionModeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDownIcon className={styles.selectArrow} />
+              </div>
+            </div>
+
+            {/* 旁白配置 - 仅漫剧解说模式显示 */}
+            {productionMode === 'comic_commentary' && (
+              <>
+                {/* 旁白视角 */}
+                <div className={styles.configSection}>
+                  <label className={styles.configLabel}>旁白视角</label>
+                  <div className={styles.durationGroup}>
+                    {narrationPerspectiveOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`${styles.durationButton} ${narrationPerspective === option.value ? styles.active : ''}`}
+                        onClick={() => handleNarrationPerspectiveChange(option.value as 'first_person' | 'third_person')}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 音色选择 - 选中视角后显示 */}
+                {narrationPerspective && (
+                  <div className={styles.configSection}>
+                    <label className={styles.configLabel} htmlFor="narration-voice">
+                      {narrationPerspective === 'first_person' ? '主角音色' : '旁白音色'}
+                    </label>
+                    <div className={styles.selectWrapper}>
+                      <select
+                        id="narration-voice"
+                        className={styles.select}
+                        value={narrationPerspective === 'first_person' ? protagonistVoiceId : narrationVoiceId}
+                        onChange={(e) => {
+                          if (narrationPerspective === 'first_person') {
+                            setProtagonistVoiceId(e.target.value);
+                          } else {
+                            setNarrationVoiceId(e.target.value);
+                          }
+                        }}
+                      >
+                        <option value="" disabled>
+                          选择音色
+                        </option>
+                        {VOICE_OPTIONS.map((option) => (
+                          <option key={option.voiceId} value={option.voiceId}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDownIcon className={styles.selectArrow} />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
             {/* 题材类型 */}
             <div className={styles.configSection}>
               <label className={styles.configLabel} htmlFor="genre">

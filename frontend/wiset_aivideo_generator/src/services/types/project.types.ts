@@ -22,6 +22,9 @@ export interface Script {
   scenes?: Scene[];
 }
 
+/** 制作模式：实时动画（默认）| 漫剧解说 */
+export type ProductionMode = 'realtime_animation' | 'comic_commentary';
+
 /**
  * 创建项目请求参数
  */
@@ -35,6 +38,10 @@ export interface CreateProjectRequest {
   imageProvider?: string;
   videoProvider?: string;
   videoModel?: string;
+  productionMode?: ProductionMode;
+  narrationPerspective?: 'first_person' | 'third_person';
+  narrationVoiceId?: string;
+  protagonistVoiceId?: string;
 }
 
 /**
@@ -164,6 +171,7 @@ export interface ProjectInfoData {
   episodesPerChapter?: number;
   imageProvider?: string;
   videoProvider?: string;
+  productionMode?: ProductionMode;
 }
 
 /**
@@ -237,6 +245,7 @@ export interface ProjectListItem {
   isFailed: boolean;
   isReview: boolean;
   completedSteps: number[];
+  productionMode?: string;
   createdAt?: string;
   updatedAt?: string;
 }

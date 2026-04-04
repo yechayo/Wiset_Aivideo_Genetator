@@ -142,6 +142,29 @@ export async function getPanelGridStatus(
   );
 }
 
+// ================= TTS 旁白生成 API =================
+
+/** 生成单个 Panel 的 TTS 旁白 */
+export async function generatePanelTts(
+  projectId: string,
+  episodeId: number,
+  panelId: number,
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/tts`,
+  );
+}
+
+/** 批量生成一集所有 Panel 的 TTS 旁白 */
+export async function batchGenerateTts(
+  projectId: string,
+  episodeId: number,
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/tts/batch`,
+  );
+}
+
 // ================= 视频生成 API =================
 
 /** 获取视频生成提示词 */
@@ -173,10 +196,11 @@ export async function generateVideo(
   panelId: number,
   offPeak: boolean = false,
   customPrompt?: string,
+  videoModel?: string,
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video`,
-    { offPeak, customPrompt },
+    { offPeak, customPrompt, videoModel },
   );
 }
 
