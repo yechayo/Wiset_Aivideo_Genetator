@@ -229,30 +229,49 @@ public class ProjectController {
     @PostMapping("/{projectId}/videos/merge")
     @Operation(summary = "拼接所有面板视频（去掉前5帧）")
     public Result<Map<String, String>> mergePanelVideos(@PathVariable String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null) return Result.fail("项目不存在");
+        boolean isComicCommentary = "comic_commentary".equals(
+                project.getProjectInfo().getOrDefault("productionMode", ""));
+
         // 获取项目所有剧集
         List<Episode> episodes = episodeRepository.findByProjectId(projectId);
 
         // 获取所有面板的视频URL
-        List<String> videoUrls = episodes.stream()
-            .flatMap(episode -> panelRepository.findByEpisodeId(episode.getId()).stream())
-            .filter(panel -> panel.getPanelInfo() != null)
-            .filter(panel -> panel.getPanelInfo().containsKey("videoUrl"))
-            .filter(panel -> {
-                String status = (String) panel.getPanelInfo().get("videoStatus");
-                return "completed".equals(status);
-            })
-            .map(panel -> (String) panel.getPanelInfo().get("videoUrl"))
-            .collect(Collectors.toList());
+        List<String> videoUrls;
+        if (isComicCommentary) {
+            // 解说模式：使用已合并的旁白视频
+            videoUrls = episodes.stream()
+                    .flatMap(episode -> panelRepository.findByEpisodeId(episode.getId()).stream())
+                    .filter(panel -> panel.getPanelInfo() != null)
+                    .filter(panel -> "completed".equals(panel.getPanelInfo().get("mergeStatus")))
+                    .filter(panel -> panel.getPanelInfo().get("videoWithNarrationUrl") != null)
+                    .map(panel -> (String) panel.getPanelInfo().get("videoWithNarrationUrl"))
+                    .collect(Collectors.toList());
+        } else {
+            // 实时动画模式：使用原始视频
+            videoUrls = episodes.stream()
+                    .flatMap(episode -> panelRepository.findByEpisodeId(episode.getId()).stream())
+                    .filter(panel -> panel.getPanelInfo() != null)
+                    .filter(panel -> panel.getPanelInfo().containsKey("videoUrl"))
+                    .filter(panel -> {
+                        String status = (String) panel.getPanelInfo().get("videoStatus");
+                        return "completed".equals(status);
+                    })
+                    .map(panel -> (String) panel.getPanelInfo().get("videoUrl"))
+                    .collect(Collectors.toList());
+        }
 
         if (videoUrls.isEmpty()) {
-            return Result.fail("没有已完成的视频可拼接");
+            return Result.fail(isComicCommentary
+                    ? "没有已合成旁白的视频可拼接，请先在各面板合成音视频"
+                    : "没有已完成的视频可拼接");
         }
 
         // 执行拼接
         String finalVideoUrl = videoCompositionService.mergePanelVideos(videoUrls);
 
         // 存储合并结果到 projectInfo
-        Project project = projectRepository.findByProjectId(projectId);
         if (project != null) {
             Map<String, Object> info = project.getProjectInfo();
             if (info == null) {
