@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from '../CreatePage.module.less';
-import { ChevronDownIcon } from '../../../components/icons/Icons';
-import { createProject, isApiSuccess } from '../../../services';
+import VoiceSelect from '../../../components/VoiceSelect';
+import Select from '../../../components/Select';
+import { createProject, isApiSuccess, previewVoice } from '../../../services';
 import type { CreateProjectRequest, ProductionMode, Project, VisualStyle } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useProjectStore } from '../../../stores';
@@ -67,16 +68,22 @@ const videoProviderOptions = [
 
 // 旁白音色选项
 const VOICE_OPTIONS = [
-  { voiceId: 'Chinese (Mandarin)_Male_Announcer', name: '播报男声' },
-  { voiceId: 'Chinese (Mandarin)_News_Anchor', name: '新闻女声' },
-  { voiceId: 'Chinese (Mandarin)_Radio_Host', name: '电台男主播' },
-  { voiceId: 'Chinese (Mandarin)_Lyrical_Voice', name: '抒情男声' },
-  { voiceId: 'Chinese (Mandarin)_Gentleman', name: '温润男声' },
-  { voiceId: 'Chinese (Mandarin)_Sweet_Lady', name: '甜美女声' },
-  { voiceId: 'male-qn-jingying', name: '精英青年音色' },
-  { voiceId: 'male-qn-badao', name: '霸道青年音色' },
-  { voiceId: 'female-yujie', name: '御姐音色' },
-  { voiceId: 'female-tianmei', name: '甜美女性音色' },
+  { value: 'Chinese (Mandarin)_Lyrical_Voice', label: '抒情男声' },
+  { value: 'Chinese (Mandarin)_Gentle_Youth', label: '温润青年' },
+  { value: 'Chinese (Mandarin)_Sincere_Adult', label: '真诚青年' },
+  { value: 'Chinese (Mandarin)_Radio_Host', label: '电台男主播' },
+  { value: 'Chinese (Mandarin)_Humorous_Elder', label: '搞笑大爷' },
+  { value: 'male-qn-badao', label: '霸道青年' },
+  { value: 'male-qn-daxuesheng', label: '青年大学生' },
+  { value: 'Chinese (Mandarin)_Gentleman', label: '温润男声' },
+  { value: 'Chinese (Mandarin)_Wise_Women', label: '阅历姐姐' },
+  { value: 'Chinese (Mandarin)_Warm_Girl', label: '温暖少女' },
+  { value: 'Chinese (Mandarin)_Soft_Girl', label: '柔和少女' },
+  { value: 'female-shaonv', label: '少女音色' },
+  { value: 'female-yujie', label: '御姐音色' },
+  { value: 'female-tianmei', label: '甜美女性音色' },
+  { value: 'Chinese (Mandarin)_Cute_Spirit', label: '憨憨萌兽' },
+  { value: 'Chinese (Mandarin)_Gentle_Senior', label: '温柔学姐' },
 ];
 
 // 旁白视角选项
@@ -145,11 +152,46 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
   const [protagonistVoiceId, setProtagonistVoiceId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ========== 音色试听 ==========
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewVoiceId, setPreviewVoiceId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   // 切换旁白视角时清除已选音色
   const handleNarrationPerspectiveChange = (value: 'first_person' | 'third_person') => {
     setNarrationPerspective(value);
     setNarrationVoiceId('');
     setProtagonistVoiceId('');
+  };
+
+  // ========== 音色试听 ==========
+  const handlePreviewVoice = async (voiceId: string) => {
+    if (previewVoiceId === voiceId && audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+      setPreviewVoiceId(null);
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewVoiceId(voiceId);
+    try {
+      const res = await previewVoice(voiceId);
+      if (isApiSuccess(res) && res.data?.audioUrl) {
+        if (audioRef.current) {
+          audioRef.current.pause();
+        }
+        audioRef.current = new Audio(res.data.audioUrl);
+        audioRef.current.onended = () => setPreviewVoiceId(null);
+        audioRef.current.play();
+      } else {
+        alert('试听生成失败');
+        setPreviewVoiceId(null);
+      }
+    } catch {
+      alert('试听请求失败');
+      setPreviewVoiceId(null);
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   // ========== 提交处理 ==========
@@ -242,24 +284,12 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
           <div className={styles.card}>
             {/* 制作模式 */}
             <div className={styles.configSection}>
-              <label className={styles.configLabel} htmlFor="production-mode">
-                制作模式
-              </label>
-              <div className={styles.selectWrapper}>
-                <select
-                  id="production-mode"
-                  className={styles.select}
-                  value={productionMode}
-                  onChange={(e) => setProductionMode(e.target.value as ProductionMode)}
-                >
-                  {productionModeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDownIcon className={styles.selectArrow} />
-              </div>
+              <label className={styles.configLabel}>制作模式</label>
+              <Select
+                options={productionModeOptions}
+                value={productionMode}
+                onChange={(v) => setProductionMode(v as ProductionMode)}
+              />
             </div>
 
             {/* 旁白配置 - 仅漫剧解说模式显示 */}
@@ -285,33 +315,23 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
                 {/* 音色选择 - 选中视角后显示 */}
                 {narrationPerspective && (
                   <div className={styles.configSection}>
-                    <label className={styles.configLabel} htmlFor="narration-voice">
+                    <label className={styles.configLabel}>
                       {narrationPerspective === 'first_person' ? '主角音色' : '旁白音色'}
                     </label>
-                    <div className={styles.selectWrapper}>
-                      <select
-                        id="narration-voice"
-                        className={styles.select}
-                        value={narrationPerspective === 'first_person' ? protagonistVoiceId : narrationVoiceId}
-                        onChange={(e) => {
-                          if (narrationPerspective === 'first_person') {
-                            setProtagonistVoiceId(e.target.value);
-                          } else {
-                            setNarrationVoiceId(e.target.value);
-                          }
-                        }}
-                      >
-                        <option value="" disabled>
-                          选择音色
-                        </option>
-                        {VOICE_OPTIONS.map((option) => (
-                          <option key={option.voiceId} value={option.voiceId}>
-                            {option.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDownIcon className={styles.selectArrow} />
-                    </div>
+                    <VoiceSelect
+                      options={VOICE_OPTIONS}
+                      value={narrationPerspective === 'first_person' ? protagonistVoiceId : narrationVoiceId}
+                      onChange={(voiceId) => {
+                        if (narrationPerspective === 'first_person') {
+                          setProtagonistVoiceId(voiceId);
+                        } else {
+                          setNarrationVoiceId(voiceId);
+                        }
+                      }}
+                      onPreview={handlePreviewVoice}
+                      previewLoading={previewLoading}
+                      previewVoiceId={previewVoiceId}
+                    />
                   </div>
                 )}
               </>
@@ -319,77 +339,35 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
 
             {/* 题材类型 */}
             <div className={styles.configSection}>
-              <label className={styles.configLabel} htmlFor="genre">
-                题材类型
-              </label>
-              <div className={styles.selectWrapper}>
-                <select
-                  id="genre"
-                  className={styles.select}
-                  value={genre}
-                  onChange={(e) => setGenre(e.target.value)}
-                >
-                  <option value="" disabled>
-                    选择题材
-                  </option>
-                  {genreOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDownIcon className={styles.selectArrow} />
-              </div>
+              <label className={styles.configLabel}>题材类型</label>
+              <Select
+                options={genreOptions}
+                value={genre}
+                onChange={setGenre}
+                placeholder="选择题材"
+              />
             </div>
 
             {/* 画面风格 */}
             <div className={styles.configSection}>
-              <label className={styles.configLabel} htmlFor="visual-style">
-                画面风格
-              </label>
-              <div className={styles.selectWrapper}>
-                <select
-                  id="visual-style"
-                  className={styles.select}
-                  value={visualStyle}
-                  onChange={(e) => setVisualStyle(e.target.value as VisualStyle)}
-                >
-                  <option value="" disabled>
-                    Select Option
-                  </option>
-                  {visualStyleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDownIcon className={styles.selectArrow} />
-              </div>
+              <label className={styles.configLabel}>画面风格</label>
+              <Select
+                options={visualStyleOptions}
+                value={visualStyle}
+                onChange={(v) => setVisualStyle(v as VisualStyle)}
+                placeholder="Select Option"
+              />
             </div>
 
             {/* 目标受众 */}
             <div className={styles.configSection}>
-              <label className={styles.configLabel} htmlFor="target-audience">
-                目标受众
-              </label>
-              <div className={styles.selectWrapper}>
-                <select
-                  id="target-audience"
-                  className={styles.select}
-                  value={targetAudience}
-                  onChange={(e) => setTargetAudience(e.target.value)}
-                >
-                  <option value="" disabled>
-                    选择目标受众
-                  </option>
-                  {targetAudienceOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDownIcon className={styles.selectArrow} />
-              </div>
+              <label className={styles.configLabel}>目标受众</label>
+              <Select
+                options={targetAudienceOptions}
+                value={targetAudience}
+                onChange={setTargetAudience}
+                placeholder="选择目标受众"
+              />
             </div>
 
             {/* 每集时长 */}
@@ -427,69 +405,33 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
 
             {/* 图片生成商 */}
             <div className={styles.configSection}>
-              <label className={styles.configLabel} htmlFor="image-provider">
-                图片生成商
-              </label>
-              <div className={styles.selectWrapper}>
-                <select
-                  id="image-provider"
-                  className={styles.select}
-                  value={imageProvider}
-                  onChange={(e) => setImageProvider(e.target.value)}
-                >
-                  {imageProviderOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDownIcon className={styles.selectArrow} />
-              </div>
+              <label className={styles.configLabel}>图片生成商</label>
+              <Select
+                options={imageProviderOptions}
+                value={imageProvider}
+                onChange={setImageProvider}
+              />
             </div>
 
             {/* 视频生成商 */}
             <div className={styles.configSection}>
-              <label className={styles.configLabel} htmlFor="video-provider">
-                视频生成商
-              </label>
-              <div className={styles.selectWrapper}>
-                <select
-                  id="video-provider"
-                  className={styles.select}
-                  value={videoProvider}
-                  onChange={(e) => setVideoProvider(e.target.value)}
-                >
-                  {videoProviderOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDownIcon className={styles.selectArrow} />
-              </div>
+              <label className={styles.configLabel}>视频生成商</label>
+              <Select
+                options={videoProviderOptions}
+                value={videoProvider}
+                onChange={setVideoProvider}
+              />
             </div>
 
             {/* Vidu 模型选择 */}
             {videoProvider === 'vidu' && (
               <div className={styles.configSection}>
-                <label className={styles.configLabel} htmlFor="video-model">
-                  视频模型
-                </label>
-                <div className={styles.selectWrapper}>
-                  <select
-                    id="video-model"
-                    className={styles.select}
-                    value={videoModel}
-                    onChange={(e) => setVideoModel(e.target.value)}
-                  >
-                    {viduModelOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDownIcon className={styles.selectArrow} />
-                </div>
+                <label className={styles.configLabel}>视频模型</label>
+                <Select
+                  options={viduModelOptions}
+                  value={videoModel}
+                  onChange={setVideoModel}
+                />
               </div>
             )}
           </div>

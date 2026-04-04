@@ -1,6 +1,6 @@
 package com.comic.ai.text;
 
-import com.comic.config.ViduProperties;
+import com.comic.config.MiniMaxTtsProperties;
 import com.comic.service.oss.OssService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,22 +9,26 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.*;
 
 /**
- * Vidu TTS 旁白生成服务
- * 调用 POST https://api.vidu.cn/ent/v2/audio-tts（同步接口）
+ * MiniMax TTS 旁白生成服务
+ * 调用 POST https://api.minimaxi.com/v1/t2a_v2（同步接口）
+ * 响应返回 hex 编码音频，解码后上传至 OSS 持久化
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ViduTtsService {
 
-    private final ViduProperties viduProperties;
+    private final MiniMaxTtsProperties minimaxProperties;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final OssService ossService;
+
+    private static final String TTS_ENDPOINT = "/v1/t2a_v2";
 
     /**
      * TTS 文本拼接算法
@@ -63,6 +67,13 @@ public class ViduTtsService {
     }
 
     /**
+     * 试听音色：生成一段固定示例文本的音频，返回 OSS URL
+     */
+    public String preview(String voiceId) {
+        return generate("大家好，欢迎收听本期故事，希望你们会喜欢。", voiceId);
+    }
+
+    /**
      * 生成 TTS 音频，上传至 OSS 持久化
      */
     public String generate(String ttsText, String voiceId) {
@@ -73,12 +84,24 @@ public class ViduTtsService {
             throw new IllegalArgumentException("voiceId 不能为空");
         }
 
-        Map<String, Object> requestBody = new HashMap<>();
+        // 构造请求体
+        Map<String, Object> voiceSetting = new HashMap<>();
+        voiceSetting.put("voice_id", voiceId);
+        voiceSetting.put("speed", 1.0);
+
+        Map<String, Object> audioSetting = new HashMap<>();
+        audioSetting.put("sample_rate", 32000);
+        audioSetting.put("bitrate", 128000);
+        audioSetting.put("format", "mp3");
+        audioSetting.put("channel", 1);
+
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("model", minimaxProperties.getModel());
         requestBody.put("text", ttsText);
-        requestBody.put("voice_setting_voice_id", voiceId);
-        requestBody.put("voice_setting_speed", 1.0);
-        requestBody.put("voice_setting_volume", 0);
-        requestBody.put("voice_setting_pitch", 0);
+        requestBody.put("stream", false);
+        requestBody.put("voice_setting", voiceSetting);
+        requestBody.put("audio_setting", audioSetting);
+        requestBody.put("output_format", "hex");
 
         String jsonBody;
         try {
@@ -88,8 +111,8 @@ public class ViduTtsService {
         }
 
         Request request = new Request.Builder()
-                .url(viduProperties.getBaseUrl() + viduProperties.getTtsEndpoint())
-                .addHeader("Authorization", "Token " + viduProperties.getApiKey())
+                .url(minimaxProperties.getBaseUrl() + TTS_ENDPOINT)
+                .addHeader("Authorization", "Bearer " + minimaxProperties.getApiKey())
                 .addHeader("Content-Type", "application/json")
                 .post(RequestBody.create(jsonBody, MediaType.parse("application/json; charset=utf-8")))
                 .build();
@@ -97,28 +120,40 @@ public class ViduTtsService {
         try (Response response = httpClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "无响应体";
-                log.error("Vidu TTS API 调用失败: {} - {}", response.code(), errorBody);
-                throw new RuntimeException("Vidu TTS 生成失败: " + response.code() + " - " + errorBody);
+                log.error("MiniMax TTS API 调用失败: {} - {}", response.code(), errorBody);
+                throw new RuntimeException("MiniMax TTS 生成失败: " + response.code() + " - " + errorBody);
             }
 
             String responseBody = response.body().string();
-            log.debug("Vidu TTS 响应: {}", responseBody);
+            log.debug("MiniMax TTS 响应: {}", responseBody.length() > 500 ? responseBody.substring(0, 500) + "..." : responseBody);
 
             JsonNode root = objectMapper.readTree(responseBody);
-            String state = root.path("state").asText();
-            String fileUrl = root.path("file_url").asText();
-            int credits = root.path("credits").asInt(0);
+            JsonNode baseResp = root.path("base_resp");
+            int statusCode = baseResp.path("status_code").asInt(-1);
+            String statusMsg = baseResp.path("status_msg").asText();
 
-            if (!"success".equals(state) || fileUrl.isEmpty()) {
-                throw new RuntimeException("Vidu TTS 生成失败: state=" + state + ", file_url=" + fileUrl);
+            if (statusCode != 0) {
+                throw new RuntimeException("MiniMax TTS 生成失败: status_code=" + statusCode + ", status_msg=" + statusMsg);
             }
 
-            String ossUrl = ossService.uploadAudioFromUrl(fileUrl);
-            log.info("Vidu TTS 完成: 消耗 credits={}, OSS URL={}", credits, ossUrl);
+            JsonNode data = root.path("data");
+            String hexAudio = data.path("audio").asText("");
+            if (hexAudio.isEmpty()) {
+                throw new RuntimeException("MiniMax TTS 返回音频为空");
+            }
+
+            // 解码 hex → byte[]
+            byte[] audioBytes = hexToBytes(hexAudio);
+
+            // 上传到 OSS（与 uploadAudioFromUrl 保持一致路径）
+            String objectKey = "tts/" + UUID.randomUUID().toString().replace("-", "") + ".mp3";
+            String ossUrl = ossService.uploadFromInputStream(
+                    new ByteArrayInputStream(audioBytes), objectKey, "audio/mpeg", audioBytes.length);
+            log.info("MiniMax TTS 完成: 音频大小={}KB, OSS URL={}", audioBytes.length / 1024, ossUrl);
             return ossUrl;
 
         } catch (IOException e) {
-            throw new RuntimeException("Vidu TTS 请求异常", e);
+            throw new RuntimeException("MiniMax TTS 请求异常", e);
         }
     }
 
@@ -153,5 +188,18 @@ public class ViduTtsService {
         if (obj instanceof Number) return ((Number) obj).doubleValue();
         try { return Double.parseDouble(obj.toString()); }
         catch (Exception e) { return 0; }
+    }
+
+    /**
+     * Hex 字符串 → byte[]
+     */
+    private static byte[] hexToBytes(String hex) {
+        int len = hex.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                    + Character.digit(hex.charAt(i + 1), 16));
+        }
+        return data;
     }
 }

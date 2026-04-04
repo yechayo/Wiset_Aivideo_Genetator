@@ -672,11 +672,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                     videoOffPeak: status.offPeak ?? seg.videoOffPeak,
                     videoProgress: status.videoProgress ?? seg.videoProgress,
                     videoCredits: status.videoCredits ?? seg.videoCredits,
-                    ttsAudioUrl: status.ttsAudioUrl ?? seg.ttsAudioUrl,
-                    ttsStatus: status.ttsStatus ?? seg.ttsStatus,
+                    ttsAudioUrl: status.ttsAudioUrl || seg.ttsAudioUrl,
+                    ttsStatus: status.ttsStatus === 'completed' ? 'completed' : (status.ttsStatus || seg.ttsStatus),
                     ttsCredits: status.ttsCredits ?? seg.ttsCredits,
-                    videoWithNarrationUrl: status.videoWithNarrationUrl ?? seg.videoWithNarrationUrl,
-                    mergeStatus: status.mergeStatus ?? seg.mergeStatus,
+                    videoWithNarrationUrl: status.videoWithNarrationUrl || seg.videoWithNarrationUrl,
+                    mergeStatus: status.mergeStatus === 'completed' ? 'completed' : (status.mergeStatus || seg.mergeStatus),
                   };
                 }),
               }
@@ -1079,6 +1079,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     })));
     try {
       await mergePanelAudio(projectId, episodeId, Number(panelId));
+      // 刷新状态以获取 mergeStatus=completed 和 videoWithNarrationUrl
+      refreshProductionStatuses(episodeId);
     } catch (err: any) {
       // Revert to failed on error
       setChapters(prev => prev.map(ch => ({
@@ -1773,10 +1775,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                           <div style={{ marginTop: 12 }}>
                                             <button
                                               className={styles.btnPrimary}
-                                              disabled={seg.mergeStatus === 'generating' || seg.mergeStatus === 'completed' || !panelId}
+                                              disabled={seg.mergeStatus === 'generating' || !panelId}
                                               onClick={() => panelId && handleMergeAudio(ep.episodeId, panelId)}
                                             >
-                                              {seg.mergeStatus === 'generating' ? <><SpinIcon /> 合成中...</> : seg.mergeStatus === 'completed' ? '已合成' : '合成旁白视频'}
+                                              {seg.mergeStatus === 'generating' ? <><SpinIcon /> 合成中...</> : seg.mergeStatus === 'completed' ? '重新合成' : '合成旁白视频'}
                                             </button>
                                             {seg.mergeStatus === 'completed' && seg.videoWithNarrationUrl && (
                                               <div style={{ marginTop: 8 }}>

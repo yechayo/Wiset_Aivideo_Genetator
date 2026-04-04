@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import styles from './Step3Merged.module.less';
+import Select from '../../../components/Select';
 import type { Project, CharacterListItem, CharacterStatus } from '../../../services';
 import { isApiSuccess } from '../../../services';
 import { advanceStatus } from '../../../services/projectService';
@@ -397,21 +398,15 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
             </div>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>角色定位</label>
-              <select className={styles.formSelect} value={editForm.role || ''} onChange={(e) => handleFormChange('role', e.target.value)}>
-                {ROLE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
+              <Select options={ROLE_OPTIONS} value={editForm.role || ''} onChange={(v) => handleFormChange('role', v)} />
             </div>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>视觉风格</label>
-              <select className={styles.formSelect} value={char.visualStyle || '3D'} onChange={(e) => handleStyleChange(char.charId, e.target.value)}>
-                {VISUAL_STYLE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
+              <Select options={VISUAL_STYLE_OPTIONS} value={char.visualStyle || '3D'} onChange={(v) => handleStyleChange(char.charId, v)} />
             </div>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>物种类型</label>
-              <select className={styles.formSelect} value={editForm.species || 'HUMAN'} onChange={(e) => handleFormChange('species', e.target.value)}>
-                {SPECIES_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
+              <Select options={SPECIES_OPTIONS} value={editForm.species || 'HUMAN'} onChange={(v) => handleFormChange('species', v)} />
             </div>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>性格描述</label>

@@ -165,6 +165,39 @@ export async function batchGenerateTts(
   );
 }
 
+// ================= 音视频合并 API =================
+
+/** 合并单个 Panel 的视频与 TTS 旁白 */
+export async function mergePanelAudio(
+  projectId: string,
+  episodeId: number,
+  panelId: number,
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/merge-audio`,
+  );
+}
+
+/** 批量合并一集所有 Panel 的视频与 TTS 旁白 */
+export async function batchMergeAudio(
+  projectId: string,
+  episodeId: number,
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/merge-audio/batch`,
+  );
+}
+
+/** 一键合成：拼接所有已合并面板为一集完整视频 */
+export async function composeEpisode(
+  projectId: string,
+  episodeId: number,
+): Promise<ApiResponse<{ composedVideoUrl: string; panelCount: number }>> {
+  return post<ApiResponse<{ composedVideoUrl: string; panelCount: number }>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/compose-episode`,
+  );
+}
+
 // ================= 视频生成 API =================
 
 /** 获取视频生成提示词 */
@@ -319,5 +352,15 @@ export async function regenerateSceneImage(
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/episodes/${episodeId}/panels/${panelIndex}/regenerate-scene`,
+  );
+}
+
+// ================= 音色试听 API =================
+
+/** 试听音色：生成一段示例文本的 TTS 音频，返回 audioUrl */
+export async function previewVoice(voiceId: string): Promise<ApiResponse<{ audioUrl: string }>> {
+  return post<ApiResponse<{ audioUrl: string }>>(
+    '/api/voice/preview',
+    { voiceId },
   );
 }

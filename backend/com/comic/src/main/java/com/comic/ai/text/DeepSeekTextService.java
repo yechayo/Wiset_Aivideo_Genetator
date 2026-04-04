@@ -652,7 +652,7 @@ public class DeepSeekTextService implements TextGenerationService {
             .append("- visualDescription: 画面描述（必须详细描述画面内容，包括角色具体动作姿态、面部表情、身体语言、手势、光影效果、色彩氛围。示例：\"女孩右手紧握裙摆，微微低头，眼眶泛红但强忍着泪水，头顶的夕阳余晖在她发梢形成金色光晕，背景是模糊的校园走廊\"）\n");
 
         if (comicCommentary) {
-            sb.append("- narration: **解说旁白口播稿**（中文口语，每镜 12-45 字，必须与该镜画面信息点一致；**每镜必填**，禁止填「无」、禁止空字符串；可含语气词但不要冗长）\n");
+            sb.append("- narration: **解说旁白口播稿**（中文口语，字数必须与该镜头 duration 对齐：约 duration×4~5 字/秒，例如 duration=2 时约8-10字、duration=3 时约12-15字、duration=4 时约16-20字；必须与该镜画面信息点一致；**每镜必填**，禁止填「无」、禁止空字符串；可含语气词但不要冗长）\n");
         }
 
         if (comicCommentary) {
@@ -762,7 +762,7 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("- cameraAngle: 角度（视平/高位俯拍/低位仰拍/斜拍/越肩/鸟瞰/荷兰角/低角度仰拍/高角度俯拍）\n");
         sb.append("- cameraMovement: 运镜描述（必须详细描述镜头的动态运动，包括：运镜方式如推/拉/摇/移/跟/升降/环绕/手持晃动/固定等，运动方向和速度如缓慢/匀速/快速/急促，起始位置和结束位置，与主体或场景的关系，营造的视觉氛围。示例：\"镜头从角色眼部特写缓慢开始，逐渐向后拉远至中景，同时向左平移30度，展现场景全貌，营造孤独空旷的压抑氛围\"。禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇！）\n");
         sb.append("- visualDescription: 画面描述（必须详细描述画面内容，包括角色具体动作姿态、面部表情、身体语言、手势、光影效果、色彩氛围。示例：\"女孩右手紧握裙摆，微微低头，眼眶泛红但强忍着泪水，头顶的夕阳余晖在她发梢形成金色光晕，背景是模糊的校园走廊\"）\n");
-        sb.append("- narration: 解说旁白口播稿（中文口语，每镜 12-45 字，必须与该镜画面信息点一致；每镜必填，禁止填「无」、禁止空字符串；可含语气词但不要冗长）\n");
+        sb.append("- narration: 解说旁白口播稿（中文口语，字数必须与该镜头 duration 对齐：约 duration×4~5 字/秒，例如 duration=2 时约8-10字、duration=3 时约12-15字、duration=4 时约16-20字；必须与该镜画面信息点一致；每镜必填，禁止填「无」、禁止空字符串；可含语气词但不要冗长）\n");
         sb.append("- dialogue: 角色在画面内开口的台词（无则填\"无\"）\n");
         sb.append("- speaker: 说话人（无角色台词则填\"无\"；有台词时必须是 characters 数组中的角色之一。不要用「旁白」填 speaker——旁白一律写在 narration 字段）\n");
         sb.append("- dialogueTone: 对白语气（无对白则填\"无\"。必须描述说话人的语气、情绪状态和表演方式。示例：\"愤怒而急促，声音略带颤抖\"或\"温柔低语，带着一丝犹豫和心疼\"）\n");
