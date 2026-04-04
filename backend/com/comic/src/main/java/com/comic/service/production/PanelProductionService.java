@@ -1,6 +1,7 @@
 package com.comic.service.production;
 
 import com.comic.ai.CharacterPromptManager;
+import com.comic.ai.ComicCommentaryPanelPromptBuilder;
 import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.ai.video.VideoGenerationService;
@@ -20,6 +21,7 @@ import com.comic.repository.PanelRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.oss.OssService;
 import com.comic.service.panel.GridImageService;
+import com.comic.util.ProjectProductionMode;
 import com.comic.service.redis.ProgressService;
 import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +53,7 @@ public class PanelProductionService {
     private final ProjectRepository projectRepository;
     private final CharacterRepository characterRepository;
     private final PanelPromptBuilder panelPromptBuilder;
+    private final ComicCommentaryPanelPromptBuilder comicCommentaryPanelPromptBuilder;
     private final AiServiceConfiguration aiServiceConfig;
     private final VideoGenerationService videoGenerationService;
     private final ViduVideoService viduVideoService;
@@ -71,6 +74,7 @@ public class PanelProductionService {
                                    ProjectRepository projectRepository,
                                    CharacterRepository characterRepository,
                                    PanelPromptBuilder panelPromptBuilder,
+                                   ComicCommentaryPanelPromptBuilder comicCommentaryPanelPromptBuilder,
                                    AiServiceConfiguration aiServiceConfig,
                                    VideoGenerationService videoGenerationService,
                                    ViduVideoService viduVideoService,
@@ -85,6 +89,7 @@ public class PanelProductionService {
         this.projectRepository = projectRepository;
         this.characterRepository = characterRepository;
         this.panelPromptBuilder = panelPromptBuilder;
+        this.comicCommentaryPanelPromptBuilder = comicCommentaryPanelPromptBuilder;
         this.aiServiceConfig = aiServiceConfig;
         this.videoGenerationService = videoGenerationService;
         this.viduVideoService = viduVideoService;
@@ -121,6 +126,61 @@ public class PanelProductionService {
         if (project == null || project.getProjectInfo() == null) return null;
         Object model = project.getProjectInfo().get(ProjectInfoKeys.VIDEO_MODEL);
         return model != null ? model.toString() : null;
+    }
+
+    /** 按项目 productionMode 选择实时动画或漫剧解说多镜头视频 prompt */
+    private String buildAutoMultiShotPrompt(Panel panel, Map<String, Object> info) {
+        String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
+        List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
+        Map<String, Object> prevPanelLastShot = getPreviousPanelLastShot(panel);
+        String projectId = getProjectIdByPanelId(panel.getId());
+        Project project = projectId != null ? projectRepository.findByProjectId(projectId) : null;
+        if (ProjectProductionMode.isComicCommentary(project)) {
+            String prevNarration = extractNarration(prevPanelLastShot);
+            String nextNarration = getNextPanelFirstNarration(panel);
+            return comicCommentaryPanelPromptBuilder.buildMultiShotPrompt(
+                    visualStyle, info, characterInfos, prevPanelLastShot, prevNarration, nextNarration);
+        }
+        return panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos, prevPanelLastShot);
+    }
+
+    /** 提取 shot 的 narration 字段 */
+    private String extractNarration(Map<String, Object> shot) {
+        if (shot == null) return null;
+        Object nar = shot.get("narration");
+        if (nar != null) {
+            String s = nar.toString().trim();
+            if (!s.isEmpty() && !"无".equals(s)) return s;
+        }
+        String sp = shot.get("speaker") != null ? shot.get("speaker").toString() : "";
+        String dlg = shot.get("dialogue") != null ? shot.get("dialogue").toString() : "";
+        if (sp.contains("旁白") && dlg != null && !dlg.isEmpty() && !"无".equals(dlg.trim())) {
+            return dlg.trim();
+        }
+        return null;
+    }
+
+    /** 获取下一个 Panel 的第一条 shot 的 narration */
+    @SuppressWarnings("unchecked")
+    private String getNextPanelFirstNarration(Panel currentPanel) {
+        try {
+            List<Panel> siblings = panelRepository.findByEpisodeId(currentPanel.getEpisodeId());
+            Panel nextPanel = null;
+            boolean found = false;
+            for (Panel p : siblings) {
+                if (found) { nextPanel = p; break; }
+                if (p.getId().equals(currentPanel.getId())) found = true;
+            }
+            if (nextPanel == null) return null;
+            Map<String, Object> nextInfo = nextPanel.getPanelInfo();
+            if (nextInfo == null) return null;
+            List<Map<String, Object>> nextShots = (List<Map<String, Object>>) nextInfo.get("shots");
+            if (nextShots == null || nextShots.isEmpty()) return null;
+            return extractNarration(nextShots.get(0));
+        } catch (Exception e) {
+            log.warn("获取下一个 Panel narration 失败: panelId={}, error={}", currentPanel.getId(), e.getMessage());
+            return null;
+        }
     }
 
     private String getProjectIdByPanelIdForProvider(Long panelId) {
@@ -167,6 +227,9 @@ public class PanelProductionService {
         status.put("offPeak", panelInfo.getOrDefault("offPeak", false));
         status.put("videoProgress", panelInfo.get("videoProgress"));
         status.put("videoCredits", panelInfo.get("videoCredits"));
+        status.put("ttsStatus", panelInfo.getOrDefault("ttsStatus", "pending"));
+        status.put("ttsAudioUrl", panelInfo.get("ttsAudioUrl"));
+        status.put("ttsCredits", panelInfo.get("ttsCredits"));
         return status;
     }
 
@@ -268,6 +331,10 @@ public class PanelProductionService {
     }
 
     public void generateVideoByPanelId(Long panelId, boolean offPeak, String customPrompt) {
+        generateVideoByPanelId(panelId, offPeak, customPrompt, null);
+    }
+
+    public void generateVideoByPanelId(Long panelId, boolean offPeak, String customPrompt, String videoModel) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
@@ -281,7 +348,7 @@ public class PanelProductionService {
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
         }
-        self().doGenerateVideoByPanelId(panelId, offPeak);
+        self().doGenerateVideoByPanelId(panelId, offPeak, videoModel);
     }
 
     /**
@@ -305,10 +372,7 @@ public class PanelProductionService {
         }
 
         // 最后返回自动构建的提示词
-        String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
-        List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
-        Map<String, Object> prevPanelLastShot = getPreviousPanelLastShot(panel);
-        return panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos, prevPanelLastShot);
+        return buildAutoMultiShotPrompt(panel, info);
     }
 
     /**
@@ -325,10 +389,7 @@ public class PanelProductionService {
         if (custom != null && !custom.trim().isEmpty()) {
             originalPrompt = custom;
         } else {
-            String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
-            List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
-            Map<String, Object> prevPanelLastShot = getPreviousPanelLastShot(panel);
-            originalPrompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos, prevPanelLastShot);
+            originalPrompt = buildAutoMultiShotPrompt(panel, info);
         }
 
         String enhanced = viduVideoService.enhancePrompt(originalPrompt);
@@ -342,7 +403,7 @@ public class PanelProductionService {
     }
 
     @Async
-    public void doGenerateVideoByPanelId(Long panelId, boolean offPeak) {
+    public void doGenerateVideoByPanelId(Long panelId, boolean offPeak, String overrideVideoModel) {
         try {
             Panel panel = panelRepository.selectById(panelId);
             if (panel == null) throw new BusinessException("分镜不存在");
@@ -365,10 +426,7 @@ public class PanelProductionService {
                 prompt = (String) info.get("customVideoPrompt");
             }
             if (prompt == null || prompt.trim().isEmpty()) {
-                String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
-                List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
-                Map<String, Object> prevPanelLastShot = getPreviousPanelLastShot(panel);
-                prompt = panelPromptBuilder.buildMultiShotPrompt(visualStyle, info, characterInfos, prevPanelLastShot);
+                prompt = buildAutoMultiShotPrompt(panel, info);
             }
 
             // 从 shots 计算总时长
@@ -386,7 +444,10 @@ public class PanelProductionService {
             String projectId = getProjectIdByPanelIdForProvider(panelId);
             VideoGenerationService videoService = aiServiceConfig.getVideoService(
                 getVideoProvider(projectId != null ? projectId : ""));
-            String videoModel = projectId != null ? getVideoModel(projectId) : null;
+            // 优先使用请求级别的 videoModel 覆盖，其次使用项目级配置
+            String videoModel = (overrideVideoModel != null && !overrideVideoModel.trim().isEmpty())
+                ? overrideVideoModel
+                : (projectId != null ? getVideoModel(projectId) : null);
             String taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
             info.put("videoTaskId", taskId);
             info.put("offPeak", offPeak);
@@ -646,12 +707,14 @@ public class PanelProductionService {
             Map<String, Object> scriptMap = (Map<String, Object>) projectInfo.get("script");
             String outline = scriptMap != null ? (String) scriptMap.getOrDefault("outline", "") : "";
             String charactersDesc = getCharacterDescriptions(projectId);
+            boolean comicMode = ProjectProductionMode.isComicCommentary(project);
 
             // 1. 生成结构化分集剧本
             int totalEpisodes = getIntFromMap(projectInfo, "totalEpisodes", 1);
-            log.info("[Pipeline-Text] 调用DeepSeek生成分集剧本: projectId={}, totalEpisodes={}", projectId, totalEpisodes);
+            log.info("[Pipeline-Text] 调用DeepSeek生成分集剧本: projectId={}, totalEpisodes={}, comicCommentary={}",
+                    projectId, totalEpisodes, comicMode);
             List<Map<String, Object>> scripts = deepSeekTextService.generateEpisodeScript(
-                outline, charactersDesc, targetDuration, visualStyle, totalEpisodes);
+                outline, charactersDesc, targetDuration, visualStyle, totalEpisodes, comicMode);
             log.info("[Pipeline-Text] 生成 {} 集剧本, projectId={}", scripts.size(), projectId);
 
             totalEpisodes = scripts.size();
@@ -665,14 +728,46 @@ public class PanelProductionService {
             }
 
             // 2. 逐集生成分镜文本，创建 Episode（不生成九宫格）
+            // 收集已有 episode 的退回原因，供重新生成时使用
+            List<Episode> existingEpisodes = episodeRepository.findByProjectId(projectId);
+            Map<Integer, String> rejectionReasons = new HashMap<>();
+            for (Episode ep : existingEpisodes) {
+                Map<String, Object> epInfo = ep.getEpisodeInfo();
+                if (epInfo != null) {
+                    String reason = (String) epInfo.get("panelRejectionReason");
+                    if (reason != null && !reason.trim().isEmpty()) {
+                        int epNum = getIntFromMap(epInfo, "episodeNum", 0);
+                        if (epNum > 0) {
+                            rejectionReasons.put(epNum, reason.trim());
+                        }
+                    }
+                }
+            }
+
             for (Map<String, Object> script : scripts) {
                 String title = (String) script.get("title");
                 String content = (String) script.get("content");
                 String characters = (String) script.getOrDefault("characters", "");
 
-                log.info("[Pipeline-Text] 调用DeepSeek生成分镜: projectId={}, episode={}", projectId, title);
-                List<Map<String, Object>> shots = deepSeekTextService.generateStoryboard(
-                    content, characters, targetDuration, visualStyle);
+                int episodeNum = scripts.indexOf(script) + 1;
+                String revisionNote = rejectionReasons.get(episodeNum);
+
+                log.info("[Pipeline-Text] 调用DeepSeek生成分镜: projectId={}, episode={}, comicMode={}, hasRevision={}",
+                        projectId, title, comicMode, revisionNote != null);
+
+                List<Map<String, Object>> shots;
+                if (comicMode) {
+                    List<List<Map<String, Object>>> panelGroups = deepSeekTextService.generatePanelAwareStoryboard(
+                        content, characters, targetDuration, visualStyle, revisionNote);
+                    log.info("[Pipeline-Text] 生成 {} 个 Panel, projectId={}, episode={}", panelGroups.size(), projectId, title);
+                    shots = new ArrayList<>();
+                    for (List<Map<String, Object>> group : panelGroups) {
+                        shots.addAll(group);
+                    }
+                } else {
+                    shots = deepSeekTextService.generateStoryboard(
+                        content, characters, targetDuration, visualStyle, false, revisionNote);
+                }
                 log.info("[Pipeline-Text] 生成 {} 个分镜, projectId={}, episode={}", shots.size(), projectId, title);
 
                 // 注入角色ID
@@ -681,12 +776,24 @@ public class PanelProductionService {
 
                 // 在独立事务中创建 episode 并设置状态为 text_ready
                 TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
-                int episodeNum = scripts.indexOf(script) + 1;
                 Long episodeId = txTemplate.execute(status -> {
                     Long eid = findOrCreateEpisode(projectId, script, shots, visualStyle, episodeNum);
                     log.info("[Pipeline-Text] Episode创建/更新: episodeId={}, projectId={}", eid, projectId);
                     deleteExistingPanels(eid);
                     gridImageService.updateEpisodeGridStatus(eid, "text_ready");
+
+                    // 清除退回原因（已根据反馈重新生成）
+                    Episode freshEp = episodeRepository.selectById(eid);
+                    if (freshEp != null) {
+                        Map<String, Object> freshInfo = freshEp.getEpisodeInfo();
+                        if (freshInfo != null && freshInfo.containsKey("panelRejectionReason")) {
+                            freshInfo.remove("panelRejectionReason");
+                            freshInfo.put("panelApproved", false);
+                            freshEp.setEpisodeInfo(freshInfo);
+                            episodeRepository.updateById(freshEp);
+                        }
+                    }
+
                     return eid;
                 });
 

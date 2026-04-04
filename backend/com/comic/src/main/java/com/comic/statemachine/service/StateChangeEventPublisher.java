@@ -120,4 +120,24 @@ public class StateChangeEventPublisher {
         payload.put("error", error);
         publishToRedis(projectId, "panel:video_failed", payload);
     }
+
+    // ===== Panel 级别事件（TTS 旁白） =====
+
+    public void publishPanelTtsDone(String projectId, Long episodeId, Long panelId, String ttsAudioUrl) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeId", episodeId);
+        payload.put("panelId", panelId);
+        payload.put("ttsAudioUrl", ttsAudioUrl);
+        payload.put("ttsStatus", "completed");
+        publishToRedis(projectId, "panel:tts_done", payload);
+    }
+
+    public void publishPanelTtsFailed(String projectId, Long episodeId, Long panelId, String error) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeId", episodeId);
+        payload.put("panelId", panelId);
+        payload.put("ttsStatus", "failed");
+        payload.put("error", error);
+        publishToRedis(projectId, "panel:tts_failed", payload);
+    }
 }

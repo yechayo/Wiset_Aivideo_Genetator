@@ -182,7 +182,8 @@ public class PanelController {
             @RequestBody(required = false) Map<String, Object> body) {
         boolean offPeak = body != null && Boolean.TRUE.equals(body.get("offPeak"));
         String customPrompt = body != null ? (String) body.get("customPrompt") : null;
-        panelProductionService.generateVideoByPanelId(panelId, offPeak, customPrompt);
+        String videoModel = body != null ? (String) body.get("videoModel") : null;
+        panelProductionService.generateVideoByPanelId(panelId, offPeak, customPrompt, videoModel);
         return Result.ok();
     }
 
@@ -194,6 +195,25 @@ public class PanelController {
             @PathVariable Long panelId) {
         panelProductionService.retryVideoByPanelId(panelId);
         return Result.ok();
+    }
+
+    // ===== TTS 旁白生成 =====
+
+    @PostMapping("/{panelId}/tts")
+    @Operation(summary = "为单个分镜生成 TTS 旁白")
+    public Result<Map<String, Object>> generatePanelTts(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        return Result.ok(panelService.generateTts(panelId));
+    }
+
+    @PostMapping("/tts/batch")
+    @Operation(summary = "批量生成 TTS 旁白")
+    public Result<Map<String, Object>> batchGenerateTts(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        return Result.ok(panelService.batchGenerateTts(episodeId));
     }
 
     // ================= 边界保护 =================
