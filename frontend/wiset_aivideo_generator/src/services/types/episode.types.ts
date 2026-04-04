@@ -190,4 +190,7 @@ export interface PanelGridStatusResponse {
   ttsAudioUrl: string | null;
   ttsStatus: 'pending' | 'generating' | 'completed' | 'failed';
   ttsCredits: number | null;
+  // === 音视频合并 ===
+  videoWithNarrationUrl: string | null;
+  mergeStatus: 'pending' | 'generating' | 'completed' | 'failed';
 }

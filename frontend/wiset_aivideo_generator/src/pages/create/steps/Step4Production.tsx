@@ -23,6 +23,8 @@ import {
   enhanceVideoPrompt as enhanceVideoPromptApi,
   generatePanelTts,
   batchGenerateTts,
+  mergePanelAudio,
+  batchMergeAudio,
 } from '../../../services/episodeService';
 import { advanceStatus } from '../../../services/projectService';
 import { useCreateStore } from '../../../stores/createStore';
@@ -309,6 +311,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [approvingEpisodeId, setApprovingEpisodeId] = useState<number | null>(null);
   const [rejectingEpisodeId, setRejectingEpisodeId] = useState<number | null>(null);
   const [isBatchTtsLoading, setIsBatchTtsLoading] = useState(false);
+  const [isBatchMergeLoading, setIsBatchMergeLoading] = useState(false);
 
   // ==================== Script Polling ====================
   const scriptPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -672,6 +675,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                     ttsAudioUrl: status.ttsAudioUrl ?? seg.ttsAudioUrl,
                     ttsStatus: status.ttsStatus ?? seg.ttsStatus,
                     ttsCredits: status.ttsCredits ?? seg.ttsCredits,
+                    videoWithNarrationUrl: status.videoWithNarrationUrl ?? seg.videoWithNarrationUrl,
+                    mergeStatus: status.mergeStatus ?? seg.mergeStatus,
                   };
                 }),
               }
@@ -1053,6 +1058,77 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId, isBatchTtsLoading]);
 
+  // Merge audio for a single panel
+  const handleMergeAudio = useCallback(async (episodeId: number, panelId: string) => {
+    if (!projectId) return;
+    // Optimistically update local state to 'generating'
+    setChapters(prev => prev.map(ch => ({
+      ...ch,
+      episodes: ch.episodes.map(ep =>
+        ep.episodeId === episodeId
+          ? {
+              ...ep,
+              segments: ep.segments.map(seg =>
+                seg.panelData?.panelId === panelId
+                  ? { ...seg, mergeStatus: 'generating' as const }
+                  : seg
+              ),
+            }
+          : ep
+      ),
+    })));
+    try {
+      await mergePanelAudio(projectId, episodeId, Number(panelId));
+    } catch (err: any) {
+      // Revert to failed on error
+      setChapters(prev => prev.map(ch => ({
+        ...ch,
+        episodes: ch.episodes.map(ep =>
+          ep.episodeId === episodeId
+            ? {
+                ...ep,
+                segments: ep.segments.map(seg =>
+                  seg.panelData?.panelId === panelId
+                    ? { ...seg, mergeStatus: 'failed' as const }
+                    : seg
+                ),
+              }
+            : ep
+        ),
+      })));
+      alert(err?.response?.data?.message || err?.message || '合成旁白视频失败');
+    }
+  }, [projectId]);
+
+  // Batch merge audio for an entire episode
+  const handleBatchMergeAudio = useCallback(async (episodeId: number) => {
+    if (!projectId || isBatchMergeLoading) return;
+    setIsBatchMergeLoading(true);
+    try {
+      await batchMergeAudio(projectId, episodeId);
+      // After batch request is accepted, set all completed-TTS segments without merge to generating
+      setChapters(prev => prev.map(ch => ({
+        ...ch,
+        episodes: ch.episodes.map(ep =>
+          ep.episodeId === episodeId
+            ? {
+                ...ep,
+                segments: ep.segments.map(seg =>
+                  (seg.ttsStatus === 'completed' || !!seg.ttsAudioUrl) && seg.mergeStatus !== 'completed'
+                    ? { ...seg, mergeStatus: 'generating' as const }
+                    : seg
+                ),
+              }
+            : ep
+        ),
+      })));
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '批量合成旁白视频失败');
+    } finally {
+      setIsBatchMergeLoading(false);
+    }
+  }, [projectId, isBatchMergeLoading]);
+
   // ==================== Render Helpers ====================
 
   const toggleChapter = useCallback((chapterIndex: number) => {
@@ -1081,6 +1157,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const ttsCompletedCount = allEpisodes.reduce((sum, ep) =>
     sum + ep.segments.filter(seg => seg.ttsStatus === 'completed' || !!seg.ttsAudioUrl).length, 0);
   const ttsTotalCount = allEpisodes.reduce((sum, ep) => sum + ep.segments.length, 0);
+  const allSegments = allEpisodes.flatMap(ep => ep.segments);
+  const mergeCompletedCount = allSegments.filter(s => s.mergeStatus === 'completed').length;
+  const mergeTotalCount = allSegments.filter(s => s.ttsStatus === 'completed' || !!s.ttsAudioUrl).length;
+  const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
 
   // ==================== Render ====================
 
@@ -1504,6 +1584,15 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                               >
                                 {isBatchTtsLoading ? <><SpinIcon /> 生成中...</> : `批量旁白 (${ttsCompletedCount}/${ttsTotalCount})`}
                               </button>
+                              {isComicCommentary && (
+                                <button
+                                  className={styles.btnGhost}
+                                  onClick={() => handleBatchMergeAudio(ep.episodeId)}
+                                  disabled={isBatchMergeLoading || mergeTotalCount === 0}
+                                >
+                                  {isBatchMergeLoading ? <><SpinIcon /> 合成中...</> : `一键合成旁白视频 (${mergeCompletedCount}/${mergeTotalCount})`}
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -1677,6 +1766,30 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                         {seg.ttsStatus === 'failed' && (
                                           <div className={styles.gridRejectionFeedback}>
                                             旁白生成失败，请重试
+                                          </div>
+                                        )}
+                                        {/* 合成旁白视频 */}
+                                        {(seg.ttsStatus === 'completed' || seg.ttsAudioUrl) && isComicCommentary && (
+                                          <div style={{ marginTop: 12 }}>
+                                            <button
+                                              className={styles.btnPrimary}
+                                              disabled={seg.mergeStatus === 'generating' || seg.mergeStatus === 'completed' || !panelId}
+                                              onClick={() => panelId && handleMergeAudio(ep.episodeId, panelId)}
+                                            >
+                                              {seg.mergeStatus === 'generating' ? <><SpinIcon /> 合成中...</> : seg.mergeStatus === 'completed' ? '已合成' : '合成旁白视频'}
+                                            </button>
+                                            {seg.mergeStatus === 'completed' && seg.videoWithNarrationUrl && (
+                                              <div style={{ marginTop: 8 }}>
+                                                <video
+                                                  controls
+                                                  src={seg.videoWithNarrationUrl}
+                                                  style={{ width: '100%', maxHeight: 200 }}
+                                                />
+                                              </div>
+                                            )}
+                                            {seg.mergeStatus === 'failed' && (
+                                              <span style={{ color: '#ff4d4f', fontSize: 12 }}>合成失败，请重试</span>
+                                            )}
                                           </div>
                                         )}
                                       </div>
