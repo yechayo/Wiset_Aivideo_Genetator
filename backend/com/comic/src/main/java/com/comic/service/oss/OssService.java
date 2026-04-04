@@ -172,13 +172,9 @@ public class OssService {
             }
             // OkHttp Response 已关闭，后续上传不再依赖其连接
 
-            // 2. 生成文件名
-            String fileName = extractFilename(audioUrl, "audio.mp3");
-            // 确保文件名以音频扩展名结尾
-            if (!hasAudioExtension(fileName)) {
-                String ext = getAudioExtension(contentType, audioUrl);
-                fileName = UUID.randomUUID().toString().replace("-", "") + ext;
-            }
+            // 2. 生成文件名（直接用 UUID，不从 URL 提取，避免 Vidu 返回的 %2F 导致路径污染）
+            String ext = getAudioExtension(contentType, audioUrl);
+            String fileName = UUID.randomUUID().toString().replace("-", "") + ext;
 
             String objectKey = DIR_TTS + fileName;
 
