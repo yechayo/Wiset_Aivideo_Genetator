@@ -73,7 +73,11 @@ public class ProjectController {
             dto.getVisualStyle(),
             dto.getImageProvider(),
             dto.getVideoProvider(),
-            dto.getVideoModel()
+            dto.getVideoModel(),
+            dto.getProductionMode(),
+            dto.getNarrationPerspective(),
+            dto.getNarrationVoiceId(),
+            dto.getProtagonistVoiceId()
         );
 
         Map<String, String> result = new HashMap<>();

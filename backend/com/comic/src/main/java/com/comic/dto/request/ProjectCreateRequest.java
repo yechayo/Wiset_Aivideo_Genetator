@@ -16,4 +16,9 @@ public class ProjectCreateRequest {
     private String imageProvider;     // "seedream" | "nanobanana"
     private String videoProvider;     // "vidu" | "sora"
     private String videoModel;        // "viduq3-pro" | "viduq3-turbo"
+    /** realtime_animation | comic_commentary，缺省由服务端写 realtime_animation */
+    private String productionMode;
+    private String narrationPerspective;
+    private String narrationVoiceId;
+    private String protagonistVoiceId;
 }

@@ -2,6 +2,7 @@ package com.comic.service.project;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.comic.exception.BusinessException;
+import com.comic.enums.ProductionMode;
 import com.comic.constant.CharacterInfoKeys;
 import com.comic.constant.EpisodeInfoKeys;
 import com.comic.constant.ProjectInfoKeys;
@@ -66,6 +67,25 @@ public class ProjectService {
 
     // ==================== Map 辅助方法 ====================
 
+    private String normalizeProductionModeForCreate(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return ProductionMode.REALTIME_ANIMATION.getCode();
+        }
+        ProductionMode mode = ProductionMode.fromCode(raw);
+        if (mode == null) {
+            throw new BusinessException("无效的制作模式: " + raw);
+        }
+        return mode.getCode();
+    }
+
+    private String normalizeProductionModeForUpdate(String raw) {
+        ProductionMode mode = ProductionMode.fromCode(raw);
+        if (mode == null) {
+            throw new BusinessException("无效的制作模式: " + raw);
+        }
+        return mode.getCode();
+    }
+
     private String getProjectInfoStr(Project project, String key) {
         Map<String, Object> info = project.getProjectInfo();
         Object v = info != null ? info.get(key) : null;
@@ -103,7 +123,9 @@ public class ProjectService {
                                 String targetAudience, Integer totalEpisodes,
                                 Integer episodeDuration, String visualStyle,
                                 String imageProvider, String videoProvider,
-                                String videoModel) {
+                                String videoModel, String productionMode,
+                                String narrationPerspective, String narrationVoiceId,
+                                String protagonistVoiceId) {
         Project project = new Project();
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
@@ -120,6 +142,10 @@ public class ProjectService {
         info.put(ProjectInfoKeys.IMAGE_PROVIDER, imageProvider != null ? imageProvider : "seedream");
         info.put(ProjectInfoKeys.VIDEO_PROVIDER, videoProvider != null ? videoProvider : "vidu");
         info.put(ProjectInfoKeys.VIDEO_MODEL, videoModel != null ? videoModel : "viduq3-pro");
+        info.put(ProjectInfoKeys.PRODUCTION_MODE, normalizeProductionModeForCreate(productionMode));
+        if (narrationPerspective != null) info.put(ProjectInfoKeys.NARRATION_PERSPECTIVE, narrationPerspective);
+        if (narrationVoiceId != null) info.put(ProjectInfoKeys.NARRATION_VOICE_ID, narrationVoiceId);
+        if (protagonistVoiceId != null) info.put(ProjectInfoKeys.PROTAGONIST_VOICE_ID, protagonistVoiceId);
         project.setProjectInfo(info);
 
         projectRepository.insert(project);
@@ -147,6 +173,12 @@ public class ProjectService {
         if (request.getImageProvider() != null) info.put(ProjectInfoKeys.IMAGE_PROVIDER, request.getImageProvider());
         if (request.getVideoProvider() != null) info.put(ProjectInfoKeys.VIDEO_PROVIDER, request.getVideoProvider());
         if (request.getVideoModel() != null) info.put(ProjectInfoKeys.VIDEO_MODEL, request.getVideoModel());
+        if (request.getProductionMode() != null) {
+            info.put(ProjectInfoKeys.PRODUCTION_MODE, normalizeProductionModeForUpdate(request.getProductionMode()));
+        }
+        if (request.getNarrationPerspective() != null) info.put(ProjectInfoKeys.NARRATION_PERSPECTIVE, request.getNarrationPerspective());
+        if (request.getNarrationVoiceId() != null) info.put(ProjectInfoKeys.NARRATION_VOICE_ID, request.getNarrationVoiceId());
+        if (request.getProtagonistVoiceId() != null) info.put(ProjectInfoKeys.PROTAGONIST_VOICE_ID, request.getProtagonistVoiceId());
         project.setProjectInfo(info);
         projectRepository.updateById(project);
     }
@@ -555,6 +587,7 @@ public class ProjectService {
         dto.setFailed(false);
         dto.setReview(false);
         dto.setCompletedSteps(completedStepsForMilestone(milestone));
+        dto.setProductionMode(getProjectInfoStr(project, ProjectInfoKeys.PRODUCTION_MODE));
         dto.setCreatedAt(project.getCreatedAt());
         dto.setUpdatedAt(project.getUpdatedAt());
 
