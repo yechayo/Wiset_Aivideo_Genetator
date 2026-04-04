@@ -57,6 +57,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
+  const [isSavingOutline, setIsSavingOutline] = useState(false);
 
   // 轮询
   const maxPollingCount = 45;
@@ -256,6 +257,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   const handleSaveOutlineDirect = useCallback(async (content: string) => {
     const pid = projectIdRef.current;
     if (!pid) return;
+    setIsSavingOutline(true);
     try {
       await updateScriptOutline(pid, content);
       // 更新本地 scriptData
@@ -263,13 +265,15 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     } catch (err) {
       console.error('保存大纲失败:', err);
       alert('保存大纲失败，请重试');
+    } finally {
+      setIsSavingOutline(false);
     }
   }, []);
 
   const handleSaveOutlineWithAI = useCallback(async (content: string, revisionNote: string) => {
     const pid = projectIdRef.current;
     if (!pid) return;
-    setIsLoading(true);
+    setIsSavingOutline(true);
     try {
       await reviseScript(pid, {
         revisionNote,
@@ -280,7 +284,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     } catch (err) {
       console.error('AI 修订失败:', err);
       alert('AI 修订失败，请重试');
-      setIsLoading(false);
+      setIsSavingOutline(false);
     }
   }, [fetchScriptWithPolling]);
 
@@ -527,6 +531,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
                 outline={scriptData.outline}
                 onSaveDirect={handleSaveOutlineDirect}
                 onSaveWithAI={handleSaveOutlineWithAI}
+                saving={isSavingOutline}
               />
             </div>
           )}

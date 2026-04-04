@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '../../../../components/icons/Icons';
 import styles from './OutlineEditor.module.less';
 
@@ -7,23 +7,32 @@ interface OutlineEditorProps {
   onSaveDirect?: (content: string) => void;
   onSaveWithAI?: (content: string, revisionNote: string) => void;
   readOnly?: boolean;
+  saving?: boolean;
 }
 
 /**
  * 大纲编辑器组件
  * 支持编辑和预览 Markdown 格式的剧本大纲
  */
-const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }: OutlineEditorProps) => {
+const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false, saving = false }: OutlineEditorProps) => {
   const [content, setContent] = useState(outline);
   const [isEditing, setIsEditing] = useState(false);
   const [collapsed, setCollapsed] = useState(readOnly);
 
+  // 同步后端返回的新大纲
+  useEffect(() => {
+    if (outline && outline !== content && !isEditing) {
+      setContent(outline);
+    }
+  }, [outline, isEditing]);
+
   const handleDirectSave = () => {
+    if (saving) return;
     onSaveDirect?.(content);
-    setIsEditing(false);
   };
 
   const handleAIRegenerate = () => {
+    if (saving) return;
     const revisionNote = window.prompt('请输入修改意见（可选，留空则基于当前内容重新生成）：');
     if (revisionNote === null) return;
     onSaveWithAI?.(content, revisionNote.trim());
@@ -53,20 +62,23 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }
                   <button
                     className={styles.cancelButton}
                     onClick={handleCancel}
+                    disabled={saving}
                   >
                     取消
                   </button>
                   <button
                     className={styles.aiButton}
                     onClick={handleAIRegenerate}
+                    disabled={saving}
                   >
-                    AI 重新生成
+                    {saving ? '生成中...' : 'AI 重新生成'}
                   </button>
                   <button
                     className={styles.saveButton}
                     onClick={handleDirectSave}
+                    disabled={saving}
                   >
-                    保存修改
+                    {saving ? '保存中...' : '保存修改'}
                   </button>
                 </>
               ) : (
@@ -74,6 +86,7 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }
                   <button
                     className={styles.editButton}
                     onClick={() => setIsEditing(true)}
+                    disabled={saving}
                   >
                     修改大纲
                   </button>
@@ -86,7 +99,21 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false }
 
       {/* 内容区域 */}
       {!collapsed && (
-        <div className={styles.contentArea}>
+        <div className={styles.contentArea} style={{ position: 'relative' }}>
+          {saving && (
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(0,0,0,0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10,
+              borderRadius: 'inherit',
+            }}>
+              <div style={{ color: '#fff', fontSize: 14 }}>保存中...</div>
+            </div>
+          )}
           {isEditing ? (
             <textarea
               className={styles.textarea}

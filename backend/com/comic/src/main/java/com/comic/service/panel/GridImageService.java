@@ -400,14 +400,56 @@ public class GridImageService {
             g.setFont(new Font("SansSerif", Font.BOLD, 26));
             String label = NumberFormatter.toCircled(i + 1);
             g.drawString(label, x + 6, y + 28);
+
+            // 绘制角色名和说话人标签
+            Map<String, Object> shot = shots.get(i);
+            List<String> shotCharNames = getShotCharacterNames(shot);
+            String speaker = (String) shot.get("speaker");
+            String dialogue = (String) shot.get("dialogue");
+            boolean hasDialogue = dialogue != null && !"无".equals(dialogue) && !dialogue.isEmpty();
+
+            if (!shotCharNames.isEmpty() || hasDialogue) {
+                int tagY = y + 40;
+                g.setFont(new Font("SansSerif", Font.BOLD, 13));
+
+                // 角色名标签
+                if (!shotCharNames.isEmpty()) {
+                    String charLabel = String.join(" ", shotCharNames);
+                    int charLabelW = g.getFontMetrics().stringWidth(charLabel) + 10;
+                    // 防止超出格子宽度
+                    if (x + charLabelW + 4 > x + cellW) {
+                        charLabel = charLabel.substring(0, Math.max(1, charLabel.length() - 2)) + "…";
+                        charLabelW = g.getFontMetrics().stringWidth(charLabel) + 10;
+                    }
+                    g.setColor(new Color(0, 0, 0, 180));
+                    g.fillRect(x + 2, tagY, charLabelW, 20);
+                    g.setColor(new Color(200, 220, 255));
+                    g.drawString(charLabel, x + 7, tagY + 15);
+                    tagY += 22;
+                }
+
+                // 说话人标签（有对白时显示）
+                if (hasDialogue && speaker != null && !"无".equals(speaker)) {
+                    String speakerLabel = "▶ " + speaker;
+                    int speakerW = g.getFontMetrics().stringWidth(speakerLabel) + 10;
+                    if (x + speakerW + 4 > x + cellW) {
+                        speakerLabel = "▶ " + speaker.substring(0, Math.max(1, speaker.length() - 2)) + "…";
+                        speakerW = g.getFontMetrics().stringWidth(speakerLabel) + 10;
+                    }
+                    g.setColor(new Color(0, 0, 0, 180));
+                    g.fillRect(x + 2, tagY, speakerW, 20);
+                    g.setColor(new Color(255, 200, 100));
+                    g.drawString(speakerLabel, x + 7, tagY + 15);
+                }
+            }
         }
 
         // 绘制底部角色参考图横条
         if (charRefs != null && !charRefs.isEmpty()) {
             int charCount = charRefs.size();
             int charW = (FIXED_WIDTH - PAD * (charCount + 1)) / charCount;
-            int nameBarH = 24;
-            int charH = BOTTOM_BAR_HEIGHT - PAD * 2 - nameBarH;
+            int infoBarH = 36;  // 名字+设定信息的高度
+            int charH = BOTTOM_BAR_HEIGHT - PAD * 2 - infoBarH;
             int charY = MAIN_AREA_HEIGHT + PAD;
 
             for (int i = 0; i < charRefs.size(); i++) {
@@ -429,16 +471,33 @@ public class GridImageService {
                     g.setFont(new Font("SansSerif", Font.BOLD, 18));
                     g.drawString("C" + (i + 1), charX + 5, charY + 22);
 
-                    // 角色名字
-                    String charName = charRefs.get(i).name;
+                    // 角色名字 + 设定信息
+                    CharRef cr = charRefs.get(i);
+                    String charName = cr.name;
+                    List<String> infoParts = new ArrayList<>();
+                    if (cr.role != null && !cr.role.isEmpty()) infoParts.add(cr.role);
+                    if (cr.species != null && !cr.species.isEmpty()) infoParts.add(cr.species);
+                    if (cr.appearance != null && !cr.appearance.isEmpty()) infoParts.add(cr.appearance);
+
+                    int infoY = charY + charH + 3;
                     if (charName != null && !charName.isEmpty()) {
-                        int nameY = charY + charH + 2;
+                        // 第一行：角色名（白色加粗）
                         g.setColor(Color.WHITE);
-                        g.setFont(new Font("SansSerif", Font.BOLD, 16));
-                        java.awt.FontMetrics fm = g.getFontMetrics();
-                        int nameWidth = fm.stringWidth(charName);
-                        int nameX = charX + (charW - nameWidth) / 2;
-                        g.drawString(charName, nameX, nameY + fm.getAscent());
+                        g.setFont(new Font("SansSerif", Font.BOLD, 14));
+                        java.awt.FontMetrics nameFm = g.getFontMetrics();
+                        String displayName = truncateText(g, charName, charW - 8);
+                        int nameX = charX + (charW - nameFm.stringWidth(displayName)) / 2;
+                        g.drawString(displayName, nameX, infoY + nameFm.getAscent());
+                        infoY += nameFm.getHeight() + 1;
+                    }
+                    if (!infoParts.isEmpty()) {
+                        // 第二行：设定信息（灰色小字）
+                        g.setColor(new Color(180, 180, 180));
+                        g.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                        java.awt.FontMetrics infoFm = g.getFontMetrics();
+                        String infoText = truncateText(g, String.join(" | ", infoParts), charW - 8);
+                        int infoTextX = charX + (charW - infoFm.stringWidth(infoText)) / 2;
+                        g.drawString(infoText, infoTextX, infoY + infoFm.getAscent());
                     }
                 } catch (Exception e) {
                     log.warn("角色参考图加载失败: {}", charRefs.get(i).url);
@@ -448,6 +507,51 @@ public class GridImageService {
 
         g.dispose();
         return canvas;
+    }
+
+    /**
+     * 从 shot 中提取角色名列表（兼容 characterRefs 和 characters 两种格式）
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> getShotCharacterNames(Map<String, Object> shot) {
+        List<String> names = new ArrayList<>();
+        // 优先从 characterRefs 获取
+        List<Map<String, String>> charRefs = (List<Map<String, String>>) shot.get("characterRefs");
+        if (charRefs != null) {
+            for (Map<String, String> ref : charRefs) {
+                String name = ref.get("name");
+                if (name != null && !name.trim().isEmpty()) {
+                    names.add(name.trim());
+                }
+            }
+        }
+        if (names.isEmpty()) {
+            // 兜底从 characters 获取
+            List<String> characters = (List<String>) shot.get("characters");
+            if (characters != null) {
+                for (String c : characters) {
+                    if (c != null && !c.trim().isEmpty()) {
+                        names.add(c.trim());
+                    }
+                }
+            }
+        }
+        return names;
+    }
+
+    /**
+     * 截断文本以适配指定最大宽度
+     */
+    private String truncateText(Graphics2D g, String text, int maxWidth) {
+        if (text == null) return "";
+        java.awt.FontMetrics fm = g.getFontMetrics();
+        if (fm.stringWidth(text) <= maxWidth) return text;
+        // 逐字符缩短直到适配
+        for (int len = text.length() - 1; len > 0; len--) {
+            String truncated = text.substring(0, len) + "…";
+            if (fm.stringWidth(truncated) <= maxWidth) return truncated;
+        }
+        return "…";
     }
 
     private List<String> getCharacterReferenceUrls(Long episodeId) {
@@ -506,6 +610,9 @@ public class GridImageService {
 
             log.info("角色参考图: episodeId={} 收集到 charIds={}, charNames={}", episodeId, charIds, charNames);
 
+            // 记录已通过 charId 匹配的角色名，防止兜底循环重复添加
+            java.util.Set<String> resolvedNames = new java.util.LinkedHashSet<>();
+
             // 优先用 charId 匹配
             for (String charId : charIds) {
                 Character ch = characterRepository.findByCharId(charId);
@@ -516,6 +623,12 @@ public class GridImageService {
                 String url = getCharacterImageUrl(ch);
                 if (url != null && !url.isEmpty()) {
                     urls.add(url);
+                    // 记录已匹配的角色名
+                    Map<String, Object> chInfo = ch.getCharacterInfo();
+                    if (chInfo != null) {
+                        String chName = (String) chInfo.get(CharacterInfoKeys.NAME);
+                        if (chName != null) resolvedNames.add(chName.trim());
+                    }
                     log.info("角色参考图: episodeId={} charId={} 匹配成功, url={}", episodeId, charId, url);
                 }
             }
@@ -533,7 +646,7 @@ public class GridImageService {
                 }
 
                 for (String charName : charNames) {
-                    if (charIds.contains(charName)) continue; // 已处理
+                    if (resolvedNames.contains(charName)) continue; // 已通过 charId 匹配，跳过
                     Character ch = nameToChar.get(charName);
                     if (ch == null) {
                         log.warn("角色参考图: episodeId={} 角色名 '{}' 未在数据库中找到匹配", episodeId, charName);
@@ -603,6 +716,9 @@ public class GridImageService {
                 }
             }
 
+            // 记录已通过 charId 匹配的角色名，防止兜底循环重复添加
+            java.util.Set<String> resolvedNames = new java.util.LinkedHashSet<>();
+
             // 用 charId 匹配
             for (String charId : charIds) {
                 Character ch = characterRepository.findByCharId(charId);
@@ -610,6 +726,7 @@ public class GridImageService {
                 CharRef ref = buildCharRef(ch);
                 if (ref.url != null && !ref.url.isEmpty()) {
                     refs.add(ref);
+                    if (ref.name != null) resolvedNames.add(ref.name);
                 }
             }
 
@@ -625,7 +742,7 @@ public class GridImageService {
                     }
                 }
                 for (String charName : charNames) {
-                    if (charIds.contains(charName)) continue;
+                    if (resolvedNames.contains(charName)) continue; // 已通过 charId 匹配，跳过
                     Character ch = nameToChar.get(charName);
                     if (ch == null) continue;
                     CharRef ref = buildCharRef(ch);

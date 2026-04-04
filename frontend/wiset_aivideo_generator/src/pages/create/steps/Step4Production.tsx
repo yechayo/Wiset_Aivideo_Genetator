@@ -5,6 +5,7 @@
  * Tab 4c: 视频生成/确认
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styles from './Step4Production.module.less';
 import type { ChapterState, EpisodeState, SegmentState } from './types';
 import {
@@ -88,6 +89,7 @@ function getGridStatusBadge(status: string) {
 
 export default function Step4Production({ project, onNextStep }: Step4ProductionProps) {
   const projectId = project?.projectId;
+  const navigate = useNavigate();
   const { statusInfo, syncStatus } = useCreateStore();
 
   // Tab state — persist to localStorage so refresh doesn't lose tab
@@ -108,6 +110,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   // UI state
   const [expandedEpisodeId, setExpandedEpisodeId] = useState<number | null>(null);
   const [expandedPanelKey, setExpandedPanelKey] = useState<string | null>(null); // "episodeId-panelId"
+  const [collapsedChapters, setCollapsedChapters] = useState<Set<number>>(new Set());
   // 提示词模态框
   const [promptModalPanelKey, setPromptModalPanelKey] = useState<string | null>(null);
   const [promptModalTab, setPromptModalTab] = useState<'view' | 'edit'>('view');
@@ -384,7 +387,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         const shots = info.shots || [];
         const isGroupedPanel = shots.length > 1;
         const synopsis = isGroupedPanel
-          ? `${shots.length} 个分镜`
+          ? shots.map((s: any) => {
+              const speaker = s.speaker && s.speaker !== '无' ? `【${s.speaker}】` : '';
+              const desc = s.visualDescription || s.visual_description || s.scene || '';
+              return speaker ? `${speaker} ${desc}` : desc;
+            }).filter(Boolean).join('\n')
           : (info.scene_summary || shots[0]?.visualDescription || '');
         const thumbnail = info.fusionImageUrl || shots[0]?.splitImageUrl || (info.gridImages?.[0] || null);
 
@@ -638,6 +645,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     setApprovingEpisodeId(episodeId);
     try {
       await approveEpisodeGrid(projectId, episodeId);
+      panelsLoadedRef.current.delete(episodeId); // 后端已重建 Panel，强制重新加载
       await loadEpisodes();
       // 全部九宫格审核通过后自动切换到视频 Tab
       const res = await getEpisodes(projectId);
@@ -751,6 +759,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     if (!projectId || advancing) return;
     const confirmed = window.confirm('确认所有分镜视频无误后，将进入视频合成阶段。是否继续？');
     if (!confirmed) return;
+    // 已完成的项目重新走 Step4 时，直接导航到 Step5，不调用状态推进（COMPLETED 状态无法再触发 confirm_panels）
+    if (statusInfo?.statusCode === 'completed') {
+      onNextStep?.() || navigate(`/project/${projectId}/step/5`, { replace: true });
+      return;
+    }
     setAdvancing(true);
     try {
       await advanceStatus(projectId, 'forward', 'confirm_panels');
@@ -760,9 +773,24 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     } finally {
       setAdvancing(false);
     }
-  }, [projectId, advancing, onNextStep]);
+  }, [projectId, advancing, onNextStep, statusInfo?.statusCode]);
 
   // ==================== Render Helpers ====================
+
+  const toggleChapter = useCallback((chapterIndex: number) => {
+    setCollapsedChapters(prev => {
+      const next = new Set(prev);
+      if (next.has(chapterIndex)) next.delete(chapterIndex); else next.add(chapterIndex);
+      return next;
+    });
+  }, []);
+
+  const ChevronIcon = ({ open }: { open: boolean }) => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
 
   const toggleEpisode = useCallback((episodeId: number) => {
     setExpandedEpisodeId(prev => prev === episodeId ? null : episodeId);
@@ -872,15 +900,25 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             {chapters.length === 0 ? (
               <div className={styles.emptyState}><p>暂无章节数据</p></div>
             ) : (
-              chapters.map(chapter => (
+              chapters.map(chapter => {
+                const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
+                return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
-                  <div className={styles.chapterHeader}>
+                  <button className={styles.chapterHeader} onClick={() => toggleChapter(chapter.chapterIndex)}>
+                    <ChevronIcon open={chapterOpen} />
                     <BookIcon />
                     <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
-                  </div>
+                  </button>
+                  {chapterOpen && (
                   <div className={styles.episodeList}>
                     {chapter.episodes.map(ep => (
-                      <div key={ep.episodeId} className={styles.episodeScriptCard}>
+                      <div key={ep.episodeId} className={`${styles.episodeScriptCard} ${(generatingScript === ep.episodeId || generatingScript === -1) ? styles.cardGenerating : ''}`}>
+                        {(generatingScript === ep.episodeId || generatingScript === -1) && (
+                          <div className={styles.cardLoadingOverlay}>
+                            <div className={styles.cardLoadingSpinner} />
+                            <span>脚本生成中...</span>
+                          </div>
+                        )}
                         <div className={styles.episodeScriptHeader}>
                           <div>
                             <h3 className={styles.episodeScriptTitle}>
@@ -894,9 +932,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                             <button
                               className={styles.btnPrimary}
                               onClick={() => handleGenerateScript(ep.episodeId)}
-                              disabled={generatingScript === ep.episodeId}
+                              disabled={generatingScript === ep.episodeId || generatingScript === -1}
                             >
-                              {generatingScript === ep.episodeId ? <><SpinIcon /> 生成中...</> : '生成脚本'}
+                              {(generatingScript === ep.episodeId || generatingScript === -1) ? <><SpinIcon /> 生成中...</> : '生成脚本'}
                             </button>
                             {ep.segments.length > 0 && (
                               <>
@@ -964,8 +1002,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                       </div>
                     ))}
                   </div>
+                  )}
                 </div>
-              ))
+              )
+              })
             )}
           </div>
         )}
@@ -976,12 +1016,16 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             {chapters.length === 0 ? (
               <div className={styles.emptyState}><p>暂无章节数据</p></div>
             ) : (
-              chapters.map(chapter => (
+              chapters.map(chapter => {
+                const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
+                return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
-                  <div className={styles.chapterHeader}>
+                  <button className={styles.chapterHeader} onClick={() => toggleChapter(chapter.chapterIndex)}>
+                    <ChevronIcon open={chapterOpen} />
                     <BookIcon />
                     <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
-                  </div>
+                  </button>
+                  {chapterOpen && (
                   <div className={styles.episodeList}>
                     {chapter.episodes.map(ep => {
                       const badge = getGridStatusBadge(ep.gridStatus || 'pending');
@@ -1056,11 +1100,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                             </div>
                           )}
                         </div>
-                      );
+                      )
                     })}
                   </div>
+                  )}
                 </div>
-              ))
+              )
+              })
             )}
           </div>
         )}
@@ -1071,12 +1117,16 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             {chapters.length === 0 ? (
               <div className={styles.emptyState}><p>暂无章节数据</p></div>
             ) : (
-              chapters.map(chapter => (
+              chapters.map(chapter => {
+                const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
+                return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
-                  <div className={styles.chapterHeader}>
+                  <button className={styles.chapterHeader} onClick={() => toggleChapter(chapter.chapterIndex)}>
+                    <ChevronIcon open={chapterOpen} />
                     <BookIcon />
                     <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
-                  </div>
+                  </button>
+                  {chapterOpen && (
                   <div className={styles.episodeList}>
                     {chapter.episodes.map(ep => {
                       const doneCount = ep.segments.filter(s => s.videoUrl || s.pipelineStep === 'video_completed').length;
@@ -1251,26 +1301,28 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                             })}
                           </div>
                         </div>
-                      );
+                      )
                     })}
                   </div>
+                  )}
                 </div>
-              ))
+              )
+              })
             )}
+          </div>
+        )}
 
-            {/* Confirm all panels done */}
-            {totalPanels > 0 && completedVideos === totalPanels && (
-              <div className={styles.footerActions}>
-                <button
-                  className={styles.btnCta}
-                  onClick={handleConfirmPanels}
-                  disabled={advancing}
-                >
-                  {advancing ? '确认中...' : '确认完成，进入视频合成'}
-                  <ArrowRightIcon />
-                </button>
-              </div>
-            )}
+        {/* Confirm all panels done - outside scroll area */}
+        {activeTab === 'video' && totalPanels > 0 && completedVideos === totalPanels && (
+          <div className={styles.footerActions}>
+            <button
+              className={styles.btnCta}
+              onClick={handleConfirmPanels}
+              disabled={advancing}
+            >
+              {advancing ? '确认中...' : '确认完成，进入视频合成'}
+              <ArrowRightIcon />
+            </button>
           </div>
         )}
 

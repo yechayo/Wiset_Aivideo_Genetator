@@ -155,7 +155,7 @@ public class CharacterImageGenerationService {
             log.info("三视图提示词长度: {} char", prompt.length());
 
             ImageGenerationService imageService = resolveImageService(projectId);
-            String imageUrl = imageService.generate(prompt, 2848, 1600, visualStyle.getCode().toLowerCase());
+            String imageUrl = imageService.generate(prompt, 1920, 1080, visualStyle.getCode().toLowerCase());
             log.info("三视图大全图生成完成: {}", imageUrl);
 
             info.put(CharacterInfoKeys.THREE_VIEW_GRID_URL, imageUrl);

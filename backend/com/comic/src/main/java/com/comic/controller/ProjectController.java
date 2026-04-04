@@ -19,6 +19,7 @@ import com.comic.repository.UserRepository;
 import com.comic.service.project.ProjectService;
 import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
 import com.comic.statemachine.enums.ProjectMilestoneEventType;
+import com.comic.statemachine.enums.ProjectMilestone;
 import com.comic.service.production.PanelProductionService;
 import com.comic.service.production.VideoCompositionService;
 import com.comic.service.script.ScriptService;
@@ -259,8 +260,11 @@ public class ProjectController {
             projectRepository.updateById(project);
         }
 
-        // 推进状态 MERGING → COMPLETED
-        milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType._ASSEMBLE_DONE);
+        // 推进状态 MERGING → COMPLETED（已完成的项目重新拼接时跳过状态机）
+        ProjectMilestone currentMilestone = milestoneStateMachineService.getCurrentMilestone(projectId);
+        if (currentMilestone != ProjectMilestone.COMPLETED) {
+            milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType._ASSEMBLE_DONE);
+        }
 
         Map<String, String> result = new HashMap<>();
         result.put("finalVideoUrl", finalVideoUrl);

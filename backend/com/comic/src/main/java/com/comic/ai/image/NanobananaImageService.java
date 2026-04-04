@@ -34,7 +34,7 @@ public class NanobananaImageService implements ImageGenerationService {
     // 轮询间隔（毫秒）
     private static final long POLL_INTERVAL_MS = 3000;
     // 超时时间（毫秒）
-    private static final long TIMEOUT_MS = 300_000;
+    private static final long TIMEOUT_MS = 600_000;
 
     // 支持的宽高比
     private static final Set<String> SUPPORTED_ASPECT_RATIOS = new HashSet<>(java.util.Arrays.asList(
@@ -164,7 +164,7 @@ public class NanobananaImageService implements ImageGenerationService {
 
             try (Response response = httpClient.newCall(request).execute()) {
                 String responseBody = response.body() != null ? response.body().string() : "";
-                log.info("Nanobanana2 查询响应: taskId={}, httpCode={}, body={}", taskId, response.code(), responseBody);
+                log.debug("Nanobanana2 查询响应: taskId={}, httpCode={}, body={}", taskId, response.code(), responseBody);
                 if (!response.isSuccessful()) {
                     log.warn("Nanobanana2 查询任务失败: {} - {}，将重试", response.code(), responseBody);
                     sleep(POLL_INTERVAL_MS);
@@ -181,7 +181,7 @@ public class NanobananaImageService implements ImageGenerationService {
 
                 JsonNode data = root.path("data");
                 int status = data.path("status").asInt(-1);
-                log.info("Nanobanana2 查询结果: taskId={}, status={}, data={}", taskId, status, data);
+                log.info("Nanobanana2 查询结果: taskId={}, status={}", taskId, status);
 
                 switch (status) {
                     case 1: {
@@ -250,6 +250,23 @@ public class NanobananaImageService implements ImageGenerationService {
         String ratio = w + ":" + h;
         if (SUPPORTED_ASPECT_RATIOS.contains(ratio)) {
             return ratio;
+        }
+        // 近似匹配：找最接近的支持比例（误差 < 2%）
+        double actual = (double) w / h;
+        String closest = "auto";
+        double minDiff = Double.MAX_VALUE;
+        for (String supported : SUPPORTED_ASPECT_RATIOS) {
+            String[] parts = supported.split(":");
+            double supportedRatio = Double.parseDouble(parts[0]) / Double.parseDouble(parts[1]);
+            double diff = Math.abs(actual - supportedRatio) / supportedRatio;
+            if (diff < minDiff) {
+                minDiff = diff;
+                closest = supported;
+            }
+        }
+        if (minDiff < 0.02) {
+            log.info("宽高比近似匹配: {}x{} ({}:{}) -> {}", width, height, w, h, closest);
+            return closest;
         }
         return "auto";
     }

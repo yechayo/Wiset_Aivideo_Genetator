@@ -69,16 +69,21 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ projectId }) => {
 
       {/* 操作按钮 */}
       <div className={styles.actions}>
-        {isCompleted && finalVideoUrl ? (
-          <a
-            className={styles.downloadButton}
-            href={finalVideoUrl || undefined}
-            download
-            target="_blank"
-            rel="noreferrer"
-          >
-            下载视频
-          </a>
+        {isCompleted && finalVideoUrl && !merging ? (
+          <>
+            <button className={styles.mergeButton} onClick={handleMerge} disabled={merging}>
+              重新拼接
+            </button>
+            <a
+              className={styles.downloadButton}
+              href={finalVideoUrl || undefined}
+              download
+              target="_blank"
+              rel="noreferrer"
+            >
+              下载视频
+            </a>
+          </>
         ) : errorMessage ? (
           <button className={styles.mergeButton} onClick={handleMerge} disabled={merging}>
             重试
