@@ -757,8 +757,9 @@ public class PanelProductionService {
 
                 List<Map<String, Object>> shots;
                 if (comicMode) {
+                    String narrationPerspective = (String) projectInfo.get("narrationPerspective");
                     List<List<Map<String, Object>>> panelGroups = deepSeekTextService.generatePanelAwareStoryboard(
-                        content, characters, targetDuration, visualStyle, revisionNote);
+                        content, characters, targetDuration, visualStyle, revisionNote, narrationPerspective);
                     log.info("[Pipeline-Text] 生成 {} 个 Panel, projectId={}, episode={}", panelGroups.size(), projectId, title);
                     shots = new ArrayList<>();
                     for (List<Map<String, Object>> group : panelGroups) {
