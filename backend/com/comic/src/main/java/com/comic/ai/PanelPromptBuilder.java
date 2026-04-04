@@ -62,7 +62,7 @@ public class PanelPromptBuilder {
                                    List<?> charRefs) {
         StringBuilder sb = new StringBuilder();
         sb.append(buildSceneStylePrefix(visualStyle));
-        sb.append("\n\n");
+        sb.append("专业动画关键帧级别，电影级画面构图，精致光影与色彩。\n\n");
 
         // ===== 布局要求 =====
         sb.append("【布局要求 - 必须严格遵守】\n");
@@ -114,7 +114,9 @@ public class PanelPromptBuilder {
         }
 
         // ===== 分镜内容 =====
-        sb.append("【分镜内容 - 按从左到右、从上到下填入九宫格】\n");
+        sb.append("【分镜内容 - 按从左到右、从上到下填入九宫格，每个格子必须是精致的关键帧画面】\n");
+        sb.append("每个分镜必须包含：完整的场景环境细节（光影、色调、空间纵深）、角色的精确外貌与服装、");
+        sb.append("细腻的面部表情和肢体语言、精心设计的构图与景深关系。画面要有电影级质感。\n\n");
         for (int i = 0; i < shots.size(); i++) {
             Map<String, Object> shot = shots.get(i);
             int row = i / 3 + 1;
@@ -142,8 +144,12 @@ public class PanelPromptBuilder {
 
         int emptySlots = 9 - shots.size();
         if (emptySlots > 0) {
-            sb.append("剩余 ").append(emptySlots).append(" 个格子留空（纯黑色填充，不绘制任何内容）。");
+            sb.append("剩余 ").append(emptySlots).append(" 个格子留空（纯黑色填充，不绘制任何内容）。\n\n");
         }
+
+        // ===== 负面提示词 =====
+        sb.append("负面提示词：文字、水印、标签、签名、人体结构错误、肢体融合、多余手指、多余肢体、");
+        sb.append("面部变形、眼睛异常、模糊、低质量、色块 artefact、粗糙线条、草稿感。");
         return sb.toString();
     }
 
@@ -279,6 +285,14 @@ public class PanelPromptBuilder {
         }
         refBuilder.append("的画面内容。");
         sb.append(refBuilder.toString());
+
+        // ===== 负面提示词 =====
+        sb.append("\n\n## 负面提示词（严格遵守）\n");
+        sb.append("文字、水印、签名、logo、人体结构错误、肢体融合、多余手指、多余肢体、");
+        sb.append("面部变形、眼睛异常、模糊、闪烁、低质量、色块 artefact。\n");
+        sb.append("禁止角色张嘴说话、嘴唇蠕动、露齿对话、口型运动——对白由后期配音，画面中角色应保持闭嘴或微张间隙的自然状态。\n");
+        sb.append("禁止两人以上同框互动（拥抱、打斗、接触），多人互动必须拆分为单人反应镜头。\n");
+        sb.append("禁止快速奔跑、剧烈运动、突然变向——镜头运动必须缓慢（缓慢推镜头、微平移、静止），用剪辑快切体现激烈而非画面快动。\n");
         return sb.toString();
     }
 }
