@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 
 import org.apache.catalina.connector.ClientAbortException;
+import org.springframework.web.context.request.WebRequest;
 
 import javax.validation.ConstraintViolation;
 import javax.validation.ConstraintViolationException;

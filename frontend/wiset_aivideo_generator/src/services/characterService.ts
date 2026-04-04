@@ -101,15 +101,14 @@ export async function generateImage(
 
 /**
  * 重试生成
- * @param type 'expression' 或 'threeView'（API 路径映射为 expression / three-view）
+ * @param type 'expression' 或 'threeView'
  */
 export async function retryGeneration(
   projectId: string,
   charId: string,
   type: 'expression' | 'threeView'
 ): Promise<ApiResponse<void>> {
-  const apiType = type === 'expression' ? 'expression' : 'three-view';
-  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}/retry/${apiType}`);
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}/retry/${type}`);
 }
 
 /**

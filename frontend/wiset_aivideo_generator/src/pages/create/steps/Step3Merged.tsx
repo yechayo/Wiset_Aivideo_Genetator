@@ -46,12 +46,12 @@ const SPECIES_OPTIONS = [
 ];
 
 const Step3Merged = ({ project }: Step3MergedProps) => {
-  const { statusInfo, isLoadingStatus, syncStatus } = useCreateStore();
+  const { statusInfo, isLoadingStatus, syncStatus, markExtractCalled, hasExtractCalled } = useCreateStore();
   const projectId = project.projectId;
 
   const [characters, setCharacters] = useState<CharacterListItem[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
-  const extractCalledRef = useRef(false);
+  const isExtractingRef = useRef(false);
   const initialSyncRef = useRef(false);
   const [statusMap, setStatusMap] = useState<Map<string, CharacterStatus>>(new Map());
   const [error, setError] = useState('');
@@ -71,6 +71,22 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
       if (isApiSuccess(res) && res.data) {
         const items = res.data.items;
         setCharacters(items);
+
+        // 自动提取：后端返回空列表且尚未提取过 → 触发提取
+        // 放在 loadCharacters 回调中，确保是在 API 返回后才判断，避免竞态条件
+        if (items.length === 0 && !isExtractingRef.current && !hasExtractCalled(projectId)) {
+          isExtractingRef.current = true;
+          markExtractCalled(projectId);
+          setIsExtracting(true);
+          extractCharacters(projectId)
+            .then(() => loadCharacters())
+            .catch((err) => console.error('提取角色失败:', err))
+            .finally(() => {
+              setIsExtracting(false);
+              isExtractingRef.current = false;
+            });
+          return; // 提取中不继续加载详情
+        }
 
         const statuses = await Promise.all(
           items.map(char => getCharacterStatus(projectId, char.charId)
@@ -107,7 +123,7 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
     } catch (err: any) {
       setError(err.message || '获取角色列表失败');
     }
-  }, [projectId]);
+  }, [projectId, markExtractCalled, hasExtractCalled, extractCharacters]);
 
   // 轮询
   const startPolling = useCallback(() => {
@@ -143,38 +159,25 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
     syncStatus(projectId);
   }, [projectId, syncStatus]);
 
-  // 角色列表为空时自动提取角色
-  useEffect(() => {
-    if (!projectId || extractCalledRef.current) return;
-    if (characters.length === 0 && !isExtracting) {
-      extractCalledRef.current = true;
-      setIsExtracting(true);
-      extractCharacters(projectId)
-        .then(() => loadCharacters())
-        .catch((err) => console.error('提取角色失败:', err))
-        .finally(() => setIsExtracting(false));
-    }
-  }, [projectId, characters.length, isExtracting, extractCharacters, loadCharacters]);
-
   useEffect(() => {
     if (generatingIds.size > 0) startPolling();
   }, [generatingIds.size, startPolling]);
 
-  // 判断角色所处阶段
+  // 判断角色所处阶段（基于实际生成状态，不依赖后端 charStatus）
   const getCharPhase = useCallback((char: CharacterListItem): CharacterPhase => {
-    if (char.charStatus && ['configuring', 'generating', 'review', 'locked'].includes(char.charStatus)) {
-      return char.charStatus as CharacterPhase;
-    }
     const st = statusMap.get(char.charId);
     const isSupporting = char.role === '配角';
     const allDone = char.threeViewStatus === 'COMPLETED' && (isSupporting || char.expressionStatus === 'COMPLETED');
 
     if (char.imagesLocked) return 'locked';
+    // 优先用实际生成状态判断，不依赖 charStatus（后端可能未及时更新）
     if (st?.isGeneratingExpression || st?.isGeneratingThreeView
       || char.expressionStatus === 'GENERATING' || char.threeViewStatus === 'GENERATING'
       || generatingIds.has(char.charId)) return 'generating';
     if (allDone) return 'review';
     if (char.threeViewStatus === 'FAILED' || char.expressionStatus === 'FAILED') return 'review';
+    // charStatus 仅作为配置中的兜底提示
+    if (char.charStatus === 'generating') return 'generating';
     return 'configuring';
   }, [statusMap, generatingIds]);
 
@@ -348,6 +351,11 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
         <div className={type === 'threeView' ? `${styles.imagePreview} ${styles.threeView}` : styles.imagePreview}>
           {imageUrl ? (
             <img src={imageUrl} alt={label} />
+          ) : status === 'GENERATING' ? (
+            <div className={styles.imagePlaceholder}>
+              <div className={styles.spinner} />
+              <span>生成中...</span>
+            </div>
           ) : status === 'FAILED' ? (
             <div className={styles.imagePlaceholder}>
               <span>生成失败</span>
@@ -595,6 +603,11 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
         <div className={styles.errorState}>
           <p>{error}</p>
           <button className={styles.retryButton} onClick={() => { setError(''); loadCharacters(); }}>重试</button>
+        </div>
+      ) : isExtracting ? (
+        <div className={styles.loadingState}>
+          <div className={styles.spinner}></div>
+          <p>正在从剧本中提取角色...</p>
         </div>
       ) : (
         <>

@@ -34,7 +34,7 @@ public class NanobananaImageService implements ImageGenerationService {
     // 轮询间隔（毫秒）
     private static final long POLL_INTERVAL_MS = 3000;
     // 超时时间（毫秒）
-    private static final long TIMEOUT_MS = 180_000;
+    private static final long TIMEOUT_MS = 300_000;
 
     // 支持的宽高比
     private static final Set<String> SUPPORTED_ASPECT_RATIOS = new HashSet<>(java.util.Arrays.asList(
@@ -106,6 +106,7 @@ public class NanobananaImageService implements ImageGenerationService {
     private String submitTask(String prompt, String aspectRatio, List<String> urls) throws IOException {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("prompt", prompt);
+        requestBody.put("size", "2K");
         requestBody.put("aspectRatio", aspectRatio);
         if (urls != null && !urls.isEmpty()) {
             requestBody.put("urls", urls);
@@ -148,10 +149,9 @@ public class NanobananaImageService implements ImageGenerationService {
      * 轮询任务结果，直到成功、失败或超时
      */
     private String pollForResult(String taskId) throws IOException, InterruptedException {
-        String url = wuyinkejiProperties.getBaseUrl() + "/api/async/detail?id=" + taskId;
+        String url = wuyinkejiProperties.getBaseUrl() + "/api/async/detail?key=" + wuyinkejiProperties.getApiKey() + "&id=" + taskId;
         Request request = new Request.Builder()
                 .url(url)
-                .addHeader("Authorization", wuyinkejiProperties.getApiKey())
                 .get()
                 .build();
 
@@ -164,6 +164,7 @@ public class NanobananaImageService implements ImageGenerationService {
 
             try (Response response = httpClient.newCall(request).execute()) {
                 String responseBody = response.body() != null ? response.body().string() : "";
+                log.info("Nanobanana2 查询响应: taskId={}, httpCode={}, body={}", taskId, response.code(), responseBody);
                 if (!response.isSuccessful()) {
                     log.warn("Nanobanana2 查询任务失败: {} - {}，将重试", response.code(), responseBody);
                     sleep(POLL_INTERVAL_MS);
@@ -180,31 +181,59 @@ public class NanobananaImageService implements ImageGenerationService {
 
                 JsonNode data = root.path("data");
                 int status = data.path("status").asInt(-1);
+                log.info("Nanobanana2 查询结果: taskId={}, status={}, data={}", taskId, status, data);
 
                 switch (status) {
-                    case 1:
-                        // 成功
-                        String remoteUrl = data.path("remote_url").asText();
+                    case 1: {
+                        // 成功 — 优先从 remote_url 取，其次从 result 数组取
+                        String remoteUrl = extractImageUrl(data);
                         if (remoteUrl == null || remoteUrl.isEmpty()) {
-                            throw new RuntimeException("Nanobanana2 任务成功但 remote_url 为空, taskId=" + taskId);
+                            throw new RuntimeException("Nanobanana2 任务成功但无图片URL, taskId=" + taskId);
                         }
                         return remoteUrl;
+                    }
 
-                    case 2:
-                        // 失败
-                        String failReason = data.path("fail_reason").asText("未知原因");
-                        throw new RuntimeException("Nanobanana2 图片生成失败: " + failReason + ", taskId=" + taskId);
+                    case 2: {
+                        // 可能是成功（result 数组有图）也可能是失败
+                        String imageUrl = extractImageUrl(data);
+                        if (imageUrl != null && !imageUrl.isEmpty()) {
+                            return imageUrl;
+                        }
+                        String failReason = data.path("fail_reason").asText("");
+                        String message = data.path("message").asText("");
+                        String reason = !failReason.isEmpty() ? failReason : (!message.isEmpty() ? message : "未知原因");
+                        throw new RuntimeException("Nanobanana2 图片生成失败: " + reason + ", taskId=" + taskId);
+                    }
 
                     case 0:
                     case 3:
                     default:
                         // 排队中(0) / 生成中(3)，继续轮询
-                        log.debug("Nanobanana2 任务状态: status={}, taskId={}", status, taskId);
+                        log.info("Nanobanana2 任务状态: status={}, taskId={}", status, taskId);
                         sleep(POLL_INTERVAL_MS);
                         break;
                 }
             }
         }
+    }
+
+    /**
+     * 从 API 响应中提取图片 URL
+     * 优先取 remote_url 字段，其次取 result 数组第一个元素
+     */
+    private String extractImageUrl(JsonNode data) {
+        String remoteUrl = data.path("remote_url").asText();
+        if (remoteUrl != null && !remoteUrl.isEmpty()) {
+            return remoteUrl;
+        }
+        JsonNode result = data.path("result");
+        if (result.isArray() && result.size() > 0) {
+            String url = result.get(0).asText();
+            if (url != null && !url.isEmpty()) {
+                return url;
+            }
+        }
+        return null;
     }
 
     /**

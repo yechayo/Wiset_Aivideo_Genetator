@@ -6,6 +6,10 @@ interface CreateState {
   statusInfo: ProjectStatusInfo | null;
   isLoadingStatus: boolean;
   isPolling: boolean;
+  /** 已触发过角色提取的项目 ID 集合，防止组件重挂载时重复提取 */
+  extractCalledProjects: Set<string>;
+  markExtractCalled: (projectId: string) => void;
+  hasExtractCalled: (projectId: string) => boolean;
   startPolling: (projectId: string) => void;
   stopPolling: () => void;
   syncStatus: (projectId: string) => Promise<void>;
@@ -40,6 +44,19 @@ export const useCreateStore = create<CreateState>()((set, get) => ({
   statusInfo: null,
   isLoadingStatus: false,
   isPolling: false,
+  extractCalledProjects: new Set<string>(),
+
+  markExtractCalled: (projectId: string) => {
+    set(state => {
+      const next = new Set(state.extractCalledProjects);
+      next.add(projectId);
+      return { extractCalledProjects: next };
+    });
+  },
+
+  hasExtractCalled: (projectId: string) => {
+    return get().extractCalledProjects.has(projectId);
+  },
 
   startPolling: (projectId: string) => {
     if (get().isPolling && get().statusInfo?.projectId === projectId) return;
@@ -98,6 +115,7 @@ export const useCreateStore = create<CreateState>()((set, get) => ({
     get().stopPolling();
     set({
       statusInfo: null,
+      extractCalledProjects: new Set<string>(),
     });
   },
 }));
