@@ -230,6 +230,8 @@ public class PanelProductionService {
         status.put("ttsStatus", panelInfo.getOrDefault("ttsStatus", "pending"));
         status.put("ttsAudioUrl", panelInfo.get("ttsAudioUrl"));
         status.put("ttsCredits", panelInfo.get("ttsCredits"));
+        status.put("videoWithNarrationUrl", panelInfo.get("videoWithNarrationUrl"));
+        status.put("mergeStatus", panelInfo.getOrDefault("mergeStatus", "pending"));
         return status;
     }
 

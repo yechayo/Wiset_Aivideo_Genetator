@@ -2,6 +2,7 @@ package com.comic.service.panel;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.comic.ai.text.ViduTtsService;
+import com.comic.ai.video.VideoAudioMergeService;
 import com.comic.constant.ProjectInfoKeys;
 import com.comic.exception.BusinessException;
 import com.comic.dto.request.PanelCreateRequest;
@@ -215,6 +216,78 @@ public class PanelService {
         panelInfo.put("ttsStatus", status);
         if (audioUrl != null) panelInfo.put("ttsAudioUrl", audioUrl);
         if (credits != null) panelInfo.put("ttsCredits", credits);
+        panel.setPanelInfo(panelInfo);
+        panelRepository.updateById(panel);
+    }
+
+    // ===== 音视频合并 =====
+
+    /**
+     * 合并单个 panel 的视频和 TTS 旁白
+     */
+    public Map<String, Object> mergeAudio(Long panelId) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("Panel 不存在");
+        Map<String, Object> panelInfo = panel.getPanelInfo();
+
+        String videoUrl = (String) panelInfo.get("videoUrl");
+        String ttsAudioUrl = (String) panelInfo.get("ttsAudioUrl");
+        String ttsStatus = (String) panelInfo.getOrDefault("ttsStatus", "pending");
+
+        if (videoUrl == null || videoUrl.isEmpty()) {
+            throw new BusinessException("面板视频尚未生成");
+        }
+        if (!"completed".equals(ttsStatus) || ttsAudioUrl == null || ttsAudioUrl.isEmpty()) {
+            throw new BusinessException("面板旁白尚未生成");
+        }
+
+        // 更新状态
+        updatePanelInfo(panel, "mergeStatus", "generating");
+
+        try {
+            VideoAudioMergeService mergeService = applicationContext.getBean(VideoAudioMergeService.class);
+            String mergedUrl = mergeService.merge(videoUrl, ttsAudioUrl);
+            updatePanelInfo(panel, "videoWithNarrationUrl", mergedUrl);
+            updatePanelInfo(panel, "mergeStatus", "completed");
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("videoWithNarrationUrl", mergedUrl);
+            result.put("mergeStatus", "completed");
+            return result;
+        } catch (Exception e) {
+            log.error("音频合并失败: panelId={}", panelId, e);
+            updatePanelInfo(panel, "mergeStatus", "failed");
+            throw new RuntimeException("音频合并失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 批量合并某集所有 panel 的视频和 TTS
+     */
+    public Map<String, Object> batchMergeAudio(Long episodeId) {
+        List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
+        int merged = 0, skipped = 0;
+        for (Panel panel : panels) {
+            try {
+                mergeAudio(panel.getId());
+                merged++;
+            } catch (Exception e) {
+                log.warn("Panel {} 合并跳过: {}", panel.getId(), e.getMessage());
+                skipped++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("merged", merged);
+        result.put("skipped", skipped);
+        return result;
+    }
+
+    private void updatePanelInfo(Panel panel, String key, Object value) {
+        Map<String, Object> panelInfo = panel.getPanelInfo();
+        if (panelInfo == null) {
+            panelInfo = new HashMap<>();
+        }
+        panelInfo.put(key, value);
         panel.setPanelInfo(panelInfo);
         panelRepository.updateById(panel);
     }

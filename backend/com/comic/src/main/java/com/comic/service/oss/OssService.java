@@ -22,6 +22,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.UUID;
 
@@ -220,6 +222,29 @@ public class OssService {
         } catch (Exception e) {
             log.error("上传文件到 OSS 失败: {}", filePath, e);
             throw new RuntimeException("上传文件到 OSS 失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 从 URL 下载文件到本地路径
+     *
+     * @param url     文件 URL（OSS 或其他公网 URL）
+     * @param filePath 本地文件保存路径
+     */
+    public void downloadToFile(String url, String filePath) throws IOException {
+        Request request = new Request.Builder().url(url).build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                throw new IOException("下载失败: " + response.code());
+            }
+            try (InputStream is = response.body().byteStream();
+                 FileOutputStream fos = new FileOutputStream(filePath)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = is.read(buffer)) != -1) {
+                    fos.write(buffer, 0, len);
+                }
+            }
         }
     }
 

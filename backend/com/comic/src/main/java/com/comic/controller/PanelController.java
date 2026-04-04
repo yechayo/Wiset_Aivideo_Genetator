@@ -216,6 +216,25 @@ public class PanelController {
         return Result.ok(panelService.batchGenerateTts(episodeId));
     }
 
+    // ===== 音视频合并 =====
+
+    @PostMapping("/{panelId}/merge-audio")
+    @Operation(summary = "合并面板视频与TTS旁白")
+    public Result<Map<String, Object>> mergeAudio(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId) {
+        return Result.ok(panelService.mergeAudio(panelId));
+    }
+
+    @PostMapping("/merge-audio/batch")
+    @Operation(summary = "批量合并视频与TTS旁白")
+    public Result<Map<String, Object>> batchMergeAudio(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        return Result.ok(panelService.batchMergeAudio(episodeId));
+    }
+
     // ================= 边界保护 =================
 
     /**
