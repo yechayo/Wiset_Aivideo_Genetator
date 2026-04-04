@@ -56,6 +56,7 @@ public class OssService {
     }
 
     private static final String DIR_VIDEOS = "comic/videos/";
+    private static final String DIR_TTS = "tts/";
 
     /**
      * 从 URL 下载视频并上传到 OSS
@@ -142,6 +143,53 @@ public class OssService {
         } catch (Exception e) {
             log.error("上传图片到 OSS 失败: {}", imageUrl, e);
             throw new RuntimeException("上传图片到 OSS 失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 从 URL 下载音频并上传到 OSS
+     * 先完整下载到内存再上传，解耦 OkHttp 和 OSS 的流生命周期
+     *
+     * @param audioUrl 音频临时 URL（如 Vidu TTS 返回的 file_url）
+     * @return OSS 公网 URL
+     */
+    public String uploadAudioFromUrl(String audioUrl) {
+        try {
+            log.info("开始从URL下载音频并上传到OSS: {}", audioUrl);
+
+            // 1. 先将音频完整下载到内存
+            byte[] audioBytes;
+            String contentType;
+            Request request = new Request.Builder().url(audioUrl).build();
+            try (Response response = httpClient.newCall(request).execute()) {
+                if (!response.isSuccessful() || response.body() == null) {
+                    throw new RuntimeException("下载音频失败: " + response.code());
+                }
+                contentType = response.body().contentType() != null
+                        ? response.body().contentType().toString()
+                        : "audio/mpeg";
+                audioBytes = response.body().bytes();
+            }
+            // OkHttp Response 已关闭，后续上传不再依赖其连接
+
+            // 2. 生成文件名
+            String fileName = extractFilename(audioUrl, "audio.mp3");
+            // 确保文件名以音频扩展名结尾
+            if (!hasAudioExtension(fileName)) {
+                String ext = getAudioExtension(contentType, audioUrl);
+                fileName = UUID.randomUUID().toString().replace("-", "") + ext;
+            }
+
+            String objectKey = DIR_TTS + fileName;
+
+            // 3. 上传到 OSS
+            ByteArrayInputStream bais = new ByteArrayInputStream(audioBytes);
+            String ossUrl = uploadFromInputStream(bais, objectKey, contentType, audioBytes.length);
+            log.info("音频已上传到OSS: {} -> {}, 大小: {} KiB", audioUrl, ossUrl, audioBytes.length / 1024);
+            return ossUrl;
+        } catch (Exception e) {
+            log.error("上传音频到OSS失败: {}", audioUrl, e);
+            throw new RuntimeException("上传音频到OSS失败: " + e.getMessage(), e);
         }
     }
 
@@ -356,5 +404,44 @@ public class OssService {
             if (ext.length() <= 5) return ext;
         }
         return defaultExt;
+    }
+
+    /**
+     * 从 contentType 或 URL 中提取音频扩展名
+     */
+    private String getAudioExtension(String contentType, String url) {
+        if (contentType.contains("mp3")) return ".mp3";
+        if (contentType.contains("mpeg")) return ".mp3";
+        if (contentType.contains("wav")) return ".wav";
+        if (contentType.contains("ogg")) return ".ogg";
+        if (contentType.contains("flac")) return ".flac";
+        return extractExtensionFromUrl(url, ".mp3");
+    }
+
+    /**
+     * 从 URL 中提取文件名，如果无法识别则返回默认名
+     */
+    private String extractFilename(String url, String defaultName) {
+        if (url == null || url.isEmpty()) return defaultName;
+        // 去除查询参数
+        String cleanUrl = url.contains("?") ? url.substring(0, url.indexOf("?")) : url;
+        int lastSlash = cleanUrl.lastIndexOf("/");
+        if (lastSlash >= 0 && lastSlash < cleanUrl.length() - 1) {
+            String name = cleanUrl.substring(lastSlash + 1);
+            if (!name.isEmpty()) return name;
+        }
+        return defaultName;
+    }
+
+    /**
+     * 检查文件名是否包含常见音频扩展名
+     */
+    private boolean hasAudioExtension(String fileName) {
+        if (fileName == null) return false;
+        String lower = fileName.toLowerCase();
+        return lower.endsWith(".mp3") || lower.endsWith(".wav")
+                || lower.endsWith(".ogg") || lower.endsWith(".flac")
+                || lower.endsWith(".m4a") || lower.endsWith(".aac")
+                || lower.endsWith(".webm");
     }
 }
