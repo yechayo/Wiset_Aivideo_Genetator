@@ -69,6 +69,9 @@ public class PanelProductionService {
     private GridImageService gridImageService;
 
     @Autowired
+    private NarrationAllocator narrationAllocator;
+
+    @Autowired
     public PanelProductionService(PanelRepository panelRepository,
                                    EpisodeRepository episodeRepository,
                                    ProjectRepository projectRepository,
@@ -224,6 +227,7 @@ public class PanelProductionService {
         status.put("videoStatus", panelInfo.getOrDefault("videoStatus", "pending"));
         status.put("videoUrl", panelInfo.get("videoUrl"));
         status.put("videoTaskId", panelInfo.get("videoTaskId"));
+        status.put("videoModel", panelInfo.get("videoModel"));
         status.put("offPeak", panelInfo.getOrDefault("offPeak", false));
         status.put("videoProgress", panelInfo.get("videoProgress"));
         status.put("videoCredits", panelInfo.get("videoCredits"));
@@ -453,6 +457,9 @@ public class PanelProductionService {
             String taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
             info.put("videoTaskId", taskId);
             info.put("offPeak", offPeak);
+            if (videoModel != null && !videoModel.isEmpty()) {
+                info.put("videoModel", videoModel);
+            }
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
             self().pollNewVideoTask(panelId, taskId, offPeak);
@@ -710,27 +717,47 @@ public class PanelProductionService {
             String outline = scriptMap != null ? (String) scriptMap.getOrDefault("outline", "") : "";
             String charactersDesc = getCharacterDescriptions(projectId);
             boolean comicMode = ProjectProductionMode.isComicCommentary(project);
-
-            // 1. 生成结构化分集剧本
             int totalEpisodes = getIntFromMap(projectInfo, "totalEpisodes", 1);
-            log.info("[Pipeline-Text] 调用DeepSeek生成分集剧本: projectId={}, totalEpisodes={}, comicCommentary={}",
-                    projectId, totalEpisodes, comicMode);
-            List<Map<String, Object>> scripts = deepSeekTextService.generateEpisodeScript(
-                outline, charactersDesc, targetDuration, visualStyle, totalEpisodes, comicMode);
-            log.info("[Pipeline-Text] 生成 {} 集剧本, projectId={}", scripts.size(), projectId);
 
-            totalEpisodes = scripts.size();
-            for (int i = 0; i < scripts.size(); i++) {
-                Map<String, Object> scriptItem = scripts.get(i);
-                eventPublisher.publishEpisodeScriptDone(projectId,
-                    i + 1,
-                    (String) scriptItem.getOrDefault("title", ""),
-                    totalEpisodes,
-                    i + 1);
+            // 1. 按章节拆分大纲，串行生成各章剧本
+            List<ParsedChapter> chapters = parseOutlineChapters(outline, totalEpisodes);
+            log.info("[Pipeline-Text] 大纲拆分为 {} 个章节: projectId={}, chapters={}", chapters.size(), projectId,
+                    chapters.stream().map(c -> c.title + "(" + c.episodeCount + "集)").collect(Collectors.joining(", ")));
+
+            List<Map<String, Object>> allScripts = new ArrayList<>();
+            StringBuilder previousSummary = new StringBuilder();
+            int globalEpisodeNum = 0;
+
+            for (int ci = 0; ci < chapters.size(); ci++) {
+                ParsedChapter chapter = chapters.get(ci);
+                log.info("[Pipeline-Text] 调用DeepSeek生成章节剧本: projectId={}, chapter={}, episodeCount={}",
+                        projectId, chapter.title, chapter.episodeCount);
+
+                List<Map<String, Object>> chapterScripts = deepSeekTextService.generateEpisodeScript(
+                    chapter.text, charactersDesc, targetDuration, visualStyle,
+                    chapter.episodeCount, comicMode, previousSummary.toString());
+                log.info("[Pipeline-Text] 章节 {} 生成 {} 集剧本, projectId={}", chapter.title, chapterScripts.size(), projectId);
+
+                for (Map<String, Object> scriptItem : chapterScripts) {
+                    globalEpisodeNum++;
+                    allScripts.add(scriptItem);
+                    eventPublisher.publishEpisodeScriptDone(projectId,
+                        globalEpisodeNum,
+                        (String) scriptItem.getOrDefault("title", ""),
+                        totalEpisodes,
+                        globalEpisodeNum);
+                }
+
+                // 构建本章摘要供下一章使用
+                if (ci < chapters.size() - 1) {
+                    previousSummary.append(buildChapterSummary(chapterScripts, globalEpisodeNum));
+                }
             }
 
-            // 2. 逐集生成分镜文本，创建 Episode（不生成九宫格）
-            // 收集已有 episode 的退回原因，供重新生成时使用
+            totalEpisodes = allScripts.size();
+            log.info("[Pipeline-Text] 全部 {} 集剧本生成完成, projectId={}", totalEpisodes, projectId);
+
+            // 2. 收集已有 episode 的退回原因
             List<Episode> existingEpisodes = episodeRepository.findByProjectId(projectId);
             Map<Integer, String> rejectionReasons = new HashMap<>();
             for (Episode ep : existingEpisodes) {
@@ -746,65 +773,25 @@ public class PanelProductionService {
                 }
             }
 
-            for (Map<String, Object> script : scripts) {
-                String title = (String) script.get("title");
-                String content = (String) script.get("content");
-                String characters = (String) script.getOrDefault("characters", "");
-
-                int episodeNum = scripts.indexOf(script) + 1;
-                String revisionNote = rejectionReasons.get(episodeNum);
-
-                log.info("[Pipeline-Text] 调用DeepSeek生成分镜: projectId={}, episode={}, comicMode={}, hasRevision={}",
-                        projectId, title, comicMode, revisionNote != null);
-
-                List<Map<String, Object>> shots;
-                if (comicMode) {
-                    String narrationPerspective = (String) projectInfo.get("narrationPerspective");
-                    List<List<Map<String, Object>>> panelGroups = deepSeekTextService.generatePanelAwareStoryboard(
-                        content, characters, targetDuration, visualStyle, revisionNote, narrationPerspective);
-                    log.info("[Pipeline-Text] 生成 {} 个 Panel, projectId={}, episode={}", panelGroups.size(), projectId, title);
-                    shots = new ArrayList<>();
-                    for (List<Map<String, Object>> group : panelGroups) {
-                        shots.addAll(group);
-                    }
-                } else {
-                    shots = deepSeekTextService.generateStoryboard(
-                        content, characters, targetDuration, visualStyle, false, revisionNote);
+            // 3. 并发生成分镜文本
+            log.info("[Pipeline-Text] 开始并发分镜生成: projectId={}, totalEpisodes={}", projectId, totalEpisodes);
+            java.util.concurrent.ExecutorService executor =
+                    java.util.concurrent.Executors.newFixedThreadPool(Math.min(totalEpisodes, 5));
+            try {
+                List<java.util.concurrent.CompletableFuture<Void>> futures = new ArrayList<>();
+                for (int i = 0; i < allScripts.size(); i++) {
+                    final Map<String, Object> script = allScripts.get(i);
+                    final int episodeNum = i + 1;
+                    futures.add(java.util.concurrent.CompletableFuture.runAsync(() -> {
+                        generateStoryboardForEpisode(projectId, projectInfo, script, episodeNum, comicMode, rejectionReasons, visualStyle, targetDuration);
+                    }, executor));
                 }
-                log.info("[Pipeline-Text] 生成 {} 个分镜, projectId={}, episode={}", shots.size(), projectId, title);
-
-                // 注入角色ID
-                Map<String, String> nameToId = buildCharacterIdMap(projectId);
-                injectCharacterIds(shots, nameToId);
-
-                // 在独立事务中创建 episode 并设置状态为 text_ready
-                TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
-                Long episodeId = txTemplate.execute(status -> {
-                    Long eid = findOrCreateEpisode(projectId, script, shots, visualStyle, episodeNum);
-                    log.info("[Pipeline-Text] Episode创建/更新: episodeId={}, projectId={}", eid, projectId);
-                    deleteExistingPanels(eid);
-                    gridImageService.updateEpisodeGridStatus(eid, "text_ready");
-
-                    // 清除退回原因（已根据反馈重新生成）
-                    Episode freshEp = episodeRepository.selectById(eid);
-                    if (freshEp != null) {
-                        Map<String, Object> freshInfo = freshEp.getEpisodeInfo();
-                        if (freshInfo != null && freshInfo.containsKey("panelRejectionReason")) {
-                            freshInfo.remove("panelRejectionReason");
-                            freshInfo.put("panelApproved", false);
-                            freshEp.setEpisodeInfo(freshInfo);
-                            episodeRepository.updateById(freshEp);
-                        }
-                    }
-
-                    return eid;
-                });
-
-                eventPublisher.publishEpisodePanelDone(projectId,
-                    episodeId, episodeNum, shots.size());
+                java.util.concurrent.CompletableFuture.allOf(futures.toArray(new java.util.concurrent.CompletableFuture[0])).join();
+            } finally {
+                executor.shutdown();
             }
 
-            // 3. 完成通知
+            // 4. 完成通知
             log.info("[Pipeline-Text] 分集剧本+分镜文本全部完成: projectId={}", projectId);
             progressService.unlock(projectId);
             progressService.clearError(projectId);
@@ -816,6 +803,166 @@ public class PanelProductionService {
             progressService.setError(projectId, e.getMessage());
             eventPublisher.publishFailure(projectId, e.getMessage());
         }
+    }
+
+    /**
+     * 从 outline 中按章节拆分，每章计算对应集数
+     */
+    private List<ParsedChapter> parseOutlineChapters(String outline, int totalEpisodes) {
+        List<ParsedChapter> chapters = new ArrayList<>();
+        if (outline == null || outline.isEmpty()) {
+            chapters.add(new ParsedChapter("全文", outline != null ? outline : "", totalEpisodes));
+            return chapters;
+        }
+
+        // 按 ### 第X章 格式切分
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "^(#{3,4}\\s+第.+章[^\\n]*)", java.util.regex.Pattern.MULTILINE);
+        java.util.regex.Matcher matcher = pattern.matcher(outline);
+
+        List<Integer> positions = new ArrayList<>();
+        List<String> titles = new ArrayList<>();
+        while (matcher.find()) {
+            positions.add(matcher.start());
+            titles.add(matcher.group(1).trim());
+        }
+
+        if (positions.isEmpty()) {
+            chapters.add(new ParsedChapter("全文", outline, totalEpisodes));
+            return chapters;
+        }
+
+        // 计算每章集数（均匀分配，最后一章取余）
+        int episodesPerChapter = totalEpisodes / positions.size();
+        int remainder = totalEpisodes % positions.size();
+
+        for (int i = 0; i < positions.size(); i++) {
+            int start = positions.get(i);
+            int end = (i + 1 < positions.size()) ? positions.get(i + 1) : outline.length();
+            String chapterText = outline.substring(start, end).trim();
+            int epCount = episodesPerChapter + (i < remainder ? 1 : 0);
+            chapters.add(new ParsedChapter(titles.get(i), chapterText, epCount));
+        }
+
+        return chapters;
+    }
+
+    /** 章节解析结果 */
+    private static class ParsedChapter {
+        final String title;
+        final String text;
+        final int episodeCount;
+
+        ParsedChapter(String title, String text, int episodeCount) {
+            this.title = title;
+            this.text = text;
+            this.episodeCount = episodeCount;
+        }
+    }
+
+    /**
+     * 构建章节摘要，供下一章保持叙事连贯性
+     */
+    private String buildChapterSummary(List<Map<String, Object>> scripts, int startEpisodeNum) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < scripts.size(); i++) {
+            Map<String, Object> s = scripts.get(i);
+            int epNum = startEpisodeNum - scripts.size() + i + 1;
+            sb.append("第").append(epNum).append("集「").append(s.getOrDefault("title", "")).append("」");
+            String characters = (String) s.getOrDefault("characters", "");
+            if (characters != null && !characters.isEmpty()) {
+                sb.append("，出场角色：").append(characters);
+            }
+            String content = (String) s.getOrDefault("content", "");
+            if (content != null && content.length() > 100) {
+                sb.append("，摘要：").append(content, 0, 100).append("…");
+            } else if (content != null && !content.isEmpty()) {
+                sb.append("，摘要：").append(content);
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 单集分镜生成（供并发调用）
+     */
+    private void generateStoryboardForEpisode(String projectId, Map<String, Object> projectInfo,
+                                               Map<String, Object> script, int episodeNum,
+                                               boolean comicMode, Map<Integer, String> rejectionReasons,
+                                               String visualStyle, int targetDuration) {
+        String title = (String) script.get("title");
+        String content = (String) script.get("content");
+        String characters = (String) script.getOrDefault("characters", "");
+        String revisionNote = rejectionReasons.get(episodeNum);
+
+        log.info("[Pipeline-Text] 调用DeepSeek生成分镜: projectId={}, episode={}({}), comicMode={}, hasRevision={}",
+                projectId, episodeNum, title, comicMode, revisionNote != null);
+
+        List<Map<String, Object>> shots;
+        try {
+            if (comicMode) {
+                String narrationPerspective = (String) projectInfo.get("narrationPerspective");
+                List<List<Map<String, Object>>> panelGroups = deepSeekTextService.generatePanelAwareStoryboard(
+                    content, characters, targetDuration, visualStyle, revisionNote, narrationPerspective);
+                log.info("[Pipeline-Text] 生成 {} 个 Panel, projectId={}, episode={}", panelGroups.size(), projectId, title);
+
+                // ===== 新增：先生成集级别旁白稿 =====
+                int totalShotsEst = targetDuration / 3;
+                int dialogueCountEst = Math.round(totalShotsEst / 3); // 约 1/3 为对白
+                String narrationDraft = deepSeekTextService.generateNarrationDraft(
+                        content, characters, targetDuration, dialogueCountEst, narrationPerspective);
+                // ======================================
+
+                shots = new ArrayList<>();
+
+                // ===== 新增：旁白分配到各 shot =====
+                for (List<Map<String, Object>> panelShots : panelGroups) {
+                    narrationAllocator.sanitizeDialogue(panelShots);
+                    int targetDialogue = Math.round(panelShots.size() / 3);
+                    narrationAllocator.forceDialogueRatio(panelShots, targetDialogue);
+                    narrationAllocator.allocate(narrationDraft, panelShots, narrationPerspective);
+                    shots.addAll(panelShots);
+                }
+                // ===================================
+            } else {
+                shots = deepSeekTextService.generateStoryboard(
+                    content, characters, targetDuration, visualStyle, false, revisionNote);
+            }
+        } catch (Exception e) {
+            log.error("[Pipeline-Text] 分镜生成失败: projectId={}, episode={}, error={}", projectId, title, e.getMessage(), e);
+            throw new RuntimeException("分镜生成失败(第" + episodeNum + "集 " + title + "): " + e.getMessage(), e);
+        }
+        log.info("[Pipeline-Text] 生成 {} 个分镜, projectId={}, episode={}", shots.size(), projectId, title);
+
+        // 注入角色ID
+        Map<String, String> nameToId = buildCharacterIdMap(projectId);
+        injectCharacterIds(shots, nameToId);
+
+        // 在独立事务中创建 episode 并设置状态为 text_ready
+        TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
+        Long episodeId = txTemplate.execute(status -> {
+            Long eid = findOrCreateEpisode(projectId, script, shots, visualStyle, episodeNum);
+            log.info("[Pipeline-Text] Episode创建/更新: episodeId={}, projectId={}, episodeNum={}", eid, projectId, episodeNum);
+            deleteExistingPanels(eid);
+            gridImageService.updateEpisodeGridStatus(eid, "text_ready");
+
+            // 清除退回原因（已根据反馈重新生成）
+            Episode freshEp = episodeRepository.selectById(eid);
+            if (freshEp != null) {
+                Map<String, Object> freshInfo = freshEp.getEpisodeInfo();
+                if (freshInfo != null && freshInfo.containsKey("panelRejectionReason")) {
+                    freshInfo.remove("panelRejectionReason");
+                    freshInfo.put("panelApproved", false);
+                    freshEp.setEpisodeInfo(freshInfo);
+                    episodeRepository.updateById(freshEp);
+                }
+            }
+
+            return eid;
+        });
+
+        eventPublisher.publishEpisodePanelDone(projectId, episodeId, episodeNum, shots.size());
     }
 
     /**
