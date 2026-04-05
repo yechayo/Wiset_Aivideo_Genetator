@@ -46,6 +46,9 @@ public class DeepSeekTextService implements TextGenerationService {
 
     private final Semaphore semaphore = new Semaphore(5);
 
+    // NarrationPromptBuilder 无状态，直接实例化即可
+    private final NarrationPromptBuilder narrationPromptBuilder = new NarrationPromptBuilder();
+
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MS = 3000;
 
@@ -337,6 +340,15 @@ public class DeepSeekTextService implements TextGenerationService {
     public List<Map<String, Object>> generateEpisodeScript(
             String outlineNode, String characters, int durationSeconds, String visualStyle, int totalEpisodes,
             boolean comicCommentary) {
+        return generateEpisodeScript(outlineNode, characters, durationSeconds, visualStyle, totalEpisodes, comicCommentary, "");
+    }
+
+    /**
+     * @param previousSummary 前序章节摘要，用于保持跨章节叙事连贯性（可为空字符串）
+     */
+    public List<Map<String, Object>> generateEpisodeScript(
+            String outlineNode, String characters, int durationSeconds, String visualStyle, int totalEpisodes,
+            boolean comicCommentary, String previousSummary) {
         StringBuilder sys = new StringBuilder();
         if (comicCommentary) {
             sys.append("你是一位擅长「漫剧解说」短视频的影视编剧。剧本将拆解为分镜并由旁白口播驱动叙事。\n");
@@ -358,14 +370,18 @@ public class DeepSeekTextService implements TextGenerationService {
             .append("**角色名称约束**：characters 字段中的角色名必须与提供的角色描述中【】内的名称完全一致，")
             .append("禁止使用昵称、简称、别名或任何变体。");
 
-        String userPrompt = "大纲节点：" + outlineNode + "\n"
-            + "角色：" + characters + "\n"
-            + "视觉风格：" + visualStyle + "\n"
-            + "目标时长：" + durationSeconds + "秒\n"
-            + "需要生成的集数：" + totalEpisodes + " 集\n"
-            + "请生成恰好 " + totalEpisodes + " 集结构化分集剧本 JSON。";
+        StringBuilder userPrompt = new StringBuilder();
+        userPrompt.append("大纲节点：").append(outlineNode).append("\n")
+            .append("角色：").append(characters).append("\n")
+            .append("视觉风格：").append(visualStyle).append("\n")
+            .append("目标时长：").append(durationSeconds).append("秒\n")
+            .append("需要生成的集数：").append(totalEpisodes).append(" 集\n");
+        if (previousSummary != null && !previousSummary.isEmpty()) {
+            userPrompt.append("前序章节摘要（保持连贯性）：\n").append(previousSummary).append("\n");
+        }
+        userPrompt.append("请生成恰好 ").append(totalEpisodes).append(" 集结构化分集剧本 JSON。");
 
-        String response = generateStream(sys.toString(), userPrompt);
+        String response = generateStream(sys.toString(), userPrompt.toString());
         return parseJsonArray(response);
     }
 
@@ -447,6 +463,61 @@ public class DeepSeekTextService implements TextGenerationService {
     }
 
     /**
+     * 生成集级别旁白稿
+     *
+     * @param episodeContent     集剧本 content
+     * @param characters        角色描述
+     * @param totalDuration     目标总时长（秒）
+     * @param dialogueCount     预计对白 shot 数（用于估算旁白 shot 数）
+     * @param narrationPerspective 第一/第三人称
+     * @return 旁白稿原文
+     */
+    public String generateNarrationDraft(String episodeContent, String characters,
+                                      int totalDuration, int dialogueCount,
+                                      String narrationPerspective) {
+        int estimatedWordCount = estimateWordCount(totalDuration, dialogueCount);
+        String systemPrompt = narrationPromptBuilder.buildNarrationSystemPrompt(
+                narrationPerspective, estimatedWordCount);
+        String userPrompt = narrationPromptBuilder.buildNarrationUserPrompt(
+                episodeContent, characters, totalDuration, dialogueCount);
+
+        log.info("[NarrationDraft] 生成旁白稿: duration={}s, dialogueCount={}, perspective={}",
+                totalDuration, dialogueCount, narrationPerspective);
+
+        String draft;
+        try {
+            draft = generate(systemPrompt, userPrompt);
+        } catch (Exception e) {
+            log.warn("[NarrationDraft] 旁白稿生成失败，回退为空串: {}", e.getMessage());
+            return "";
+        }
+
+        if (draft == null || draft.trim().isEmpty()) {
+            log.warn("[NarrationDraft] 旁白稿为空");
+            return "";
+        }
+
+        // 清理 markdown 代码块
+        draft = draft.trim();
+        if (draft.startsWith("```")) {
+            int endBacktick = draft.lastIndexOf("```");
+            if (endBacktick > 3) {
+                draft = draft.substring(draft.indexOf("\n") + 1, endBacktick).trim();
+            }
+        }
+
+        log.info("[NarrationDraft] 旁白稿生成成功: {} 字", draft.length());
+        return draft;
+    }
+
+    /** 根据时长和对白数量动态估算旁白总字数 */
+    private int estimateWordCount(int totalDuration, int dialogueCount) {
+        int totalShots = Math.round((float) totalDuration / 3.0f);
+        int narrationShots = Math.max(0, totalShots - dialogueCount);
+        return (int) (narrationShots * 11 * 1.15);
+    }
+
+    /**
      * Panel-Aware 分镜生成（仅解说模式）：AI 感知 Panel 边界，输出嵌套 JSON。
      * 返回 List<List<Map>> — 外层为 Panel，内层为 shots。
      */
@@ -469,6 +540,11 @@ public class DeepSeekTextService implements TextGenerationService {
             .append("目标总时长：").append(totalDuration).append("秒\n\n");
         if (revisionNote != null && !revisionNote.trim().isEmpty()) {
             promptBuilder.append("**修改建议**：").append(revisionNote.trim()).append("\n\n");
+        }
+        if ("third_person".equals(narrationPerspective)) {
+            promptBuilder.append("**重要：旁白必须使用第三人称叙述，用角色名字或他/她指代，严禁使用「我」**。\n\n");
+        } else if ("first_person".equals(narrationPerspective)) {
+            promptBuilder.append("**重要：旁白必须使用第一人称「我」叙述，以主角口吻讲述**。\n\n");
         }
         promptBuilder.append("请生成 Panel-Aware 分镜脚本 JSON。");
 
@@ -530,6 +606,23 @@ public class DeepSeekTextService implements TextGenerationService {
             List<Map<String, Object>> removed = panelShots.remove(panelShots.size() - 1);
             for (Map<String, Object> s : removed) {
                 totalActual -= toSafeInt(s.get("duration"), 3);
+            }
+        }
+
+        // 后处理：解析 narrationType 标签，预填 narration（dialogue shot 强制「无」，旁白 shot 预填空）
+        for (List<Map<String, Object>> panelShotList : panelShots) {
+            for (Map<String, Object> shot : panelShotList) {
+                String type = str(shot.get("narrationType"));
+                String dialogue = str(shot.get("dialogue"));
+                if (!"无".equals(dialogue) && !dialogue.isEmpty()) {
+                    // 对白 shot：narration 强制为「无」
+                    shot.put("narration", "无");
+                } else {
+                    // 旁白 shot：预填空字符串（等待 NarrationAllocator 填充）
+                    shot.put("narration", "");
+                }
+                // narrationType 标签本身不再需要，移除避免干扰
+                shot.remove("narrationType");
             }
         }
 
@@ -652,12 +745,9 @@ public class DeepSeekTextService implements TextGenerationService {
             .append("- visualDescription: 画面描述（必须详细描述画面内容，包括角色具体动作姿态、面部表情、身体语言、手势、光影效果、色彩氛围。示例：\"女孩右手紧握裙摆，微微低头，眼眶泛红但强忍着泪水，头顶的夕阳余晖在她发梢形成金色光晕，背景是模糊的校园走廊\"）\n");
 
         if (comicCommentary) {
-            sb.append("- narration: **解说旁白口播稿**（中文口语，字数必须与该镜头 duration 对齐：约 duration×4~5 字/秒，例如 duration=2 时约8-10字、duration=3 时约12-15字、duration=4 时约16-20字；必须与该镜画面信息点一致；**每镜必填**，禁止填「无」、禁止空字符串；可含语气词但不要冗长）\n");
-        }
-
-        if (comicCommentary) {
-            sb.append("- dialogue: 角色**在画面内开口**的台词（无则填\"无\"）\n")
-                .append("- speaker: 说话人（无角色台词则填\"无\"；有台词时必须是 characters 数组中的角色之一。**不要**用「旁白」填 speaker——旁白一律写在 narration 字段）\n");
+            sb.append("- narration: 旁白口播稿（中文口语，字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**）\n");
+            sb.append("- dialogue: 角色在画面内开口的台词（**有 narration 的分镜 dialogue 填「无」**；对白分镜 narration 必须填「无」）\n")
+                .append("- speaker: 说话人（dialogue 为「无」时填「无」；有台词时必须是 characters 中的角色之一，禁止填「旁白」）\n");
         } else {
             sb.append("- dialogue: 对白（无则填\"无\"）\n")
                 .append("- speaker: 说话人角色名（无对白则填\"无\"，有对白时必须是 characters 数组中的角色之一）\n");
@@ -669,17 +759,20 @@ public class DeepSeekTextService implements TextGenerationService {
 
         if (comicCommentary) {
             sb.append("漫剧解说专用规则：\n")
-                .append("1. **每一镜必须有非空的 narration**，口播与画面同步，先想清楚「这一秒观众该听到什么解说」再写画面。\n")
-                .append("2. dialogue/speaker 仅用于角色**当面**说出的台词；纯解说、过渡、悬念句一律只放在 narration，dialogue 填「无」、speaker 填「无」。\n")
+                .append("1.【旁白与对白互斥 - 最高优先级】每一镜 narration 和 dialogue 绝对不能同时存在：\n")
+                .append("  - 有 narration 的分镜：dialogue 填「无」、speaker 填「无」。\n")
+                .append("  - 有 dialogue 的分镜：narration 填「无」。\n")
+                .append("  - 违反此规则（同时有 narration 和 dialogue）视为生成失败。\n\n")
+                .append("2.【对白数量强制约束】所有分镜中，**每 9 个分镜必须有且仅有 3 个对白分镜**（其余 6 个为旁白分镜）：\n")
+                .append("  - 对白分镜：dialogue 不为「无」，narration 填「无」。\n")
+                .append("  - 旁白分镜：narration 不为「无」，dialogue 填「无」、speaker 填「无」。\n")
+                .append("  - 对白分镜分布在情感爆发力最强的节点，禁止连续出现，至少间隔 1 个旁白分镜。\n\n")
                 .append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；visualDescription 中角色嘴部以自然闭合为主，除非该镜 dialogue 非「无」且说话人在画面中。\n")
                 .append("4.【景别倾向】景别以中景、近景、特写为主（占比 80%+），大远景/远景控制在 1-2 镜以内，仅用于开场定场或转场。构图需留出上方约 1/4 区域作为「字幕安全区」，避免关键视觉元素被花字遮挡。\n")
                 .append("5.【运镜风格】运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。每个镜头需有 2-3 秒画面相对静止的「解说留白」时段，供观众消化旁白信息。\n")
                 .append("6.【画面侧重点】visualDescription 应侧重角色情绪状态和场景氛围，而非复杂动作。优先描述：表情变化、眼神方向、身体朝向、光影氛围。避免描述复杂肢体动作、多人互动、快速运动。每镜画面应像一个清晰的「信息单元」——观众看一眼就能理解当前发生的事。\n")
                 .append("7.【转场节奏】转场以简洁为主：硬切、淡入淡出、黑场过渡。避免复杂动势衔接或匹配剪辑，保持叙事节奏清晰。\n")
-                .append("8.【音效策略 - 强制规则】漫剧解说以旁白口播为唯一声音核心，必须保证解说词清晰可闻：\n")
-                .append("  - audioEffects 字段**一律填「无」**。禁止填写任何音效、背景音乐、环境声、打击声等。\n")
-                .append("  - 理由：解说旁白是本视频唯一的声音内容，任何音效都会干扰观众听清解说。\n")
-                .append("  - 若某些画面确实需要氛围感，通过 visualDescription 的光影、色彩、构图来传达，而不是通过音效。\n\n");
+                .append("8.【音效策略 - 强制规则】audioEffects 字段一律填「无」。若需要氛围感，通过 visualDescription 的光影、色彩、构图来传达。\n\n");
         }
 
         sb.append("重要规则：\n")
@@ -762,21 +855,21 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("- cameraAngle: 角度（视平/高位俯拍/低位仰拍/斜拍/越肩/鸟瞰/荷兰角/低角度仰拍/高角度俯拍）\n");
         sb.append("- cameraMovement: 运镜描述（必须详细描述镜头的动态运动，包括：运镜方式如推/拉/摇/移/跟/升降/环绕/手持晃动/固定等，运动方向和速度如缓慢/匀速/快速/急促，起始位置和结束位置，与主体或场景的关系，营造的视觉氛围。示例：\"镜头从角色眼部特写缓慢开始，逐渐向后拉远至中景，同时向左平移30度，展现场景全貌，营造孤独空旷的压抑氛围\"。禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇！）\n");
         sb.append("- visualDescription: 画面描述（必须详细描述画面内容，包括角色具体动作姿态、面部表情、身体语言、手势、光影效果、色彩氛围。示例：\"女孩右手紧握裙摆，微微低头，眼眶泛红但强忍着泪水，头顶的夕阳余晖在她发梢形成金色光晕，背景是模糊的校园走廊\"）\n");
-        sb.append("- narration: 解说旁白口播稿（中文口语，字数必须与该镜头 duration 对齐：约 duration×4~5 字/秒，例如 duration=2 时约8-10字、duration=3 时约12-15字、duration=4 时约16-20字；必须与该镜画面信息点一致；每镜必填，禁止填「无」、禁止空字符串；可含语气词但不要冗长）\n");
-        sb.append("- dialogue: 角色在画面内开口的台词（无则填\"无\"）\n");
-        sb.append("- speaker: 说话人（无角色台词则填\"无\"；有台词时必须是 characters 数组中的角色之一。不要用「旁白」填 speaker——旁白一律写在 narration 字段）\n");
+        sb.append("- narrationType: 旁白类型标签（**仅填写标签，禁止填旁白文本**。\"narrate\"=此分镜有旁白，\"dialogue\"=此分镜有对白）\n");
+        sb.append("- dialogue: 角色在画面内开口的台词（旁白分镜 dialogue 填「无」；对白分镜填写角色台词）\n");
+        sb.append("- speaker: 说话人（dialogue 为「无」时填「无」；有台词时必须是 characters 中的角色之一，禁止填「旁白」）\n");
         sb.append("- dialogueTone: 对白语气（无对白则填\"无\"。必须描述说话人的语气、情绪状态和表演方式。示例：\"愤怒而急促，声音略带颤抖\"或\"温柔低语，带着一丝犹豫和心疼\"）\n");
         sb.append("- visualEffects: 视觉特效（无则填\"无\"）\n");
         sb.append("- audioEffects: 音效（无则填\"无\"）\n");
         sb.append("- transitionHint: 镜头衔接提示（描述此镜头如何过渡到下一个镜头，确保画面连贯性。最后一个分镜填写\"最后一个镜头，无需衔接\"）\n\n");
 
         sb.append("【叙事连贯性规则 - 最高优先级】\n");
-        sb.append("1. 整集所有 shot 的 narration 连起来必须是一篇完整、流畅的旁白口播稿。\n");
+        sb.append("1. 整集所有旁白分镜的 narration 连起来必须是一篇完整、流畅的旁白口播稿（对白分镜的 dialogue 不参与旁白连贯性检查）。\n");
         sb.append("   - 有清晰的开场引入 → 中间推进 → 高潮转折 → 结尾收束\n");
         sb.append("   - 句子之间有逻辑递进，禁止跳跃、重复或突兀换话题\n");
         sb.append("2. Panel 边界过渡：\n");
-        sb.append("   - 每个 Panel 最后一个 shot 的 narration 要为下一个 Panel 留有自然承接点\n");
-        sb.append("   - 下一个 Panel 的第一个 shot 的 narration 要自然承接上文\n");
+        sb.append("   - 每个 Panel 最后一个旁白分镜的 narration 要为下一个 Panel 留有自然承接点\n");
+        sb.append("   - 下一个 Panel 的第一个旁白分镜的 narration 要自然承接上文\n");
         sb.append("   - 禁止在 Panel 边界处突兀地硬切话题\n");
         sb.append("3. Panel 内部：\n");
         sb.append("   - narration 与 visualDescription 严格对齐，解说描述的必须是画面可见的\n");
@@ -784,8 +877,19 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("4. 第一个 Panel 的第一个 shot 要有开场引入感，最后一个 Panel 的最后一个 shot 要有收束感\n\n");
 
         sb.append("漫剧解说专用规则：\n");
-        sb.append("1. 每一镜必须有非空的 narration，口播与画面同步，先想清楚「这一秒观众该听到什么解说」再写画面。\n");
-        sb.append("2. dialogue/speaker 仅用于角色当面说出的台词；纯解说、过渡、悬念句一律只放在 narration，dialogue 填「无」、speaker 填「无」。\n");
+        sb.append("【分镜类型标签 - 必须严格遵守】\n");
+        sb.append("- narrationType=\"narrate\"：此分镜是旁白分镜，画面由旁白解说驱动。\n");
+        sb.append("  · dialogue 填「无」，speaker 填「无」\n");
+        sb.append("  · narrationType 填 \"narrate\"（**禁止填写实际旁白文本**）\n");
+        sb.append("- narrationType=\"dialogue\"：此分镜是对白分镜，画面由角色台词驱动。\n");
+        sb.append("  · dialogue 填角色台词，speaker 填角色名\n");
+        sb.append("  · narrationType 填 \"dialogue\"（**禁止填 \"narrate\"**）\n\n");
+
+        sb.append("【对白数量约束】整集所有分镜中，**每 9 个分镜必须有且仅有 3 个对白分镜**（其余为旁白分镜）：\n");
+        sb.append("  - 对白分镜（narrationType=\"dialogue\"）：dialogue 非「无」\n");
+        sb.append("  - 旁白分镜（narrationType=\"narrate\"）：dialogue 填「无」\n");
+        sb.append("  - 对白分镜禁止连续出现，至少间隔 1 个旁白分镜\n");
+        sb.append("  - 整集对白分镜总数偏差不得超过 ±1\n\n");
         sb.append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；visualDescription 中角色嘴部以自然闭合为主，除非该镜 dialogue 非「无」且说话人在画面中。\n");
         sb.append("4.【景别倾向】景别以中景、近景、特写为主（占比 80%+），大远景/远景控制在 1-2 镜以内，仅用于开场定场或转场。构图需留出上方约 1/4 区域作为「字幕安全区」，避免关键视觉元素被花字遮挡。\n");
         sb.append("5.【运镜风格】运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。每个镜头需有 2-3 秒画面相对静止的「解说留白」时段，供观众消化旁白信息。\n");
@@ -793,17 +897,13 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("7.【转场节奏】转场以简洁为主：硬切、淡入淡出、黑场过渡。避免复杂动势衔接或匹配剪辑，保持叙事节奏清晰。\n");
         sb.append("8.【音效策略 - 强制规则】漫剧解说以旁白口播为唯一声音核心，必须保证解说词清晰可闻：\n");
         sb.append("  - audioEffects 字段一律填「无」。禁止填写任何音效、背景音乐、环境声、打击声等。\n");
-        sb.append("  - 若某些画面确实需要氛围感，通过 visualDescription 的光影、色彩、构图来传达，而不是通过音效。\n");
-        sb.append("9.【台词密度约束 - 强制规则】漫剧解说以旁白为叙事主轴，角色台词必须极其克制：\n");
-        sb.append("  - 整集所有分镜中，仅 1-2 个分镜可以有台词（dialogue 不为\"无\"）。\n");
-        sb.append("  - 其余所有分镜必须无台词（dialogue 为\"无\"、speaker 为\"无\"），通过 narration 旁白推动剧情。\n");
-        sb.append("  - 如必须出现角色台词，选择最具情感爆发力的节点（如转折、高潮），而非日常对话。\n\n");
+        sb.append("  - 若某些画面确实需要氛围感，通过 visualDescription 的光影、色彩、构图来传达，而不是通过音效。\n\n");
 
         if (narrationPerspective != null && !narrationPerspective.isEmpty()) {
             if ("first_person".equals(narrationPerspective)) {
-                sb.append("10.【旁白人称 - 第一人称】所有 narration 必须以主角口吻叙述，使用「我」来讲述故事，营造沉浸式代入感。\n\n");
+                sb.append("10.【旁白人称 - 第一人称 · 最高优先级】所有 narration 必须以主角口吻叙述，使用「我」来讲述故事，营造沉浸式代入感。绝对禁止在 narration 中使用第三人称（他/她/主角名字）。\n\n");
             } else if ("third_person".equals(narrationPerspective)) {
-                sb.append("10.【旁白人称 - 第三人称】所有 narration 以旁观者/上帝视角叙述，客观描述故事事件与角色行为。\n\n");
+                sb.append("10.【旁白人称 - 第三人称 · 最高优先级】所有 narration 必须以旁观者/上帝视角叙述，客观描述故事事件与角色行为。绝对禁止在 narration 中使用第一人称「我」，必须用角色名字或他/她指代。\n\n");
             }
         }
 
@@ -912,5 +1012,9 @@ public class DeepSeekTextService implements TextGenerationService {
             }
         }
         return null;
+    }
+
+    private String str(Object o) {
+        return o != null ? o.toString().trim() : "";
     }
 }
