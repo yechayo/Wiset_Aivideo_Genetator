@@ -558,8 +558,6 @@ public class DeepSeekTextService implements TextGenerationService {
         int globalShotNumber = 0;
 
         for (List<Map<String, Object>> panelShotList : panelShots) {
-            normalizeComicNarrationFields(panelShotList);
-
             // 计算 panelStartTime：统计前面所有 panel 的时长
             int panelStartTime = 0;
             for (List<Map<String, Object>> prevPanel : panelShots) {
@@ -609,19 +607,16 @@ public class DeepSeekTextService implements TextGenerationService {
             }
         }
 
-        // 后处理：解析 narrationType 标签，预填 narration（dialogue shot 强制「无」，旁白 shot 预填空）
+        // 后处理：强制清除所有 narration（由 NarrationAllocator 统一分配）
         for (List<Map<String, Object>> panelShotList : panelShots) {
             for (Map<String, Object> shot : panelShotList) {
-                String type = str(shot.get("narrationType"));
+                shot.put("narration", "");
+                // 对白 shot 额外确保 dialogue 非空
                 String dialogue = str(shot.get("dialogue"));
                 if (!"无".equals(dialogue) && !dialogue.isEmpty()) {
-                    // 对白 shot：narration 强制为「无」
-                    shot.put("narration", "无");
-                } else {
-                    // 旁白 shot：预填空字符串（等待 NarrationAllocator 填充）
-                    shot.put("narration", "");
+                    shot.put("speaker", str(shot.get("speaker")));
                 }
-                // narrationType 标签本身不再需要，移除避免干扰
+                // narrationType 标签不再需要，移除避免干扰
                 shot.remove("narrationType");
             }
         }
@@ -863,18 +858,9 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("- audioEffects: 音效（无则填\"无\"）\n");
         sb.append("- transitionHint: 镜头衔接提示（描述此镜头如何过渡到下一个镜头，确保画面连贯性。最后一个分镜填写\"最后一个镜头，无需衔接\"）\n\n");
 
-        sb.append("【叙事连贯性规则 - 最高优先级】\n");
-        sb.append("1. 整集所有旁白分镜的 narration 连起来必须是一篇完整、流畅的旁白口播稿（对白分镜的 dialogue 不参与旁白连贯性检查）。\n");
-        sb.append("   - 有清晰的开场引入 → 中间推进 → 高潮转折 → 结尾收束\n");
-        sb.append("   - 句子之间有逻辑递进，禁止跳跃、重复或突兀换话题\n");
-        sb.append("2. Panel 边界过渡：\n");
-        sb.append("   - 每个 Panel 最后一个旁白分镜的 narration 要为下一个 Panel 留有自然承接点\n");
-        sb.append("   - 下一个 Panel 的第一个旁白分镜的 narration 要自然承接上文\n");
-        sb.append("   - 禁止在 Panel 边界处突兀地硬切话题\n");
-        sb.append("3. Panel 内部：\n");
-        sb.append("   - narration 与 visualDescription 严格对齐，解说描述的必须是画面可见的\n");
-        sb.append("   - 每个 Panel 内部像一个完整的叙事小节，有起承转合\n");
-        sb.append("4. 第一个 Panel 的第一个 shot 要有开场引入感，最后一个 Panel 的最后一个 shot 要有收束感\n\n");
+        sb.append("【叙事连贯性规则 - Panel 边界过渡】\n");
+        sb.append("1. 每个 Panel 最后一个 shot 与下一个 Panel 第一个 shot 的视觉内容应自然承接，避免突兀跳切。\n");
+        sb.append("2. 第一个 Panel 的第一个 shot 要有开场引入感，最后一个 Panel 的最后一个 shot 要有收束感。\n\n");
 
         sb.append("漫剧解说专用规则：\n");
         sb.append("【分镜类型标签 - 必须严格遵守】\n");
