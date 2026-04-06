@@ -66,7 +66,13 @@ public class ViduVideoService implements VideoGenerationService {
             log.info("Vidu 视频生成: 并发槽位 {}/{}", semaphore.availablePermits(), semaphore.getQueueLength());
 
             // 构建请求体
+            // 将简写映射为 Vidu API 实际 model 名
             String effectiveModel = (model != null && !model.isEmpty()) ? model : viduProperties.getModel();
+            switch (effectiveModel) {
+                case "pro":  effectiveModel = "viduq3-pro"; break;
+                case "turbo": effectiveModel = "viduq3-turbo"; break;
+                default: break;
+            }
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", effectiveModel);
             requestBody.put("images", Collections.singletonList(referenceImage));

@@ -26,10 +26,19 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 @Service
 @RequiredArgsConstructor
@@ -280,6 +289,121 @@ public class PanelService {
         result.put("merged", merged);
         result.put("skipped", skipped);
         return result;
+    }
+
+    // ===== 一键合成（剧集视频拼接）=====
+
+    /**
+     * 一键合成：将某集所有已合并的 panel 视频拼接为一集完整视频
+     */
+    public Map<String, Object> composeEpisode(Long episodeId) {
+        List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
+
+        // 筛选出已合并的 panel，按 id 排序
+        List<Panel> mergedPanels = panels.stream()
+                .filter(p -> {
+                    Map<String, Object> info = p.getPanelInfo();
+                    return info != null && "completed".equals(info.get("mergeStatus"))
+                            && info.get("videoWithNarrationUrl") != null;
+                })
+                .sorted(Comparator.comparing(Panel::getId))
+                .collect(Collectors.toList());
+
+        if (mergedPanels.isEmpty()) {
+            throw new BusinessException("没有已合并的 panel，请先合成音视频");
+        }
+
+        com.comic.service.oss.OssService ossService = applicationContext.getBean(com.comic.service.oss.OssService.class);
+
+        Path tempDir = null;
+        try {
+            tempDir = Files.createTempDirectory("episode-compose-");
+            List<String> inputFiles = new ArrayList<>();
+
+            // 下载所有合并后的视频
+            for (int i = 0; i < mergedPanels.size(); i++) {
+                Panel panel = mergedPanels.get(i);
+                String url = (String) panel.getPanelInfo().get("videoWithNarrationUrl");
+                File localFile = tempDir.resolve(String.format("panel_%03d.mp4", i)).toFile();
+                ossService.downloadToFile(url, localFile.getAbsolutePath());
+                inputFiles.add(localFile.getAbsolutePath());
+            }
+
+            // FFmpeg concat
+            String outputFile = tempDir.resolve("episode_full.mp4").toAbsolutePath().toString();
+
+            // 创建 concat 文件列表
+            String concatFile = tempDir.resolve("concat.txt").toAbsolutePath().toString();
+            StringBuilder sb = new StringBuilder();
+            for (String f : inputFiles) {
+                sb.append("file '").append(f.replace("\\", "/")).append("'\n");
+            }
+            Files.write(Paths.get(concatFile), sb.toString().getBytes());
+
+            ProcessBuilder pb = new ProcessBuilder(
+                    "ffmpeg", "-y",
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", concatFile,
+                    "-c", "copy",
+                    outputFile
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int len;
+            while ((len = process.getInputStream().read(buffer)) != -1) {
+                baos.write(buffer, 0, len);
+            }
+            int exitCode = process.waitFor();
+
+            if (exitCode != 0) {
+                throw new RuntimeException("FFmpeg 拼接失败: " + baos.toString());
+            }
+
+            // 上传到 OSS
+            String ossUrl = ossService.uploadFromFile(outputFile, "episodes");
+
+            // 更新 episodeInfo
+            Episode episode = episodeRepository.selectById(episodeId);
+            if (episode != null) {
+                Map<String, Object> epInfo = episode.getEpisodeInfo();
+                if (epInfo == null) epInfo = new HashMap<>();
+                epInfo.put("composedVideoUrl", ossUrl);
+                epInfo.put("composedVideoStatus", "completed");
+                episode.setEpisodeInfo(epInfo);
+                episodeRepository.updateById(episode);
+            }
+
+            log.info("一键合成完成: episodeId={}, panels={}, url={}", episodeId, mergedPanels.size(), ossUrl);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("composedVideoUrl", ossUrl);
+            result.put("panelCount", mergedPanels.size());
+            return result;
+
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("一键合成失败: episodeId={}", episodeId, e);
+            throw new RuntimeException("一键合成失败: " + e.getMessage(), e);
+        } finally {
+            if (tempDir != null) {
+                deleteRecursively(tempDir);
+            }
+        }
+    }
+
+    private void deleteRecursively(Path dir) {
+        try {
+            Files.walk(dir)
+                    .sorted((a, b) -> -a.compareTo(b))
+                    .forEach(p -> {
+                        try { Files.delete(p); } catch (IOException ignored) {}
+                    });
+        } catch (IOException ignored) {}
     }
 
     private void updatePanelInfo(Panel panel, String key, Object value) {

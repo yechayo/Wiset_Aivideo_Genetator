@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -259,8 +260,22 @@ public class EpisodeController {
             panelRepository.deleteById(p.getId());
         }
 
-        // 贪心分组 splitShots（10s 一组）
-        List<List<Map<String, Object>>> groups = PanelService.greedyGroup(splitShots, 10);
+        // 分组 splitShots 创建 Panel
+        List<List<Map<String, Object>>> groups;
+        boolean hasPanelIndex = splitShots.stream()
+            .anyMatch(s -> s.containsKey("panelIndex") && s.get("panelIndex") != null);
+        if (hasPanelIndex) {
+            // 按 panelIndex 分组（AI 预分组，解说模式）
+            Map<Integer, List<Map<String, Object>>> groupMap = new LinkedHashMap<>();
+            for (Map<String, Object> shot : splitShots) {
+                int idx = shot.get("panelIndex") != null ? ((Number) shot.get("panelIndex")).intValue() : 1;
+                groupMap.computeIfAbsent(idx, k -> new ArrayList<>()).add(shot);
+            }
+            groups = new ArrayList<>(groupMap.values());
+        } else {
+            // fallback: 贪心分组（实时动画模式或旧数据）
+            groups = PanelService.greedyGroup(splitShots, 10);
+        }
 
         // 每组创建 Panel
         List<String> charRefUrls = gridImageService.getCharacterReferenceUrlsForEpisode(episodeId);

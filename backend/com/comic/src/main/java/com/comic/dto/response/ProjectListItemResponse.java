@@ -43,6 +43,8 @@ public class ProjectListItemResponse {
 
     private List<Integer> completedSteps;
 
+    private String productionMode;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

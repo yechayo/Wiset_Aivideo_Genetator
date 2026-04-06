@@ -162,6 +162,12 @@ function ProjectDetailPage() {
               <span className={styles.infoLabel}>每章集数</span>
               <span className={styles.infoValue}>{pi(project)?.episodesPerChapter || 4} 集</span>
             </div>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>制作模式</span>
+              <span className={styles.infoValue}>
+                {pi(project)?.productionMode === 'comic_commentary' ? '漫剧解说' : '实时动画'}
+              </span>
+            </div>
           </div>
         </div>
 

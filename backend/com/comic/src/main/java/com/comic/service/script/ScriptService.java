@@ -1,5 +1,6 @@
 package com.comic.service.script;
 
+import com.comic.ai.ComicCommentaryScriptPromptBuilder;
 import com.comic.ai.ScriptPromptBuilder;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.exception.BusinessException;
@@ -12,6 +13,7 @@ import com.comic.repository.EpisodeRepository;
 import com.comic.repository.ProjectRepository;
 import com.comic.service.redis.ProgressService;
 import com.comic.service.world.WorldRuleService;
+import com.comic.util.ProjectProductionMode;
 import com.comic.statemachine.enums.ProjectMilestoneEventType;
 import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
 import com.comic.statemachine.service.StateChangeEventPublisher;
@@ -41,6 +43,7 @@ public class ScriptService {
     private final EpisodeRepository episodeRepository;
     private final TextGenerationService textGenerationService;
     private final ScriptPromptBuilder scriptPromptBuilder;
+    private final ComicCommentaryScriptPromptBuilder comicCommentaryScriptPromptBuilder;
     private final WorldRuleService worldRuleService;
     private final ObjectMapper objectMapper;
 
@@ -139,27 +142,48 @@ public class ScriptService {
             // 获取世界观配置
             WorldConfigModel worldConfig = worldRuleService.getWorldConfig(projectId);
 
-            // 计算章节参数
-            ScriptPromptBuilder.ScriptParams params = scriptPromptBuilder.calculateScriptParameters(
-                totalEpisodes != null ? totalEpisodes : 4);
+            boolean comicMode = ProjectProductionMode.isComicCommentary(project);
+            int resolvedTotalEpisodes = totalEpisodes != null ? totalEpisodes : 4;
 
-            // 构建生成大纲的prompt
-            String systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
-                totalEpisodes != null ? totalEpisodes : 4,
-                genre,
-                targetAudience,
-                params.chapterCount,
-                params.episodesPerChapter
-            );
+            ScriptPromptBuilder.ScriptParams params = comicMode
+                    ? comicCommentaryScriptPromptBuilder.calculateScriptParameters(resolvedTotalEpisodes)
+                    : scriptPromptBuilder.calculateScriptParameters(resolvedTotalEpisodes);
 
-            String userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
-                storyPrompt,
-                genre,
-                worldConfig.getRulesText(),
-                totalEpisodes != null ? totalEpisodes : 4,
-                episodeDuration != null ? episodeDuration : 60,
-                visualStyle != null ? visualStyle : "REAL"
-            );
+            String systemPrompt;
+            String userPrompt;
+            if (comicMode) {
+                systemPrompt = comicCommentaryScriptPromptBuilder.buildScriptOutlineSystemPrompt(
+                        resolvedTotalEpisodes,
+                        genre,
+                        targetAudience,
+                        params.chapterCount,
+                        params.episodesPerChapter
+                );
+                userPrompt = comicCommentaryScriptPromptBuilder.buildScriptOutlineUserPrompt(
+                        storyPrompt,
+                        genre,
+                        worldConfig.getRulesText(),
+                        resolvedTotalEpisodes,
+                        episodeDuration != null ? episodeDuration : 60,
+                        visualStyle != null ? visualStyle : "REAL"
+                );
+            } else {
+                systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
+                        resolvedTotalEpisodes,
+                        genre,
+                        targetAudience,
+                        params.chapterCount,
+                        params.episodesPerChapter
+                );
+                userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
+                        storyPrompt,
+                        genre,
+                        worldConfig.getRulesText(),
+                        resolvedTotalEpisodes,
+                        episodeDuration != null ? episodeDuration : 60,
+                        visualStyle != null ? visualStyle : "REAL"
+                );
+            }
 
             log.info("systemPrompt: {}", systemPrompt);
             log.info("userPrompt: {}", userPrompt);
@@ -248,18 +272,31 @@ public class ScriptService {
 
             Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
 
-            // 构建分集prompt
-            String systemPrompt = scriptPromptBuilder.buildScriptEpisodeSystemPrompt();
-            String userPrompt = scriptPromptBuilder.buildScriptEpisodeUserPrompt(
-                outline,
-                chapter,
-                globalCharacters,
-                globalItems,
-                previousSummary,
-                resolvedEpisodeCount,
-                episodeDuration != null ? episodeDuration : 60,
-                modificationSuggestion
-            );
+            boolean comicMode = ProjectProductionMode.isComicCommentary(project);
+            String systemPrompt = comicMode
+                    ? comicCommentaryScriptPromptBuilder.buildScriptEpisodeSystemPrompt()
+                    : scriptPromptBuilder.buildScriptEpisodeSystemPrompt();
+            String userPrompt = comicMode
+                    ? comicCommentaryScriptPromptBuilder.buildScriptEpisodeUserPrompt(
+                            outline,
+                            chapter,
+                            globalCharacters,
+                            globalItems,
+                            previousSummary,
+                            resolvedEpisodeCount,
+                            episodeDuration != null ? episodeDuration : 60,
+                            modificationSuggestion
+                    )
+                    : scriptPromptBuilder.buildScriptEpisodeUserPrompt(
+                            outline,
+                            chapter,
+                            globalCharacters,
+                            globalItems,
+                            previousSummary,
+                            resolvedEpisodeCount,
+                            episodeDuration != null ? episodeDuration : 60,
+                            modificationSuggestion
+                    );
 
             // 调用文本生成服务生成分集
             String episodesJson = textGenerationService.generate(systemPrompt, userPrompt);
@@ -905,25 +942,48 @@ public class ScriptService {
             Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
             String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
 
-            ScriptPromptBuilder.ScriptParams params = scriptPromptBuilder.calculateScriptParameters(
-                totalEpisodes != null ? totalEpisodes : 4);
+            boolean comicMode = ProjectProductionMode.isComicCommentary(project);
+            int resolvedTotalEpisodes = totalEpisodes != null ? totalEpisodes : 4;
 
-            String systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
-                totalEpisodes != null ? totalEpisodes : 4,
-                genre,
-                targetAudience,
-                params.chapterCount,
-                params.episodesPerChapter
-            );
+            ScriptPromptBuilder.ScriptParams params = comicMode
+                    ? comicCommentaryScriptPromptBuilder.calculateScriptParameters(resolvedTotalEpisodes)
+                    : scriptPromptBuilder.calculateScriptParameters(resolvedTotalEpisodes);
 
-            String userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
-                storyPrompt,
-                genre,
-                currentOutline,
-                totalEpisodes != null ? totalEpisodes : 4,
-                episodeDuration != null ? episodeDuration : 60,
-                visualStyle != null ? visualStyle : "REAL"
-            );
+            String systemPrompt;
+            String userPrompt;
+            if (comicMode) {
+                systemPrompt = comicCommentaryScriptPromptBuilder.buildScriptOutlineSystemPrompt(
+                        resolvedTotalEpisodes,
+                        genre,
+                        targetAudience,
+                        params.chapterCount,
+                        params.episodesPerChapter
+                );
+                userPrompt = comicCommentaryScriptPromptBuilder.buildScriptOutlineUserPrompt(
+                        storyPrompt,
+                        genre,
+                        currentOutline,
+                        resolvedTotalEpisodes,
+                        episodeDuration != null ? episodeDuration : 60,
+                        visualStyle != null ? visualStyle : "REAL"
+                );
+            } else {
+                systemPrompt = scriptPromptBuilder.buildScriptOutlineSystemPrompt(
+                        resolvedTotalEpisodes,
+                        genre,
+                        targetAudience,
+                        params.chapterCount,
+                        params.episodesPerChapter
+                );
+                userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
+                        storyPrompt,
+                        genre,
+                        currentOutline,
+                        resolvedTotalEpisodes,
+                        episodeDuration != null ? episodeDuration : 60,
+                        visualStyle != null ? visualStyle : "REAL"
+                );
+            }
 
             // 添加修改意见
             userPrompt += "\n\n**修改要求**：" + revisionNote;

@@ -4,6 +4,7 @@ import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.ComicCommentaryPanelPromptBuilder;
 import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.text.DeepSeekTextService;
+import com.comic.ai.text.NarrationAllocator;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.ai.video.ViduVideoService;
 import com.comic.config.AiServiceConfiguration;
@@ -907,24 +908,10 @@ public class PanelProductionService {
                     content, characters, targetDuration, visualStyle, revisionNote, narrationPerspective);
                 log.info("[Pipeline-Text] 生成 {} 个 Panel, projectId={}, episode={}", panelGroups.size(), projectId, title);
 
-                // ===== 新增：先生成集级别旁白稿 =====
-                int totalShotsEst = targetDuration / 3;
-                int dialogueCountEst = Math.round(totalShotsEst / 3); // 约 1/3 为对白
-                String narrationDraft = deepSeekTextService.generateNarrationDraft(
-                        content, characters, targetDuration, dialogueCountEst, narrationPerspective);
-                // ======================================
-
                 shots = new ArrayList<>();
-
-                // ===== 新增：旁白分配到各 shot =====
                 for (List<Map<String, Object>> panelShots : panelGroups) {
-                    narrationAllocator.sanitizeDialogue(panelShots);
-                    int targetDialogue = Math.round(panelShots.size() / 3);
-                    narrationAllocator.forceDialogueRatio(panelShots, targetDialogue);
-                    narrationAllocator.allocate(narrationDraft, panelShots, narrationPerspective);
                     shots.addAll(panelShots);
                 }
-                // ===================================
             } else {
                 shots = deepSeekTextService.generateStoryboard(
                     content, characters, targetDuration, visualStyle, false, revisionNote);

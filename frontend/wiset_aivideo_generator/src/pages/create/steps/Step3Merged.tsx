@@ -262,9 +262,11 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
     setGeneratingIds(prev => new Set(prev).add(charId));
     try {
       await generateImage(projectId, charId, type);
+      loadCharacters();
     } catch (err: any) {
       alert(err.message || '生成失败');
       setGeneratingIds(prev => { const next = new Set(prev); next.delete(charId); return next; });
+      loadCharacters();
     }
   };
 
@@ -274,9 +276,11 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
     setGeneratingIds(prev => new Set(prev).add(charId));
     try {
       await retryGeneration(projectId, charId, type);
+      loadCharacters();
     } catch (err: any) {
       alert(err.message || '重试失败');
       setGeneratingIds(prev => { const next = new Set(prev); next.delete(charId); return next; });
+      loadCharacters();
     }
   };
 
@@ -526,6 +530,7 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
           confirmSingleCharacter(projectId, char.charId).catch(() => { /* 单个失败不阻断 */ })
         )
       );
+      loadCharacters();
     } finally {
       setBatchLoading(false);
     }

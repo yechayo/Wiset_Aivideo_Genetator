@@ -11,12 +11,12 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Nanobanana2 图片生成服务（异步轮询方式）
- * 通过吾印科技 API 提交异步任务，轮询获取生成结果
+ * 通过吾印科技 API 提交异步任务，轮询获取生成结果。
+ * 不在此做进程内并发排队：官方接口约 100 QPS，由上游与 HTTP 客户端承载并发。
  */
 @Service
 @Slf4j
@@ -28,13 +28,10 @@ public class NanobananaImageService implements ImageGenerationService {
     private final ObjectMapper objectMapper;
     private final OssService ossService;
 
-    // 并发控制
-    private final Semaphore semaphore = new Semaphore(2);
-
     // 轮询间隔（毫秒）
     private static final long POLL_INTERVAL_MS = 3000;
     // 超时时间（毫秒）
-    private static final long TIMEOUT_MS = 600_000;
+    private static final long TIMEOUT_MS = 86_400_000; // 24小时
 
     // 支持的宽高比
     private static final Set<String> SUPPORTED_ASPECT_RATIOS = new HashSet<>(java.util.Arrays.asList(
@@ -64,7 +61,7 @@ public class NanobananaImageService implements ImageGenerationService {
 
     @Override
     public int getAvailableConcurrentSlots() {
-        return semaphore.availablePermits();
+        return Integer.MAX_VALUE;
     }
 
     /**
@@ -72,9 +69,6 @@ public class NanobananaImageService implements ImageGenerationService {
      */
     private String doGenerate(String prompt, int width, int height, List<String> urls) {
         try {
-            semaphore.acquire();
-            log.info("Nanobanana2 图片生成: 并发槽位 {}/{}", semaphore.availablePermits(), semaphore.getQueueLength());
-
             String aspectRatio = computeAspectRatio(width, height);
 
             // 1. 提交异步任务
@@ -95,8 +89,6 @@ public class NanobananaImageService implements ImageGenerationService {
         } catch (Exception e) {
             log.error("Nanobanana2 图片生成异常", e);
             throw new RuntimeException("Nanobanana2 图片生成失败: " + e.getMessage(), e);
-        } finally {
-            semaphore.release();
         }
     }
 

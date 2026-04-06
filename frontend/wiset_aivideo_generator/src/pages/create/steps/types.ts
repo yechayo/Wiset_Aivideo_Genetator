@@ -41,6 +41,7 @@ export interface SegmentState {
   feedback: string;
   panelData?: PanelData;
   videoTaskId?: string | null;
+  videoModel?: string | null;
   videoOffPeak?: boolean | null;
   videoProgress?: number | null;     // 0-100
   videoCredits?: number | null;      // 积分消耗
@@ -48,6 +49,9 @@ export interface SegmentState {
   ttsAudioUrl?: string | null;
   ttsStatus?: 'pending' | 'generating' | 'completed' | 'failed';
   ttsCredits?: number | null;
+  // === 音视频合并 ===
+  videoWithNarrationUrl?: string | null;
+  mergeStatus?: 'pending' | 'generating' | 'completed' | 'failed';
 }
 
 /** Episode 级九宫格状态 */

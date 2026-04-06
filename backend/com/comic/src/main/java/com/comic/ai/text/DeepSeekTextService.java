@@ -558,6 +558,8 @@ public class DeepSeekTextService implements TextGenerationService {
         int globalShotNumber = 0;
 
         for (List<Map<String, Object>> panelShotList : panelShots) {
+            normalizeComicNarrationFields(panelShotList);
+
             // 计算 panelStartTime：统计前面所有 panel 的时长
             int panelStartTime = 0;
             for (List<Map<String, Object>> prevPanel : panelShots) {
@@ -607,16 +609,27 @@ public class DeepSeekTextService implements TextGenerationService {
             }
         }
 
-        // 后处理：强制清除所有 narration（由 NarrationAllocator 统一分配）
+        // 后处理：互斥原则强制校验 + 去重
         for (List<Map<String, Object>> panelShotList : panelShots) {
+            String prevNarration = "";
             for (Map<String, Object> shot : panelShotList) {
-                shot.put("narration", "");
-                // 对白 shot 额外确保 dialogue 非空
                 String dialogue = str(shot.get("dialogue"));
+                String narration = str(shot.get("narration"));
+                // 互斥：有对白的 shot，清除 narration
                 if (!"无".equals(dialogue) && !dialogue.isEmpty()) {
-                    shot.put("speaker", str(shot.get("speaker")));
+                    if (!"无".equals(narration) && !narration.isEmpty()) {
+                        log.warn("Shot {} 违反互斥原则，清除 narration 保留 dialogue", shot.get("shotNumber"));
+                        shot.put("narration", "无");
+                    }
                 }
-                // narrationType 标签不再需要，移除避免干扰
+                // 去重：如果与上一镜旁白完全相同，清除
+                narration = str(shot.get("narration"));
+                if (!"无".equals(narration) && !narration.isEmpty() && narration.equals(prevNarration)) {
+                    log.warn("Shot {} narration 与上一镜完全重复，已清除", shot.get("shotNumber"));
+                    shot.put("narration", "无");
+                }
+                prevNarration = str(shot.get("narration"));
+                // 清理残留的 narrationType 字段
                 shot.remove("narrationType");
             }
         }
@@ -850,32 +863,54 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("- cameraAngle: 角度（视平/高位俯拍/低位仰拍/斜拍/越肩/鸟瞰/荷兰角/低角度仰拍/高角度俯拍）\n");
         sb.append("- cameraMovement: 运镜描述（必须详细描述镜头的动态运动，包括：运镜方式如推/拉/摇/移/跟/升降/环绕/手持晃动/固定等，运动方向和速度如缓慢/匀速/快速/急促，起始位置和结束位置，与主体或场景的关系，营造的视觉氛围。示例：\"镜头从角色眼部特写缓慢开始，逐渐向后拉远至中景，同时向左平移30度，展现场景全貌，营造孤独空旷的压抑氛围\"。禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇！）\n");
         sb.append("- visualDescription: 画面描述（必须详细描述画面内容，包括角色具体动作姿态、面部表情、身体语言、手势、光影效果、色彩氛围。示例：\"女孩右手紧握裙摆，微微低头，眼眶泛红但强忍着泪水，头顶的夕阳余晖在她发梢形成金色光晕，背景是模糊的校园走廊\"）\n");
-        sb.append("- narrationType: 旁白类型标签（**仅填写标签，禁止填旁白文本**。\"narrate\"=此分镜有旁白，\"dialogue\"=此分镜有对白）\n");
-        sb.append("- dialogue: 角色在画面内开口的台词（旁白分镜 dialogue 填「无」；对白分镜填写角色台词）\n");
+        if ("third_person".equals(narrationPerspective)) {
+            sb.append("- narration: 旁白口播稿（**第三人称叙述**，使用「他/她/它」指代角色，禁止使用「我」；中文口语，字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**）\n");
+        } else {
+            sb.append("- narration: 旁白口播稿（中文口语，字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**）\n");
+        }
+        sb.append("- dialogue: 角色在画面内开口的台词（**有 narration 的分镜 dialogue 填「无」**；对白分镜 narration 必须填「无」）\n");
         sb.append("- speaker: 说话人（dialogue 为「无」时填「无」；有台词时必须是 characters 中的角色之一，禁止填「旁白」）\n");
         sb.append("- dialogueTone: 对白语气（无对白则填\"无\"。必须描述说话人的语气、情绪状态和表演方式。示例：\"愤怒而急促，声音略带颤抖\"或\"温柔低语，带着一丝犹豫和心疼\"）\n");
         sb.append("- visualEffects: 视觉特效（无则填\"无\"）\n");
         sb.append("- audioEffects: 音效（无则填\"无\"）\n");
         sb.append("- transitionHint: 镜头衔接提示（描述此镜头如何过渡到下一个镜头，确保画面连贯性。最后一个分镜填写\"最后一个镜头，无需衔接\"）\n\n");
 
-        sb.append("【叙事连贯性规则 - Panel 边界过渡】\n");
-        sb.append("1. 每个 Panel 最后一个 shot 与下一个 Panel 第一个 shot 的视觉内容应自然承接，避免突兀跳切。\n");
-        sb.append("2. 第一个 Panel 的第一个 shot 要有开场引入感，最后一个 Panel 的最后一个 shot 要有收束感。\n\n");
+        sb.append("【叙事连贯性规则 - 最高优先级】\n");
+        sb.append("1. 整集所有旁白分镜的 narration 连起来必须是一篇完整、流畅的旁白口播稿（对白分镜的 dialogue 不参与旁白连贯性检查）。\n");
+        sb.append("   - 有清晰的开场引入 → 中间推进 → 高潮转折 → 结尾收束\n");
+        sb.append("   - 句子之间有逻辑递进，禁止跳跃、重复或突兀换话题\n");
+        sb.append("2. Panel 边界过渡：\n");
+        sb.append("   - 每个 Panel 最后一个旁白分镜的 narration 要为下一个 Panel 留有自然承接点\n");
+        sb.append("   - 下一个 Panel 的第一个旁白分镜的 narration 要自然承接上文\n");
+        sb.append("   - 禁止在 Panel 边界处突兀地硬切话题\n");
+        sb.append("3. Panel 内部：\n");
+        sb.append("   - narration 与 visualDescription 严格对齐，解说描述的必须是画面可见的\n");
+        sb.append("   - 每个 Panel 内部像一个完整的叙事小节，有起承转合\n");
+        sb.append("4. 第一个 Panel 的第一个 shot 要有开场引入感，最后一个 Panel 的最后一个 shot 要有收束感\n\n");
 
         sb.append("漫剧解说专用规则：\n");
-        sb.append("【分镜类型标签 - 必须严格遵守】\n");
-        sb.append("- narrationType=\"narrate\"：此分镜是旁白分镜，画面由旁白解说驱动。\n");
-        sb.append("  · dialogue 填「无」，speaker 填「无」\n");
-        sb.append("  · narrationType 填 \"narrate\"（**禁止填写实际旁白文本**）\n");
-        sb.append("- narrationType=\"dialogue\"：此分镜是对白分镜，画面由角色台词驱动。\n");
-        sb.append("  · dialogue 填角色台词，speaker 填角色名\n");
-        sb.append("  · narrationType 填 \"dialogue\"（**禁止填 \"narrate\"**）\n\n");
+        sb.append("1.【旁白与对白互斥 - 最高优先级】每一镜 narration 和 dialogue 绝对不能同时存在：\n");
+        sb.append("  - 有 narration 的分镜：dialogue 填「无」、speaker 填「无」。\n");
+        sb.append("  - 有 dialogue 的分镜：narration 填「无」。\n");
+        sb.append("  - 违反此规则（同时有 narration 和 dialogue）视为生成失败。\n\n");
+        sb.append("2.【对白数量强制约束】整集所有分镜中，**每 9 个分镜必须有且仅有 3 个对白分镜**（其余 6 个为旁白分镜）：\n");
+        sb.append("  - 对白分镜：dialogue 不为「无」，narration 填「无」。\n");
+        sb.append("  - 旁白分镜：narration 不为「无」，dialogue 填「无」、speaker 填「无」。\n");
+        sb.append("  - 对白分镜应分布在情感爆发力最强的节点（转折、高潮、冲突），禁止连续出现，至少间隔 1 个旁白分镜。\n");
+        sb.append("  - 整集对白分镜总数偏差不得超过 ±1，否则视为生成失败。\n\n");
 
-        sb.append("【对白数量约束】整集所有分镜中，**每 9 个分镜必须有且仅有 3 个对白分镜**（其余为旁白分镜）：\n");
-        sb.append("  - 对白分镜（narrationType=\"dialogue\"）：dialogue 非「无」\n");
-        sb.append("  - 旁白分镜（narrationType=\"narrate\"）：dialogue 填「无」\n");
-        sb.append("  - 对白分镜禁止连续出现，至少间隔 1 个旁白分镜\n");
-        sb.append("  - 整集对白分镜总数偏差不得超过 ±1\n\n");
+        sb.append("【旁白连续性 - 核心规则 + 示例】\n");
+        sb.append("所有旁白分镜的 narration 拼接后必须是一篇流畅的口播稿。每镜旁白必须承接上一镜旁白的语义，推进叙事。\n\n");
+        sb.append("✅ 正确示例（旁白之间有语义递进，像一段完整的口播稿）：\n");
+        sb.append("  shot1 narration: \"三百年前的惨败，刻骨铭心。\"（开场引入）\n");
+        sb.append("  shot2 narration: \"他猛然睁眼，发现自己竟回到了少年时代。\"（承接上句，推进事件）\n");
+        sb.append("  shot3 narration: \"眼前浮现的蓝色光屏，显示着密密麻麻的分析数据。\"（描述新发现）\n");
+        sb.append("  shot4 narration: \"系统已锁定赵无极功法的致命破绽。\"（进一步推进）\n");
+        sb.append("  shot5 narration: \"只需一指，便能瓦解他所有的攻击。\"（制造悬念）\n\n");
+        sb.append("❌ 错误示例（旁白重复，没有推进叙事）——**严禁这样写**：\n");
+        sb.append("  shot1 narration: \"这一世的因果，他必将逐一清算。\"\n");
+        sb.append("  shot2 narration: \"这一世的因果，他必将逐一清算。\"（← 禁止：与上一镜完全相同）\n");
+        sb.append("  shot3 narration: \"这一世的因果，他必将逐一清算。\"（← 禁止：没有推进故事）\n\n");
         sb.append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；visualDescription 中角色嘴部以自然闭合为主，除非该镜 dialogue 非「无」且说话人在画面中。\n");
         sb.append("4.【景别倾向】景别以中景、近景、特写为主（占比 80%+），大远景/远景控制在 1-2 镜以内，仅用于开场定场或转场。构图需留出上方约 1/4 区域作为「字幕安全区」，避免关键视觉元素被花字遮挡。\n");
         sb.append("5.【运镜风格】运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。每个镜头需有 2-3 秒画面相对静止的「解说留白」时段，供观众消化旁白信息。\n");

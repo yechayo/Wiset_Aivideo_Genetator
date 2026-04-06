@@ -1,5 +1,6 @@
 package com.comic.service.panel;
 
+import com.comic.ai.ComicCommentaryPanelPromptBuilder;
 import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.config.AiServiceConfiguration;
@@ -8,9 +9,12 @@ import com.comic.constant.CharacterInfoKeys;
 import com.comic.entity.Character;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
+import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
+import com.comic.repository.ProjectRepository;
+import com.comic.util.ProjectProductionMode;
 import com.comic.service.oss.OssService;
 import com.comic.statemachine.service.StateChangeEventPublisher;
 import com.comic.util.NumberFormatter;
@@ -43,7 +47,9 @@ public class GridImageService {
 
     @Resource private AiServiceConfiguration aiServiceConfig;
     @Resource private PanelPromptBuilder panelPromptBuilder;
+    @Resource private ComicCommentaryPanelPromptBuilder comicCommentaryPanelPromptBuilder;
     @Resource private PanelRepository panelRepository;
+    @Resource private ProjectRepository projectRepository;
     @Resource private OssService ossService;
     @Resource private EpisodeRepository episodeRepository;
     @Resource private CharacterRepository characterRepository;
@@ -81,7 +87,7 @@ public class GridImageService {
                 int toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, shots.size());
                 List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
 
-                String prompt = panelPromptBuilder.buildGridPrompt(visualStyleStr, pageShots, charRefsWithNames);
+                String prompt = buildGridPromptForProject(panel.getEpisodeId(), visualStyleStr, pageShots, charRefsWithNames);
                 // 追加用户的修改建议
                 if (customHint != null && !customHint.trim().isEmpty()) {
                     prompt += "\n\n用户修改要求: " + customHint.trim();
@@ -127,6 +133,26 @@ public class GridImageService {
             panelInfo.put("errorMessage", e.getMessage());
             updatePanelInfo(panel, panelInfo);
         }
+    }
+
+    private Project resolveProjectByEpisodeId(Long episodeId) {
+        if (episodeId == null) {
+            return null;
+        }
+        Episode ep = episodeRepository.selectById(episodeId);
+        if (ep == null || ep.getProjectId() == null) {
+            return null;
+        }
+        return projectRepository.findByProjectId(ep.getProjectId());
+    }
+
+    private String buildGridPromptForProject(Long episodeId, String visualStyle,
+                                             List<Map<String, Object>> pageShots, List<CharRef> charRefsWithNames) {
+        Project project = resolveProjectByEpisodeId(episodeId);
+        if (ProjectProductionMode.isComicCommentary(project)) {
+            return comicCommentaryPanelPromptBuilder.buildGridPrompt(visualStyle, pageShots, charRefsWithNames);
+        }
+        return panelPromptBuilder.buildGridPrompt(visualStyle, pageShots, charRefsWithNames);
     }
 
     /**
@@ -175,7 +201,7 @@ public class GridImageService {
                 int toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, shots.size());
                 List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
 
-                String prompt = panelPromptBuilder.buildGridPrompt(visualStyle, pageShots, charRefsWithNames);
+                String prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames);
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
                     imageUrl = imageService.generateWithMultipleReferences(

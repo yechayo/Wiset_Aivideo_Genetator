@@ -117,6 +117,22 @@ panelHasAnyDialogue = panel.shots 中任意一个 shot.hasDialogue == true
 
 ## 三、后端 — Vidu TTS 服务
 
+### 触发时机
+
+**TTS 生成在视频生成完成之后触发**，用户主动发起，不自动串入流水线。
+
+原因：
+- 视频生成是耗时最长、最可能失败的环节，TTS 不应阻塞视频流程
+- TTS 依赖 `shot.duration` 字段，该字段在分镜生成时已确定，视频生成不影响 TTS 文本
+- 用户可能只想重试视频不想重做 TTS，分开触发更灵活
+
+**触发路径：**
+1. 用户在 4c Tab 点击单个 panel 的「生成旁白」→ 调用 `POST /{panelId}/tts`
+2. 用户点击集级别「批量生成旁白」→ 调用 `POST /panels/tts/batch`
+3. TTS 与视频生成可并行进行，互不依赖
+
+**面板重生成时：** 面板重新生成（如九宫格被驳回）后，`ttsStatus` 重置为 `pending`，已有 `ttsAudioUrl` 保留直至新 TTS 生成完成覆盖。
+
 ### 新建 ViduTtsService
 
 调用 `POST https://api.vidu.cn/ent/v2/audio-tts`（同步接口，直接返回 file_url）。
@@ -187,6 +203,14 @@ TTS 文本：`"阳光洒在古老的城墙上。<#5.0#>她站在城门前，目�
  shot1(3s)    shot2(角色对白)  shot3(4s)    shot4(角色对白)  shot5(4s)
 ```
 
+#### 积分计费
+
+Vidu TTS API 响应中包含 `credits` 字段，表示本次消耗的积分。
+
+- 每次 TTS 请求记录 `credits` 消耗，写入 `panelInfo.ttsCredits`
+- 前端 Stats bar 显示 TTS 积分消耗
+- 批量 TTS 时，累加所有 panel 的 credits
+
 #### 语速策略
 
 使用自然语速（`voice_setting_speed` 默认 1.0），不精确匹配 shot 时长。
@@ -206,10 +230,19 @@ else:
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `ttsAudioUrl` | String | TTS 音频 URL |
+| `ttsAudioUrl` | String | TTS 音频 OSS URL |
 | `ttsStatus` | `pending` \| `generating` \| `completed` \| `failed` | TTS 状态 |
+| `ttsCredits` | Integer | 本次 TTS 消耗积分 |
 
 存储在 panel 的 `panelInfo` JSON 中，与 `videoUrl` 同级。
+
+### 历史数据兼容
+
+`ComicCommentaryPanelPromptBuilder` 中已有 `effectiveNarrationText()` 方法，处理了两种旁白来源：
+1. 新数据：`shot.narration` 字段
+2. 历史数据：`shot.speaker="旁白"` 且 `shot.dialogue` 非空
+
+TTS 服务必须复用该方法（或将其抽取为公共工具方法），确保历史项目的旁白数据不丢失。
 
 ### 新增 API 端点
 
@@ -221,13 +254,48 @@ Response: { code: 0, data: { ttsAudioUrl: "...", ttsStatus: "completed" } }
 
 **批量 TTS（某集所有需要旁白的 panel）：**
 ```
-POST /api/projects/{projectId}/episodes/{episodeId}/tts/batch
+POST /api/projects/{projectId}/episodes/{episodeId}/panels/tts/batch
 Response: { code: 0, data: { generated: 5, skipped: 2 } }
 ```
+- `generated`: 实际发起了 TTS 生成的 panel 数量
+- `skipped`: 跳过的 panel 数量（所有 shot 都有台词、无 narration 可朗读、或 TTS 已完成且用户未要求重新生成）
 
 ### 查询接口扩展
 
 `getBatchProductionStatuses` 响应中每个 panel 增加 `ttsAudioUrl`、`ttsStatus`。
+
+### SSE 事件
+
+由于 Vidu TTS 是同步接口（直接返回 `file_url`），SSE 不需要异步回调。TTS 完成后的状态更新通过以下方式驱动前端刷新：
+
+| 场景 | 触发方式 |
+|------|----------|
+| 单个 panel TTS 完成 | 后端直接返回 `ttsAudioUrl`，前端刷新该 panel 状态 |
+| 批量 TTS 完成 | 后端在 SSE 连接上推送 `panel:tts_done` 事件（按 panel 逐个推送），前端刷新对应 panel |
+
+**SSE 事件格式：**
+```
+event: panel:tts_done
+data: {"panelId": 123, "ttsAudioUrl": "https://...", "ttsStatus": "completed"}
+
+event: panel:tts_failed
+data: {"panelId": 123, "ttsStatus": "failed", "error": "..."}
+```
+
+前端 SSE hook 需新增对 `panel:tts_done` 和 `panel:tts_failed` 事件类型的处理。
+
+### 音频 URL 持久化
+
+Vidu TTS 返回的 `file_url` 为临时地址（有效期有限），需上传至 OSS 持久化存储。
+
+**流程：**
+1. Vidu TTS 返回 `file_url`
+2. `ViduTtsService` 下载音频文件
+3. 上传至 OSS（使用项目已有的 OSS 配置）
+4. 将 OSS URL 写入 `panelInfo.ttsAudioUrl`
+5. 返回给前端的是 OSS 持久化 URL
+
+前端播放器始终使用 OSS URL，确保长期可访问。
 
 ## 四、前端 — 集成到 4c 视频生成 Tab
 
@@ -305,7 +373,8 @@ batchGenerateTts(projectId, episodeId)
 | **新建** `ViduTtsService.java` | Vidu TTS API 调用 |
 | `PanelController.java` | 新增 TTS 端点 |
 | `PanelService.java` | TTS 生成逻辑、状态更新 |
-| 查询接口相关 Service | 返回 ttsAudioUrl/ttsStatus |
+| 查询接口相关 Service | 返回 ttsAudioUrl/ttsStatus/ttsCredits |
+| `ViduTtsService.java` | 新增：调用 Vidu TTS API + OSS 上传 + SSE 推送 |
 
 ### 前端
 

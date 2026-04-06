@@ -235,6 +235,14 @@ public class PanelController {
         return Result.ok(panelService.batchMergeAudio(episodeId));
     }
 
+    @PostMapping("/compose-episode")
+    @Operation(summary = "一键合成：拼接所有已合并面板为一集完整视频")
+    public Result<Map<String, Object>> composeEpisode(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        return Result.ok(panelService.composeEpisode(episodeId));
+    }
+
     // ================= 边界保护 =================
 
     /**

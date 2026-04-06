@@ -93,6 +93,12 @@ function ProjectsPage() {
                   <span className={styles.metaValue}>{project.visualStyle || project.genre || '3D'}</span>
                 </div>
                 <div className={styles.metaItem}>
+                  <span className={styles.metaLabel}>制作模式</span>
+                  <span className={styles.metaValue}>
+                    {project.productionMode === 'comic_commentary' ? '漫剧解说' : '实时动画'}
+                  </span>
+                </div>
+                <div className={styles.metaItem}>
                   <span className={styles.metaLabel}>集数</span>
                   <span className={styles.metaValue}>{project.totalEpisodes} 集</span>
                 </div>
