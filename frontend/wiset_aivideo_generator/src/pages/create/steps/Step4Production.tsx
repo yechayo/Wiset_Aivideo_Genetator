@@ -518,7 +518,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         }
       }
     }
-    if (keys.size > 0) setGeneratingVideoKeys(keys);
+    setGeneratingVideoKeys(keys);
   }, [chapters]);
 
   // Auto-stop polling when all episodes have script data
@@ -546,7 +546,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     if (!statusInfo?.isGenerating) {
       setGeneratingScript(null);
       setGeneratingGrid(null);
-      setGeneratingVideoKeys(new Set());
+      // 不清除 generatingVideoKeys — 视频生成进度由 polling 独立管理
       return;
     }
     const taskType = statusInfo.generatingTaskType;
@@ -558,13 +558,19 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
     // "panel" = grid/video generation in progress
     if (taskType === 'panel') {
-      // Find episodes with generating panels
-      const generatingEp = chapters.find(ch =>
+      const hasVideoGenerating = chapters.some(ch =>
         ch.episodes.some(ep => ep.segments.some(seg =>
-          seg.pipelineStep === 'grid_generating' || seg.pipelineStep === 'video_generating'
+          seg.pipelineStep === 'video_generating'
         ))
       );
-      if (generatingEp) {
+      const hasGridGenerating = chapters.some(ch =>
+        ch.episodes.some(ep => ep.segments.some(seg =>
+          seg.pipelineStep === 'grid_generating'
+        ))
+      );
+      if (hasVideoGenerating) {
+        switchTab('video');
+      } else if (hasGridGenerating) {
         switchTab('grid');
       }
     }
@@ -669,8 +675,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                     shots: status.shots?.length ? status.shots : seg.shots,
                     videoUrl: status.videoUrl ?? seg.videoUrl,
                     videoTaskId: status.videoTaskId ?? seg.videoTaskId,
+                    videoModel: status.videoModel ?? seg.videoModel,
                     videoOffPeak: status.offPeak ?? seg.videoOffPeak,
-                    videoProgress: status.videoProgress ?? seg.videoProgress,
+                    videoProgress: status.videoProgress != null ? status.videoProgress : seg.videoProgress,
                     videoCredits: status.videoCredits ?? seg.videoCredits,
                     ttsAudioUrl: status.ttsAudioUrl || seg.ttsAudioUrl,
                     ttsStatus: status.ttsStatus === 'completed' ? 'completed' : (status.ttsStatus || seg.ttsStatus),
@@ -735,10 +742,18 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       }
     },
     onPanelVideoDone: (data) => {
-      if (data.episodeId) refreshProductionStatuses(data.episodeId);
+      if (data.episodeId) {
+        refreshProductionStatuses(data.episodeId);
+        const key = `${data.episodeId}-${data.panelId}`;
+        setGeneratingVideoKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+      }
     },
     onPanelVideoFailed: (data) => {
-      if (data.episodeId) refreshProductionStatuses(data.episodeId);
+      if (data.episodeId) {
+        refreshProductionStatuses(data.episodeId);
+        const key = `${data.episodeId}-${data.panelId}`;
+        setGeneratingVideoKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+      }
     },
     onPanelTtsDone: (data) => {
       if (data.episodeId) refreshProductionStatuses(data.episodeId);
@@ -748,6 +763,12 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     },
     onStatusChange: (data) => {
       if (projectId && data.to) { syncStatus(projectId); loadEpisodes(); }
+      // task-complete 或状态变为非生成中时，重置前端 generating 状态
+      if (data.eventType === 'task-complete' || data.to === 'completed') {
+        setGeneratingScript(null);
+        setGeneratingGrid(null);
+        stopScriptPolling();
+      }
     },
     onReconnect: () => {
       if (projectId) { syncStatus(projectId); loadEpisodes(); }
@@ -768,13 +789,12 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   // ==================== Actions ====================
 
-  // Generate script per episode
+  // Generate script per episode (backend regenerates ALL episodes for the project)
   const handleGenerateScript = useCallback(async (episodeId: number) => {
     if (!projectId || generatingScript) return;
-    setGeneratingScript(episodeId);
+    setGeneratingScript(-1); // -1 = batch generating
     try {
       await generateEpisodeScripts(projectId, episodeId);
-      // Start polling — SSE may miss the completion event
       startScriptPolling();
       await loadEpisodes();
     } catch (err: any) {
@@ -918,6 +938,23 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       setGeneratingVideoKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
     };
     poll();
+
+    // 立即设置本地状态为生成中，确保进度条和 UI 立即反映
+    setChapters(prev => prev.map(ch => ({
+      ...ch,
+      episodes: ch.episodes.map(ep =>
+        ep.episodeId === episodeId
+          ? {
+              ...ep,
+              segments: ep.segments.map(seg =>
+                seg.panelData?.panelId === panelId
+                  ? { ...seg, pipelineStep: 'video_generating' as const, videoProgress: 0, videoStatus: 'generating' as any }
+                  : seg
+              ),
+            }
+          : ep
+      ),
+    })));
 
     generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt, isVidu ? videoModel : undefined)
       .catch((err: any) => {
@@ -1116,7 +1153,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             ? {
                 ...ep,
                 segments: ep.segments.map(seg =>
-                  (seg.ttsStatus === 'completed' || !!seg.ttsAudioUrl) && seg.mergeStatus !== 'completed'
+                  (seg.ttsStatus === 'completed' || !!seg.ttsAudioUrl) && (seg.pipelineStep === 'video_completed' || !!seg.videoUrl) && seg.mergeStatus !== 'completed'
                     ? { ...seg, mergeStatus: 'generating' as const }
                     : seg
                 ),
@@ -1161,7 +1198,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const ttsTotalCount = allEpisodes.reduce((sum, ep) => sum + ep.segments.length, 0);
   const allSegments = allEpisodes.flatMap(ep => ep.segments);
   const mergeCompletedCount = allSegments.filter(s => s.mergeStatus === 'completed').length;
-  const mergeTotalCount = allSegments.filter(s => s.ttsStatus === 'completed' || !!s.ttsAudioUrl).length;
+  const mergeTotalCount = allSegments.filter(s => (s.ttsStatus === 'completed' || !!s.ttsAudioUrl) && (s.pipelineStep === 'video_completed' || !!s.videoUrl)).length;
   const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
 
   // ==================== Render ====================
@@ -1289,12 +1326,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                   <div className={styles.episodeList}>
                     {chapter.episodes.map(ep => (
                       <div key={ep.episodeId} className={`${styles.episodeScriptCard} ${(generatingScript === ep.episodeId || generatingScript === -1) ? styles.cardGenerating : ''}`}>
-                        {(generatingScript === ep.episodeId || generatingScript === -1) && (
-                          <div className={styles.cardLoadingOverlay}>
-                            <div className={styles.cardLoadingSpinner} />
-                            <span>脚本生成中...</span>
-                          </div>
-                        )}
                         <div className={styles.episodeScriptHeader}>
                           <div>
                             <h3 className={styles.episodeScriptTitle}>
@@ -1604,7 +1635,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                               const panelId = seg.panelData?.panelId;
                               const isGenerating = generatingVideoKeys.has(`${ep.episodeId}-${panelId}`);
                               const isFailed = seg.pipelineStep === 'video_failed';
-                              const isDone = !!seg.videoUrl || seg.pipelineStep === 'video_completed';
+                              const isDone = !isGenerating && (!!seg.videoUrl || seg.pipelineStep === 'video_completed');
                               const panelKey = `${ep.episodeId}-${panelId}`;
                               const isExpanded = expandedPanelKey === panelKey;
                               const shotDescriptions = (seg.shots || [])
@@ -1697,16 +1728,16 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                     <div className={styles.panelVideoProgressBar}>
                                       <div
                                         className={styles.panelVideoProgressFill}
-                                        style={{ width: `${seg.videoProgress ?? 0}%` }}
+                                        style={{ width: `${seg.videoProgress || 0}%` }}
                                       />
                                     </div>
                                   )}
                                   {/* 元信息：积分、任务ID、错峰 */}
-                                  {(seg.videoCredits != null || seg.videoTaskId || seg.videoOffPeak) && (
+                                  {(seg.videoCredits != null || seg.videoTaskId || seg.videoOffPeak || seg.videoModel) && (
                                     <div className={styles.panelVideoMeta}>
-                                      {seg.videoOffPeak && <span className={styles.panelVideoTag}>错峰模式</span>}
+                                      {seg.videoModel && <span className={styles.panelVideoTag}>{seg.videoModel === 'pro' ? 'Pro' : seg.videoModel === 'turbo' ? 'Turbo' : seg.videoModel}</span>}
+                                      {seg.videoOffPeak && <span className={styles.panelVideoTag}>错峰</span>}
                                       {seg.videoCredits != null && <span className={styles.panelVideoTag}>{seg.videoCredits} 积分</span>}
-                                      {seg.videoTaskId && <span className={styles.panelVideoTag}>{seg.videoTaskId.slice(0, 8)}...</span>}
                                     </div>
                                   )}
                                   {isExpanded && (
