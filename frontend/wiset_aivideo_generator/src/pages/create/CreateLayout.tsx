@@ -81,6 +81,9 @@ const CreateLayout = () => {
     // 跳转到同一个 step 时不重复触发
     if (lastRedirectedStep.current === backendStep) return;
 
+    // draft 状态允许停留在 Step 1 回填/编辑表单，不强制跳转到 Step 2
+    if (statusInfo.statusCode === 'draft' && urlStep === 1) return;
+
     if (urlStep < backendStep) {
       // 后端步骤前进 → 自动跳转
       lastRedirectedStep.current = backendStep;

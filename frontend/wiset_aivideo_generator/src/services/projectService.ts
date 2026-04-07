@@ -26,6 +26,13 @@ export async function createProject(data: CreateProjectRequest): Promise<ApiResp
 }
 
 /**
+ * 更新项目设置（merge 模式，仅覆盖非 null 字段）
+ */
+export async function updateProject(projectId: string, data: CreateProjectRequest): Promise<ApiResponse<void>> {
+  return patch<ApiResponse<void>>(`/api/projects/${projectId}`, data);
+}
+
+/**
  * AI 重新生成大纲（修改剧本）
  * @param projectId 项目ID
  * @param data 修改意见和当前大纲

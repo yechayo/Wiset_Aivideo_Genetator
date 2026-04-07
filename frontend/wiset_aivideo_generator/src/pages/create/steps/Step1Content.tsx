@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import styles from '../CreatePage.module.less';
 import VoiceSelect from '../../../components/VoiceSelect';
 import Select from '../../../components/Select';
-import { createProject, isApiSuccess, previewVoice } from '../../../services';
+import { createProject, updateProject, isApiSuccess, previewVoice } from '../../../services';
 import type { CreateProjectRequest, ProductionMode, Project, VisualStyle } from '../../../services';
 import type { StepContentProps } from '../types';
 import { useProjectStore } from '../../../stores';
@@ -130,26 +130,31 @@ interface Step1ContentProps extends StepContentProps {
 /**
  * Step 1: 创意输入 + 设定
  *
- * 纯输入页面：填写故事创意和生成配置，点击创建后跳转 Step 2。
+ * 新建项目：填写故事创意和生成配置，点击创建后跳转 Step 2。
+ * 编辑草稿：回填已有的项目配置，点击继续后保存并跳转 Step 2。
  */
-const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
+const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
   const navigate = useNavigate();
   const setCurrentProject = useProjectStore((state) => state.setCurrentProject);
 
-  // ========== 表单状态 ==========
-  const [storyIdea, setStoryIdea] = useState('');
-  const [genre, setGenre] = useState('');
-  const [visualStyle, setVisualStyle] = useState<VisualStyle | ''>('');
-  const [targetAudience, setTargetAudience] = useState('');
-  const [totalEpisodes, setTotalEpisodes] = useState(10);
-  const [episodeDuration, setEpisodeDuration] = useState<number>(60);
-  const [imageProvider, setImageProvider] = useState('seedream');
-  const [videoProvider, setVideoProvider] = useState('vidu');
-  const [videoModel, setVideoModel] = useState('viduq3-pro');
-  const [productionMode, setProductionMode] = useState<ProductionMode>('realtime_animation');
-  const [narrationPerspective, setNarrationPerspective] = useState<'first_person' | 'third_person' | ''>('');
-  const [narrationVoiceId, setNarrationVoiceId] = useState('');
-  const [protagonistVoiceId, setProtagonistVoiceId] = useState('');
+  // ========== 编辑模式 ==========
+  const isEditing = !!project?.projectId;
+  const info = project?.projectInfo;
+
+  // ========== 表单状态（编辑时从已有项目回填） ==========
+  const [storyIdea, setStoryIdea] = useState(() => info?.storyPrompt || '');
+  const [genre, setGenre] = useState(() => info?.genre || '');
+  const [visualStyle, setVisualStyle] = useState<VisualStyle | ''>(() => (info?.visualStyle as VisualStyle) || '');
+  const [targetAudience, setTargetAudience] = useState(() => info?.targetAudience || '');
+  const [totalEpisodes, setTotalEpisodes] = useState(() => info?.totalEpisodes || 10);
+  const [episodeDuration, setEpisodeDuration] = useState<number>(() => info?.episodeDuration || 60);
+  const [imageProvider, setImageProvider] = useState(() => info?.imageProvider || 'seedream');
+  const [videoProvider, setVideoProvider] = useState(() => info?.videoProvider || 'vidu');
+  const [videoModel, setVideoModel] = useState(() => info?.videoModel || 'viduq3-pro');
+  const [productionMode, setProductionMode] = useState<ProductionMode>(() => (info?.productionMode as ProductionMode) || 'realtime_animation');
+  const [narrationPerspective, setNarrationPerspective] = useState<'first_person' | 'third_person' | ''>(() => (info?.narrationPerspective as 'first_person' | 'third_person') || '');
+  const [narrationVoiceId, setNarrationVoiceId] = useState(() => info?.narrationVoiceId || '');
+  const [protagonistVoiceId, setProtagonistVoiceId] = useState(() => info?.protagonistVoiceId || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ========== 音色试听 ==========
@@ -201,49 +206,56 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
       return;
     }
 
+    const requestData: CreateProjectRequest = {
+      storyPrompt: storyIdea,
+      genre: genre || undefined,
+      visualStyle: visualStyle || undefined,
+      targetAudience,
+      totalEpisodes,
+      episodeDuration: episodeDuration,
+      imageProvider,
+      videoProvider,
+      videoModel,
+      productionMode,
+      narrationPerspective: narrationPerspective || undefined,
+      narrationVoiceId: narrationPerspective === 'third_person' ? narrationVoiceId || undefined : undefined,
+      protagonistVoiceId: narrationPerspective === 'first_person' ? protagonistVoiceId || undefined : undefined,
+    };
+
     setIsSubmitting(true);
 
     try {
-      const requestData: CreateProjectRequest = {
-        storyPrompt: storyIdea,
-        genre: genre || undefined,
-        visualStyle: visualStyle || undefined,
-        targetAudience,
-        totalEpisodes,
-        episodeDuration: episodeDuration,
-        imageProvider,
-        videoProvider,
-        videoModel,
-        productionMode,
-        narrationPerspective: narrationPerspective || undefined,
-        narrationVoiceId: narrationPerspective === 'third_person' ? narrationVoiceId || undefined : undefined,
-        protagonistVoiceId: narrationPerspective === 'first_person' ? protagonistVoiceId || undefined : undefined,
-      };
-
-      const createResult = await createProject(requestData);
-
-      if (isApiSuccess(createResult) && createResult.data) {
-        const newProjectId = createResult.data.projectId;
-
-        if (!newProjectId) {
-          console.error('创建成功但缺少项目 ID');
-          alert('项目创建成功但缺少 ID，请重试');
-          return;
-        }
-
-        const projectData: Project = { projectId: newProjectId };
-        setCurrentProject(projectData);
-        onProjectCreated?.(projectData);
-
-        // 创建成功后跳转到 Step 2
-        navigate(`/project/${newProjectId}/step/2`, { replace: true });
+      if (isEditing) {
+        // 编辑草稿：更新已有项目配置并跳转 Step 2
+        await updateProject(project!.projectId!, requestData);
+        navigate(`/project/${project!.projectId}/step/2`, { replace: true });
       } else {
-        console.error('创建失败:', createResult.message);
-        alert(`创建失败: ${createResult.message}`);
+        // 新建项目
+        const createResult = await createProject(requestData);
+
+        if (isApiSuccess(createResult) && createResult.data) {
+          const newProjectId = createResult.data.projectId;
+
+          if (!newProjectId) {
+            console.error('创建成功但缺少项目 ID');
+            alert('项目创建成功但缺少 ID，请重试');
+            return;
+          }
+
+          const projectData: Project = { projectId: newProjectId };
+          setCurrentProject(projectData);
+          onProjectCreated?.(projectData);
+
+          // 创建成功后跳转到 Step 2
+          navigate(`/project/${newProjectId}/step/2`, { replace: true });
+        } else {
+          console.error('创建失败:', createResult.message);
+          alert(`创建失败: ${createResult.message}`);
+        }
       }
     } catch (error) {
       console.error('API调用失败:', error);
-      alert('API调用失败，请稍后重试');
+      alert(isEditing ? '更新项目失败，请稍后重试' : 'API调用失败，请稍后重试');
     } finally {
       setIsSubmitting(false);
     }
@@ -254,9 +266,11 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
     <div className={styles.content}>
       {/* 标题区域 */}
       <div className={styles.header}>
-        <h1 className={styles.title}>创建新的AI漫剧</h1>
+        <h1 className={styles.title}>{isEditing ? '编辑项目设置' : '创建新的AI漫剧'}</h1>
         <p className={styles.subtitle}>
-          输入你的故事创意，AI将自动生成完整的漫剧视频
+          {isEditing
+            ? '确认或修改你的创意设定后，继续生成大纲'
+            : '输入你的故事创意，AI将自动生成完整的漫剧视频'}
         </p>
       </div>
 
@@ -446,7 +460,7 @@ const Step1Content = ({ onProjectCreated }: Step1ContentProps) => {
           disabled={!storyIdea.trim() || !visualStyle || !targetAudience || isSubmitting}
         >
           <SparklesIcon className={styles.buttonIcon} />
-          <span>{isSubmitting ? '创建中...' : '创建项目'}</span>
+          <span>{isSubmitting ? (isEditing ? '保存中...' : '创建中...') : (isEditing ? '继续创建' : '创建项目')}</span>
         </button>
       </div>
     </div>

@@ -171,7 +171,11 @@ export interface ProjectInfoData {
   episodesPerChapter?: number;
   imageProvider?: string;
   videoProvider?: string;
+  videoModel?: string;
   productionMode?: ProductionMode;
+  narrationPerspective?: string;
+  narrationVoiceId?: string;
+  protagonistVoiceId?: string;
 }
 
 /**

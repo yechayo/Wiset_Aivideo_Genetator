@@ -19,7 +19,7 @@ interface CreateState {
 
 let pollingTimerId: ReturnType<typeof setTimeout> | null = null;
 
-function normalizeStatusInfo(raw: ProjectStatusInfo | Record<string, any>): ProjectStatusInfo {
+export function normalizeStatusInfo(raw: ProjectStatusInfo | Record<string, any>): ProjectStatusInfo {
   const data = raw as Record<string, any>;
 
   const generating = data.isGenerating ?? data.generating;
