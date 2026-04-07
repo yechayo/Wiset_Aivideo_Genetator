@@ -447,6 +447,7 @@ public class PanelProductionService {
                 }
             }
             if (totalDuration <= 0) totalDuration = 5;
+            if (totalDuration > 10) totalDuration = 10;
 
             String projectId = getProjectIdByPanelIdForProvider(panelId);
             VideoGenerationService videoService = aiServiceConfig.getVideoService(

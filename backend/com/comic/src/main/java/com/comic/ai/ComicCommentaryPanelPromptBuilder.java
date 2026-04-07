@@ -127,11 +127,11 @@ public class ComicCommentaryPanelPromptBuilder {
                                        Map<String, Object> previousPanelLastShot) {
         StringBuilder sb = new StringBuilder();
         sb.append(panelPromptBuilder.buildSceneStylePrefix(visualStyle));
-        sb.append(" 漫剧解说向连续视频：画面服务于旁白节奏，镜头以清晰叙事与情绪递进为主。\n\n");
+        sb.append(" 漫剧风格连续视频：画面节奏服务于叙事与情绪递进。\n\n");
 
         if (previousPanelLastShot != null && !previousPanelLastShot.isEmpty()) {
             sb.append("## 承接上一段画面\n");
-            sb.append("本段需与上一段结尾自然衔接，便于解说连续讲述。\n");
+            sb.append("本段需与上一段结尾自然衔接。\n");
             String prevScene = (String) previousPanelLastShot.get("scene");
             if (prevScene != null && !prevScene.isEmpty()) {
                 sb.append("- 结束场景：").append(prevScene).append("\n");
@@ -172,7 +172,7 @@ public class ComicCommentaryPanelPromptBuilder {
 
         List<Map<String, Object>> shots = (List<Map<String, Object>>) panelInfo.get("shots");
         int n = shots != null ? shots.size() : 0;
-        sb.append("以下 ").append(n).append(" 个镜头在同一视频中连续呈现，节奏需适合解说口播（信息点清晰、留白合理）：\n\n");
+        sb.append("以下 ").append(n).append(" 个镜头在同一视频中连续呈现，节奏平缓，信息点清晰、留白合理：\n\n");
 
         if (shots != null) {
             for (int i = 0; i < shots.size(); i++) {
@@ -214,23 +214,23 @@ public class ComicCommentaryPanelPromptBuilder {
             }
         }
 
-        sb.append("## 口型与声画约束（漫剧解说 - 最高优先级）\n");
-        sb.append("解说模式下画面内不出现角色对白口型，所有角色保持自然闭嘴。\n");
+        sb.append("## 口型约束（最高优先级）\n");
+        sb.append("所有角色保持自然闭嘴。\n");
         sb.append("- 画面中所有角色的嘴巴必须始终保持自然闭合，禁止任何嘴唇开合、蠕动或口型运动。角色只能通过眼神、表情、头部动作传达情绪。\n");
-        sb.append("- 解说旁白为画外音，画面内角色一律闭嘴，保持倾听、沉思或自然状态，绝对禁止任何嘴部运动。\n");
+        sb.append("- 画面内角色一律保持倾听、沉思或自然状态，绝对禁止任何嘴部运动。\n");
         sb.append("- 禁止任何嘴部动作：嘴唇开合、舌头运动、露齿、口型蠕动、咀嚼、吞咽。\n\n");
 
-        sb.append("## 音效约束（漫剧解说 - 最高优先级）\n");
-        sb.append("本视频为漫剧解说模式，声音层只有旁白口播，**禁止出现任何音效、背景音乐、环境声**。\n");
+        sb.append("## 音效约束（最高优先级）\n");
+        sb.append("**禁止出现任何音效、背景音乐、环境声、旁白**。\n");
         sb.append("所有镜头的音效/音乐需求必须通过 visualDescription 的光影、色彩、构图来传达，不得通过音频层实现。\n\n");
 
-        sb.append("## 运镜约束（漫剧解说）\n");
+        sb.append("## 运镜约束\n");
         sb.append("运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。\n");
-        sb.append("每个镜头需有短暂静止留白，供观众消化旁白。\n\n");
+        sb.append("每个镜头需有短暂静止留白。\n\n");
 
         sb.append("## 画面衔接\n");
         if (previousPanelLastShot != null && !previousPanelLastShot.isEmpty()) {
-            sb.append("开头与上一段结尾连贯；镜头运动平缓，便于观众跟随解说。\n");
+            sb.append("开头与上一段结尾连贯；镜头运动平缓。\n");
         }
         sb.append("镜头间过渡清晰，遵循衔接提示；保持角色与情绪连贯。\n");
         StringBuilder refBuilder = new StringBuilder("参考图中编号");
@@ -270,11 +270,11 @@ public class ComicCommentaryPanelPromptBuilder {
 
         StringBuilder ctx = new StringBuilder("\n\n## 叙事上下文（Panel 间衔接）\n");
         if (previousPanelLastNarration != null && !previousPanelLastNarration.isEmpty()) {
-            ctx.append("【上一段结尾旁白】").append(previousPanelLastNarration).append("\n");
-            ctx.append("本段画面/解说应自然承接上一段的叙事节奏。\n");
+            ctx.append("【上一段结尾】").append(previousPanelLastNarration).append("\n");
+            ctx.append("本段画面应自然承接上一段的叙事节奏。\n");
         }
         if (nextPanelFirstNarration != null && !nextPanelFirstNarration.isEmpty()) {
-            ctx.append("【下一段开头旁白】").append(nextPanelFirstNarration).append("\n");
+            ctx.append("【下一段开头】").append(nextPanelFirstNarration).append("\n");
             ctx.append("本段结尾应为下一段的叙事做铺垫。\n");
         }
 
