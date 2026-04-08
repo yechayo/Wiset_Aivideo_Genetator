@@ -23,7 +23,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class VideoAudioMergeService {
 
-    private static final double TTS_VOLUME = 0.8;   // TTS 旁白音量
+    private static final double TTS_VOLUME = 1.0;   // TTS 旁白音量
     private static final double BG_VOLUME = 1.0;    // 视频原声音量（与旁白同等）
 
     /** atempo 兜底容差：音频时长在此范围内认为匹配，不做调速 */
