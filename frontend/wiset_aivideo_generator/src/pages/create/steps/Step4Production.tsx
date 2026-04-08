@@ -273,6 +273,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [isBatchMergeLoading, setIsBatchMergeLoading] = useState(false);
   // Track which chapter/project batch scope is active (e.g., "enhance-ch-1", "tts-project")
   const [activeBatchScope, setActiveBatchScope] = useState<string | null>(null);
+  // 已完成剧集的展开状态
+  const [expandedPassedEpisodeId, setExpandedPassedEpisodeId] = useState<number | null>(null);
   const hasInitialLoadRef = useRef(false);
 
   // ==================== Script Polling ====================
@@ -1634,16 +1636,68 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             {getPassedEpisodes('script', chapters).length > 0 && (
               <details className={styles.passedEpisodesSection}>
                 <summary className={styles.passedEpisodesSummary}>
-                  已完成脚本审核（{getPassedEpisodes('script', chapters).length} 集）
+                  已完成脚本审核（{getPassedEpisodes('script', chapters).length} 集）- 点击展开查看脚本内容
                 </summary>
                 <div className={styles.passedEpisodesList}>
                   {getPassedEpisodes('script', chapters).map(ep => {
                     const stage = getPipelineStage(ep);
                     const stageLabel = stage === 'grid' ? '→ 九宫格' : '→ 视频';
+                    const isExpanded = expandedPassedEpisodeId === ep.episodeId;
+                    const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
+                    const allShots = ep.segments.map(s => s.shots?.[0]).filter(Boolean);
+                    const visualStyle = ep.segments[0]?.panelData?.visualStyle || 'ANIME';
                     return (
                       <div key={ep.episodeId} className={styles.passedEpisodeItem}>
-                        <span className={styles.passedEpisodeTitle}>第{ep.episodeIndex}集 {ep.title}</span>
-                        <span className={styles.passedEpisodeStage}>{stageLabel}</span>
+                        <div style={{ width: '100%' }}>
+                          <div
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                            onClick={() => setExpandedPassedEpisodeId(isExpanded ? null : ep.episodeId)}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ color: isExpanded ? '#1890ff' : 'var(--color-text-secondary)', fontSize: 14 }}>
+                                {isExpanded ? '▾' : '▸'}
+                              </span>
+                              <span className={styles.passedEpisodeTitle}>第{ep.episodeIndex}集 {ep.title}</span>
+                              <span style={{ fontSize: 12, color: '#999' }}>
+                                {ep.segments.length} 个分镜
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <span className={styles.passedEpisodeStage}>{stageLabel}</span>
+                            </div>
+                          </div>
+                          {isExpanded && allShots.length > 0 && (
+                            <div style={{ marginTop: 12, borderTop: '1px solid var(--color-border)', paddingTop: 10 }}>
+                              <div className={styles.episodePromptPreview}>
+                                <button
+                                  className={styles.episodePromptToggle}
+                                  style={{ marginBottom: 4 }}
+                                  onClick={(e) => { e.stopPropagation(); setExpandedPassedEpisodeId(isExpanded ? null : ep.episodeId); }}
+                                >
+                                  图片生成 Prompt（九宫格）
+                                </button>
+                                <pre className={styles.episodePromptBlock} style={{ maxHeight: 200, overflow: 'auto' }}>
+                                  {buildGridPromptText(visualStyle, allShots, isComicCommentary)}
+                                </pre>
+                                <button
+                                  className={styles.episodePromptToggle}
+                                  style={{ marginTop: 10, marginBottom: 4 }}
+                                  onClick={(e) => { e.stopPropagation(); setExpandedPassedEpisodeId(isExpanded ? null : ep.episodeId); }}
+                                >
+                                  视频生成 Prompt（多镜头）
+                                </button>
+                                <pre className={styles.episodePromptBlock} style={{ maxHeight: 200, overflow: 'auto' }}>
+                                  {buildMultiShotPromptText(visualStyle, allShots, isComicCommentary)}
+                                </pre>
+                              </div>
+                            </div>
+                          )}
+                          {isExpanded && allShots.length === 0 && (
+                            <div style={{ marginTop: 8, color: '#999', fontSize: 12 }}>
+                              暂无分镜数据
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -1694,15 +1748,54 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             {getPassedEpisodes('grid', chapters).length > 0 && (
               <details className={styles.passedEpisodesSection}>
                 <summary className={styles.passedEpisodesSummary}>
-                  已完成九宫格审核（{getPassedEpisodes('grid', chapters).length} 集）
+                  已完成九宫格审核（{getPassedEpisodes('grid', chapters).length} 集）- 点击展开查看九宫格图片
                 </summary>
                 <div className={styles.passedEpisodesList}>
-                  {getPassedEpisodes('grid', chapters).map(ep => (
-                    <div key={ep.episodeId} className={styles.passedEpisodeItem}>
-                      <span className={styles.passedEpisodeTitle}>第{ep.episodeIndex}集 {ep.title}</span>
-                      <span className={styles.passedEpisodeStage}>→ 视频</span>
-                    </div>
-                  ))}
+                  {getPassedEpisodes('grid', chapters).map(ep => {
+                    const isExpanded = expandedPassedEpisodeId === ep.episodeId;
+                    return (
+                      <div key={ep.episodeId} className={styles.passedEpisodeItem}>
+                        <div style={{ width: '100%' }}>
+                          <div
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                            onClick={() => setExpandedPassedEpisodeId(isExpanded ? null : ep.episodeId)}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ color: isExpanded ? '#1890ff' : 'var(--color-text-secondary)', fontSize: 14 }}>
+                                {isExpanded ? '▾' : '▸'}
+                              </span>
+                              <span className={styles.passedEpisodeTitle}>第{ep.episodeIndex}集 {ep.title}</span>
+                              <span style={{ fontSize: 12, color: '#999' }}>
+                                {ep.gridImages?.length || 0} 张九宫格
+                              </span>
+                            </div>
+                            <span className={styles.passedEpisodeStage}>→ 视频</span>
+                          </div>
+                          {isExpanded && ep.gridImages && ep.gridImages.length > 0 && (
+                            <div style={{ marginTop: 12, borderTop: '1px solid var(--color-border)', paddingTop: 10 }}>
+                              <div className={styles.gridImagesContainer}>
+                                {ep.gridImages.map((url, idx) => (
+                                  <img
+                                    key={idx}
+                                    src={url}
+                                    alt={`九宫格 ${idx + 1}`}
+                                    className={styles.gridImage}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => setLightboxUrl(url)}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {isExpanded && (!ep.gridImages || ep.gridImages.length === 0) && (
+                            <div style={{ marginTop: 8, color: '#999', fontSize: 12 }}>
+                              暂无九宫格图片
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </details>
             )}
