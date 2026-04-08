@@ -54,13 +54,14 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
       const res = await getEpisodes(projectId, { size: 999 });
       const items = res.data?.items || [];
       // Group by chapter
-      const chapterMap = new Map<number, EpisodeState[]>();
+      const chapterMap = new Map<string, EpisodeState[]>();
       for (const item of items) {
         const ep = item.episodeInfo || {};
+        const epNum = ep.episodeNum || 0;
         const epState: EpisodeState = {
           episodeId: item.id,
-          episodeIndex: item.episodeIndex ?? 0,
-          title: item.title || `第${item.episodeIndex}集`,
+          episodeIndex: epNum,
+          title: ep.title || `第${epNum}集`,
           sceneSummaryMap: ep.sceneSummaryMap || {},
           segments: [],
           gridStatus: ep.gridStatus,
@@ -74,13 +75,14 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
           composedVideoUrl: ep.composedVideoUrl || null,
           composedVideoStatus: ep.composedVideoStatus || '',
         };
-        const chIdx = item.chapterIndex ?? 1;
-        if (!chapterMap.has(chIdx)) chapterMap.set(chIdx, []);
-        chapterMap.get(chIdx)!.push(epState);
+        const chapterTitle = (ep.chapterTitle || '').replace(/^#+\s*/, '').trim() || '未分章';
+        const chKey = chapterTitle;
+        if (!chapterMap.has(chKey)) chapterMap.set(chKey, []);
+        chapterMap.get(chKey)!.push(epState);
       }
-      const chs: ChapterState[] = Array.from(chapterMap.entries()).map(([idx, eps]) => ({
-        chapterIndex: idx,
-        title: eps[0]?.episodeInfo?.chapterTitle || `第${idx}章`,
+      const chs: ChapterState[] = Array.from(chapterMap.entries()).map(([title, eps], idx) => ({
+        chapterIndex: idx + 1,
+        title,
         episodes: eps,
       }));
       setChapters(chs);
@@ -222,7 +224,7 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
                   <button className={styles.chapterHeaderLeft} onClick={() => toggleChapter(chapter.chapterIndex)}>
                     <ChevronIcon open={chapterOpen} />
                     <BookIcon />
-                    <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
+                    <h2 className={styles.chapterTitle}>{chapter.title}</h2>
                     <span className={styles.chapterProgress}>
                       <span className={styles.chapterProgressText}>{chComposedCount}/{chapter.episodes.length}</span>
                     </span>
