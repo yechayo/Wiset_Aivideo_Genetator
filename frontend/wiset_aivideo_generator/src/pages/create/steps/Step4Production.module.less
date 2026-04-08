@@ -860,6 +860,22 @@
   font-size: var(--font-size-sm);
 }
 
+// Tab episode count badge
+.stepCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(114, 183, 255, 0.15);
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  margin-left: 4px;
+}
+
 .stepConnector {
   width: 32px;
   height: 1px;
@@ -1883,6 +1899,64 @@
     background: rgba(242, 119, 123, 0.1);
     color: var(--color-danger);
   }
+}
+
+// ============================================================
+// Passed Episodes (collapsed footer in 4a / 4b tabs)
+// ============================================================
+
+.passedEpisodesSection {
+  margin-top: var(--space-6);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(247, 249, 252, 0.02);
+}
+
+.passedEpisodesSummary {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+
+  &::marker {
+    display: none;
+    content: '';
+  }
+
+  &:hover {
+    color: var(--color-text-secondary);
+    background: rgba(247, 249, 252, 0.04);
+  }
+}
+
+.passedEpisodesList {
+  padding: 0 var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.passedEpisodeItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: rgba(247, 249, 252, 0.03);
+  font-size: var(--font-size-sm);
+}
+
+.passedEpisodeTitle {
+  color: var(--color-text-secondary);
+}
+
+.passedEpisodeStage {
+  color: var(--color-success);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-xs);
 }
 
 // Accessibility
