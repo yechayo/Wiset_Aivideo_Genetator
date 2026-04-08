@@ -13,6 +13,7 @@ interface SseProgressCallbacks {
   onPanelTtsFailed?: (data: { episodeId: number; panelId: number; error: string }) => void;
   onPanelMergeDone?: (data: { episodeId: number; panelId: number; videoWithNarrationUrl: string }) => void;
   onPanelMergeFailed?: (data: { episodeId: number; panelId: number; error: string }) => void;
+  onEpisodeComposed?: (data: { episodeId: number; composedVideoUrl: string }) => void;
   onStatusChange: (data: { from?: string; to?: string }) => void;
   /** SSE 重连后触发全量数据刷新 */
   onReconnect?: () => void;
@@ -72,6 +73,8 @@ export function useSseProgress(
           cbRef.current.onPanelMergeDone?.(JSON.parse(event.data));
         } else if (eventType === 'panel:merge_failed') {
           cbRef.current.onPanelMergeFailed?.(JSON.parse(event.data));
+        } else if (eventType === 'episode:composed') {
+          cbRef.current.onEpisodeComposed?.(JSON.parse(event.data));
         } else if (eventType === 'milestone-change') {
           // 里程碑变更：同步状态并刷新数据
           cbRef.current.onStatusChange(data);

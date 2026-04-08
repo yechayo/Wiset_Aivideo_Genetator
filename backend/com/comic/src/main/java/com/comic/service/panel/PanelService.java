@@ -443,6 +443,11 @@ public class PanelService {
 
             log.info("一键合成完成: episodeId={}, panels={}, url={}", episodeId, sourcePanels.size(), ossUrl);
 
+            // 发布 SSE 事件通知前端
+            if (episode != null) {
+                stateChangeEventPublisher.publishEpisodeComposed(episode.getProjectId(), episodeId, ossUrl);
+            }
+
             Map<String, Object> result = new HashMap<>();
             result.put("composedVideoUrl", ossUrl);
             result.put("panelCount", sourcePanels.size());

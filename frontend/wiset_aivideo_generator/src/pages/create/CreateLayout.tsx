@@ -5,6 +5,7 @@ import { CREATE_STEPS } from './constants/steps';
 import StepIndicator from './components/StepIndicator';
 import { useCreateStore } from '../../stores/createStore';
 import { useProjectStore } from '../../stores';
+import { useSseProgress } from './steps/hooks/useSseProgress';
 import Step1Content from './steps/Step1Content';
 import Step2page from './steps/Step2page';
 import Step3Merged from './steps/Step3Merged';
@@ -22,9 +23,31 @@ import Step5Compose from './steps/Step5Compose';
 const CreateLayout = () => {
   const { step } = useParams<{ step: string }>();
   const navigate = useNavigate();
-  const { statusInfo, isLoadingStatus, startPolling, stopPolling } = useCreateStore();
+  const { statusInfo, isLoadingStatus, startPolling, stopPolling, syncStatus } = useCreateStore();
   const { currentProject, setCurrentProject } = useProjectStore();
   const [isStepTransitioning, setIsStepTransitioning] = useState(false);
+
+  // Step5 刷新回调
+  const [step5RefreshKey, setStep5RefreshKey] = useState(0);
+
+  useSseProgress(currentProject?.projectId, {
+    onEpisodeScriptDone: () => {},
+    onEpisodePanelDone: () => {},
+    onEpisodeGridStatus: () => {},
+    onEpisodeComposed: () => {
+      setStep5RefreshKey(k => k + 1);
+    },
+    onStatusChange: (data) => {
+      if (currentProject?.projectId && data.to) {
+        syncStatus(currentProject.projectId);
+      }
+    },
+    onReconnect: () => {
+      if (currentProject?.projectId) {
+        syncStatus(currentProject.projectId);
+      }
+    },
+  });
 
   // 动态生成步骤 URL：有 projectId 时用项目路由，否则用 /create
   const getStepUrl = useCallback((stepNum: number) => {
@@ -146,7 +169,7 @@ const CreateLayout = () => {
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 5:
         return currentProject ? (
-          <Step5Compose project={currentProject} />
+          <Step5Compose key={step5RefreshKey} project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       default:
         return <Navigate to={getStepUrl(1)} replace />;

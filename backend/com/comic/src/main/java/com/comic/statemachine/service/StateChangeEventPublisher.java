@@ -160,4 +160,14 @@ public class StateChangeEventPublisher {
         payload.put("error", error);
         publishToRedis(projectId, "panel:merge_failed", payload);
     }
+
+    // ===== Episode 级别事件（剧集视频合成） =====
+
+    public void publishEpisodeComposed(String projectId, Long episodeId, String composedVideoUrl) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeId", episodeId);
+        payload.put("composedVideoUrl", composedVideoUrl);
+        payload.put("composedVideoStatus", "completed");
+        publishToRedis(projectId, "episode:composed", payload);
+    }
 }
