@@ -907,7 +907,19 @@ public class PanelProductionService {
                 String narrationPerspective = (String) projectInfo.get("narrationPerspective");
                 List<List<Map<String, Object>>> panelGroups = deepSeekTextService.generatePanelAwareStoryboard(
                     content, characters, targetDuration, visualStyle, revisionNote, narrationPerspective);
-                log.info("[Pipeline-Text] 生成 {} 个 Panel, projectId={}, episode={}", panelGroups.size(), projectId, title);
+                log.info("[Pipeline-Text] Stage 1 完成: {} 个 Panel, projectId={}, episode={}", panelGroups.size(), projectId, title);
+
+                // Stage 2: 逐 Panel 串行精修旁白（携带上文上下文）
+                if (deepSeekTextService.isNarrationRefinementEnabled()) {
+                    try {
+                        panelGroups = deepSeekTextService.refineNarrationsSequentially(
+                            panelGroups, content, narrationPerspective);
+                        log.info("[Pipeline-Text] Stage 2 旁白精修完成: projectId={}, episode={}", projectId, title);
+                    } catch (Exception e) {
+                        log.warn("[Pipeline-Text] Stage 2 旁白精修失败，保留 Stage 1 旁白: projectId={}, episode={}, error={}",
+                            projectId, title, e.getMessage());
+                    }
+                }
 
                 shots = new ArrayList<>();
                 for (List<Map<String, Object>> panelShots : panelGroups) {
