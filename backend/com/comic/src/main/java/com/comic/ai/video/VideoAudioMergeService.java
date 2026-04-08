@@ -23,8 +23,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class VideoAudioMergeService {
 
-    private static final double TTS_VOLUME = 1.0;   // TTS 旁白主音量
-    private static final double BG_VOLUME = 0.3;    // 视频原声辅音量
+    private static final double TTS_VOLUME = 0.8;   // TTS 旁白音量
+    private static final double BG_VOLUME = 1.0;    // 视频原声音量（与旁白同等）
 
     /** atempo 兜底容差：音频时长在此范围内认为匹配，不做调速 */
     private static final double ATEMPO_TOLERANCE_LOW = 0.88;
@@ -35,7 +35,7 @@ public class VideoAudioMergeService {
     /**
      * 合并面板视频和 TTS 旁白音频
      * <p>
-     * 音频混合策略：TTS 旁白为主音量（1.0），视频原声为辅音量（0.3）。
+     * 音频混合策略：TTS 旁白与视频原声同等音量（各 1.0）。
      * 使用 amix 滤镜混合两路音频，当视频无音频轨时降级为纯 TTS 叠加。
      * <p>
      * 时长兜底：检测 TTS 音频与视频时长差异，偏差超 ±12% 时自动用 atempo 调速对齐。
