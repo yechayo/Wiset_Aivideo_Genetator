@@ -70,13 +70,13 @@ public class ViduTtsService {
      * 试听音色：生成一段固定示例文本的音频，返回 OSS URL
      */
     public String preview(String voiceId) {
-        return generate("大家好，欢迎收听本期故事，希望你们会喜欢。", voiceId);
+        return generate("大家好，欢迎收听本期故事，希望你们会喜欢。", voiceId, null);
     }
 
     /**
      * 生成 TTS 音频，上传至 OSS 持久化
      */
-    public String generate(String ttsText, String voiceId) {
+    public String generate(String ttsText, String voiceId, String emotion) {
         if (ttsText == null || ttsText.isEmpty()) {
             throw new IllegalArgumentException("TTS 文本为空，无需生成");
         }
@@ -88,6 +88,9 @@ public class ViduTtsService {
         Map<String, Object> voiceSetting = new HashMap<>();
         voiceSetting.put("voice_id", voiceId);
         voiceSetting.put("speed", 1.0);
+        if (emotion != null && !emotion.isEmpty()) {
+            voiceSetting.put("emotion", emotion);
+        }
 
         Map<String, Object> audioSetting = new HashMap<>();
         audioSetting.put("sample_rate", 32000);

@@ -27,9 +27,9 @@ public class NarrationAllocator {
     private static final Map<Integer, int[]> WORD_COUNT_RANGE;
     static {
         Map<Integer, int[]> m = new HashMap<>();
-        m.put(2, new int[]{5, 9});
-        m.put(3, new int[]{9, 13});
-        m.put(4, new int[]{12, 16});
+        m.put(2, new int[]{8, 14});
+        m.put(3, new int[]{14, 20});
+        m.put(4, new int[]{18, 24});
         WORD_COUNT_RANGE = Collections.unmodifiableMap(m);
     }
 
