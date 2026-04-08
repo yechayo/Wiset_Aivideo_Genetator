@@ -310,6 +310,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [rejectingEpisodeId, setRejectingEpisodeId] = useState<number | null>(null);
   const [isBatchTtsLoading, setIsBatchTtsLoading] = useState(false);
   const [isBatchMergeLoading, setIsBatchMergeLoading] = useState(false);
+  // Track which chapter/project batch scope is active (e.g., "enhance-ch-1", "tts-project")
+  const [activeBatchScope, setActiveBatchScope] = useState<string | null>(null);
 
   // ==================== Script Polling ====================
   const scriptPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1042,6 +1044,128 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId, chapters, batchEnhancingEpisodeId]);
 
+  // ==================== Chapter / Project Level Batch Handlers ====================
+
+  const videoStageChapters = useMemo(() => filterChaptersByStage('video', chapters), [chapters]);
+
+  // Batch generate videos for all episodes in a chapter
+  const handleChapterBatchVideo = useCallback((chapterIndex: number) => {
+    const chapter = videoStageChapters.find(ch => ch.chapterIndex === chapterIndex);
+    if (!chapter) return;
+    chapter.episodes.forEach(ep => handleBatchGenerateVideo(ep.episodeId));
+  }, [videoStageChapters, handleBatchGenerateVideo]);
+
+  // Batch generate videos for all video-stage episodes
+  const handleProjectBatchVideo = useCallback(() => {
+    videoStageChapters.forEach(ch => {
+      ch.episodes.forEach(ep => handleBatchGenerateVideo(ep.episodeId));
+    });
+  }, [videoStageChapters, handleBatchGenerateVideo]);
+
+  // Batch enhance prompts for all episodes in a chapter
+  const handleChapterBatchEnhance = useCallback(async (chapterIndex: number) => {
+    if (activeBatchScope) return;
+    const chapter = videoStageChapters.find(ch => ch.chapterIndex === chapterIndex);
+    if (!chapter) return;
+    setActiveBatchScope(`enhance-ch-${chapterIndex}`);
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    for (const ep of chapter.episodes) {
+      for (const seg of ep.segments) {
+        const panelId = seg.panelData?.panelId;
+        if (!panelId || seg.videoUrl) continue;
+        try {
+          await enhanceVideoPromptApi(projectId, ep.episodeId, Number(panelId));
+          totalSuccess++;
+        } catch {
+          totalFailed++;
+        }
+      }
+    }
+    setActiveBatchScope(null);
+    if (totalFailed === 0) {
+      alert(`第${chapterIndex}章已润色 ${totalSuccess} 个分组的提示词`);
+    } else {
+      alert(`第${chapterIndex}章润色完成：${totalSuccess} 成功，${totalFailed} 失败`);
+    }
+  }, [activeBatchScope, videoStageChapters, projectId]);
+
+  // Batch enhance prompts for all video-stage episodes
+  const handleProjectBatchEnhance = useCallback(async () => {
+    if (activeBatchScope) return;
+    setActiveBatchScope('enhance-project');
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    for (const ch of videoStageChapters) {
+      for (const ep of ch.episodes) {
+        for (const seg of ep.segments) {
+          const panelId = seg.panelData?.panelId;
+          if (!panelId || seg.videoUrl) continue;
+          try {
+            await enhanceVideoPromptApi(projectId, ep.episodeId, Number(panelId));
+            totalSuccess++;
+          } catch {
+            totalFailed++;
+          }
+        }
+      }
+    }
+    setActiveBatchScope(null);
+    if (totalFailed === 0) {
+      alert(`全部已润色 ${totalSuccess} 个分组的提示词`);
+    } else {
+      alert(`全部润色完成：${totalSuccess} 成功，${totalFailed} 失败`);
+    }
+  }, [activeBatchScope, videoStageChapters, projectId]);
+
+  // Batch generate TTS for all episodes in a chapter
+  const handleChapterBatchTts = useCallback(async (chapterIndex: number) => {
+    if (!projectId || activeBatchScope) return;
+    const chapter = videoStageChapters.find(ch => ch.chapterIndex === chapterIndex);
+    if (!chapter) return;
+    setActiveBatchScope(`tts-ch-${chapterIndex}`);
+    for (const ep of chapter.episodes) {
+      await batchGenerateTts(projectId, ep.episodeId);
+    }
+    setActiveBatchScope(null);
+  }, [projectId, activeBatchScope, videoStageChapters]);
+
+  // Batch generate TTS for all video-stage episodes
+  const handleProjectBatchTts = useCallback(async () => {
+    if (!projectId || activeBatchScope) return;
+    setActiveBatchScope('tts-project');
+    for (const ch of videoStageChapters) {
+      for (const ep of ch.episodes) {
+        await batchGenerateTts(projectId, ep.episodeId);
+      }
+    }
+    setActiveBatchScope(null);
+  }, [projectId, activeBatchScope, videoStageChapters]);
+
+  // Batch merge audio for all episodes in a chapter
+  const handleChapterBatchMerge = useCallback(async (chapterIndex: number) => {
+    if (!projectId || activeBatchScope) return;
+    const chapter = videoStageChapters.find(ch => ch.chapterIndex === chapterIndex);
+    if (!chapter) return;
+    setActiveBatchScope(`merge-ch-${chapterIndex}`);
+    for (const ep of chapter.episodes) {
+      await batchMergeAudio(projectId, ep.episodeId);
+    }
+    setActiveBatchScope(null);
+  }, [projectId, activeBatchScope, videoStageChapters]);
+
+  // Batch merge audio for all video-stage episodes
+  const handleProjectBatchMerge = useCallback(async () => {
+    if (!projectId || activeBatchScope) return;
+    setActiveBatchScope('merge-project');
+    for (const ch of videoStageChapters) {
+      for (const ep of ch.episodes) {
+        await batchMergeAudio(projectId, ep.episodeId);
+      }
+    }
+    setActiveBatchScope(null);
+  }, [projectId, activeBatchScope, videoStageChapters]);
+
   // Confirm all panels done -> advance to Step 5
   const [advancing, setAdvancing] = useState(false);
   const handleConfirmPanels = useCallback(async () => {
@@ -1319,6 +1443,38 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             <span className={styles.separator}>/</span>
             <span className={styles.totalCount}>{totalPanels}</span>
             <span className={styles.statsLabel}>分镜视频已完成</span>
+          </div>
+          <div className={styles.batchBarActions}>
+            <button
+              className={styles.btnGhost}
+              onClick={handleProjectBatchVideo}
+              disabled={generatingVideoKeys.size > 0 || completedVideos === totalPanels}
+            >
+              全部批量生成
+            </button>
+            <button
+              className={styles.btnGhost}
+              onClick={handleProjectBatchEnhance}
+              disabled={!!activeBatchScope || batchEnhancingEpisodeId !== null}
+            >
+              {activeBatchScope === 'enhance-project' ? <><SpinIcon /> 润色中...</> : '全部润色'}
+            </button>
+            <button
+              className={styles.btnGhost}
+              onClick={handleProjectBatchTts}
+              disabled={!!activeBatchScope || isBatchTtsLoading}
+            >
+              {activeBatchScope === 'tts-project' ? <><SpinIcon /> 生成中...</> : `全部旁白`}
+            </button>
+            {isComicCommentary && (
+              <button
+                className={styles.btnGhost}
+                onClick={handleProjectBatchMerge}
+                disabled={!!activeBatchScope || isBatchMergeLoading || mergeTotalCount === 0}
+              >
+                {activeBatchScope === 'merge-project' ? <><SpinIcon /> 合成中...</> : '全部合成'}
+              </button>
+            )}
           </div>
           <div className={styles.toolbarToggles}>
             <button
@@ -1656,13 +1812,55 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             ) : (
               filterChaptersByStage('video', chapters).map(chapter => {
                 const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
+                const chDoneCount = chapter.episodes.reduce((sum, ep) =>
+                  sum + ep.segments.filter(s => s.videoUrl || s.pipelineStep === 'video_completed').length, 0);
+                const chTotalCount = chapter.episodes.reduce((sum, ep) => sum + ep.segments.length, 0);
+                const chAllDone = chTotalCount > 0 && chDoneCount === chTotalCount;
+                const chScope = (op: string) => `${op}-ch-${chapter.chapterIndex}`;
                 return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
-                  <button className={styles.chapterHeader} onClick={() => toggleChapter(chapter.chapterIndex)}>
-                    <ChevronIcon open={chapterOpen} />
-                    <BookIcon />
-                    <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
-                  </button>
+                  <div className={styles.chapterHeader}>
+                    <button className={styles.chapterHeaderLeft} onClick={() => toggleChapter(chapter.chapterIndex)}>
+                      <ChevronIcon open={chapterOpen} />
+                      <BookIcon />
+                      <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
+                      <span className={styles.chapterProgress}>
+                        <span className={styles.chapterProgressText}>{chDoneCount}/{chTotalCount}</span>
+                      </span>
+                    </button>
+                    <div className={styles.chapterBatchActions}>
+                      <button
+                        className={styles.btnGhost}
+                        onClick={() => handleChapterBatchVideo(chapter.chapterIndex)}
+                        disabled={chAllDone}
+                      >
+                        {chAllDone ? '已完成' : '批量生成'}
+                      </button>
+                      <button
+                        className={styles.btnGhost}
+                        onClick={() => handleChapterBatchEnhance(chapter.chapterIndex)}
+                        disabled={!!activeBatchScope || batchEnhancingEpisodeId !== null || chAllDone}
+                      >
+                        {activeBatchScope === chScope('enhance') ? <><SpinIcon /> 润色中...</> : '润色'}
+                      </button>
+                      <button
+                        className={styles.btnGhost}
+                        onClick={() => handleChapterBatchTts(chapter.chapterIndex)}
+                        disabled={!!activeBatchScope || isBatchTtsLoading}
+                      >
+                        {activeBatchScope === chScope('tts') ? <><SpinIcon /> 生成中...</> : '旁白'}
+                      </button>
+                      {isComicCommentary && (
+                        <button
+                          className={styles.btnGhost}
+                          onClick={() => handleChapterBatchMerge(chapter.chapterIndex)}
+                          disabled={!!activeBatchScope || isBatchMergeLoading}
+                        >
+                          {activeBatchScope === chScope('merge') ? <><SpinIcon /> 合成中...</> : '合成'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   {chapterOpen && (
                   <div className={styles.episodeList}>
                     {chapter.episodes.map(ep => {

@@ -307,10 +307,42 @@
   font: inherit;
   text-align: left;
   border: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 
   &:hover {
     background: rgba(247, 249, 252, 0.06);
   }
+}
+
+.chapterHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.chapterBatchActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.batchBarActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .chapterTitleRow {
