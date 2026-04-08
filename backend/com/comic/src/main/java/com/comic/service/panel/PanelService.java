@@ -306,7 +306,8 @@ public class PanelService {
             result.put("mergeStatus", "completed");
 
             // 发布 SSE 事件通知前端
-            String projectId = panel.getProjectId();
+            Episode episode = episodeRepository.selectById(panel.getEpisodeId());
+            String projectId = episode != null ? episode.getProjectId() : null;
             Long episodeId = panel.getEpisodeId();
             stateChangeEventPublisher.publishPanelMergeDone(projectId, episodeId, panelId, mergedUrl);
 
@@ -314,7 +315,9 @@ public class PanelService {
         } catch (Exception e) {
             log.error("音频合并失败: panelId={}", panelId, e);
             updatePanelInfo(panel, "mergeStatus", "failed");
-            stateChangeEventPublisher.publishPanelMergeFailed(panel.getProjectId(), panel.getEpisodeId(), panelId, e.getMessage());
+            Episode episode = episodeRepository.selectById(panel.getEpisodeId());
+            String projectId = episode != null ? episode.getProjectId() : null;
+            stateChangeEventPublisher.publishPanelMergeFailed(projectId, panel.getEpisodeId(), panelId, e.getMessage());
             throw new RuntimeException("音频合并失败: " + e.getMessage(), e);
         }
     }
