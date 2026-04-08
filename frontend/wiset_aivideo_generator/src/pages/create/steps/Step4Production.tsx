@@ -4,7 +4,7 @@
  * Tab 4b: 九宫格图片生成/审核
  * Tab 4c: 视频生成/确认
  */
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './Step4Production.module.less';
 import type { ChapterState, EpisodeState, PipelineStage, SegmentState } from './types';
