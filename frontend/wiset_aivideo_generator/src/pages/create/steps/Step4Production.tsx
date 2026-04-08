@@ -1597,54 +1597,59 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               <div className={styles.emptyState}><p>暂无章节数据</p></div>
             ) : (
               chapters.map(chapter => {
-                const stageEps = chapter.episodes.filter((ep: EpisodeState) => !ep.panelApproved);
-                const doneEps = chapter.episodes.filter((ep: EpisodeState) => ep.panelApproved && ep.gridStatus !== 'approved');
+                const doneEps = new Set(chapter.episodes.filter((ep: EpisodeState) => ep.panelApproved && ep.gridStatus !== 'approved').map(ep => ep.episodeId));
                 const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
+                const doneCount = doneEps.size;
                 return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
                   <button className={styles.chapterHeader} onClick={() => toggleChapter(chapter.chapterIndex)}>
                     <ChevronIcon open={chapterOpen} />
                     <BookIcon />
                     <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
-                    {doneEps.length > 0 && (
+                    {doneCount > 0 && (
                       <span style={{ marginLeft: 8, fontSize: 12, color: '#52c41a' }}>
-                        ✓ {doneEps.length} 集已完成
+                        ✓ {doneCount} 集已完成
                       </span>
                     )}
                   </button>
                   {chapterOpen && (
                   <div className={styles.episodeList}>
-                    {stageEps.map(ep => (
-                      <ScriptEpisodeCard
-                        key={ep.episodeId}
-                        episode={ep}
-                        project={project}
-                        generatingScript={generatingScript}
-                        approvingEpisodeId={approvingEpisodeId}
-                        rejectingEpisodeId={rejectingEpisodeId}
-                        expandedEpisodeId={expandedEpisodeId}
-                        expandedPanelKey={expandedPanelKey}
-                        onGenerateScript={handleGenerateScript}
-                        onApproveScript={handleApproveScript}
-                        onRejectScript={handleRejectScript}
-                        onToggleEpisode={toggleEpisode}
-                        onTogglePromptPreview={setExpandedPanelKey}
-                        buildGridPromptText={buildGridPromptText}
-                        buildMultiShotPromptText={buildMultiShotPromptText}
-                      />
-                    ))}
-                    {doneEps.map(ep => (
-                      <DoneEpisodeCard
-                        key={ep.episodeId}
-                        episode={ep}
-                        project={project}
-                        expandedPassedEpisodeId={expandedPassedEpisodeId}
-                        onToggleExpanded={setExpandedPassedEpisodeId}
-                        buildGridPromptText={buildGridPromptText}
-                        buildMultiShotPromptText={buildMultiShotPromptText}
-                        nextStageLabel="→ 九宫格"
-                      />
-                    ))}
+                    {chapter.episodes.map(ep => {
+                      const isDone = doneEps.has(ep.episodeId);
+                      if (isDone) {
+                        return (
+                          <DoneEpisodeCard
+                            key={ep.episodeId}
+                            episode={ep}
+                            project={project}
+                            expandedPassedEpisodeId={expandedPassedEpisodeId}
+                            onToggleExpanded={setExpandedPassedEpisodeId}
+                            buildGridPromptText={buildGridPromptText}
+                            buildMultiShotPromptText={buildMultiShotPromptText}
+                            nextStageLabel="→ 九宫格"
+                          />
+                        );
+                      }
+                      return (
+                        <ScriptEpisodeCard
+                          key={ep.episodeId}
+                          episode={ep}
+                          project={project}
+                          generatingScript={generatingScript}
+                          approvingEpisodeId={approvingEpisodeId}
+                          rejectingEpisodeId={rejectingEpisodeId}
+                          expandedEpisodeId={expandedEpisodeId}
+                          expandedPanelKey={expandedPanelKey}
+                          onGenerateScript={handleGenerateScript}
+                          onApproveScript={handleApproveScript}
+                          onRejectScript={handleRejectScript}
+                          onToggleEpisode={toggleEpisode}
+                          onTogglePromptPreview={setExpandedPanelKey}
+                          buildGridPromptText={buildGridPromptText}
+                          buildMultiShotPromptText={buildMultiShotPromptText}
+                        />
+                      );
+                    })}
                   </div>
                   )}
                 </div>
@@ -1661,47 +1666,54 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               <div className={styles.emptyState}><p>暂无章节数据</p></div>
             ) : (
               chapters.map(chapter => {
-                const stageEps = chapter.episodes.filter((ep: EpisodeState) => !ep.panelApproved || (ep.panelApproved && ep.gridStatus !== 'approved'));
-                const doneEps = chapter.episodes.filter((ep: EpisodeState) => ep.panelApproved && ep.gridStatus === 'approved');
+                const doneEps = new Set(chapter.episodes.filter((ep: EpisodeState) => ep.panelApproved && ep.gridStatus === 'approved').map(ep => ep.episodeId));
                 const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
+                const doneCount = doneEps.size;
                 return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
                   <button className={styles.chapterHeader} onClick={() => toggleChapter(chapter.chapterIndex)}>
                     <ChevronIcon open={chapterOpen} />
                     <BookIcon />
                     <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
-                    {doneEps.length > 0 && (
+                    {doneCount > 0 && (
                       <span style={{ marginLeft: 8, fontSize: 12, color: '#52c41a' }}>
-                        ✓ {doneEps.length} 集已完成
+                        ✓ {doneCount} 集已完成
                       </span>
                     )}
                   </button>
                   {chapterOpen && (
                   <div className={styles.episodeList}>
-                    {stageEps.map(ep => (
-                      <GridEpisodeCard
-                        key={ep.episodeId}
-                        episode={ep}
-                        generatingGrid={generatingGrid}
-                        approvingEpisodeId={approvingEpisodeId}
-                        rejectingEpisodeId={rejectingEpisodeId}
-                        onGenerateGrid={handleGenerateGrid}
-                        onApproveGrid={handleApproveGrid}
-                        onRejectGrid={handleRejectGrid}
-                        onRejectToScript={handleRejectToScript}
-                        onOpenLightbox={setLightboxUrl}
-                      />
-                    ))}
-                    {doneEps.map(ep => (
-                      <DoneEpisodeCard
-                        key={ep.episodeId}
-                        episode={ep}
-                        project={project}
-                        expandedPassedEpisodeId={expandedPassedEpisodeId}
-                        onToggleExpanded={setExpandedPassedEpisodeId}
-                        nextStageLabel="→ 视频"
-                      />
-                    ))}
+                    {chapter.episodes.map(ep => {
+                      const isDone = doneEps.has(ep.episodeId);
+                      if (isDone) {
+                        return (
+                          <DoneEpisodeCard
+                            key={ep.episodeId}
+                            episode={ep}
+                            project={project}
+                            expandedPassedEpisodeId={expandedPassedEpisodeId}
+                            onToggleExpanded={setExpandedPassedEpisodeId}
+                            buildGridPromptText={buildGridPromptText}
+                            buildMultiShotPromptText={buildMultiShotPromptText}
+                            nextStageLabel="→ 视频"
+                          />
+                        );
+                      }
+                      return (
+                        <GridEpisodeCard
+                          key={ep.episodeId}
+                          episode={ep}
+                          generatingGrid={generatingGrid}
+                          approvingEpisodeId={approvingEpisodeId}
+                          rejectingEpisodeId={rejectingEpisodeId}
+                          onGenerateGrid={handleGenerateGrid}
+                          onApproveGrid={handleApproveGrid}
+                          onRejectGrid={handleRejectGrid}
+                          onRejectToScript={handleRejectToScript}
+                          onOpenLightbox={setLightboxUrl}
+                        />
+                      );
+                    })}
                   </div>
                   )}
                 </div>
