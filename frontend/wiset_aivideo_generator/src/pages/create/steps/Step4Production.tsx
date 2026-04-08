@@ -646,6 +646,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               if (status.videoStatus === 'completed' && status.videoUrl && status.videoUrl !== seg.videoUrl) { hasChanges = true; break; }
               if (status.ttsStatus === 'completed' && status.ttsAudioUrl && status.ttsAudioUrl !== seg.ttsAudioUrl) { hasChanges = true; break; }
               if (status.gridStatus && status.gridStatus !== seg.gridStatus) { hasChanges = true; break; }
+              if (status.mergeStatus && status.mergeStatus !== seg.mergeStatus) { hasChanges = true; break; }
+              if (status.videoWithNarrationUrl && status.videoWithNarrationUrl !== seg.videoWithNarrationUrl) { hasChanges = true; break; }
             }
             if (hasChanges) break;
           }
@@ -757,6 +759,12 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       if (data.episodeId) refreshProductionStatuses(data.episodeId);
     },
     onPanelTtsFailed: (data) => {
+      if (data.episodeId) refreshProductionStatuses(data.episodeId);
+    },
+    onPanelMergeDone: (data) => {
+      if (data.episodeId) refreshProductionStatuses(data.episodeId);
+    },
+    onPanelMergeFailed: (data) => {
       if (data.episodeId) refreshProductionStatuses(data.episodeId);
     },
     onStatusChange: (data) => {
@@ -1840,6 +1848,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                     {chapter.episodes.map(ep => {
                       const doneCount = ep.segments.filter(s => s.videoUrl || s.pipelineStep === 'video_completed').length;
                       const allDone = ep.segments.length > 0 && doneCount === ep.segments.length;
+                      const epTtsCompletedCount = ep.segments.filter(seg => seg.ttsStatus === 'completed' || !!seg.ttsAudioUrl).length;
+                      const epTtsTotalCount = ep.segments.length;
+                      const epMergeCompletedCount = ep.segments.filter(s => s.mergeStatus === 'completed').length;
+                      const epMergeTotalCount = ep.segments.filter(s => (s.ttsStatus === 'completed' || !!s.ttsAudioUrl) && (s.pipelineStep === 'video_completed' || !!s.videoUrl)).length;
                       return (
                         <div key={ep.episodeId} className={styles.episodeVideoCard}>
                           <div className={styles.episodeVideoHeader}>
@@ -1873,15 +1885,15 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                 onClick={() => handleBatchGenerateTts(ep.episodeId)}
                                 disabled={isBatchTtsLoading}
                               >
-                                {isBatchTtsLoading ? <><SpinIcon /> 生成中...</> : `批量旁白 (${ttsCompletedCount}/${ttsTotalCount})`}
+                                {isBatchTtsLoading ? <><SpinIcon /> 生成中...</> : `批量旁白 (${epTtsCompletedCount}/${epTtsTotalCount})`}
                               </button>
                               {isComicCommentary && (
                                 <button
                                   className={styles.btnGhost}
                                   onClick={() => handleBatchMergeAudio(ep.episodeId)}
-                                  disabled={isBatchMergeLoading || mergeTotalCount === 0}
+                                  disabled={isBatchMergeLoading || epMergeTotalCount === 0}
                                 >
-                                  {isBatchMergeLoading ? <><SpinIcon /> 合成中...</> : `一键合成旁白视频 (${mergeCompletedCount}/${mergeTotalCount})`}
+                                  {isBatchMergeLoading ? <><SpinIcon /> 合成中...</> : `一键合成旁白视频 (${epMergeCompletedCount}/${epMergeTotalCount})`}
                                 </button>
                               )}
                             </div>

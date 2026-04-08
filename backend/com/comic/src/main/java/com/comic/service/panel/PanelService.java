@@ -304,10 +304,17 @@ public class PanelService {
             Map<String, Object> result = new HashMap<>();
             result.put("videoWithNarrationUrl", mergedUrl);
             result.put("mergeStatus", "completed");
+
+            // 发布 SSE 事件通知前端
+            String projectId = panel.getProjectId();
+            Long episodeId = panel.getEpisodeId();
+            stateChangeEventPublisher.publishPanelMergeDone(projectId, episodeId, panelId, mergedUrl);
+
             return result;
         } catch (Exception e) {
             log.error("音频合并失败: panelId={}", panelId, e);
             updatePanelInfo(panel, "mergeStatus", "failed");
+            stateChangeEventPublisher.publishPanelMergeFailed(panel.getProjectId(), panel.getEpisodeId(), panelId, e.getMessage());
             throw new RuntimeException("音频合并失败: " + e.getMessage(), e);
         }
     }

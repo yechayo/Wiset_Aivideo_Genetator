@@ -140,4 +140,24 @@ public class StateChangeEventPublisher {
         payload.put("error", error);
         publishToRedis(projectId, "panel:tts_failed", payload);
     }
+
+    // ===== Panel 级别事件（音视频合并） =====
+
+    public void publishPanelMergeDone(String projectId, Long episodeId, Long panelId, String videoWithNarrationUrl) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeId", episodeId);
+        payload.put("panelId", panelId);
+        payload.put("videoWithNarrationUrl", videoWithNarrationUrl);
+        payload.put("mergeStatus", "completed");
+        publishToRedis(projectId, "panel:merge_done", payload);
+    }
+
+    public void publishPanelMergeFailed(String projectId, Long episodeId, Long panelId, String error) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeId", episodeId);
+        payload.put("panelId", panelId);
+        payload.put("mergeStatus", "failed");
+        payload.put("error", error);
+        publishToRedis(projectId, "panel:merge_failed", payload);
+    }
 }
