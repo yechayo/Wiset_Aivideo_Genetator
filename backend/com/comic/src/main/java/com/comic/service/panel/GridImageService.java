@@ -210,6 +210,7 @@ public class GridImageService {
             List<CharRef> charRefsWithNames = getCharacterReferencesWithNames(episodeId);
             int pageCount = calculatePageCount(shots.size(), SHOTS_PER_PAGE);
             List<String> gridImageUrls = new ArrayList<>();
+            String lastPagePrompt = null;
 
             // 逐页生成九宫格
             for (int page = 0; page < pageCount; page++) {
@@ -219,6 +220,7 @@ public class GridImageService {
 
                 String prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames);
                 prompt = appendUserHintToPrompt(prompt, customHint);
+                lastPagePrompt = prompt;
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
                     imageUrl = imageService.generateWithMultipleReferences(
@@ -260,7 +262,7 @@ public class GridImageService {
             episodeInfo.put("gridStatus", "generated");
             episodeInfo.put("gridPageCount", pageCount);
             // 保存最后一个 page 的 prompt（包含完整九宫格布局信息）
-            episodeInfo.put("gridPrompt", prompt);
+            episodeInfo.put("gridPrompt", lastPagePrompt);
             episode.setEpisodeInfo(episodeInfo);
             episodeRepository.updateById(episode);
 
