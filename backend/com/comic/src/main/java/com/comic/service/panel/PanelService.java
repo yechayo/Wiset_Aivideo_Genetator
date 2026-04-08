@@ -169,7 +169,7 @@ public class PanelService {
                 return result;
             }
 
-            String ossUrl = ttsService.generate(ttsText, voiceId);
+            String ossUrl = ttsService.generate(ttsText, voiceId, resolvePanelEmotion(shots));
             updatePanelTtsStatus(panel, "completed", ossUrl, null);
 
             stateChangeEventPublisher.publishPanelTtsDone(
@@ -227,6 +227,48 @@ public class PanelService {
         if (credits != null) panelInfo.put("ttsCredits", credits);
         panel.setPanelInfo(panelInfo);
         panelRepository.updateById(panel);
+    }
+
+    /**
+     * 根据 Panel 内所有 shot 的 narrationTone 计算 TTS 使用的 emotion。
+     * 取占比最高的情绪；平局时按优先级选强情绪。
+     * 优先级：angry > fearful > surprised > disgusted > sad > happy > fluent > calm
+     */
+    private String resolvePanelEmotion(List<Map<String, Object>> shots) {
+        // 强情绪优先级（数值越小优先级越高）
+        java.util.LinkedHashMap<String, Integer> priority = new java.util.LinkedHashMap<>();
+        priority.put("angry", 0);
+        priority.put("fearful", 1);
+        priority.put("surprised", 2);
+        priority.put("disgusted", 3);
+        priority.put("sad", 4);
+        priority.put("happy", 5);
+        priority.put("fluent", 6);
+        priority.put("calm", 7);
+
+        java.util.Map<String, Integer> counts = new HashMap<>();
+        for (Map<String, Object> shot : shots) {
+            Object toneObj = shot.get("narrationTone");
+            if (toneObj == null) continue;
+            String tone = toneObj.toString().trim().toLowerCase();
+            if (!tone.isEmpty() && !"无".equals(tone) && priority.containsKey(tone)) {
+                counts.merge(tone, 1, Integer::sum);
+            }
+        }
+
+        if (counts.isEmpty()) return null;
+
+        // 找到优先级最高（数值最小）的情绪
+        String best = null;
+        int bestPriority = Integer.MAX_VALUE;
+        for (java.util.Map.Entry<String, Integer> entry : counts.entrySet()) {
+            int p = priority.getOrDefault(entry.getKey(), Integer.MAX_VALUE);
+            if (p < bestPriority || (p == bestPriority && counts.getOrDefault(entry.getKey(), 0) > counts.getOrDefault(best, 0))) {
+                bestPriority = p;
+                best = entry.getKey();
+            }
+        }
+        return best;
     }
 
     // ===== 音视频合并 =====
@@ -294,23 +336,34 @@ public class PanelService {
     // ===== 一键合成（剧集视频拼接）=====
 
     /**
-     * 一键合成：将某集所有已合并的 panel 视频拼接为一集完整视频
+     * 一键合成：将某集所有 panel 视频拼接为一集完整视频
+     * 漫剧模式使用 videoWithNarrationUrl（已合并旁白的视频），其他模式使用 videoUrl（原始视频）
      */
-    public Map<String, Object> composeEpisode(Long episodeId) {
+    public Map<String, Object> composeEpisode(Long episodeId, String productionMode) {
         List<Panel> panels = panelRepository.findByEpisodeId(episodeId);
 
-        // 筛选出已合并的 panel，按 id 排序
-        List<Panel> mergedPanels = panels.stream()
+        boolean useNarrationVideo = "comic_commentary".equals(productionMode);
+
+        // 筛选出可拼接的 panel，按 id 排序
+        List<Panel> sourcePanels = panels.stream()
                 .filter(p -> {
                     Map<String, Object> info = p.getPanelInfo();
-                    return info != null && "completed".equals(info.get("mergeStatus"))
-                            && info.get("videoWithNarrationUrl") != null;
+                    if (info == null) return false;
+                    if (useNarrationVideo) {
+                        return "completed".equals(info.get("mergeStatus"))
+                                && info.get("videoWithNarrationUrl") != null;
+                    } else {
+                        return "completed".equals(info.get("videoStatus"))
+                                && info.get("videoUrl") != null;
+                    }
                 })
                 .sorted(Comparator.comparing(Panel::getId))
                 .collect(Collectors.toList());
 
-        if (mergedPanels.isEmpty()) {
-            throw new BusinessException("没有已合并的 panel，请先合成音视频");
+        if (sourcePanels.isEmpty()) {
+            throw new BusinessException(useNarrationVideo
+                    ? "没有已合并的 panel，请先合成音视频"
+                    : "没有已完成的视频可合成");
         }
 
         com.comic.service.oss.OssService ossService = applicationContext.getBean(com.comic.service.oss.OssService.class);
@@ -320,10 +373,11 @@ public class PanelService {
             tempDir = Files.createTempDirectory("episode-compose-");
             List<String> inputFiles = new ArrayList<>();
 
-            // 下载所有合并后的视频
-            for (int i = 0; i < mergedPanels.size(); i++) {
-                Panel panel = mergedPanels.get(i);
-                String url = (String) panel.getPanelInfo().get("videoWithNarrationUrl");
+            // 下载所有视频
+            String urlKey = useNarrationVideo ? "videoWithNarrationUrl" : "videoUrl";
+            for (int i = 0; i < sourcePanels.size(); i++) {
+                Panel panel = sourcePanels.get(i);
+                String url = (String) panel.getPanelInfo().get(urlKey);
                 File localFile = tempDir.resolve(String.format("panel_%03d.mp4", i)).toFile();
                 ossService.downloadToFile(url, localFile.getAbsolutePath());
                 inputFiles.add(localFile.getAbsolutePath());
@@ -377,11 +431,11 @@ public class PanelService {
                 episodeRepository.updateById(episode);
             }
 
-            log.info("一键合成完成: episodeId={}, panels={}, url={}", episodeId, mergedPanels.size(), ossUrl);
+            log.info("一键合成完成: episodeId={}, panels={}, url={}", episodeId, sourcePanels.size(), ossUrl);
 
             Map<String, Object> result = new HashMap<>();
             result.put("composedVideoUrl", ossUrl);
-            result.put("panelCount", mergedPanels.size());
+            result.put("panelCount", sourcePanels.size());
             return result;
 
         } catch (BusinessException e) {

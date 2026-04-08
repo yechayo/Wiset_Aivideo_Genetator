@@ -1,97 +1,328 @@
-import { useState, useCallback } from 'react';
+/**
+ * Step5Compose - 逐集合成视频与下载
+ * 每集独立合成，支持按集/按章/全部批量操作
+ */
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import styles from './Step5Compose.module.less';
-import type { StepContentProps } from '../types';
+import type { ChapterState, EpisodeState } from './types';
+import {
+  getEpisodes,
+  composeEpisode,
+} from '../../../services/episodeService';
 import { mergeVideos } from '../../../services/projectService';
-import { useCreateStore } from '../../../stores/createStore';
 
-interface Step5ComposeProps extends StepContentProps {
-  projectId: string;
+interface Step5ComposeProps {
+  project: any;
 }
 
-const Step5Compose: React.FC<Step5ComposeProps> = ({ projectId }) => {
-  const { statusInfo } = useCreateStore();
+const ChevronIcon = ({ open }: { open: boolean }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {open ? <polyline points="6 9 12 15 18 9" /> : <polyline points="9 18 15 12 9 6" />}
+  </svg>
+);
+
+const BookIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+  </svg>
+);
+
+const SpinIcon = () => <span className={styles.btnSpinner} />;
+
+const CheckIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
+  const projectId = project?.projectId;
+  const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
+
+  const [chapters, setChapters] = useState<ChapterState[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [composingEpisodeIds, setComposingEpisodeIds] = useState<Set<number>>(new Set());
   const [merging, setMerging] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [collapsedChapters, setCollapsedChapters] = useState<Set<number>>(new Set());
+  const [expandedEpisodeId, setExpandedEpisodeId] = useState<number | null>(null);
 
-  // 从后端状态获取合并结果
-  const finalVideoUrl = statusInfo?.finalVideoUrl ?? null;
-  const isCompleted = statusInfo?.statusCode === 'completed';
+  // Load episodes
+  const loadEpisodes = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res = await getEpisodes(projectId, { size: 999 });
+      const items = res.data?.items || [];
+      // Group by chapter
+      const chapterMap = new Map<number, EpisodeState[]>();
+      for (const item of items) {
+        const ep = item.episodeInfo || {};
+        const epState: EpisodeState = {
+          episodeId: item.id,
+          episodeIndex: item.episodeIndex ?? 0,
+          title: item.title || `第${item.episodeIndex}集`,
+          sceneSummaryMap: ep.sceneSummaryMap || {},
+          segments: [],
+          gridStatus: ep.gridStatus,
+          gridImages: ep.gridImages,
+          splitShots: ep.splitShots,
+          gridRejectionFeedback: ep.gridRejectionFeedback,
+          panelApproved: ep.panelApproved,
+          scriptStatus: ep.scriptStatus,
+          storyboardStatus: ep.storyboardStatus,
+          episodeInfo: ep,
+          composedVideoUrl: ep.composedVideoUrl || null,
+          composedVideoStatus: ep.composedVideoStatus || '',
+        };
+        const chIdx = item.chapterIndex ?? 1;
+        if (!chapterMap.has(chIdx)) chapterMap.set(chIdx, []);
+        chapterMap.get(chIdx)!.push(epState);
+      }
+      const chs: ChapterState[] = Array.from(chapterMap.entries()).map(([idx, eps]) => ({
+        chapterIndex: idx,
+        title: eps[0]?.episodeInfo?.chapterTitle || `第${idx}章`,
+        episodes: eps,
+      }));
+      setChapters(chs);
+    } catch {
+      console.error('加载剧集失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
 
-  const handleMerge = useCallback(async () => {
+  useEffect(() => { loadEpisodes(); }, [loadEpisodes]);
+
+  // All episodes
+  const allEpisodes = useMemo(() => chapters.flatMap(ch => ch.episodes), [chapters]);
+  const composedCount = allEpisodes.filter(ep => ep.composedVideoUrl).length;
+
+  // Check if an episode has panels ready for composition
+  const canCompose = useCallback((ep: EpisodeState): boolean => {
+    const info = ep.episodeInfo || {};
+    if (isComicCommentary) {
+      // In comic commentary mode, need mergeStatus === 'completed'
+      // Check from segments or episodeInfo
+      const mergeStatus = info.mergeStatus;
+      return !!ep.composedVideoStatus || !!mergeStatus;
+    }
+    // Non-comic mode:只要有 panel 完成视频即可
+    return true;
+  }, [isComicCommentary]);
+
+  // Single episode compose
+  const handleComposeEpisode = useCallback(async (episodeId: number) => {
+    if (!projectId) return;
+    setComposingEpisodeIds(prev => new Set(prev).add(episodeId));
+    try {
+      await composeEpisode(projectId, episodeId);
+      await loadEpisodes();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '合成失败');
+    } finally {
+      setComposingEpisodeIds(prev => { const next = new Set(prev); next.delete(episodeId); return next; });
+    }
+  }, [projectId, loadEpisodes]);
+
+  // Chapter batch compose
+  const handleChapterBatchCompose = useCallback((chapterIndex: number) => {
+    const chapter = chapters.find(ch => ch.chapterIndex === chapterIndex);
+    if (!chapter) return;
+    chapter.episodes.forEach(ep => {
+      if (!ep.composedVideoUrl && canCompose(ep)) {
+        handleComposeEpisode(ep.episodeId);
+      }
+    });
+  }, [chapters, handleComposeEpisode, canCompose]);
+
+  // Project batch compose
+  const handleProjectBatchCompose = useCallback(() => {
+    allEpisodes.forEach(ep => {
+      if (!ep.composedVideoUrl && canCompose(ep)) {
+        handleComposeEpisode(ep.episodeId);
+      }
+    });
+  }, [allEpisodes, handleComposeEpisode, canCompose]);
+
+  // Project-level merge (merge all episode videos into one)
+  const handleProjectMerge = useCallback(async () => {
     if (!projectId || merging) return;
-
     setMerging(true);
-    setErrorMessage(null);
-
     try {
       await mergeVideos(projectId);
-      // 合并成功后后端会推进状态到 COMPLETED，轮询会自动更新 statusInfo
-    } catch (e: any) {
-      setErrorMessage(e?.response?.data?.message || e?.message || '拼接失败');
+      await loadEpisodes();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '合并失败');
       setMerging(false);
     }
-  }, [projectId, merging]);
+  }, [projectId, merging, loadEpisodes]);
+
+  const toggleChapter = useCallback((chIdx: number) => {
+    setCollapsedChapters(prev => {
+      const next = new Set(prev);
+      if (next.has(chIdx)) next.delete(chIdx); else next.add(chIdx);
+      return next;
+    });
+  }, []);
+
+  const toggleEpisode = useCallback((epId: number) => {
+    setExpandedEpisodeId(prev => prev === epId ? null : epId);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className={styles.pageContainer}>
+        <div className={styles.loadingState}><div className={styles.spinner} /><p>加载中...</p></div>
+      </div>
+    );
+  }
+
+  const hasComposing = composingEpisodeIds.size > 0;
 
   return (
-    <div className={styles.content}>
-      {/* 标题 */}
-      <div className={styles.header}>
-        <h1 className={styles.title}>视频拼接</h1>
-        <p className={styles.subtitle}>拼接所有面板视频，自动去掉每段前5帧</p>
+    <div className={styles.pageContainer}>
+      {/* Header */}
+      <div className={styles.pageHeader}>
+        <div className={styles.titleSection}>
+          <h1 className={styles.pageTitle}>视频合成与下载</h1>
+        </div>
       </div>
 
-      {/* 视频预览区 */}
-      <div className={styles.videoContainer}>
-        {isCompleted && finalVideoUrl ? (
-          <video
-            className={styles.videoPlayer}
-            controls
-            src={finalVideoUrl}
-            preload="metadata"
-          />
-        ) : merging ? (
-          <div className={styles.placeholder}>
-            <div className={styles.spinner}></div>
-            <p className={styles.placeholderText}>正在拼接中...</p>
-          </div>
-        ) : errorMessage ? (
-          <div className={styles.placeholder}>
-            <div className={styles.errorIcon}>!</div>
-            <p className={styles.errorText}>{errorMessage || '拼接失败，请重试'}</p>
-          </div>
+      {/* Stats Bar */}
+      <div className={styles.statsBar}>
+        <div className={styles.statsInfo}>
+          <span className={styles.completedCount}>{composedCount}</span>
+          <span className={styles.separator}>/</span>
+          <span className={styles.totalCount}>{allEpisodes.length}</span>
+          <span className={styles.statsLabel}>集已合成</span>
+        </div>
+        <div className={styles.batchBarActions}>
+          <button
+            className={styles.btnSuccess}
+            onClick={handleProjectBatchCompose}
+            disabled={hasComposing || composedCount === allEpisodes.length}
+          >
+            {hasComposing ? <><SpinIcon /> 合成中...</> : '全部合成'}
+          </button>
+        </div>
+      </div>
+
+      {/* Episode list */}
+      <div className={styles.tabContent}>
+        {chapters.length === 0 ? (
+          <div className={styles.emptyState}><p>暂无章节数据</p></div>
         ) : (
-          <div className={styles.placeholder}>
-            <div className={styles.placeholderIcon}>*</div>
-            <p className={styles.placeholderText}>等待拼接视频</p>
-          </div>
+          chapters.map(chapter => {
+            const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
+            const chComposedCount = chapter.episodes.filter(ep => ep.composedVideoUrl).length;
+            const chAllDone = chComposedCount === chapter.episodes.length;
+            return (
+              <div key={chapter.chapterIndex} className={styles.chapterGroup}>
+                <div className={styles.chapterHeader}>
+                  <button className={styles.chapterHeaderLeft} onClick={() => toggleChapter(chapter.chapterIndex)}>
+                    <ChevronIcon open={chapterOpen} />
+                    <BookIcon />
+                    <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
+                    <span className={styles.chapterProgress}>
+                      <span className={styles.chapterProgressText}>{chComposedCount}/{chapter.episodes.length}</span>
+                    </span>
+                  </button>
+                  <div className={styles.chapterBatchActions}>
+                    <button
+                      className={styles.btnGhost}
+                      onClick={() => handleChapterBatchCompose(chapter.chapterIndex)}
+                      disabled={hasComposing || chAllDone}
+                    >
+                      {chAllDone ? '已完成' : '批量合成'}
+                    </button>
+                  </div>
+                </div>
+                {chapterOpen && (
+                <div className={styles.episodeList}>
+                  {chapter.episodes.map(ep => {
+                    const isComposing = composingEpisodeIds.has(ep.episodeId);
+                    const isDone = !!ep.composedVideoUrl;
+                    const statusLabel = isComposing ? '合成中' : isDone ? '已合成' : '待合成';
+                    const statusClass = isDone ? 'completed' : isComposing ? 'generating' : 'pending';
+                    return (
+                      <div key={ep.episodeId} className={styles.episodeCard}>
+                        <div className={styles.episodeHeader}>
+                          <button className={styles.episodeHeaderLeft} onClick={() => toggleEpisode(ep.episodeId)}>
+                            <h3 className={styles.episodeTitle}>
+                              第{ep.episodeIndex}集 {ep.title}
+                            </h3>
+                            <span className={`${styles.statusBadge} ${styles[`status${statusClass.charAt(0).toUpperCase()}${statusClass.slice(1)}`]}`}>
+                              <span className={styles.statusDot} />
+                              {statusLabel}
+                            </span>
+                          </button>
+                          <div className={styles.episodeActions}>
+                            {isDone ? (
+                              <>
+                                <button
+                                  className={styles.btnGhost}
+                                  onClick={() => handleComposeEpisode(ep.episodeId)}
+                                  disabled={isComposing}
+                                >
+                                  {isComposing ? <><SpinIcon /> 合成中...</> : '重新合成'}
+                                </button>
+                                <a
+                                  className={styles.btnSuccess}
+                                  href={ep.composedVideoUrl || undefined}
+                                  download
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  <CheckIcon /> 下载
+                                </a>
+                              </>
+                            ) : (
+                              <button
+                                className={styles.btnSuccess}
+                                onClick={() => handleComposeEpisode(ep.episodeId)}
+                                disabled={isComposing}
+                              >
+                                {isComposing ? <><SpinIcon /> 合成中...</> : '合成'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Expand video player */}
+                        {expandedEpisodeId === ep.episodeId && isDone && ep.composedVideoUrl && (
+                          <div className={styles.videoWrap}>
+                            <video
+                              className={styles.videoPlayer}
+                              controls
+                              src={ep.composedVideoUrl}
+                              preload="metadata"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                )}
+              </div>
+            );
+          })
         )}
-      </div>
 
-      {/* 操作按钮 */}
-      <div className={styles.actions}>
-        {isCompleted && finalVideoUrl && !merging ? (
-          <>
-            <button className={styles.mergeButton} onClick={handleMerge} disabled={merging}>
-              重新拼接
-            </button>
-            <a
-              className={styles.downloadButton}
-              href={finalVideoUrl || undefined}
-              download
-              target="_blank"
-              rel="noreferrer"
+        {/* Project-level merge */}
+        {composedCount === allEpisodes.length && allEpisodes.length > 0 && (
+          <div className={styles.projectMergeSection}>
+            <div className={styles.projectMergeInfo}>
+              <span>所有集已合成完毕</span>
+            </div>
+            <button
+              className={styles.btnPrimary}
+              onClick={handleProjectMerge}
+              disabled={merging}
             >
-              下载视频
-            </a>
-          </>
-        ) : errorMessage ? (
-          <button className={styles.mergeButton} onClick={handleMerge} disabled={merging}>
-            重试
-          </button>
-        ) : (
-          <button className={styles.mergeButton} onClick={handleMerge} disabled={merging}>
-            {merging ? '拼接中...' : '拼接视频'}
-          </button>
+              {merging ? <><SpinIcon /> 合并中...</> : '合并为完整视频'}
+            </button>
+          </div>
         )}
       </div>
     </div>

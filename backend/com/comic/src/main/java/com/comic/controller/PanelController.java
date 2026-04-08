@@ -236,11 +236,15 @@ public class PanelController {
     }
 
     @PostMapping("/compose-episode")
-    @Operation(summary = "一键合成：拼接所有已合并面板为一集完整视频")
+    @Operation(summary = "一键合成：拼接所有面板为一集完整视频")
     public Result<Map<String, Object>> composeEpisode(
             @PathVariable String projectId,
             @PathVariable Long episodeId) {
-        return Result.ok(panelService.composeEpisode(episodeId));
+        Project project = projectRepository.findByProjectId(projectId);
+        String productionMode = project != null
+                ? (String) project.getProjectInfo().getOrDefault("productionMode", "")
+                : "";
+        return Result.ok(panelService.composeEpisode(episodeId, productionMode));
     }
 
     // ================= 边界保护 =================

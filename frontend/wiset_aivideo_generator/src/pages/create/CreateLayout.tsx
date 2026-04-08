@@ -24,19 +24,7 @@ const CreateLayout = () => {
   const navigate = useNavigate();
   const { statusInfo, isLoadingStatus, startPolling, stopPolling } = useCreateStore();
   const { currentProject, setCurrentProject } = useProjectStore();
-  const [pollPaused, setPollPaused] = useState(false);
   const [isStepTransitioning, setIsStepTransitioning] = useState(false);
-
-  // 手动暂停/恢复轮询（测试用）
-  const togglePolling = useCallback(() => {
-    if (pollPaused) {
-      if (currentProject?.projectId) startPolling(currentProject.projectId);
-      setPollPaused(false);
-    } else {
-      stopPolling();
-      setPollPaused(true);
-    }
-  }, [pollPaused, currentProject?.projectId, startPolling, stopPolling]);
 
   // 动态生成步骤 URL：有 projectId 时用项目路由，否则用 /create
   const getStepUrl = useCallback((stepNum: number) => {
@@ -146,7 +134,7 @@ const CreateLayout = () => {
         ) : <Navigate to={getStepUrl(1)} replace />;
       case 5:
         return currentProject ? (
-          <Step5Compose projectId={currentProject.projectId} />
+          <Step5Compose project={currentProject} />
         ) : <Navigate to={getStepUrl(1)} replace />;
       default:
         return <Navigate to={getStepUrl(1)} replace />;
@@ -168,13 +156,6 @@ const CreateLayout = () => {
         {/* 步骤内容 */}
         {renderStepContent()}
 
-        {/* 测试工具：暂停/恢复轮询 */}
-        <button
-          onClick={togglePolling}
-          className={`${styles.pollingToggle} ${pollPaused ? styles.pollingTogglePaused : ''}`}
-        >
-          {pollPaused ? '▶ 恢复轮询' : '⏸ 暂停轮询'}
-        </button>
 
         {/* 全局 loading 遮罩：生成中时禁止操作 */}
         {showLoadingOverlay && (
