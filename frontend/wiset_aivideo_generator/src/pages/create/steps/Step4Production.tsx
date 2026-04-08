@@ -4,10 +4,11 @@
  * Tab 4b: 九宫格图片生成/审核
  * Tab 4c: 视频生成/确认
  */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './Step4Production.module.less';
-import type { ChapterState, EpisodeState, SegmentState } from './types';
+import type { ChapterState, EpisodeState, PipelineStage, SegmentState } from './types';
+import { getPipelineStage } from './types';
 import {
   getEpisodes,
   getPanels,
@@ -276,7 +277,10 @@ function getGridStatusBadge(status: string) {
 export default function Step4Production({ project, onNextStep }: Step4ProductionProps) {
   const projectId = project?.projectId;
   const navigate = useNavigate();
-  const { statusInfo, syncStatus } = useCreateStore();
+  const isGenerating = useCreateStore(s => s.statusInfo?.isGenerating);
+  const generatingTaskType = useCreateStore(s => s.statusInfo?.generatingTaskType);
+  const statusCode = useCreateStore(s => s.statusInfo?.statusCode);
+  const syncStatus = useCreateStore(s => s.syncStatus);
 
   // Tab state — persist to localStorage so refresh doesn't lose tab
   const [activeTab, setActiveTab] = useState<SubPhase>(() => {
@@ -333,12 +337,12 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   }, [stopScriptPolling]);
 
   useEffect(() => {
-    if (statusInfo?.isGenerating) {
+    if (isGenerating) {
       startScriptPolling();
     } else {
       stopScriptPolling();
     }
-  }, [statusInfo?.isGenerating, startScriptPolling, stopScriptPolling]);
+  }, [isGenerating, startScriptPolling, stopScriptPolling]);
 
   // Off-peak mode
   const [offPeak, setOffPeak] = useState(() => localStorage.getItem('video_off_peak') === 'true');
@@ -534,22 +538,22 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   // Watch backend generating flag — if true and segments missing, restore polling
   useEffect(() => {
-    if (statusInfo?.isGenerating) {
+    if (isGenerating) {
       startScriptPolling();
     } else {
       stopScriptPolling();
     }
-  }, [statusInfo?.isGenerating, startScriptPolling, stopScriptPolling]);
+  }, [isGenerating, startScriptPolling, stopScriptPolling]);
 
   // Restore generating UI state from backend after page refresh
   useEffect(() => {
-    if (!statusInfo?.isGenerating) {
+    if (!isGenerating) {
       setGeneratingScript(null);
       setGeneratingGrid(null);
       // 不清除 generatingVideoKeys — 视频生成进度由 polling 独立管理
       return;
     }
-    const taskType = statusInfo.generatingTaskType;
+    const taskType = generatingTaskType;
     // "episode" = script generation in progress
     if (taskType === 'episode') {
       setGeneratingScript(-1); // -1 = batch generating, unknown specific episode
@@ -574,7 +578,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         switchTab('grid');
       }
     }
-  }, [statusInfo?.isGenerating, statusInfo?.generatingTaskType, chapters]);
+  }, [isGenerating, generatingTaskType, chapters]);
 
   // ==================== Panel Loading ====================
 
@@ -656,40 +660,64 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       const statusMap = new Map<number, any>();
       res.data.forEach((s: any) => statusMap.set(s.panelId, s));
 
-      setChapters(prev => prev.map(ch => ({
-        ...ch,
-        episodes: ch.episodes.map(ep =>
-          ep.episodeId === episodeId
-            ? {
-                ...ep,
-                segments: ep.segments.map(seg => {
-                  const panelId = Number(seg.panelData?.panelId);
-                  const status = statusMap.get(panelId);
-                  if (!status) return seg;
-                  return {
-                    ...seg,
-                    pipelineStep: mapToPipelineStep(status.gridStatus, status.videoStatus),
-                    gridImages: status.gridImages?.length ? status.gridImages : seg.gridImages,
-                    gridStatus: status.gridStatus || seg.gridStatus,
-                    fusionImageUrl: status.fusionImageUrl ?? seg.fusionImageUrl,
-                    shots: status.shots?.length ? status.shots : seg.shots,
-                    videoUrl: status.videoUrl ?? seg.videoUrl,
-                    videoTaskId: status.videoTaskId ?? seg.videoTaskId,
-                    videoModel: status.videoModel ?? seg.videoModel,
-                    videoOffPeak: status.offPeak ?? seg.videoOffPeak,
-                    videoProgress: status.videoProgress != null ? status.videoProgress : seg.videoProgress,
-                    videoCredits: status.videoCredits ?? seg.videoCredits,
-                    ttsAudioUrl: status.ttsAudioUrl || seg.ttsAudioUrl,
-                    ttsStatus: status.ttsStatus === 'completed' ? 'completed' : (status.ttsStatus || seg.ttsStatus),
-                    ttsCredits: status.ttsCredits ?? seg.ttsCredits,
-                    videoWithNarrationUrl: status.videoWithNarrationUrl || seg.videoWithNarrationUrl,
-                    mergeStatus: status.mergeStatus === 'completed' ? 'completed' : (status.mergeStatus || seg.mergeStatus),
-                  };
-                }),
-              }
-            : ep
-        ),
-      })));
+      setChapters(prev => {
+        // 快速检测：该 episode 是否有实际变化
+        let hasChanges = false;
+        for (const ch of prev) {
+          for (const ep of ch.episodes) {
+            if (ep.episodeId !== episodeId) continue;
+            for (const seg of ep.segments) {
+              const panelId = Number(seg.panelData?.panelId);
+              const status = statusMap.get(panelId);
+              if (!status) continue;
+              const newStep = mapToPipelineStep(status.gridStatus, status.videoStatus);
+              if (newStep !== seg.pipelineStep) { hasChanges = true; break; }
+              if (status.videoProgress != null && status.videoProgress !== seg.videoProgress) { hasChanges = true; break; }
+              if (status.videoStatus === 'completed' && status.videoUrl && status.videoUrl !== seg.videoUrl) { hasChanges = true; break; }
+              if (status.ttsStatus === 'completed' && status.ttsAudioUrl && status.ttsAudioUrl !== seg.ttsAudioUrl) { hasChanges = true; break; }
+              if (status.gridStatus && status.gridStatus !== seg.gridStatus) { hasChanges = true; break; }
+            }
+            if (hasChanges) break;
+          }
+          if (hasChanges) break;
+        }
+        if (!hasChanges) return prev; // 无变化，跳过 state 更新
+
+        return prev.map(ch => ({
+          ...ch,
+          episodes: ch.episodes.map(ep =>
+            ep.episodeId === episodeId
+              ? {
+                  ...ep,
+                  segments: ep.segments.map(seg => {
+                    const panelId = Number(seg.panelData?.panelId);
+                    const status = statusMap.get(panelId);
+                    if (!status) return seg;
+                    return {
+                      ...seg,
+                      pipelineStep: mapToPipelineStep(status.gridStatus, status.videoStatus),
+                      gridImages: status.gridImages?.length ? status.gridImages : seg.gridImages,
+                      gridStatus: status.gridStatus || seg.gridStatus,
+                      fusionImageUrl: status.fusionImageUrl ?? seg.fusionImageUrl,
+                      shots: status.shots?.length ? status.shots : seg.shots,
+                      videoUrl: status.videoUrl ?? seg.videoUrl,
+                      videoTaskId: status.videoTaskId ?? seg.videoTaskId,
+                      videoModel: status.videoModel ?? seg.videoModel,
+                      videoOffPeak: status.offPeak ?? seg.videoOffPeak,
+                      videoProgress: status.videoProgress != null ? status.videoProgress : seg.videoProgress,
+                      videoCredits: status.videoCredits ?? seg.videoCredits,
+                      ttsAudioUrl: status.ttsAudioUrl || seg.ttsAudioUrl,
+                      ttsStatus: status.ttsStatus === 'completed' ? 'completed' : (status.ttsStatus || seg.ttsStatus),
+                      ttsCredits: status.ttsCredits ?? seg.ttsCredits,
+                      videoWithNarrationUrl: status.videoWithNarrationUrl || seg.videoWithNarrationUrl,
+                      mergeStatus: status.mergeStatus === 'completed' ? 'completed' : (status.mergeStatus || seg.mergeStatus),
+                    };
+                  }),
+                }
+              : ep
+          ),
+        }));
+      });
     } catch (err) {
       console.error('刷新生产状态失败:', err);
     }
@@ -777,15 +805,30 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   // ==================== Tab Unlock Logic ====================
 
-  const allEpisodes = chapters.flatMap(ch => ch.episodes);
+  const allEpisodes = useMemo(() => chapters.flatMap(ch => ch.episodes), [chapters]);
 
-  // Tab 4b unlocked when ALL episodes have script approved (panelApproved)
-  // Spec: "4a → 4b：所有集脚本确认后自动解锁"
-  const tab4bUnlocked = allEpisodes.length > 0 && allEpisodes.every(ep => ep.panelApproved);
+  // Filter chapters' episodes by pipeline stage
+  const filterChaptersByStage = useCallback((stage: PipelineStage, chapters: ChapterState[]): ChapterState[] => {
+    return chapters.map(ch => ({
+      ...ch,
+      episodes: ch.episodes.filter(ep => getPipelineStage(ep) === stage),
+    })).filter(ch => ch.episodes.length > 0);
+  }, []);
 
-  // Tab 4c unlocked when ALL episodes have grid approved
-  // Spec: "4b → 4c：所有集九宫格审核通过后自动解锁"
-  const tab4cUnlocked = tab4bUnlocked && allEpisodes.every(ep => ep.gridStatus === 'approved');
+  // Get episodes that have passed beyond a given stage (for collapsed footer)
+  const getPassedEpisodes = useCallback((stage: PipelineStage, chapters: ChapterState[]): EpisodeState[] => {
+    const stageOrder: PipelineStage[] = ['script', 'grid', 'video'];
+    const currentIdx = stageOrder.indexOf(stage);
+    return chapters.flatMap(ch => ch.episodes).filter(ep => {
+      const epIdx = stageOrder.indexOf(getPipelineStage(ep));
+      return epIdx > currentIdx;
+    });
+  }, []);
+
+  // Per-tab episode counts for progress indicator
+  const scriptCount = allEpisodes.filter(ep => getPipelineStage(ep) === 'script').length;
+  const gridCount = allEpisodes.filter(ep => getPipelineStage(ep) === 'grid').length;
+  const videoCount = allEpisodes.filter(ep => getPipelineStage(ep) === 'video').length;
 
   // ==================== Actions ====================
 
@@ -811,12 +854,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     try {
       await approvePanel(projectId, episodeId);
       await loadEpisodes();
-      // 全部审核通过后自动切换到九宫格 Tab
-      const res = await getEpisodes(projectId);
-      const items = res.data?.items || [];
-      if (items.length > 0 && items.every((ep: any) => ep.episodeInfo?.panelApproved)) {
-        switchTab('grid');
-      }
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '审核失败');
     } finally {
@@ -877,14 +914,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     setApprovingEpisodeId(episodeId);
     try {
       await approveEpisodeGrid(projectId, episodeId);
-      panelsLoadedRef.current.delete(episodeId); // 后端已重建 Panel，强制重新加载
+      panelsLoadedRef.current.delete(episodeId);
       await loadEpisodes();
-      // 全部九宫格审核通过后自动切换到视频 Tab
-      const res = await getEpisodes(projectId);
-      const items = res.data?.items || [];
-      if (items.length > 0 && items.every((ep: any) => ep.episodeInfo?.gridStatus === 'approved')) {
-        switchTab('video');
-      }
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '审核失败');
     } finally {
@@ -1009,7 +1040,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     const confirmed = window.confirm('确认所有分镜视频无误后，将进入视频合成阶段。是否继续？');
     if (!confirmed) return;
     // 已完成的项目重新走 Step4 时，直接导航到 Step5，不调用状态推进（COMPLETED 状态无法再触发 confirm_panels）
-    if (statusInfo?.statusCode === 'completed') {
+    if (statusCode === 'completed') {
       onNextStep?.() || navigate(`/project/${projectId}/step/5`, { replace: true });
       return;
     }
@@ -1022,7 +1053,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     } finally {
       setAdvancing(false);
     }
-  }, [projectId, advancing, onNextStep, statusInfo?.statusCode]);
+  }, [projectId, advancing, onNextStep, statusCode]);
 
   // Generate TTS for a single panel
   const handleGenerateTts = useCallback(async (episodeId: number, panelId: string) => {
@@ -1238,31 +1269,30 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       <div className={styles.stepProgress}>
         {STEPS.map((step, idx) => {
           const isActive = activeTab === step.key;
-          const completed = step.key === 'script' ? tab4bUnlocked
-            : step.key === 'grid' ? tab4cUnlocked
-            : false;
-          const locked = step.key === 'script' ? false
-            : step.key === 'grid' ? !tab4bUnlocked
-            : !tab4cUnlocked;
+          const count = step.key === 'script' ? scriptCount
+            : step.key === 'grid' ? gridCount
+            : videoCount;
+          // Tab is "completed" when no episodes remain at this stage
+          const completed = count === 0 && allEpisodes.length > 0;
           const stepClasses = [
             styles.stepItem,
             isActive && styles.stepItemActive,
             completed && !isActive && styles.stepItemCompleted,
-            locked && styles.stepItemLocked,
           ].filter(Boolean).join(' ');
 
           return (
             <div key={step.key} style={{ display: 'contents' }}>
               <button
                 className={stepClasses}
-                onClick={() => !locked && switchTab(step.key)}
-                disabled={locked}
+                onClick={() => switchTab(step.key)}
               >
                 <span className={styles.stepNumber}>
                   {completed && !isActive ? <CheckIcon /> : `4${step.number}`}
                 </span>
-                <span className={styles.stepLabel}>{step.label}</span>
-                {locked && <LockIcon />}
+                <span className={styles.stepLabel}>
+                  {step.label}
+                  {count > 0 && <span className={styles.stepCount}>{count}</span>}
+                </span>
               </button>
               {idx < STEPS.length - 1 && (
                 <div className={`${styles.stepConnector} ${completed ? styles.stepConnectorCompleted : ''}`} />
@@ -1313,7 +1343,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             {chapters.length === 0 ? (
               <div className={styles.emptyState}><p>暂无章节数据</p></div>
             ) : (
-              chapters.map(chapter => {
+              filterChaptersByStage('script', chapters).map(chapter => {
                 const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
                 return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
@@ -1458,6 +1488,26 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               )
               })
             )}
+
+            {getPassedEpisodes('script', chapters).length > 0 && (
+              <details className={styles.passedEpisodesSection}>
+                <summary className={styles.passedEpisodesSummary}>
+                  已完成脚本审核（{getPassedEpisodes('script', chapters).length} 集）
+                </summary>
+                <div className={styles.passedEpisodesList}>
+                  {getPassedEpisodes('script', chapters).map(ep => {
+                    const stage = getPipelineStage(ep);
+                    const stageLabel = stage === 'grid' ? '→ 九宫格' : '→ 视频';
+                    return (
+                      <div key={ep.episodeId} className={styles.passedEpisodeItem}>
+                        <span className={styles.passedEpisodeTitle}>第{ep.episodeIndex}集 {ep.title}</span>
+                        <span className={styles.passedEpisodeStage}>{stageLabel}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            )}
           </div>
         )}
 
@@ -1467,7 +1517,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             {chapters.length === 0 ? (
               <div className={styles.emptyState}><p>暂无章节数据</p></div>
             ) : (
-              chapters.map(chapter => {
+              filterChaptersByStage('grid', chapters).map(chapter => {
                 const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
                 return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
@@ -1559,6 +1609,22 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               )
               })
             )}
+
+            {getPassedEpisodes('grid', chapters).length > 0 && (
+              <details className={styles.passedEpisodesSection}>
+                <summary className={styles.passedEpisodesSummary}>
+                  已完成九宫格审核（{getPassedEpisodes('grid', chapters).length} 集）
+                </summary>
+                <div className={styles.passedEpisodesList}>
+                  {getPassedEpisodes('grid', chapters).map(ep => (
+                    <div key={ep.episodeId} className={styles.passedEpisodeItem}>
+                      <span className={styles.passedEpisodeTitle}>第{ep.episodeIndex}集 {ep.title}</span>
+                      <span className={styles.passedEpisodeStage}>→ 视频</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
         )}
 
@@ -1568,7 +1634,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             {chapters.length === 0 ? (
               <div className={styles.emptyState}><p>暂无章节数据</p></div>
             ) : (
-              chapters.map(chapter => {
+              filterChaptersByStage('video', chapters).map(chapter => {
                 const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
                 return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
