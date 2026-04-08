@@ -784,7 +784,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         loadPanelsForEpisode(data.episodeId);
       }
     },
-    onEpisodeGridStatus: (data) => {
+    onEpisodeGridStatus: async (data) => {
       setChapters(prev => prev.map(ch => ({
         ...ch,
         episodes: ch.episodes.map(ep =>
@@ -795,9 +795,35 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       })));
       if (data.episodeId && (data.gridStatus === 'generated' || data.gridStatus === 'approved' || data.gridStatus === 'failed')) {
         panelsLoadedRef.current.delete(data.episodeId);
+        // 获取完整的 episode 数据以更新 gridImages 和 gridPrompt
+        if (projectId) {
+          try {
+            const res = await getEpisodes(projectId);
+            if (res.data?.items) {
+              const updatedEp = res.data.items.find((e: any) => e.id === data.episodeId);
+              if (updatedEp) {
+                setChapters(prev => prev.map(ch => ({
+                  ...ch,
+                  episodes: ch.episodes.map(ep =>
+                    ep.episodeId === data.episodeId
+                      ? {
+                          ...ep,
+                          gridImages: updatedEp.episodeInfo?.gridImages || [],
+                          splitShots: updatedEp.episodeInfo?.splitShots || [],
+                          gridPromptHint: updatedEp.episodeInfo?.gridPromptHint || '',
+                          gridRejectionFeedback: updatedEp.episodeInfo?.gridRejectionFeedback || null,
+                        }
+                      : ep
+                  ),
+                })));
+              }
+            }
+          } catch (err) {
+            console.error('获取 episode 数据失败:', err);
+          }
+        }
         loadPanelsForEpisode(data.episodeId);
         refreshProductionStatuses(data.episodeId);
-        // loadPanelsForEpisode 和 refreshProductionStatuses 会精准更新数据，不需要全量 loadEpisodes
       }
     },
     onPanelVideoDone: (data) => {

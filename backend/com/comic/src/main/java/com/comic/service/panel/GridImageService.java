@@ -259,6 +259,8 @@ public class GridImageService {
             episodeInfo.put("splitShots", splitShots);
             episodeInfo.put("gridStatus", "generated");
             episodeInfo.put("gridPageCount", pageCount);
+            // 保存最后一个 page 的 prompt（包含完整九宫格布局信息）
+            episodeInfo.put("gridPrompt", prompt);
             episode.setEpisodeInfo(episodeInfo);
             episodeRepository.updateById(episode);
 
