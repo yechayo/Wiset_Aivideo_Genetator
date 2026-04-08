@@ -107,7 +107,6 @@ public class ComicCommentaryPanelPromptBuilder {
         sb.append("负面提示词：文字、水印、标签、签名、人体结构错误、肢体融合、多余手指、多余肢体、");
         sb.append("面部变形、眼睛异常、模糊、低质量、色块 artefact、粗糙线条、草稿感、");
         sb.append("字幕、旁白文字、屏幕上的任何文字。\n");
-        sb.append("【嘴部约束 - 最强】所有角色嘴巴必须完全闭合静止，禁止任何嘴部运动（张嘴、口型蠕动、露齿、舌头活动）。");
         sb.append("禁止快速运动、剧烈动作、突然变向。");
         return sb.toString();
     }
@@ -214,16 +213,6 @@ public class ComicCommentaryPanelPromptBuilder {
             }
         }
 
-        sb.append("## 口型约束（最高优先级）\n");
-        sb.append("所有角色保持自然闭嘴。\n");
-        sb.append("- 画面中所有角色的嘴巴必须始终保持自然闭合，禁止任何嘴唇开合、蠕动或口型运动。角色只能通过眼神、表情、头部动作传达情绪。\n");
-        sb.append("- 画面内角色一律保持倾听、沉思或自然状态，绝对禁止任何嘴部运动。\n");
-        sb.append("- 禁止任何嘴部动作：嘴唇开合、舌头运动、露齿、口型蠕动、咀嚼、吞咽。\n\n");
-
-        sb.append("## 音效约束（最高优先级）\n");
-        sb.append("**禁止出现任何音效、背景音乐、环境声、旁白**。\n");
-        sb.append("所有镜头的音效/音乐需求必须通过 visualDescription 的光影、色彩、构图来传达，不得通过音频层实现。\n\n");
-
         sb.append("## 运镜约束\n");
         sb.append("运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。\n");
         sb.append("每个镜头需有短暂静止留白。\n\n");
@@ -248,7 +237,6 @@ public class ComicCommentaryPanelPromptBuilder {
         sb.append("\n\n## 负面提示词（严格遵守，违反任何一条即为失败）\n");
         sb.append("文字、水印、签名、logo、字幕、旁白文字、屏幕上出现的任何文字、人体结构错误、肢体融合、多余手指、多余肢体、");
         sb.append("面部变形、眼睛异常、模糊、闪烁、低质量、色块 artefact。\n");
-        sb.append("【嘴部约束 - 最强约束】所有角色一律闭嘴，绝对禁止任何嘴部运动：张嘴、嘴唇开合蠕动、露齿、口型运动、舌头活动、咀嚼吞咽。画面角色不得出现说话口型，所有角色嘴巴保持完全静止闭合。表情只能通过眼睛、眉毛、头部姿态传达。\n");
         sb.append("禁止快速奔跑、剧烈运动、突然变向——运镜以缓慢推拉和微平移为主，用剪辑快切体现节奏。");
         return sb.toString();
     }

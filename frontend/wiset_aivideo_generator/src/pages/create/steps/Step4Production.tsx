@@ -165,7 +165,7 @@ const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicComm
   const n = shots.length;
 
   lines.push(isComicCommentary
-    ? stylePrefix + ' 漫剧解说向连续视频：画面服务于旁白节奏，镜头以清晰叙事与情绪递进为主。'
+    ? stylePrefix + ' 漫剧解说向连续视频：镜头以清晰叙事与情绪递进为主。'
     : stylePrefix + ' 专业电影级画面。');
   lines.push('');
 
@@ -176,14 +176,6 @@ const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicComm
     lines.push(`【镜头${i + 1}】`);
     lines.push(`duration: ${shot.duration || 5}s`);
     lines.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || shot.visual_description || ''}`);
-
-    // 解说模式下：显示 narration 旁白
-    if (isComicCommentary) {
-      const nar = shot.narration || (shot.speaker === '旁白' ? shot.dialogue : '');
-      if (nar && nar !== '无') {
-        lines.push(`解说旁白: ${nar}`);
-      }
-    }
 
     const dialogue = typeof shot.dialogue === 'string' ? shot.dialogue : '';
     if (dialogue && dialogue !== '无') {
@@ -211,22 +203,6 @@ const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicComm
     lines.push('');
   });
 
-  if (isComicCommentary) {
-    lines.push('## 口型与声画约束（漫剧解说 - 最高优先级）');
-    lines.push('解说模式下画面不出现角色对白口型，所有角色保持自然闭嘴。');
-    lines.push('- 画面中所有角色的嘴巴必须始终保持自然闭合，不得有任何嘴唇开合、蠕动或口型运动。角色只能通过眼神、表情、头部动作传达情绪。');
-    lines.push('- 解说旁白为画外音，画面内角色一律闭嘴，保持倾听、沉思或自然状态，绝对禁止任何嘴部运动。');
-    lines.push('- 角色嘴巴的自然静止状态：嘴唇自然闭合或微笑时嘴角微扬（不露齿）。允许的短暂微张仅限惊讶表情（一条细缝，不伴随蠕动）。');
-    lines.push('- 禁止任何嘴部动作：嘴唇开合、舌头运动、露齿、口型蠕动、咀嚼、吞咽。');
-  } else {
-    lines.push('## 嘴巴运动与说话人约束（最高优先级）');
-    lines.push('本视频为音画同步生成，只有对白中标注的说话人可以产生嘴部动作，其他所有角色必须保持闭嘴。');
-    lines.push('- 仅当说话人正在画面中可见时，该说话人可以有适度的嘴部开合动作来配合对白，但动作幅度必须自然克制。');
-    lines.push('- 画面中所有非说话人的角色，嘴巴必须始终保持自然闭合，不得有任何嘴唇开合、蠕动或口型运动。非说话人只能通过眼神、表情、头部动作表达反应。');
-    lines.push('- 当对白说话人为旁白、画外音、内心独白、或不在画面中的角色时，画面内所有角色的嘴巴必须完全闭合静止，保持倾听或自然状态，绝对禁止任何嘴部运动。');
-    lines.push('- 角色嘴巴的自然静止状态：嘴唇自然闭合或微笑时嘴角微扬（不露齿）。允许的短暂微张仅限惊讶表情（一条细缝，不伴随蠕动）。');
-    lines.push('- 绝对禁止非说话人的任何嘴部动作：嘴唇开合、舌头运动、露齿、口型蠕动、咀嚼、吞咽、不自主的面部肌肉运动。');
-  }
   lines.push('');
 
   lines.push('## 画面衔接');
@@ -247,10 +223,8 @@ const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicComm
   lines.push('## 负面提示词（严格遵守，违反任何一条即为失败）');
   lines.push('文字、水印、签名、logo、人体结构错误、肢体融合、多余手指、多余肢体、面部变形、眼睛异常、模糊、闪烁、低质量、色块 artefact。');
   if (isComicCommentary) {
-    lines.push('【嘴巴运动约束 - 最强约束】漫剧解说模式下所有角色一律闭嘴，绝对禁止任何嘴部运动：张嘴、嘴唇开合蠕动、露齿、口型运动、舌头活动、咀嚼吞咽。画面角色不得出现说话口型，所有角色嘴巴保持完全静止闭合。表情只能通过眼睛、眉毛、头部姿态传达。');
     lines.push('禁止快速奔跑、剧烈运动、突然变向——运镜以缓慢推拉和微平移为主，用剪辑快切体现节奏。');
   } else {
-    lines.push('【嘴巴运动约束 - 最强约束】非说话人角色绝对禁止任何嘴部运动：张嘴、嘴唇开合蠕动、露齿、口型运动、舌头活动、咀嚼吞咽。仅对白中标注的说话人且在画面中可见时可以有嘴部动作，其余角色嘴巴必须完全静止闭合。当说话人为旁白或不在画面中时，画面内所有角色一律闭嘴，不得有任何嘴部反应。非说话人的表情只能通过眼睛、眉毛、头部姿态传达。');
     lines.push('禁止两人以上同框互动（拥抱、打斗、接触），多人互动必须拆分为单人反应镜头。');
     lines.push('禁止快速奔跑、剧烈运动、突然变向——镜头运动必须缓慢（缓慢推镜头、微平移、静止），用剪辑快切体现激烈而非画面快动。');
   }

@@ -20,9 +20,11 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Semaphore;
 
 @Service
@@ -40,6 +42,9 @@ public class DeepSeekTextService implements TextGenerationService {
 
     @Value("${comic.deepseek.max-tokens:16384}")
     private int maxTokens;
+
+    @Value("${comic.deepseek.narration-refinement.enabled:true}")
+    private boolean narrationRefinementEnabled;
 
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -231,6 +236,10 @@ public class DeepSeekTextService implements TextGenerationService {
     @Override
     public String getServiceName() {
         return "DeepSeek-Text";
+    }
+
+    public boolean isNarrationRefinementEnabled() {
+        return narrationRefinementEnabled;
     }
 
     @Override
@@ -514,7 +523,7 @@ public class DeepSeekTextService implements TextGenerationService {
     private int estimateWordCount(int totalDuration, int dialogueCount) {
         int totalShots = Math.round((float) totalDuration / 3.0f);
         int narrationShots = Math.max(0, totalShots - dialogueCount);
-        return (int) (narrationShots * 11 * 1.15);
+        return (int) (narrationShots * 17 * 1.15);
     }
 
     /**
@@ -635,6 +644,272 @@ public class DeepSeekTextService implements TextGenerationService {
         }
 
         return panelShots;
+    }
+
+    // ==================== Stage 2: Sequential Narration Refinement ====================
+
+    private static final Set<String> VALID_NARRATION_TONES = new java.util.HashSet<>(
+            java.util.Arrays.asList("calm", "happy", "sad", "angry", "fearful", "surprised", "disgusted", "fluent"));
+
+    /**
+     * Stage 2: 逐 Panel 串行精修旁白。
+     * 每个 Panel 单独调用 AI 重写 narration/narrationTone，携带前序 Panel 旁白作为上下文。
+     *
+     * @param panelShots           Stage 1 输出
+     * @param episodeContent       原始集剧本
+     * @param narrationPerspective first_person / third_person / null
+     * @return 同一 panelShots 引用（in-place 修改）
+     */
+    public List<List<Map<String, Object>>> refineNarrationsSequentially(
+            List<List<Map<String, Object>>> panelShots,
+            String episodeContent,
+            String narrationPerspective) {
+
+        if (!narrationRefinementEnabled) {
+            log.info("[Stage2] Narration refinement disabled, skipping");
+            return panelShots;
+        }
+
+        StringBuilder narrationContext = new StringBuilder();
+        int totalPanels = panelShots.size();
+
+        for (int panelIdx = 0; panelIdx < totalPanels; panelIdx++) {
+            List<Map<String, Object>> panel = panelShots.get(panelIdx);
+            log.info("[Stage2] Processing Panel {}/{}", panelIdx + 1, totalPanels);
+
+            try {
+                List<Map<String, Object>> narrationShots = new ArrayList<>();
+                for (Map<String, Object> shot : panel) {
+                    String nar = str(shot.get("narration"));
+                    String dlg = str(shot.get("dialogue"));
+                    if (!nar.isEmpty() && !"无".equals(nar) && (dlg.isEmpty() || "无".equals(dlg))) {
+                        narrationShots.add(shot);
+                    }
+                }
+
+                if (narrationShots.isEmpty()) {
+                    log.info("[Stage2] Panel {} has no narration shots, skipping", panelIdx + 1);
+                    continue;
+                }
+
+                String sysPrompt = buildNarrationRefinementSystemPrompt(narrationPerspective);
+                String usrPrompt = buildNarrationRefinementUserPrompt(
+                        narrationShots, panelIdx, totalPanels,
+                        narrationContext.toString(), episodeContent);
+
+                String response = generateStream(sysPrompt, usrPrompt);
+                List<Map<String, String>> refined = parseNarrationRefinementResponse(response);
+
+                if (refined == null || refined.isEmpty()) {
+                    log.warn("[Stage2] Panel {} refinement returned empty, keeping Stage 1", panelIdx + 1);
+                    appendNarrationContext(narrationContext, narrationShots);
+                    continue;
+                }
+
+                applyRefinedNarrations(panel, refined, panelIdx + 1);
+                appendNarrationContext(narrationContext, narrationShots);
+
+                log.info("[Stage2] Panel {} refinement complete", panelIdx + 1);
+
+            } catch (Exception e) {
+                log.warn("[Stage2] Panel {} refinement failed, keeping Stage 1: {}",
+                        panelIdx + 1, e.getMessage());
+                // 即使失败也要将 Stage 1 旁白加入上下文，保证后续 Panel 有完整故事线
+                appendNarrationContext(narrationContext, panel);
+            }
+        }
+
+        log.info("[Stage2] All panels processed. Context length: {} chars", narrationContext.length());
+        return panelShots;
+    }
+
+    private void appendNarrationContext(StringBuilder ctx, List<Map<String, Object>> shots) {
+        for (Map<String, Object> shot : shots) {
+            String nar = str(shot.get("narration"));
+            String dlg = str(shot.get("dialogue"));
+            if (!nar.isEmpty() && !"无".equals(nar) && (dlg.isEmpty() || "无".equals(dlg))) {
+                ctx.append(nar);
+            }
+        }
+    }
+
+    private String buildNarrationRefinementSystemPrompt(String narrationPerspective) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一位专业的漫剧解说旁白编剧。你的任务是为指定的旁白分镜撰写高质量的旁白口播稿。\n\n");
+
+        sb.append("【核心原则】\n");
+        sb.append("你只需要输出 narration（旁白文本）和 narrationTone（旁白语气），不要修改任何其他分镜字段。\n");
+        sb.append("旁白与对白互斥：有对白的分镜不在你的任务范围内。\n\n");
+
+        sb.append("【字数硬性约束 - 违反即为失败】\n");
+        sb.append("- duration=2 的旁白：5~9 个中文字符\n");
+        sb.append("- duration=3 的旁白：9~13 个中文字符\n");
+        sb.append("- duration=4 的旁白：12~16 个中文字符\n\n");
+
+        sb.append("【narrationTone 枚举值 - 必填】\n");
+        sb.append("有 narration 的分镜必须填写 narrationTone，只能为以下之一：\n");
+        sb.append("calm（平静叙述）、happy（轻松愉悦）、sad（悲伤低沉）、angry（愤怒激烈）、\n");
+        sb.append("fearful（恐惧紧张）、surprised（惊讶震撼）、disgusted（厌恶反感）、fluent（流畅生动）\n\n");
+
+        sb.append("【叙事连贯性 - 最高优先级】\n");
+        sb.append("你撰写的旁白必须与「前文旁白上下文」自然衔接，形成连续的故事流。\n");
+        sb.append("- 句子之间有逻辑递进，禁止跳跃、重复或突兀换话题\n");
+        sb.append("- 使用主题承接、对比承接、因果承接、情绪承接\n");
+        sb.append("- 禁止「看图说话」：每句旁白不是独立描述画面，而是连续故事的碎片\n");
+        sb.append("- 每句旁白末尾要留有驱动力（悬念尾、情绪钩子），让观众想听下一句\n\n");
+
+        if ("first_person".equals(narrationPerspective)) {
+            sb.append("【人称 - 第一人称 · 最高优先级】必须使用「我」叙述，禁止第三人称。\n\n");
+        } else if ("third_person".equals(narrationPerspective)) {
+            sb.append("【人称 - 第三人称 · 最高优先级】必须使用「他/她」或角色名叙述，禁止第一人称「我」。\n\n");
+        }
+
+        sb.append("【写作风格 - 小说阅读感】\n");
+        sb.append("1.【具象修饰语】禁止只用光杆名词，必须加有质感的修饰语。❌「他看到一把剑。」→ ✅「一把锈迹斑斑的巨剑，斜插在焦土之中。」\n");
+        sb.append("2.【心理侧写】不描述表情本身（「他很痛苦」），外化心理活动。❌「他很害怕。」→ ✅「手心沁出冷汗。」\n");
+        sb.append("3.【五感体验】调动视觉、听觉、触觉、嗅觉。❌「这是一个可怕的森林。」→ ✅「四周死一般的寂静，只有脚踩枯枝的脆响刺耳回荡。空气中弥漫着腐烂的腥气。」\n");
+        sb.append("4.【宿命感金句】转折处用宿命论连接词（殊不知、然而、命运的齿轮……）。\n");
+        sb.append("5.【长短句韵律】铺垫用长句，爆发用短句。\n\n");
+
+        sb.append("【绝对禁止】\n");
+        sb.append("- 禁止「然后他……」「接着……」「只见……」等流水账连接词\n");
+        sb.append("- 禁止「他很痛苦」「非常害怕」等抽象情绪标签\n");
+        sb.append("- 禁止连续3句使用相同句式或相同主语开头\n");
+        sb.append("- 禁止旁白中直接引用对白原文\n\n");
+
+        sb.append("【情感弧线】\n");
+        sb.append("如果是第一个 Panel：旁白要有开场引入感\n");
+        sb.append("如果是最后一个 Panel：旁白要有收束感或悬念留白\n");
+        sb.append("中间 Panel：要有情绪推进，不能从头到尾平铺\n\n");
+
+        sb.append("【输出格式】\n");
+        sb.append("输出 JSON 数组，每个元素对应一个旁白分镜：\n");
+        sb.append("[\n");
+        sb.append("  { \"shotNumber\": 1, \"narration\": \"旁白文本\", \"narrationTone\": \"calm\" },\n");
+        sb.append("  { \"shotNumber\": 3, \"narration\": \"旁白文本\", \"narrationTone\": \"surprised\" }\n");
+        sb.append("]\n");
+        sb.append("仅输出旁白分镜（跳过对白分镜），shotNumber 必须与输入一致。仅输出 JSON，不要 markdown 代码块。\n");
+        return sb.toString();
+    }
+
+    private String buildNarrationRefinementUserPrompt(
+            List<Map<String, Object>> narrationShots,
+            int panelIndex,
+            int totalPanels,
+            String narrationContext,
+            String episodeContent) {
+
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("【前文旁白上下文】\n");
+        if (narrationContext != null && !narrationContext.isEmpty()) {
+            sb.append("以下是前面 Panel 已经写好的旁白，你的旁白必须自然承接这些内容：\n");
+            sb.append(narrationContext).append("\n\n");
+        } else {
+            sb.append("（这是第一个 Panel，请撰写有开场引入感的旁白）\n\n");
+        }
+
+        sb.append("【当前 Panel 信息】\n");
+        sb.append("Panel 编号：第 ").append(panelIndex + 1).append("/").append(totalPanels).append(" 个\n");
+        if (panelIndex == totalPanels - 1) {
+            sb.append("⚠️ 这是最后一个 Panel，请确保结尾有收束感或悬念留白\n");
+        }
+        sb.append("\n");
+
+        sb.append("【当前 Panel 的旁白分镜】\n");
+        for (Map<String, Object> shot : narrationShots) {
+            int shotNum = toSafeInt(shot.get("shotNumber"), 0);
+            int duration = toSafeInt(shot.get("duration"), 3);
+            String visual = str(shot.get("visualDescription"));
+            String currentNar = str(shot.get("narration"));
+            sb.append("Shot ").append(shotNum).append(" (duration=").append(duration).append("秒):\n");
+            sb.append("  画面描述：").append(visual).append("\n");
+            sb.append("  当前旁白（待重写）：").append(currentNar).append("\n\n");
+        }
+
+        sb.append("【原剧本文本】\n");
+        if (episodeContent != null && episodeContent.length() > 500) {
+            sb.append(episodeContent, 0, 500).append("……\n\n");
+        } else {
+            sb.append(episodeContent != null ? episodeContent : "").append("\n\n");
+        }
+
+        sb.append("请为上述旁白分镜重写 narration 和 narrationTone，输出 JSON 数组。");
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, String>> parseNarrationRefinementResponse(String jsonStr) {
+        String cleaned = jsonStr.trim();
+        if (cleaned.startsWith("```json")) cleaned = cleaned.substring(7);
+        else if (cleaned.startsWith("```")) cleaned = cleaned.substring(3);
+        if (cleaned.endsWith("```")) cleaned = cleaned.substring(0, cleaned.length() - 3);
+        cleaned = cleaned.trim();
+
+        try {
+            return objectMapper.readValue(cleaned, new TypeReference<List<Map<String, String>>>() {});
+        } catch (Exception e) {
+            log.warn("[Stage2] Failed to parse narration refinement JSON: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void applyRefinedNarrations(List<Map<String, Object>> panelShots,
+                                         List<Map<String, String>> refinedNarrations, int panelNum) {
+        Map<Integer, Map<String, String>> byShotNum = new HashMap<>();
+        for (Map<String, String> entry : refinedNarrations) {
+            int num = Integer.parseInt(entry.getOrDefault("shotNumber", "-1"));
+            byShotNum.put(num, entry);
+        }
+
+        for (Map<String, Object> shot : panelShots) {
+            String dlg = str(shot.get("dialogue"));
+            // 只处理旁白 shot
+            if (!dlg.isEmpty() && !"无".equals(dlg)) continue;
+
+            String nar = str(shot.get("narration"));
+            if (nar.isEmpty() || "无".equals(nar)) continue;
+
+            int shotNum = toSafeInt(shot.get("shotNumber"), 0);
+            int duration = toSafeInt(shot.get("duration"), 3);
+            Map<String, String> refined = byShotNum.get(shotNum);
+
+            if (refined == null) {
+                log.warn("[Stage2] Panel {} Shot {} not found in refinement result, keeping Stage 1",
+                        panelNum, shotNum);
+                continue;
+            }
+
+            String newNarr = refined.get("narration");
+            String newTone = refined.get("narrationTone");
+
+            if (newNarr != null && !newNarr.isEmpty() && !"无".equals(newNarr.trim())
+                    && isNarrationWordCountAcceptable(newNarr, duration)) {
+                shot.put("narration", newNarr.trim());
+            } else if (newNarr != null && !isNarrationWordCountAcceptable(newNarr, duration)) {
+                log.warn("[Stage2] Panel {} Shot {} narration word count {} out of range, keeping Stage 1",
+                        panelNum, shotNum, newNarr.length());
+            }
+
+            if (newTone != null && VALID_NARRATION_TONES.contains(newTone.trim().toLowerCase())) {
+                shot.put("narrationTone", newTone.trim().toLowerCase());
+            } else if (newTone != null && !newTone.trim().isEmpty()) {
+                log.warn("[Stage2] Panel {} Shot {} invalid narrationTone '{}', fallback to calm",
+                        panelNum, shotNum, newTone);
+                shot.put("narrationTone", "calm");
+            }
+        }
+    }
+
+    private boolean isNarrationWordCountAcceptable(String narration, int duration) {
+        if (narration == null) return false;
+        int len = narration.trim().length();
+        switch (duration) {
+            case 2: return len <= 18;
+            case 3: return len <= 20;
+            case 4: return len <= 22;
+            default: return len <= 25;
+        }
     }
 
     /** 安全取整数值，处理 Number、String、Map 等意外类型 */
@@ -775,12 +1050,12 @@ public class DeepSeekTextService implements TextGenerationService {
                 .append("  - 对白分镜：dialogue 不为「无」，narration 填「无」。\n")
                 .append("  - 旁白分镜：narration 不为「无」，dialogue 填「无」、speaker 填「无」。\n")
                 .append("  - 对白分镜分布在情感爆发力最强的节点，禁止连续出现，至少间隔 1 个旁白分镜。\n\n")
-                .append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；visualDescription 中角色嘴部以自然闭合为主，除非该镜 dialogue 非「无」且说话人在画面中。\n")
+                .append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；visualDescription 中角色状态以自然为主。\n")
                 .append("4.【景别倾向】景别以中景、近景、特写为主（占比 80%+），大远景/远景控制在 1-2 镜以内，仅用于开场定场或转场。构图需留出上方约 1/4 区域作为「字幕安全区」，避免关键视觉元素被花字遮挡。\n")
                 .append("5.【运镜风格】运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。每个镜头需有 2-3 秒画面相对静止的「解说留白」时段，供观众消化旁白信息。\n")
                 .append("6.【画面侧重点】visualDescription 应侧重角色情绪状态和场景氛围，而非复杂动作。优先描述：表情变化、眼神方向、身体朝向、光影氛围。避免描述复杂肢体动作、多人互动、快速运动。每镜画面应像一个清晰的「信息单元」——观众看一眼就能理解当前发生的事。\n")
                 .append("7.【转场节奏】转场以简洁为主：硬切、淡入淡出、黑场过渡。避免复杂动势衔接或匹配剪辑，保持叙事节奏清晰。\n")
-                .append("8.【音效策略 - 强制规则】audioEffects 字段一律填「无」。若需要氛围感，通过 visualDescription 的光影、色彩、构图来传达。\n\n");
+                .append("8.【音效策略】audioEffects 字段可根据画面氛围需要填写具体音效描述。\n\n");
         }
 
         sb.append("重要规则：\n")
@@ -801,13 +1076,13 @@ public class DeepSeekTextService implements TextGenerationService {
             .append("禁止描写剧烈运动（快速奔跑、跳跃、翻滚、打斗）。激烈场面通过多分镜快切实现，而非单镜头内的快动。\n");
 
         if (comicCommentary) {
-            sb.append("3.【解说与口型】以 narration 为声画主轴；dialogue 非「无」时，说话人可有克制口型，其余角色闭嘴；无角色台词时全员自然闭嘴，旁白仅存在于 narration 文本中。\n\n");
+            sb.append("3.【解说与对白】以 narration 为声画主轴；dialogue 非「无」时，说话人可有自然说话神态；无角色台词时角色保持自然状态，旁白仅存在于 narration 文本中。\n\n");
         } else {
-            sb.append("3.【说话人与嘴部约束原则】本视频为音画同步生成，对白和画面同时产出，必须严格区分说话人与非说话人：\n")
-                .append("  (a) 当 speaker 是 characters 中的某个画面内角色时：visualDescription 中可以描写该说话人自然的说话神态（如表情、眼神、手势），但禁止详细描写嘴部开合、口型蠕动等唇齿运动。\n")
+            sb.append("3.【说话人标注原则】本视频为音画同步生成，对白和画面同时产出，必须严格区分说话人与非说话人：\n")
+                .append("  (a) 当 speaker 是 characters 中的某个画面内角色时：visualDescription 中可以描写该说话人自然的说话神态（如表情、眼神、手势）。\n")
                 .append("  (b) 当 speaker 为旁白、画外音、内心独白，或 speaker 不在 characters 列表中（即不在画面中）时：")
-                .append("visualDescription 中所有角色必须保持闭嘴静止，处于倾听、思考或感受状态，绝对禁止任何嘴部动作。\n")
-                .append("  (c) 非说话人的画面内角色：嘴巴必须闭合，只能通过眼神、表情、头部动作表达反应，禁止任何嘴部运动。\n")
+                .append("visualDescription 中所有角色保持倾听、思考或感受状态。\n")
+                .append("  (c) 非说话人的画面内角色：通过眼神、表情、头部动作表达反应。\n")
                 .append("  (d) speaker 字段必须精确标注说话人。有对白时 speaker 不可填\"无\"；若对白来自旁白则填\"旁白\"，内心独白则填对应角色名加\"（内心独白）\"。\n")
                 .append("  (e) dialogueTone 必须精准描述说话人的语气情绪，帮助视频模型理解谁在说话、以什么情绪说话。\n\n")
                 .append("**说话人标注强化规则：**\n")
@@ -864,13 +1139,14 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("- cameraMovement: 运镜描述（必须详细描述镜头的动态运动，包括：运镜方式如推/拉/摇/移/跟/升降/环绕/手持晃动/固定等，运动方向和速度如缓慢/匀速/快速/急促，起始位置和结束位置，与主体或场景的关系，营造的视觉氛围。示例：\"镜头从角色眼部特写缓慢开始，逐渐向后拉远至中景，同时向左平移30度，展现场景全貌，营造孤独空旷的压抑氛围\"。禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇！）\n");
         sb.append("- visualDescription: 画面描述（必须详细描述画面内容，包括角色具体动作姿态、面部表情、身体语言、手势、光影效果、色彩氛围。示例：\"女孩右手紧握裙摆，微微低头，眼眶泛红但强忍着泪水，头顶的夕阳余晖在她发梢形成金色光晕，背景是模糊的校园走廊\"）\n");
         if ("third_person".equals(narrationPerspective)) {
-            sb.append("- narration: 旁白口播稿（**第三人称叙述**，使用「他/她/它」指代角色，禁止使用「我」；中文口语，字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**）\n");
+            sb.append("- narration: 旁白口播稿（**第三人称叙述**，使用「他/她/它」指代角色，禁止使用「我」；中文口语；字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**；**写作风格要求：每镜旁白是微小说的碎片，必须有具象修饰语和心理外化，禁止光杆名词和抽象情绪标签，末尾留悬念或情绪钩子**）\n");
         } else {
-            sb.append("- narration: 旁白口播稿（中文口语，字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**）\n");
+            sb.append("- narration: 旁白口播稿（中文口语；字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**；**写作风格要求：每镜旁白是微小说的碎片，必须有具象修饰语和心理外化，禁止光杆名词和抽象情绪标签，末尾留悬念或情绪钩子**）\n");
         }
         sb.append("- dialogue: 角色在画面内开口的台词（**有 narration 的分镜 dialogue 填「无」**；对白分镜 narration 必须填「无」）\n");
         sb.append("- speaker: 说话人（dialogue 为「无」时填「无」；有台词时必须是 characters 中的角色之一，禁止填「旁白」）\n");
         sb.append("- dialogueTone: 对白语气（无对白则填\"无\"。必须描述说话人的语气、情绪状态和表演方式。示例：\"愤怒而急促，声音略带颤抖\"或\"温柔低语，带着一丝犹豫和心疼\"）\n");
+        sb.append("- narrationTone: 旁白语气（**有 narration 的分镜必填，无 narration 的分镜填\"无\"**）。必须为以下枚举值之一：calm（平静叙述）、happy（轻松愉悦）、sad（悲伤低沉）、angry（愤怒激烈）、fearful（恐惧紧张）、surprised（惊讶震撼）、disgusted（厌恶反感）、fluent（流畅生动）。根据该镜旁白内容和情节氛围选择最匹配的情绪。开场铺垫多用 calm，转折突变用 surprised，高潮冲突用 angry，悲伤低谷用 sad，轻松过渡用 fluent 或 happy。\n");
         sb.append("- visualEffects: 视觉特效（无则填\"无\"）\n");
         sb.append("- audioEffects: 音效（无则填\"无\"）\n");
         sb.append("- transitionHint: 镜头衔接提示（描述此镜头如何过渡到下一个镜头，确保画面连贯性。最后一个分镜填写\"最后一个镜头，无需衔接\"）\n\n");
@@ -899,26 +1175,60 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("  - 对白分镜应分布在情感爆发力最强的节点（转折、高潮、冲突），禁止连续出现，至少间隔 1 个旁白分镜。\n");
         sb.append("  - 整集对白分镜总数偏差不得超过 ±1，否则视为生成失败。\n\n");
 
-        sb.append("【旁白连续性 - 核心规则 + 示例】\n");
-        sb.append("所有旁白分镜的 narration 拼接后必须是一篇流畅的口播稿。每镜旁白必须承接上一镜旁白的语义，推进叙事。\n\n");
-        sb.append("✅ 正确示例（旁白之间有语义递进，像一段完整的口播稿）：\n");
-        sb.append("  shot1 narration: \"三百年前的惨败，刻骨铭心。\"（开场引入）\n");
-        sb.append("  shot2 narration: \"他猛然睁眼，发现自己竟回到了少年时代。\"（承接上句，推进事件）\n");
-        sb.append("  shot3 narration: \"眼前浮现的蓝色光屏，显示着密密麻麻的分析数据。\"（描述新发现）\n");
-        sb.append("  shot4 narration: \"系统已锁定赵无极功法的致命破绽。\"（进一步推进）\n");
-        sb.append("  shot5 narration: \"只需一指，便能瓦解他所有的攻击。\"（制造悬念）\n\n");
-        sb.append("❌ 错误示例（旁白重复，没有推进叙事）——**严禁这样写**：\n");
-        sb.append("  shot1 narration: \"这一世的因果，他必将逐一清算。\"\n");
-        sb.append("  shot2 narration: \"这一世的因果，他必将逐一清算。\"（← 禁止：与上一镜完全相同）\n");
-        sb.append("  shot3 narration: \"这一世的因果，他必将逐一清算。\"（← 禁止：没有推进故事）\n\n");
-        sb.append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；visualDescription 中角色嘴部以自然闭合为主，除非该镜 dialogue 非「无」且说话人在画面中。\n");
+        sb.append("【旁白连续性 - 最高优先级核心规则】\n");
+        sb.append("所有旁白分镜的 narration 拼接后必须是一篇流畅的、有情感起伏的口播稿。旁白不是画面的说明文字，而是连续故事的碎片。\n\n");
+        sb.append("⚠️ 最常见的致命错误——**严禁「看图说话」**：\n");
+        sb.append("  ❌ 错误（每镜独立描述画面，互相割裂，情绪平淡）：\n");
+        sb.append("    shot1: \"校霸王浩炫耀着他的异能手环。\"\n");
+        sb.append("    shot2: \"校花苏沐清指尖凝结的冰花。\"\n");
+        sb.append("    shot3: \"放学路上，他握着仅有的慰藉。\"\n");
+        sb.append("    shot4: \"跑回破旧的家中，他摔上门。\"\n");
+        sb.append("    （问题：每句都在独立描述画面，句子之间没有语义承接，情绪从头到尾是平的）\n\n");
+        sb.append("  ✅ 正确（旁白是连续故事的碎片，有语义递进和情感弧线）：\n");
+        sb.append("    shot1: \"而王浩的异能手环，是所有人仰望的光。\"（承接上文，形成对比）\n");
+        sb.append("    shot2: \"苏沐清指尖的冰花，更是遥不可及的梦。\"（延续对比主题，递进）\n");
+        sb.append("    shot3: \"手里这杯廉价的奶茶，是我仅有的温暖。\"（情绪转折，从他人到自我）\n");
+        sb.append("    shot4: \"然而命运，从不怜悯弱者。\"（短句升华，为转折蓄势）\n\n");
+        sb.append("旁白之间的承接方式（必须使用，不可遗漏）：\n");
+        sb.append("- 主题承接：上一镜提到「力量」，下一镜从另一个角度延续「力量」\n");
+        sb.append("- 对比承接：上一镜写他人的光芒，下一镜写自己的暗淡\n");
+        sb.append("- 因果承接：上一镜写事件起因，下一镜写结果或转折\n");
+        sb.append("- 情绪承接：上一镜结尾留下情绪余韵，下一镜接住并推进\n\n");
+        sb.append("每个 Panel 的旁白必须形成完整的情感弧线（不能从头到尾平铺）：\n");
+        sb.append("- Panel 开头（第1-2镜）：铺垫情绪，建立氛围（calm）\n");
+        sb.append("- Panel 中段（第2-3镜）：推进事件，制造张力（calm → surprised）\n");
+        sb.append("- Panel 收束（最后1镜）：升华或悬念，必须有情绪冲击力（angry/sad/surprised）\n");
+        sb.append("- 禁止：一个 Panel 内所有旁白都是同一个情绪和语调\n\n");
+        sb.append("❌ 另一种致命错误——**严禁旁白重复或停滞**：\n");
+        sb.append("  shot1: \"这一世的因果，他必将逐一清算。\"\n");
+        sb.append("  shot2: \"这一世的因果，他必将逐一清算。\"（← 禁止：与上一镜完全相同）\n");
+        sb.append("  shot3: \"这一世的因果，他必将逐一清算。\"（← 禁止：没有推进故事）\n\n");
+
+        sb.append("【旁白文学质感 - shot 级约束】\n");
+        sb.append("旁白是微小说，不是画面说明文。每镜旁白虽然字数有限（5-16字），但仍需遵循以下原则：\n\n");
+        sb.append("1.【钩子原则】每镜旁白末尾要留有驱动力——悬念尾、情绪钩子、或未完成的动作，让观众想听下一镜。\n");
+        sb.append("  ✅ \"命运的齿轮，在此刻转动。\" / \"然而，真正的危机才刚刚开始。\" / \"他不知道的是……\"\n");
+        sb.append("  ❌ \"他走在路上。\" / \"房间里很安静。\"（信息自封闭，没有驱动力）\n\n");
+        sb.append("2.【节奏变化】相邻 3 镜的旁白句式不能雷同，必须有长短落差。\n");
+        sb.append("  ✅ 短句「轰！」→ 长句「冲击波撕裂了整片大地」→ 反问「谁还能挡住他？」\n");
+        sb.append("  ❌ 连续 3 镜都是「他……了。」的同质句式\n\n");
+        sb.append("3.【具象化】用有质感的修饰语替代光杆名词，用隐喻替代直述。\n");
+        sb.append("  ❌ 「他看到一把剑。」→ ✅ 「一把锈迹斑斑的巨剑，斜插在焦土之中。」\n\n");
+        sb.append("4.【心理外化】不写「他很痛苦」，写心理活动。每镜虽短，但可以是一个心理碎片。\n");
+        sb.append("  ❌ 「他很害怕。」→ ✅ 「手心沁出冷汗。」\n\n");
+        sb.append("5.【宿命金句】每个 Panel 的最后一句旁白，优先用升华句收束（宿命感、命运感、悬念留白）。\n\n");
+        sb.append("【旁白绝对禁止清单】\n");
+        sb.append("- 禁止「然后他……」「接着……」「只见……」「话说……」等流水账连接词\n");
+        sb.append("- 禁止「他很痛苦」「非常害怕」「十分愤怒」等抽象情绪标签\n");
+        sb.append("- 禁止连续 3 镜使用相同句式或相同主语开头\n");
+        sb.append("- 禁止旁白中直接引用对白原文\n\n");
+
+        sb.append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；visualDescription 中角色状态以自然为主。\n");
         sb.append("4.【景别倾向】景别以中景、近景、特写为主（占比 80%+），大远景/远景控制在 1-2 镜以内，仅用于开场定场或转场。构图需留出上方约 1/4 区域作为「字幕安全区」，避免关键视觉元素被花字遮挡。\n");
         sb.append("5.【运镜风格】运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。每个镜头需有 2-3 秒画面相对静止的「解说留白」时段，供观众消化旁白信息。\n");
         sb.append("6.【画面侧重点】visualDescription 应侧重角色情绪状态和场景氛围，而非复杂动作。优先描述：表情变化、眼神方向、身体朝向、光影氛围。避免描述复杂肢体动作、多人互动、快速运动。每镜画面应像一个清晰的「信息单元」——观众看一眼就能理解当前发生的事。\n");
         sb.append("7.【转场节奏】转场以简洁为主：硬切、淡入淡出、黑场过渡。避免复杂动势衔接或匹配剪辑，保持叙事节奏清晰。\n");
-        sb.append("8.【音效策略 - 强制规则】漫剧解说以旁白口播为唯一声音核心，必须保证解说词清晰可闻：\n");
-        sb.append("  - audioEffects 字段一律填「无」。禁止填写任何音效、背景音乐、环境声、打击声等。\n");
-        sb.append("  - 若某些画面确实需要氛围感，通过 visualDescription 的光影、色彩、构图来传达，而不是通过音效。\n\n");
+        sb.append("8.【音效策略】audioEffects 字段可根据画面氛围需要填写具体音效描述。\n\n");
 
         if (narrationPerspective != null && !narrationPerspective.isEmpty()) {
             if ("first_person".equals(narrationPerspective)) {
@@ -931,7 +1241,8 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("重要规则：\n");
         sb.append("1. dialogue 与 speaker 必须严格对应。如果 dialogue 不为\"无\"，则 speaker 必须是 characters 数组中的某个角色名。\n");
         sb.append("2. dialogue 与 dialogueTone 必须严格对应。如果 dialogue 不为\"无\"，dialogueTone 不能为\"无\"。\n");
-        sb.append("3. 分镜之间必须有连贯性。每个分镜的 transitionHint 要清晰描述画面如何过渡到下一个分镜。\n");
+        sb.append("3. narration 与 narrationTone 必须严格对应。如果 narration 不为\"无\"，narrationTone 必须为以下枚举之一：calm、happy、sad、angry、fearful、surprised、disgusted、fluent。如果 narration 为\"无\"，narrationTone 填\"无\"。\n");
+        sb.append("4. 分镜之间必须有连贯性。每个分镜的 transitionHint 要清晰描述画面如何过渡到下一个分镜。\n");
         sb.append("4. 每个 Panel 的最后一个 shot 的 transitionHint 填写\"最后一个镜头，无需衔接\"。\n");
         sb.append("5. cameraMovement 必须具体到运动细节，禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇。\n");
         sb.append("6. visualDescription 必须包含角色的具体动作、表情、身体语言和光影氛围，禁止笼统描述。\n\n");
@@ -939,7 +1250,7 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("**AI视频生成三原则（必须严格遵守）：**\n");
         sb.append("1.【单主体原则】每个分镜最多只保留1个角色的动作描写，禁止两个角色同框互动。双人对话必须拆分为两个分镜，用剪辑快切实现对话效果。静态多人同框允许，但禁止动态互动。\n");
         sb.append("2.【慢动作原则】cameraMovement 必须使用缓慢运动。visualDescription 中的角色动作必须是微小动作，禁止描写剧烈运动。激烈场面通过多分镜快切实现。\n");
-        sb.append("3.【解说与口型】以 narration 为声画主轴；dialogue 非「无」时，说话人可有克制口型，其余角色闭嘴；无角色台词时全员自然闭嘴。\n\n");
+        sb.append("3.【解说与对白】以 narration 为声画主轴；dialogue 非「无」时，说话人可有自然说话神态；无角色台词时角色保持自然状态。\n\n");
 
         return sb.toString();
     }
