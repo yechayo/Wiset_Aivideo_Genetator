@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-04-08]
+
+- feat: 集成 Grok 视频生成服务与 Panel 生产流程优化
+- feat: 视频合并时 TTS 与视频原声同等音量
+- docs: 更新逐集流水线设计文档
+- feat: 项目列表页添加删除按钮
+- feat: EpisodeState 添加逐集合成视频字段
+- feat: 流水线新增 Stage 2 逐 Panel 旁白精修
+
 ## [2026-04-07]
 
 - feat: 漫剧提示词优化、视频时长限制及开发环境配置更新
