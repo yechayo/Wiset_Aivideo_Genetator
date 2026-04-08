@@ -1,15 +1,23 @@
 /**
  * Step5Compose - 逐集合成视频与下载
  * 每集独立合成，支持按集/按章/全部批量操作
+ * 只有所有 panel 视频完成的剧集才可合成
  */
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import styles from './Step5Compose.module.less';
-import type { ChapterState, EpisodeState } from './types';
+import type { EpisodeState } from './types';
 import {
   getEpisodes,
+  getPanels,
   composeEpisode,
 } from '../../../services/episodeService';
 import { mergeVideos } from '../../../services/projectService';
+
+interface ChapterState {
+  chapterIndex: number;
+  title: string;
+  episodes: EpisodeState[];
+}
 
 interface Step5ComposeProps {
   project: any;
@@ -36,6 +44,20 @@ const CheckIcon = () => (
   </svg>
 );
 
+/**
+ * 检查某集是否所有 panel 视频都已完成（可合成）
+ */
+function checkAllPanelsReady(panels: any[], isComicCommentary: boolean): boolean {
+  if (panels.length === 0) return false;
+  return panels.every(p => {
+    const info = p.panelInfo || p;
+    if (isComicCommentary) {
+      return info.mergeStatus === 'completed' && info.videoWithNarrationUrl;
+    }
+    return info.videoStatus === 'completed' && info.videoUrl;
+  });
+}
+
 const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
   const projectId = project?.projectId;
   const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
@@ -46,13 +68,17 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
   const [merging, setMerging] = useState(false);
   const [collapsedChapters, setCollapsedChapters] = useState<Set<number>>(new Set());
   const [expandedEpisodeId, setExpandedEpisodeId] = useState<number | null>(null);
+  // episodeId → boolean: 是否所有 panel 视频已完成
+  const [episodeReadyMap, setEpisodeReadyMap] = useState<Record<number, boolean>>({});
 
-  // Load episodes
-  const loadEpisodes = useCallback(async () => {
+  // Load episodes + check panel readiness
+  const loadData = useCallback(async () => {
     if (!projectId) return;
+    setLoading(true);
     try {
       const res = await getEpisodes(projectId, { size: 999 });
       const items = res.data?.items || [];
+
       // Group by chapter
       const chapterMap = new Map<string, EpisodeState[]>();
       for (const item of items) {
@@ -76,9 +102,8 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
           composedVideoStatus: ep.composedVideoStatus || '',
         };
         const chapterTitle = (ep.chapterTitle || '').replace(/^#+\s*/, '').trim() || '未分章';
-        const chKey = chapterTitle;
-        if (!chapterMap.has(chKey)) chapterMap.set(chKey, []);
-        chapterMap.get(chKey)!.push(epState);
+        if (!chapterMap.has(chapterTitle)) chapterMap.set(chapterTitle, []);
+        chapterMap.get(chapterTitle)!.push(epState);
       }
       const chs: ChapterState[] = Array.from(chapterMap.entries()).map(([title, eps], idx) => ({
         chapterIndex: idx + 1,
@@ -86,31 +111,43 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
         episodes: eps,
       }));
       setChapters(chs);
+
+      // Load panels for each episode to check readiness
+      const allEps = chs.flatMap(ch => ch.episodes);
+      const readyMap: Record<number, boolean> = {};
+      const panelChecks = allEps.map(async (ep) => {
+        try {
+          const panelRes = await getPanels(projectId, ep.episodeId);
+          const panels = panelRes.data || [];
+          readyMap[ep.episodeId] = checkAllPanelsReady(panels, isComicCommentary);
+        } catch {
+          readyMap[ep.episodeId] = false;
+        }
+      });
+      await Promise.all(panelChecks);
+      setEpisodeReadyMap(readyMap);
     } catch {
-      console.error('加载剧集失败');
+      console.error('加载数据失败');
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, isComicCommentary]);
 
-  useEffect(() => { loadEpisodes(); }, [loadEpisodes]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   // All episodes
   const allEpisodes = useMemo(() => chapters.flatMap(ch => ch.episodes), [chapters]);
   const composedCount = allEpisodes.filter(ep => ep.composedVideoUrl).length;
 
-  // Check if an episode has panels ready for composition
+  // Check if an episode is ready for composition (all panels have video)
   const canCompose = useCallback((ep: EpisodeState): boolean => {
-    const info = ep.episodeInfo || {};
-    if (isComicCommentary) {
-      // In comic commentary mode, need mergeStatus === 'completed'
-      // Check from segments or episodeInfo
-      const mergeStatus = info.mergeStatus;
-      return !!ep.composedVideoStatus || !!mergeStatus;
-    }
-    // Non-comic mode:只要有 panel 完成视频即可
-    return true;
-  }, [isComicCommentary]);
+    // Already composed
+    if (ep.composedVideoUrl) return true;
+    return !!episodeReadyMap[ep.episodeId];
+  }, [episodeReadyMap]);
+
+  // Count of ready-but-not-yet-composed episodes
+  const readyCount = allEpisodes.filter(ep => canCompose(ep) && !ep.composedVideoUrl).length;
 
   // Single episode compose
   const handleComposeEpisode = useCallback(async (episodeId: number) => {
@@ -118,13 +155,13 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
     setComposingEpisodeIds(prev => new Set(prev).add(episodeId));
     try {
       await composeEpisode(projectId, episodeId);
-      await loadEpisodes();
+      await loadData();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '合成失败');
     } finally {
       setComposingEpisodeIds(prev => { const next = new Set(prev); next.delete(episodeId); return next; });
     }
-  }, [projectId, loadEpisodes]);
+  }, [projectId, loadData]);
 
   // Chapter batch compose
   const handleChapterBatchCompose = useCallback((chapterIndex: number) => {
@@ -152,12 +189,12 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
     setMerging(true);
     try {
       await mergeVideos(projectId);
-      await loadEpisodes();
+      await loadData();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '合并失败');
       setMerging(false);
     }
-  }, [projectId, merging, loadEpisodes]);
+  }, [projectId, merging, loadData]);
 
   const toggleChapter = useCallback((chIdx: number) => {
     setCollapsedChapters(prev => {
@@ -197,12 +234,17 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
           <span className={styles.separator}>/</span>
           <span className={styles.totalCount}>{allEpisodes.length}</span>
           <span className={styles.statsLabel}>集已合成</span>
+          {readyCount > 0 && (
+            <span className={styles.readyHint}>
+              （{readyCount} 集可合成）
+            </span>
+          )}
         </div>
         <div className={styles.batchBarActions}>
           <button
             className={styles.btnSuccess}
             onClick={handleProjectBatchCompose}
-            disabled={hasComposing || composedCount === allEpisodes.length}
+            disabled={hasComposing || readyCount === 0}
           >
             {hasComposing ? <><SpinIcon /> 合成中...</> : '全部合成'}
           </button>
@@ -217,6 +259,7 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
           chapters.map(chapter => {
             const chapterOpen = !collapsedChapters.has(chapter.chapterIndex);
             const chComposedCount = chapter.episodes.filter(ep => ep.composedVideoUrl).length;
+            const chReadyCount = chapter.episodes.filter(ep => canCompose(ep) && !ep.composedVideoUrl).length;
             const chAllDone = chComposedCount === chapter.episodes.length;
             return (
               <div key={chapter.chapterIndex} className={styles.chapterGroup}>
@@ -233,9 +276,9 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
                     <button
                       className={styles.btnGhost}
                       onClick={() => handleChapterBatchCompose(chapter.chapterIndex)}
-                      disabled={hasComposing || chAllDone}
+                      disabled={hasComposing || chReadyCount === 0}
                     >
-                      {chAllDone ? '已完成' : '批量合成'}
+                      {chAllDone ? '已完成' : chReadyCount > 0 ? `批量合成 (${chReadyCount})` : '暂无可合成'}
                     </button>
                   </div>
                 </div>
@@ -244,8 +287,22 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
                   {chapter.episodes.map(ep => {
                     const isComposing = composingEpisodeIds.has(ep.episodeId);
                     const isDone = !!ep.composedVideoUrl;
-                    const statusLabel = isComposing ? '合成中' : isDone ? '已合成' : '待合成';
-                    const statusClass = isDone ? 'completed' : isComposing ? 'generating' : 'pending';
+                    const isReady = canCompose(ep);
+                    let statusLabel: string;
+                    let statusClass: string;
+                    if (isComposing) {
+                      statusLabel = '合成中';
+                      statusClass = 'generating';
+                    } else if (isDone) {
+                      statusLabel = '已合成';
+                      statusClass = 'completed';
+                    } else if (isReady) {
+                      statusLabel = '可合成';
+                      statusClass = 'ready';
+                    } else {
+                      statusLabel = '视频未完成';
+                      statusClass = 'pending';
+                    }
                     return (
                       <div key={ep.episodeId} className={styles.episodeCard}>
                         <div className={styles.episodeHeader}>
@@ -282,7 +339,7 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
                               <button
                                 className={styles.btnSuccess}
                                 onClick={() => handleComposeEpisode(ep.episodeId)}
-                                disabled={isComposing}
+                                disabled={isComposing || !isReady}
                               >
                                 {isComposing ? <><SpinIcon /> 合成中...</> : '合成'}
                               </button>
