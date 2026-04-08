@@ -26,6 +26,7 @@ import {
   batchGenerateTts,
   mergePanelAudio,
   batchMergeAudio,
+  rejectToScript,
 } from '../../../services/episodeService';
 import { advanceStatus } from '../../../services/projectService';
 import { useCreateStore } from '../../../stores/createStore';
@@ -40,13 +41,6 @@ interface Step4ProductionProps {
   project: any;
   onNextStep?: () => void;
 }
-
-const LockIcon = () => (
-  <svg className={styles.stepLockIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-  </svg>
-);
 
 const BookIcon = () => (
   <svg className={styles.chapterIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -936,6 +930,21 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId, loadEpisodes, rejectingEpisodeId]);
 
+  // Reject to script stage (4b → 4a rollback)
+  const handleRejectToScript = useCallback(async (episodeId: number) => {
+    if (!projectId || rejectingEpisodeId) return;
+    setRejectingEpisodeId(episodeId);
+    try {
+      await rejectToScript(projectId, episodeId);
+      panelsLoadedRef.current.delete(episodeId);
+      await loadEpisodes();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '退回脚本阶段失败');
+    } finally {
+      setRejectingEpisodeId(null);
+    }
+  }, [projectId, loadEpisodes, rejectingEpisodeId]);
+
   // Generate video per panel
   const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string, customPrompt?: string) => {
     if (!projectId) return;
@@ -1575,6 +1584,17 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                     disabled={approvingEpisodeId === ep.episodeId || rejectingEpisodeId === ep.episodeId}
                                   >
                                     {rejectingEpisodeId === ep.episodeId ? <><SpinIcon /> 退回中...</> : '退回'}
+                                  </button>
+                                  <button
+                                    className={styles.btnGhost}
+                                    onClick={() => {
+                                      if (confirm('确定要退回脚本阶段吗？九宫格数据将被清除。')) {
+                                        handleRejectToScript(ep.episodeId);
+                                      }
+                                    }}
+                                    disabled={rejectingEpisodeId === ep.episodeId}
+                                  >
+                                    退回脚本
                                   </button>
                                 </>
                               )}
