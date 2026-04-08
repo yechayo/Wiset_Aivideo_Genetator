@@ -88,10 +88,7 @@ public class GridImageService {
                 List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
 
                 String prompt = buildGridPromptForProject(panel.getEpisodeId(), visualStyleStr, pageShots, charRefsWithNames);
-                // 追加用户的修改建议
-                if (customHint != null && !customHint.trim().isEmpty()) {
-                    prompt += "\n\n用户修改要求: " + customHint.trim();
-                }
+                prompt = appendUserHintToPrompt(prompt, customHint);
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
                     imageUrl = imageService.generateWithMultipleReferences(
@@ -155,6 +152,14 @@ public class GridImageService {
         return panelPromptBuilder.buildGridPrompt(visualStyle, pageShots, charRefsWithNames);
     }
 
+    public static String appendUserHintToPrompt(String basePrompt, String customHint) {
+        String normalized = customHint == null ? "" : customHint.trim();
+        if (normalized.isEmpty()) {
+            return basePrompt;
+        }
+        return basePrompt + "\n\n用户修改要求: " + normalized;
+    }
+
     /**
      * 更新 Episode 的九宫格状态
      */
@@ -173,6 +178,17 @@ public class GridImageService {
      */
     @Async
     public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle, String imageProvider) {
+        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, null);
+    }
+
+    @Async
+    public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle,
+                                        String imageProvider, String customHint) {
+        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, customHint);
+    }
+
+    private void doGenerateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle,
+                                           String imageProvider, String customHint) {
         // 获取 projectId（在 try 外声明，catch 中也需要用）
         String gridProjectId = null;
         try {
@@ -202,6 +218,7 @@ public class GridImageService {
                 List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
 
                 String prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames);
+                prompt = appendUserHintToPrompt(prompt, customHint);
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
                     imageUrl = imageService.generateWithMultipleReferences(
@@ -312,7 +329,7 @@ public class GridImageService {
     }
 
     /**
-     * 为指定 Panel 的 splitShots 创建融合参考图（公开版）
+     * 为指定 Panel 的 splitShots 创建融合参考图（仅 URL 版本）
      */
     public BufferedImage createFusionImageForPanel(List<Map<String, Object>> panelShots, List<String> charRefUrls) {
         List<CharRef> charRefs = new ArrayList<>();
@@ -322,6 +339,13 @@ public class GridImageService {
             }
         }
         return createFusionImage(panelShots, charRefs);
+    }
+
+    /**
+     * 为指定 Panel 的 splitShots 创建融合参考图（带角色名字版本）
+     */
+    public BufferedImage createFusionImageForPanelWithNames(List<Map<String, Object>> panelShots, List<CharRef> charRefs) {
+        return createFusionImage(panelShots, charRefs != null ? charRefs : new ArrayList<>());
     }
 
     /**
@@ -427,47 +451,7 @@ public class GridImageService {
             String label = NumberFormatter.toCircled(i + 1);
             g.drawString(label, x + 6, y + 28);
 
-            // 绘制角色名和说话人标签
-            Map<String, Object> shot = shots.get(i);
-            List<String> shotCharNames = getShotCharacterNames(shot);
-            String speaker = (String) shot.get("speaker");
-            String dialogue = (String) shot.get("dialogue");
-            boolean hasDialogue = dialogue != null && !"无".equals(dialogue) && !dialogue.isEmpty();
-
-            if (!shotCharNames.isEmpty() || hasDialogue) {
-                int tagY = y + 40;
-                g.setFont(new Font("SansSerif", Font.BOLD, 13));
-
-                // 角色名标签
-                if (!shotCharNames.isEmpty()) {
-                    String charLabel = String.join(" ", shotCharNames);
-                    int charLabelW = g.getFontMetrics().stringWidth(charLabel) + 10;
-                    // 防止超出格子宽度
-                    if (x + charLabelW + 4 > x + cellW) {
-                        charLabel = charLabel.substring(0, Math.max(1, charLabel.length() - 2)) + "…";
-                        charLabelW = g.getFontMetrics().stringWidth(charLabel) + 10;
-                    }
-                    g.setColor(new Color(0, 0, 0, 180));
-                    g.fillRect(x + 2, tagY, charLabelW, 20);
-                    g.setColor(new Color(200, 220, 255));
-                    g.drawString(charLabel, x + 7, tagY + 15);
-                    tagY += 22;
-                }
-
-                // 说话人标签（有对白时显示）
-                if (hasDialogue && speaker != null && !"无".equals(speaker)) {
-                    String speakerLabel = "▶ " + speaker;
-                    int speakerW = g.getFontMetrics().stringWidth(speakerLabel) + 10;
-                    if (x + speakerW + 4 > x + cellW) {
-                        speakerLabel = "▶ " + speaker.substring(0, Math.max(1, speaker.length() - 2)) + "…";
-                        speakerW = g.getFontMetrics().stringWidth(speakerLabel) + 10;
-                    }
-                    g.setColor(new Color(0, 0, 0, 180));
-                    g.fillRect(x + 2, tagY, speakerW, 20);
-                    g.setColor(new Color(255, 200, 100));
-                    g.drawString(speakerLabel, x + 7, tagY + 15);
-                }
-            }
+            // 角色名字只展示在底部角色参考图区域，避免覆盖到分镜场景图。
         }
 
         // 绘制底部角色参考图横条
@@ -505,19 +489,30 @@ public class GridImageService {
                     if (cr.species != null && !cr.species.isEmpty()) infoParts.add(cr.species);
                     if (cr.appearance != null && !cr.appearance.isEmpty()) infoParts.add(cr.appearance);
 
-                    int infoY = charY + charH + 3;
                     if (charName != null && !charName.isEmpty()) {
-                        // 第一行：角色名（白色加粗）
-                        g.setColor(Color.WHITE);
-                        g.setFont(new Font("SansSerif", Font.BOLD, 14));
+                        // 角色名贴在角色图旁边（优先右侧，空间不足时自动夹紧在槽位内）
+                        g.setFont(new Font("SansSerif", Font.BOLD, 13));
                         java.awt.FontMetrics nameFm = g.getFontMetrics();
-                        String displayName = truncateText(g, charName, charW - 8);
-                        int nameX = charX + (charW - nameFm.stringWidth(displayName)) / 2;
-                        g.drawString(displayName, nameX, infoY + nameFm.getAscent());
-                        infoY += nameFm.getHeight() + 1;
+                        int maxNameTextWidth = Math.max(40, charW - 16);
+                        String displayName = truncateText(g, charName, maxNameTextWidth);
+                        int namePaddingX = 8;
+                        int namePaddingY = 3;
+                        int badgeW = Math.min(nameFm.stringWidth(displayName) + namePaddingX * 2, charW - 8);
+                        int badgeH = nameFm.getHeight() + namePaddingY * 2;
+                        Point badgePos = computeNameBadgePosition(
+                            charX, charY, charW, charH,
+                            drawX, drawY, drawW, drawH,
+                            badgeW, badgeH
+                        );
+
+                        g.setColor(new Color(0, 0, 0, 180));
+                        g.fillRoundRect(badgePos.x, badgePos.y, badgeW, badgeH, 10, 10);
+                        g.setColor(Color.WHITE);
+                        g.drawString(displayName, badgePos.x + namePaddingX, badgePos.y + namePaddingY + nameFm.getAscent());
                     }
                     if (!infoParts.isEmpty()) {
-                        // 第二行：设定信息（灰色小字）
+                        // 设定信息放在角色图下方
+                        int infoY = charY + charH + 3;
                         g.setColor(new Color(180, 180, 180));
                         g.setFont(new Font("SansSerif", Font.PLAIN, 11));
                         java.awt.FontMetrics infoFm = g.getFontMetrics();
@@ -536,36 +531,6 @@ public class GridImageService {
     }
 
     /**
-     * 从 shot 中提取角色名列表（兼容 characterRefs 和 characters 两种格式）
-     */
-    @SuppressWarnings("unchecked")
-    private List<String> getShotCharacterNames(Map<String, Object> shot) {
-        List<String> names = new ArrayList<>();
-        // 优先从 characterRefs 获取
-        List<Map<String, String>> charRefs = (List<Map<String, String>>) shot.get("characterRefs");
-        if (charRefs != null) {
-            for (Map<String, String> ref : charRefs) {
-                String name = ref.get("name");
-                if (name != null && !name.trim().isEmpty()) {
-                    names.add(name.trim());
-                }
-            }
-        }
-        if (names.isEmpty()) {
-            // 兜底从 characters 获取
-            List<String> characters = (List<String>) shot.get("characters");
-            if (characters != null) {
-                for (String c : characters) {
-                    if (c != null && !c.trim().isEmpty()) {
-                        names.add(c.trim());
-                    }
-                }
-            }
-        }
-        return names;
-    }
-
-    /**
      * 截断文本以适配指定最大宽度
      */
     private String truncateText(Graphics2D g, String text, int maxWidth) {
@@ -578,6 +543,30 @@ public class GridImageService {
             if (fm.stringWidth(truncated) <= maxWidth) return truncated;
         }
         return "…";
+    }
+
+    static Point computeNameBadgePosition(
+            int slotX,
+            int slotY,
+            int slotW,
+            int slotH,
+            int imageX,
+            int imageY,
+            int imageW,
+            int imageH,
+            int badgeW,
+            int badgeH) {
+        int minX = slotX + 4;
+        int maxX = slotX + slotW - badgeW - 4;
+        int preferredX = imageX + imageW + 6;
+        int badgeX = Math.max(minX, Math.min(preferredX, maxX));
+
+        int minY = slotY + 4;
+        int maxY = slotY + slotH - badgeH - 4;
+        int preferredY = imageY + 6;
+        int badgeY = Math.max(minY, Math.min(preferredY, maxY));
+
+        return new Point(badgeX, badgeY);
     }
 
     private List<String> getCharacterReferenceUrls(Long episodeId) {

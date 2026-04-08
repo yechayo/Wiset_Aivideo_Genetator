@@ -64,6 +64,7 @@ const imageProviderOptions = [
 const videoProviderOptions = [
   { value: 'vidu', label: 'Vidu' },
   { value: 'sora', label: 'Sora2' },
+  { value: 'grok', label: 'Grok' },
 ];
 
 // 旁白音色选项

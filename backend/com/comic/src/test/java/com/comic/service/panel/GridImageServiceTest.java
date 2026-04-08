@@ -97,4 +97,44 @@ class GridImageServiceTest {
             assertTrue(fRows * cellH + (fRows + 1) * PAD <= MAIN_AREA_HEIGHT, "shots=" + shotCount + ": height overflow");
         }
     }
+
+    @Test
+    void nameBadge_should_prefer_right_side_of_character_image_when_space_allows() {
+        // 槽位宽度充足时，名字标签应优先贴在角色图右侧
+        java.awt.Point p = GridImageService.computeNameBadgePosition(
+                100, 900, 220, 132,
+                120, 920, 80, 90,
+                70, 24
+        );
+
+        assertTrue(p.x >= 206, "名字标签应优先放在角色图右侧");
+        assertTrue(p.x <= 100 + 220 - 70 - 4, "名字标签不能超出角色槽位右边界");
+    }
+
+    @Test
+    void nameBadge_should_be_clamped_inside_character_slot() {
+        // 槽位较窄时，名字标签也必须被限制在角色槽位内
+        java.awt.Point p = GridImageService.computeNameBadgePosition(
+                20, 900, 90, 120,
+                26, 910, 70, 100,
+                80, 28
+        );
+
+        assertTrue(p.x >= 24, "名字标签不能越过左边界");
+        assertTrue(p.x <= 20 + 90 - 80 - 4, "名字标签不能越过右边界");
+        assertTrue(p.y >= 904, "名字标签不能越过上边界");
+        assertTrue(p.y <= 900 + 120 - 28 - 4, "名字标签不能越过下边界");
+    }
+
+    @Test
+    void appendUserHintToPrompt_should_append_trimmed_hint() {
+        String result = GridImageService.appendUserHintToPrompt("基础提示词", "  镜头请更强调逆光和雨夜质感  ");
+        assertEquals("基础提示词\n\n用户修改要求: 镜头请更强调逆光和雨夜质感", result);
+    }
+
+    @Test
+    void appendUserHintToPrompt_should_keep_original_when_hint_blank() {
+        String result = GridImageService.appendUserHintToPrompt("基础提示词", "   ");
+        assertEquals("基础提示词", result);
+    }
 }

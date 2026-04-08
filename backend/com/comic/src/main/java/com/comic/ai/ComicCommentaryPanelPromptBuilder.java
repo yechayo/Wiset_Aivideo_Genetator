@@ -3,8 +3,12 @@ package com.comic.ai;
 import com.comic.util.NumberFormatter;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 漫剧解说模式下的分镜九宫格与多镜头视频 prompt，与 {@link PanelPromptBuilder} 实时动画链路分离。
@@ -12,6 +16,21 @@ import java.util.Map;
  */
 @Component
 public class ComicCommentaryPanelPromptBuilder {
+
+    private static final Set<String> FLASHBACK_KEYWORDS = new HashSet<>(Arrays.asList(
+        "回忆", "闪回", "往事", "过去", "memory", "flashback", "past"
+    ));
+
+    private static final String[] FLASHBACK_FLAG_KEYS = {
+        "isFlashback", "flashback", "is_flashback", "isMemory", "is_memory", "memory"
+    };
+
+    private static final String[] FLASHBACK_TEXT_KEYS = {
+        "timeType", "time_type", "timelineTag", "timeline_tag",
+        "sceneTime", "scene_time", "scene", "visualDescription",
+        "visual_description", "transitionHint", "transition_hint",
+        "dialogue", "narration"
+    };
 
     private final PanelPromptBuilder panelPromptBuilder;
 
@@ -30,6 +49,7 @@ public class ComicCommentaryPanelPromptBuilder {
         sb.append("每个格子是一个完全独立的画面，可表现不同时间或场景；整体像动态漫/条漫分格，便于后期加解说与花字。\n");
         sb.append("绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。\n");
         sb.append("图片中不包含任何文字、数字、标号或水印（解说与字幕由后期添加）。\n\n");
+        sb.append("【时间态标识】若分镜属于回忆/闪回（字段标记或描述语义显示为回忆），该格必须使用柔和虚化边框/暗角区分时间线；非回忆格禁止使用该效果。\n\n");
 
         if (charRefs != null && !charRefs.isEmpty()) {
             sb.append("【角色设定 - 必须严格遵守】\n");
@@ -79,22 +99,30 @@ public class ComicCommentaryPanelPromptBuilder {
             int row = i / 3 + 1;
             int col = i % 3 + 1;
             sb.append("第").append(row).append("行第").append(col).append("列: ");
-            sb.append(shot.getOrDefault("visualDescription", ""));
-            String shotSize = (String) shot.getOrDefault("shotSize", "");
+            String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
+            sb.append(visualDescription != null ? visualDescription : "");
+            String shotSize = getShotValue(shot, "shotSize", "shot_size");
             if (shotSize != null && !shotSize.isEmpty()) {
                 sb.append("，").append(shotSize);
             }
-            String cameraAngle = (String) shot.getOrDefault("cameraAngle", "");
+            String cameraAngle = getShotValue(shot, "cameraAngle", "camera_angle");
             if (cameraAngle != null && !cameraAngle.isEmpty()) {
                 sb.append("，").append(cameraAngle);
             }
-            String cameraMovement = (String) shot.getOrDefault("cameraMovement", "");
+            String cameraMovement = getShotValue(shot, "cameraMovement", "camera_movement");
             if (cameraMovement != null && !cameraMovement.isEmpty()) {
                 sb.append("，").append(cameraMovement);
             }
-            String scene = (String) shot.getOrDefault("scene", "");
+            String scene = getShotValue(shot, "scene");
             if (scene != null && !scene.isEmpty()) {
                 sb.append("，场景: ").append(scene);
+            }
+            if (isFlashbackShot(shot)) {
+                sb.append("，回忆镜头（需添加柔和虚化边框作为时间标识）");
+            }
+            String imageHint = getShotValue(shot, "image_prompt_hint");
+            if (imageHint != null && !imageHint.isEmpty()) {
+                sb.append("，画面补充提示: ").append(imageHint);
             }
             sb.append("\n");
         }
@@ -172,16 +200,30 @@ public class ComicCommentaryPanelPromptBuilder {
         List<Map<String, Object>> shots = (List<Map<String, Object>>) panelInfo.get("shots");
         int n = shots != null ? shots.size() : 0;
         sb.append("以下 ").append(n).append(" 个镜头在同一视频中连续呈现，节奏平缓，信息点清晰、留白合理：\n\n");
+        sb.append("若某个镜头属于回忆/闪回，必须仅在该镜头画面边缘加入柔和虚化边框/暗角作为时间态标识；现实时间镜头保持清晰边缘。\n\n");
 
         if (shots != null) {
             for (int i = 0; i < shots.size(); i++) {
                 Map<String, Object> shot = shots.get(i);
                 sb.append("【镜头").append(i + 1).append("】\n");
                 sb.append("duration: ").append(shot.get("duration")).append("s\n");
-                sb.append("Scene: ").append(shot.getOrDefault("shotSize", ""))
-                        .append("，").append(shot.getOrDefault("cameraAngle", ""))
-                        .append("，").append(shot.getOrDefault("cameraMovement", ""))
-                        .append("，").append(shot.getOrDefault("visualDescription", "")).append("\n");
+            String shotSize = getShotValue(shot, "shotSize", "shot_size");
+            String cameraAngle = getShotValue(shot, "cameraAngle", "camera_angle");
+            String cameraMovement = getShotValue(shot, "cameraMovement", "camera_movement");
+            String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
+            sb.append("Scene: ").append(shotSize != null ? shotSize : "")
+                .append("，").append(cameraAngle != null ? cameraAngle : "")
+                .append("，").append(cameraMovement != null ? cameraMovement : "")
+                .append("，").append(visualDescription != null ? visualDescription : "").append("\n");
+
+            if (isFlashbackShot(shot)) {
+                sb.append("时间态: 回忆/闪回镜头，需添加柔和虚化边框（仅该镜头生效）\n");
+            }
+
+            String videoHint = getShotValue(shot, "video_prompt_hint");
+            if (videoHint != null && !videoHint.isEmpty()) {
+                sb.append("补充画面要求: ").append(videoHint).append("\n");
+            }
 
                 String dialogue = (String) shot.get("dialogue");
                 String speaker = (String) shot.get("speaker");
@@ -271,6 +313,84 @@ public class ComicCommentaryPanelPromptBuilder {
             return base.substring(0, negIdx) + ctx.toString() + base.substring(negIdx);
         }
         return base + ctx.toString();
+    }
+
+    private boolean isFlashbackShot(Map<String, Object> shot) {
+        if (shot == null || shot.isEmpty()) {
+            return false;
+        }
+
+        for (String key : FLASHBACK_FLAG_KEYS) {
+            if (isTrueFlag(shot.get(key))) {
+                return true;
+            }
+        }
+
+        for (String key : FLASHBACK_TEXT_KEYS) {
+            if (containsFlashbackKeyword(shot.get(key))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean containsFlashbackKeyword(Object value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = normalize(value);
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        for (String keyword : FLASHBACK_KEYWORDS) {
+            if (normalized.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTrueFlag(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value == null) {
+            return false;
+        }
+        String normalized = normalize(value);
+        return "true".equals(normalized)
+                || "1".equals(normalized)
+                || "yes".equals(normalized)
+                || "y".equals(normalized)
+                || "是".equals(normalized);
+    }
+
+    private String getShotValue(Map<String, Object> shot, String... keys) {
+        if (shot == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            if (key == null || key.isEmpty()) {
+                continue;
+            }
+            Object value = shot.get(key);
+            if (value == null) {
+                continue;
+            }
+            String text = value.toString().trim();
+            if (!text.isEmpty() && !"null".equalsIgnoreCase(text)) {
+                return text;
+            }
+        }
+        return null;
+    }
+
+    private String normalize(Object value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toString().toLowerCase(Locale.ROOT).trim();
     }
 
     /** narration 优先；否则兼容旧数据 speaker=旁白 + dialogue */

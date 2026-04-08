@@ -44,7 +44,7 @@ export async function getBatchProductionStatuses(
 
 // ================= 脚本生成 API =================
 
-/** 生成所有集的脚本（项目级操作，episodeId 参数会被忽略） */
+/** 生成分集剧本与分镜（单集生成） */
 export async function generateEpisodeScripts(
   projectId: string,
   episodeId: number,
@@ -86,10 +86,13 @@ export async function rejectEpisodeGrid(
 
 /** 重新生成整集九宫格 */
 export async function regenerateEpisodeGrid(
-  projectId: string, episodeId: number,
+  projectId: string,
+  episodeId: number,
+  customHint?: string,
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/grid/regenerate`,
+    customHint !== undefined ? { customHint } : undefined,
   );
 }
 

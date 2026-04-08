@@ -4,7 +4,8 @@ import { useAuthStore } from '../../../../stores/authStore';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 interface SseProgressCallbacks {
-  onEpisodeScriptDone: (data: { episodeNum: number; title: string; totalEpisodes: number; completedEpisodes: number }) => void;
+  onEpisodeScriptDone: (data: { episodeNum: number; title: string; totalEpisodes: number; completedEpisodes: number; stage?: string }) => void;
+  onEpisodeStoryboardDone: (data: { episodeId: number; episodeNum: number; shotsCount: number }) => void;
   onEpisodePanelDone: (data: { episodeId: number; episodeNum: number; shotsCount: number }) => void;
   onEpisodeGridStatus: (data: { episodeId: number; episodeNum?: number; gridStatus: string }) => void;
   onPanelVideoDone?: (data: { episodeId: number; panelId: number; videoUrl: string }) => void;
@@ -35,10 +36,16 @@ export function useSseProgress(
   const cbRef = useRef(callbacks);
   cbRef.current = callbacks;
 
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleReconnect = useCallback(async () => {
     if (!projectId) return;
-    // 通知调用方做全量刷新（loadEpisodes 等）
-    cbRef.current.onReconnect?.();
+    // 防抖：2秒内只触发一次重连刷新，避免频繁重连导致连刷新
+    if (reconnectTimerRef.current) return;
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      cbRef.current.onReconnect?.();
+    }, 2000);
   }, [projectId]);
 
   useEffect(() => {
@@ -57,6 +64,8 @@ export function useSseProgress(
 
         if (eventType === 'episode:script_done') {
           cbRef.current.onEpisodeScriptDone(data);
+        } else if (eventType === 'episode:storyboard_done') {
+          cbRef.current.onEpisodeStoryboardDone(data);
         } else if (eventType === 'episode:panel_done') {
           cbRef.current.onEpisodePanelDone(data);
         } else if (eventType === 'episode:grid_status') {
@@ -108,6 +117,10 @@ export function useSseProgress(
     };
 
     return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       es.close();
       esRef.current = null;
     };

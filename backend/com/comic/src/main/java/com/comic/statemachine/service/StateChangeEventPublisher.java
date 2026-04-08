@@ -78,12 +78,13 @@ public class StateChangeEventPublisher {
 
     // ===== 细粒度事件（Step5 SSE 使用） =====
 
-    public void publishEpisodeScriptDone(String projectId, int episodeNum, String title, int totalEpisodes, int completedEpisodes) {
+    public void publishEpisodeScriptDone(String projectId, int episodeNum, String title, int totalEpisodes, int completedEpisodes, String stage) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("episodeNum", episodeNum);
         payload.put("title", title);
         payload.put("totalEpisodes", totalEpisodes);
         payload.put("completedEpisodes", completedEpisodes);
+        payload.put("stage", stage);
         publishToRedis(projectId, "episode:script_done", payload);
     }
 
@@ -93,6 +94,18 @@ public class StateChangeEventPublisher {
         payload.put("episodeNum", episodeNum);
         payload.put("shotsCount", shotsCount);
         publishToRedis(projectId, "episode:panel_done", payload);
+    }
+
+    /**
+     * Stage 2 旁白精修完成后发布
+     */
+    public void publishStoryboardDone(String projectId, Long episodeId, int episodeNum, int shotsCount) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeId", episodeId);
+        payload.put("episodeNum", episodeNum);
+        payload.put("shotsCount", shotsCount);
+        payload.put("stage", "stage2");
+        publishToRedis(projectId, "episode:storyboard_done", payload);
     }
 
     public void publishEpisodeGridStatus(String projectId, Long episodeId, int episodeNum, String gridStatus) {

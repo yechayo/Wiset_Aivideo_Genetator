@@ -366,20 +366,32 @@ public class PanelProductionService {
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
 
-        // 优先返回增强后的提示词
-        String enhanced = (String) info.get("enhancedVideoPrompt");
-        if (enhanced != null && !enhanced.trim().isEmpty()) {
-            return enhanced;
-        }
+        return resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
+    }
 
-        // 其次返回用户自定义提示词
-        String custom = (String) info.get("customVideoPrompt");
-        if (custom != null && !custom.trim().isEmpty()) {
-            return custom;
-        }
+    /**
+     * 最终用于视频生成的提示词选择策略：
+     * 1) 用户手动编辑(customVideoPrompt)；
+     * 2) AI 增强(enhancedVideoPrompt)；
+     * 3) 自动构建(autoPrompt)。
+     */
+    public static String resolveFinalVideoPrompt(Map<String, Object> panelInfo, String autoPrompt) {
+        if (panelInfo != null) {
+            String custom = panelInfo.get("customVideoPrompt") instanceof String
+                ? (String) panelInfo.get("customVideoPrompt")
+                : null;
+            if (custom != null && !custom.trim().isEmpty()) {
+                return custom;
+            }
 
-        // 最后返回自动构建的提示词
-        return buildAutoMultiShotPrompt(panel, info);
+            String enhanced = panelInfo.get("enhancedVideoPrompt") instanceof String
+                ? (String) panelInfo.get("enhancedVideoPrompt")
+                : null;
+            if (enhanced != null && !enhanced.trim().isEmpty()) {
+                return enhanced;
+            }
+        }
+        return autoPrompt;
     }
 
     /**
@@ -427,14 +439,8 @@ public class PanelProductionService {
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
 
-            // 构建提示词：优先使用增强后的提示词，其次自定义，最后自动构建
-            String prompt = (String) info.get("enhancedVideoPrompt");
-            if (prompt == null || prompt.trim().isEmpty()) {
-                prompt = (String) info.get("customVideoPrompt");
-            }
-            if (prompt == null || prompt.trim().isEmpty()) {
-                prompt = buildAutoMultiShotPrompt(panel, info);
-            }
+            // 构建提示词：用户手动编辑 > AI 增强 > 自动构建
+            String prompt = resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
 
             // 从 shots 计算总时长
             int totalDuration = 0;
@@ -701,6 +707,124 @@ public class PanelProductionService {
      *
      * 注意：不使用 @Transactional，因为每集的 episode 创建通过 TransactionTemplate 在独立事务中完成。
      */
+    public void generateSingleEpisodeScript(String projectId, Long episodeId) {
+        log.info("[Pipeline-Text] 单集剧本生成: projectId={}, episodeId={}", projectId, episodeId);
+        if (!progressService.tryLock(projectId, "episode:" + episodeId)) {
+            throw new BusinessException("该剧集正在生成中，请稍后再试");
+        }
+        try {
+            Project project = projectRepository.findByProjectId(projectId);
+            if (project == null) {
+                throw new BusinessException("项目不存在: " + projectId);
+            }
+            Episode episode = episodeRepository.selectById(episodeId);
+            if (episode == null) {
+                throw new BusinessException("剧集不存在: " + episodeId);
+            }
+            Map<String, Object> projectInfo = project.getProjectInfo();
+            String visualStyle = (String) projectInfo.getOrDefault("visualStyle", "ANIME");
+            int targetDuration = getIntFromMap(projectInfo, "episodeDuration", 60);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> scriptMap = (Map<String, Object>) projectInfo.get("script");
+            String outline = scriptMap != null ? (String) scriptMap.getOrDefault("outline", "") : "";
+            String charactersDesc = getCharacterDescriptions(projectId);
+            boolean comicMode = ProjectProductionMode.isComicCommentary(project);
+            int totalEpisodes = getIntFromMap(projectInfo, "totalEpisodes", 1);
+
+            // 找到该 episodeId 对应的集号
+            int targetEpisodeNum = getIntFromMap(episode.getEpisodeInfo(), "episodeNum", -1);
+            if (targetEpisodeNum <= 0) {
+                // 如果 episodeInfo 中没有 episodeNum，查找同名 episode
+                List<Episode> allEps = episodeRepository.findByProjectId(projectId);
+                int idx = 0;
+                for (Episode ep : allEps) {
+                    idx++;
+                    if (ep.getId().equals(episodeId)) {
+                        targetEpisodeNum = idx;
+                        break;
+                    }
+                }
+            }
+            if (targetEpisodeNum <= 0) {
+                throw new BusinessException("无法确定剧集编号");
+            }
+
+            // 解析章节，找到目标集所在的章节
+            List<ParsedChapter> chapters = parseOutlineChapters(outline, totalEpisodes);
+            ParsedChapter targetChapter = null;
+            int episodeCountBeforeChapter = 0;
+            for (ParsedChapter ch : chapters) {
+                if (targetEpisodeNum <= episodeCountBeforeChapter + ch.episodeCount) {
+                    targetChapter = ch;
+                    break;
+                }
+                episodeCountBeforeChapter += ch.episodeCount;
+            }
+            if (targetChapter == null) {
+                targetChapter = chapters.get(chapters.size() - 1);
+            }
+
+            // 生成目标章节的剧本（包含目标集）
+            String previousSummary = buildPreviousEpisodesSummaryFor(projectId, episodeCountBeforeChapter);
+            log.info("[Pipeline-Text] 单集生成: projectId={}, chapter={}, episodeNum={}, targetEpisodeNum={}",
+                    projectId, targetChapter.title, targetEpisodeNum, targetEpisodeNum);
+
+            List<Map<String, Object>> chapterScripts = deepSeekTextService.generateEpisodeScript(
+                targetChapter.text, charactersDesc, targetDuration, visualStyle,
+                targetChapter.episodeCount, comicMode, previousSummary);
+
+            // 找到目标集的剧本
+            Map<String, Object> targetScript = null;
+            int episodeNumInChapter = targetEpisodeNum - episodeCountBeforeChapter;
+            if (episodeNumInChapter >= 1 && episodeNumInChapter <= chapterScripts.size()) {
+                targetScript = chapterScripts.get(episodeNumInChapter - 1);
+            }
+            if (targetScript == null) {
+                targetScript = chapterScripts.get(0);
+            }
+
+            // SSE: Stage 1 完成
+            eventPublisher.publishEpisodeScriptDone(projectId,
+                targetEpisodeNum,
+                (String) targetScript.getOrDefault("title", ""),
+                totalEpisodes,
+                1,
+                "stage1");
+
+            // 收集退回原因
+            Map<Integer, String> rejectionReasons = new HashMap<>();
+            Episode existingEp = episodeRepository.selectById(episodeId);
+            if (existingEp != null) {
+                Map<String, Object> epInfo = existingEp.getEpisodeInfo();
+                if (epInfo != null) {
+                    String reason = (String) epInfo.get("panelRejectionReason");
+                    if (reason != null && !reason.trim().isEmpty()) {
+                        rejectionReasons.put(targetEpisodeNum, reason.trim());
+                    }
+                }
+            }
+
+            // 执行 Stage 2（生成 storyboard，包含旁白精修）
+            generateStoryboardForEpisode(projectId, projectInfo, targetScript, targetEpisodeNum,
+                    comicMode, rejectionReasons, visualStyle, targetDuration);
+
+            log.info("[Pipeline-Text] 单集剧本+分镜生成完成: projectId={}, episodeId={}, episodeNum={}",
+                    projectId, episodeId, targetEpisodeNum);
+            progressService.unlock(projectId);
+            progressService.clearError(projectId);
+
+        } catch (Exception e) {
+            log.error("[Pipeline-Text] 单集生成异常: projectId={}, episodeId={}, error={}", projectId, episodeId, e.getMessage(), e);
+            progressService.unlock(projectId);
+            progressService.setError(projectId, e.getMessage());
+            eventPublisher.publishFailure(projectId, e.getMessage());
+            throw new BusinessException("单集生成失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 生成全部剧集的大纲剧本
+     */
     public void generateEpisodeScripts(String projectId) {
         log.info("[Pipeline-Text] 开始分集剧本+分镜文本生成: projectId={}", projectId);
         if (!progressService.tryLock(projectId, "episode")) {
@@ -747,7 +871,8 @@ public class PanelProductionService {
                         globalEpisodeNum,
                         (String) scriptItem.getOrDefault("title", ""),
                         totalEpisodes,
-                        globalEpisodeNum);
+                        globalEpisodeNum,
+                        "stage1");
                 }
 
                 // 构建本章摘要供下一章使用
@@ -887,6 +1012,33 @@ public class PanelProductionService {
     }
 
     /**
+     * 构建前序剧集摘要（用于单集生成）
+     */
+    private String buildPreviousEpisodesSummaryFor(String projectId, int upToEpisodeCount) {
+        List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        if (episodes.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (Episode ep : episodes) {
+            Map<String, Object> epInfo = ep.getEpisodeInfo();
+            if (epInfo == null) continue;
+            Integer epNum = getIntFromMap(epInfo, "episodeNum", 0);
+            if (epNum <= 0 || epNum > upToEpisodeCount) continue;
+            String title = (String) epInfo.get("title");
+            String characters = (String) epInfo.get("characters");
+            String content = (String) epInfo.get("content");
+            sb.append("第").append(epNum).append("集：").append(title != null ? title : "").append("\n");
+            sb.append("- 涉及角色：").append(characters != null ? characters : "无").append("\n");
+            if (content != null && content.length() > 200) {
+                sb.append("- 剧情摘要：").append(content.substring(0, 200)).append("...\n");
+            } else if (content != null) {
+                sb.append("- 剧情摘要：").append(content).append("\n");
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    /**
      * 单集分镜生成（供并发调用）
      */
     private void generateStoryboardForEpisode(String projectId, Map<String, Object> projectInfo,
@@ -962,7 +1114,17 @@ public class PanelProductionService {
             return eid;
         });
 
-        eventPublisher.publishEpisodePanelDone(projectId, episodeId, episodeNum, shots.size());
+        // 设置 storyboardStatus = 'done'（表示 Stage 2 旁白精修完成）
+        Episode epForStatus = episodeRepository.selectById(episodeId);
+        if (epForStatus != null) {
+            Map<String, Object> epInfo = epForStatus.getEpisodeInfo();
+            if (epInfo == null) epInfo = new HashMap<>();
+            epInfo.put("scriptStatus", "done");
+            epInfo.put("storyboardStatus", "done");
+            epForStatus.setEpisodeInfo(epInfo);
+            episodeRepository.updateById(epForStatus);
+        }
+        eventPublisher.publishStoryboardDone(projectId, episodeId, episodeNum, shots.size());
     }
 
     /**
@@ -1070,6 +1232,7 @@ public class PanelProductionService {
                 info.put("shots", shots);
                 info.put("visualStyle", visualStyle);
                 info.put("gridStatus", "pending");
+                info.put("scriptStatus", "done");
                 ep.setEpisodeInfo(info);
                 episodeRepository.updateById(ep);
                 return ep.getId();
@@ -1084,6 +1247,7 @@ public class PanelProductionService {
         episodeInfo.put("shots", shots);
         episodeInfo.put("visualStyle", visualStyle);
         episodeInfo.put("gridStatus", "pending");
+        episodeInfo.put("scriptStatus", "done");
         episode.setEpisodeInfo(episodeInfo);
         episodeRepository.insert(episode);
         return episode.getId();

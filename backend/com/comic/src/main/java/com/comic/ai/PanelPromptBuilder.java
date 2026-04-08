@@ -3,8 +3,12 @@ package com.comic.ai;
 import com.comic.util.NumberFormatter;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 分镜 prompt 构建器
@@ -12,6 +16,21 @@ import java.util.Map;
  */
 @Component
 public class PanelPromptBuilder {
+
+    private static final Set<String> FLASHBACK_KEYWORDS = new HashSet<>(Arrays.asList(
+        "回忆", "闪回", "往事", "过去", "memory", "flashback", "past"
+    ));
+
+    private static final String[] FLASHBACK_FLAG_KEYS = {
+        "isFlashback", "flashback", "is_flashback", "isMemory", "is_memory", "memory"
+    };
+
+    private static final String[] FLASHBACK_TEXT_KEYS = {
+        "timeType", "time_type", "timelineTag", "timeline_tag",
+        "sceneTime", "scene_time", "scene", "visualDescription",
+        "visual_description", "transitionHint", "transition_hint",
+        "dialogue", "narration"
+    };
 
     // ================= 生产阶段：九宫格 / 视频 =================
 
@@ -71,6 +90,7 @@ public class PanelPromptBuilder {
         sb.append("每个格子是一个完全独立的分镜画面，场景、人物、时间可以不同。\n");
         sb.append("绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。\n");
         sb.append("图片中不包含任何文字、数字、标号或水印。\n\n");
+        sb.append("【时间态标识】若分镜属于回忆/闪回（字段标记或描述语义显示为回忆），该格必须使用柔和虚化边框/暗角区分时间线；非回忆格禁止使用该效果。\n\n");
 
         // ===== 角色锚定 =====
         if (charRefs != null && !charRefs.isEmpty()) {
@@ -122,22 +142,30 @@ public class PanelPromptBuilder {
             int row = i / 3 + 1;
             int col = i % 3 + 1;
             sb.append("第").append(row).append("行第").append(col).append("列: ");
-            sb.append(shot.getOrDefault("visualDescription", ""));
-            String shotSize = (String) shot.getOrDefault("shotSize", "");
+            String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
+            sb.append(visualDescription != null ? visualDescription : "");
+            String shotSize = getShotValue(shot, "shotSize", "shot_size");
             if (shotSize != null && !shotSize.isEmpty()) {
                 sb.append("，").append(shotSize);
             }
-            String cameraAngle = (String) shot.getOrDefault("cameraAngle", "");
+            String cameraAngle = getShotValue(shot, "cameraAngle", "camera_angle");
             if (cameraAngle != null && !cameraAngle.isEmpty()) {
                 sb.append("，").append(cameraAngle);
             }
-            String cameraMovement = (String) shot.getOrDefault("cameraMovement", "");
+            String cameraMovement = getShotValue(shot, "cameraMovement", "camera_movement");
             if (cameraMovement != null && !cameraMovement.isEmpty()) {
                 sb.append("，").append(cameraMovement);
             }
-            String scene = (String) shot.getOrDefault("scene", "");
+            String scene = getShotValue(shot, "scene");
             if (scene != null && !scene.isEmpty()) {
                 sb.append("，场景: ").append(scene);
+            }
+            if (isFlashbackShot(shot)) {
+                sb.append("，回忆镜头（需添加柔和虚化边框作为时间标识）");
+            }
+            String imageHint = getShotValue(shot, "image_prompt_hint");
+            if (imageHint != null && !imageHint.isEmpty()) {
+                sb.append("，画面补充提示: ").append(imageHint);
             }
             sb.append("\n");
         }
@@ -227,16 +255,30 @@ public class PanelPromptBuilder {
         List<Map<String, Object>> shots = (List<Map<String, Object>>) panelInfo.get("shots");
         int n = shots != null ? shots.size() : 0;
         sb.append("多镜头连续拍摄指令，以下 ").append(n).append(" 个镜头必须在同一视频中连续呈现：\n\n");
+                sb.append("若某个镜头属于回忆/闪回，必须仅在该镜头画面边缘加入柔和虚化边框/暗角作为时间态标识；现实时间镜头保持清晰边缘。\n\n");
 
         if (shots != null) {
             for (int i = 0; i < shots.size(); i++) {
                 Map<String, Object> shot = shots.get(i);
                 sb.append("【镜头").append(i + 1).append("】\n");
                 sb.append("duration: ").append(shot.get("duration")).append("s\n");
-                sb.append("Scene: ").append(shot.getOrDefault("shotSize", ""))
-                  .append("，").append(shot.getOrDefault("cameraAngle", ""))
-                  .append("，").append(shot.getOrDefault("cameraMovement", ""))
-                  .append("，").append(shot.getOrDefault("visualDescription", "")).append("\n");
+                                String shotSize = getShotValue(shot, "shotSize", "shot_size");
+                                String cameraAngle = getShotValue(shot, "cameraAngle", "camera_angle");
+                                String cameraMovement = getShotValue(shot, "cameraMovement", "camera_movement");
+                                String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
+                                sb.append("Scene: ").append(shotSize != null ? shotSize : "")
+                                    .append("，").append(cameraAngle != null ? cameraAngle : "")
+                                    .append("，").append(cameraMovement != null ? cameraMovement : "")
+                                    .append("，").append(visualDescription != null ? visualDescription : "").append("\n");
+
+                                if (isFlashbackShot(shot)) {
+                                        sb.append("时间态: 回忆/闪回镜头，需添加柔和虚化边框（仅该镜头生效）\n");
+                                }
+
+                                String videoHint = getShotValue(shot, "video_prompt_hint");
+                                if (videoHint != null && !videoHint.isEmpty()) {
+                                        sb.append("补充画面要求: ").append(videoHint).append("\n");
+                                }
 
                 String dialogue = (String) shot.get("dialogue");
                 if (dialogue != null && !"无".equals(dialogue) && !dialogue.isEmpty()) {
@@ -293,5 +335,83 @@ public class PanelPromptBuilder {
         sb.append("禁止两人以上同框互动（拥抱、打斗、接触），多人互动必须拆分为单人反应镜头。\n");
         sb.append("禁止快速奔跑、剧烈运动、突然变向——镜头运动必须缓慢（缓慢推镜头、微平移、静止），用剪辑快切体现激烈而非画面快动。\n");
         return sb.toString();
+    }
+
+    private boolean isFlashbackShot(Map<String, Object> shot) {
+        if (shot == null || shot.isEmpty()) {
+            return false;
+        }
+
+        for (String key : FLASHBACK_FLAG_KEYS) {
+            if (isTrueFlag(shot.get(key))) {
+                return true;
+            }
+        }
+
+        for (String key : FLASHBACK_TEXT_KEYS) {
+            if (containsFlashbackKeyword(shot.get(key))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean containsFlashbackKeyword(Object value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = normalize(value);
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        for (String keyword : FLASHBACK_KEYWORDS) {
+            if (normalized.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTrueFlag(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value == null) {
+            return false;
+        }
+        String normalized = normalize(value);
+        return "true".equals(normalized)
+                || "1".equals(normalized)
+                || "yes".equals(normalized)
+                || "y".equals(normalized)
+                || "是".equals(normalized);
+    }
+
+    private String getShotValue(Map<String, Object> shot, String... keys) {
+        if (shot == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            if (key == null || key.isEmpty()) {
+                continue;
+            }
+            Object value = shot.get(key);
+            if (value == null) {
+                continue;
+            }
+            String text = value.toString().trim();
+            if (!text.isEmpty() && !"null".equalsIgnoreCase(text)) {
+                return text;
+            }
+        }
+        return null;
+    }
+
+    private String normalize(Object value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toString().toLowerCase(Locale.ROOT).trim();
     }
 }

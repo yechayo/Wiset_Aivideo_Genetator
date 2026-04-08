@@ -92,10 +92,17 @@ public class EpisodeController {
     // ================= 剧集剧本与分镜 =================
 
     @PostMapping("/{episodeId}/script")
-    @Operation(summary = "生成分集剧本与分镜")
+    @Operation(summary = "生成分集剧本与分镜（单集）")
     public Result<Void> generateEpisodeScript(
             @PathVariable String projectId,
             @PathVariable Long episodeId) {
+        panelProductionService.generateSingleEpisodeScript(projectId, episodeId);
+        return Result.ok();
+    }
+
+    @PostMapping("/scripts/generate-all")
+    @Operation(summary = "批量生成所有剧集剧本与分镜")
+    public Result<Void> generateAllEpisodeScripts(@PathVariable String projectId) {
         panelProductionService.generateEpisodeScripts(projectId);
         return Result.ok();
     }
@@ -217,11 +224,20 @@ public class EpisodeController {
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
                 String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
+                String gridPromptHint = info.get("gridPromptHint") instanceof String
+                    ? ((String) info.get("gridPromptHint")).trim()
+                    : null;
                 if (shots != null && !shots.isEmpty()) {
                     info.put("gridStatus", "generating");
                     ep.setEpisodeInfo(info);
                     episodeRepository.updateById(ep);
-                    gridImageService.generateGridsForEpisode(ep.getId(), shots, visualStyle, panelProductionService.getImageProvider(projectId));
+                    gridImageService.generateGridsForEpisode(
+                        ep.getId(),
+                        shots,
+                        visualStyle,
+                        panelProductionService.getImageProvider(projectId),
+                        (gridPromptHint != null && !gridPromptHint.isEmpty()) ? gridPromptHint : null
+                    );
                 }
             }
         }
@@ -244,6 +260,7 @@ public class EpisodeController {
         result.put("gridRejectionFeedback", info.get("gridRejectionFeedback"));
         result.put("shots", info.getOrDefault("shots", new ArrayList<>()));
         result.put("gridPageCount", info.getOrDefault("gridPageCount", 0));
+        result.put("gridPromptHint", info.getOrDefault("gridPromptHint", ""));
         return Result.ok(result);
     }
 
@@ -300,7 +317,7 @@ public class EpisodeController {
         }
 
         // 每组创建 Panel
-        List<String> charRefUrls = gridImageService.getCharacterReferenceUrlsForEpisode(episodeId);
+        List<GridImageService.CharRef> charRefsWithNames = gridImageService.getCharacterReferencesWithNamesForEpisode(episodeId);
         for (List<Map<String, Object>> group : groups) {
             Panel panel = new Panel();
             panel.setEpisodeId(episodeId);
@@ -318,7 +335,7 @@ public class EpisodeController {
 
             // 生成融合图
             try {
-                BufferedImage fusionImage = gridImageService.createFusionImageForPanel(group, charRefUrls);
+                BufferedImage fusionImage = gridImageService.createFusionImageForPanelWithNames(group, charRefsWithNames);
                 String fusionUrl = gridImageService.uploadFusionImageForPanel(fusionImage, episodeId, group);
                 panelInfo.put("fusionImageUrl", fusionUrl);
             } catch (Exception e) {
@@ -360,10 +377,26 @@ public class EpisodeController {
     @Operation(summary = "重新生成整集九宫格（不重新生成分镜脚本）")
     public Result<Void> regenerateEpisodeGrid(
             @PathVariable String projectId,
-            @PathVariable Long episodeId) {
+            @PathVariable Long episodeId,
+            @RequestBody(required = false) Map<String, String> body) {
         Episode episode = episodeRepository.selectById(episodeId);
         if (episode == null) throw new BusinessException("剧集不存在");
         Map<String, Object> info = episode.getEpisodeInfo();
+
+        String effectiveCustomHint = info.get("gridPromptHint") instanceof String
+            ? (String) info.get("gridPromptHint")
+            : null;
+        String requestedHint = body != null ? body.get("customHint") : null;
+        if (requestedHint != null) {
+            String normalized = requestedHint.trim();
+            if (normalized.isEmpty()) {
+                info.remove("gridPromptHint");
+                effectiveCustomHint = null;
+            } else {
+                info.put("gridPromptHint", normalized);
+                effectiveCustomHint = normalized;
+            }
+        }
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
@@ -389,7 +422,13 @@ public class EpisodeController {
         }
 
         // 异步重新生成
-        gridImageService.generateGridsForEpisode(episodeId, shots, visualStyle, panelProductionService.getImageProvider(projectId));
+        gridImageService.generateGridsForEpisode(
+            episodeId,
+            shots,
+            visualStyle,
+            panelProductionService.getImageProvider(projectId),
+            (effectiveCustomHint != null && !effectiveCustomHint.trim().isEmpty()) ? effectiveCustomHint.trim() : null
+        );
 
         return Result.ok();
     }

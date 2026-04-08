@@ -31,6 +31,9 @@ import {
 import { advanceStatus } from '../../../services/projectService';
 import { useCreateStore } from '../../../stores/createStore';
 import { useSseProgress } from './hooks/useSseProgress';
+import ScriptEpisodeCard from './components/ScriptEpisodeCard';
+import GridEpisodeCard from './components/GridEpisodeCard';
+import VideoSegmentRow from './components/VideoSegmentRow';
 
 type SubPhase = 'script' | 'grid' | 'video';
 
@@ -59,12 +62,6 @@ const ArrowRightIcon = () => (
   <svg className={styles.btnCtaArrow} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="5" y1="12" x2="19" y2="12" />
     <polyline points="12 5 19 12 12 19" />
-  </svg>
-);
-
-const PlayIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="5 3 19 12 5 21 5 3" />
   </svg>
 );
 
@@ -232,23 +229,13 @@ const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicComm
   return lines.join('\n');
 };
 
-function getGridStatusBadge(status: string) {
-  switch (status) {
-    case 'approved': return { text: '已通过', className: styles.statusApproved };
-    case 'generated': return { text: '待审核', className: styles.statusGenerated };
-    case 'rejected': return { text: '已退回', className: styles.statusRejected };
-    case 'generating': return { text: '排队中', className: styles.statusGenerating, pulse: true };
-    default: return { text: '待生成', className: styles.statusPending };
-  }
-}
-
 export default function Step4Production({ project, onNextStep }: Step4ProductionProps) {
-  const projectId = project?.projectId;
+  // Stable projectId: extract once, avoid prop object reference changes causing re-render loops
+  const projectId = useMemo(() => project?.projectId, [project?.projectId]);
   const navigate = useNavigate();
   const isGenerating = useCreateStore(s => s.statusInfo?.isGenerating);
   const generatingTaskType = useCreateStore(s => s.statusInfo?.generatingTaskType);
   const statusCode = useCreateStore(s => s.statusInfo?.statusCode);
-  const syncStatus = useCreateStore(s => s.syncStatus);
 
   // Tab state — persist to localStorage so refresh doesn't lose tab
   const [activeTab, setActiveTab] = useState<SubPhase>(() => {
@@ -286,14 +273,20 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [isBatchMergeLoading, setIsBatchMergeLoading] = useState(false);
   // Track which chapter/project batch scope is active (e.g., "enhance-ch-1", "tts-project")
   const [activeBatchScope, setActiveBatchScope] = useState<string | null>(null);
+  const hasInitialLoadRef = useRef(false);
 
   // ==================== Script Polling ====================
   const scriptPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  type LoadEpisodesFn = (options?: { silent?: boolean }) => Promise<void>;
+  const loadEpisodesRef = useRef<LoadEpisodesFn>(async () => {});
+
   const startScriptPolling = useCallback(() => {
     if (scriptPollingRef.current) return;
-    scriptPollingRef.current = setInterval(loadEpisodes, 5000);
-  }, []); // eslint-disable-line-line react-hooks/exhaustive-deps
+    scriptPollingRef.current = setInterval(() => {
+      void loadEpisodesRef.current({ silent: true });
+    }, 5000);
+  }, []);
 
   const stopScriptPolling = useCallback(() => {
     if (scriptPollingRef.current) {
@@ -305,14 +298,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   useEffect(() => {
     return () => stopScriptPolling();
   }, [stopScriptPolling]);
-
-  useEffect(() => {
-    if (isGenerating) {
-      startScriptPolling();
-    } else {
-      stopScriptPolling();
-    }
-  }, [isGenerating, startScriptPolling, stopScriptPolling]);
 
   // Off-peak mode
   const [offPeak, setOffPeak] = useState(() => localStorage.getItem('video_off_peak') === 'true');
@@ -338,8 +323,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   }, []);
 
   // Refs
+  const loadEpisodesControllerRef = useRef<AbortController | null>(null);
+  // Guard: prevent concurrent refreshProductionStatuses calls for same episode
+  const refreshInFlightRef = useRef<Set<number>>(new Set());
   const panelsLoadedRef = useRef<Set<number>>(new Set());
   const generateVideoAbortRef = useRef<AbortController | null>(null);
+  // 滚动位置恢复：防止 chapters 更新时列表跳回顶部
+  const tabContentScrollRef = useRef<number>(0);
 
   useEffect(() => {
     return () => {
@@ -349,9 +339,16 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   // ==================== Data Loading ====================
 
-  const loadEpisodes = useCallback(async () => {
+  const loadEpisodes = useCallback(async (options?: { silent?: boolean }) => {
     if (!projectId) return;
-    setLoading(true);
+    const silent = options?.silent ?? false;
+    const showGlobalLoading = !silent && !hasInitialLoadRef.current;
+    // Guard: prevent concurrent calls
+    if (loadEpisodesControllerRef.current) return;
+    loadEpisodesControllerRef.current = new AbortController();
+    if (showGlobalLoading) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const res = await getEpisodes(projectId);
@@ -455,15 +452,18 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             gridImages: ep.episodeInfo?.gridImages || [],
             splitShots: ep.episodeInfo?.splitShots || [],
             gridRejectionFeedback: ep.episodeInfo?.gridRejectionFeedback || null,
+            gridPromptHint: ep.episodeInfo?.gridPromptHint || '',
             panelApproved: ep.episodeInfo?.panelApproved ?? false,
             isNewFlow: !!ep.episodeInfo?.gridStatus,
             scriptStatus: ep.episodeInfo?.scriptStatus || 'pending',
+            storyboardStatus: ep.episodeInfo?.storyboardStatus || 'pending',
           };
         });
 
         builtChapters.push({ chapterIndex, title: chapterTitle, episodes: episodeStates });
       }
       setChapters(builtChapters);
+      hasInitialLoadRef.current = true;
 
       // Load panels for all episodes
       panelsLoadedRef.current.clear();
@@ -472,9 +472,16 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     } catch (err: any) {
       setError(err?.message || '加载失败');
     } finally {
-      setLoading(false);
+      if (showGlobalLoading) {
+        setLoading(false);
+      }
+      loadEpisodesControllerRef.current = null;
     }
   }, [projectId]);
+
+  useEffect(() => {
+    loadEpisodesRef.current = loadEpisodes;
+  }, [loadEpisodes]);
 
   useEffect(() => { loadEpisodes(); }, [loadEpisodes]);
 
@@ -506,14 +513,31 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [chapters, stopScriptPolling]);
 
-  // Watch backend generating flag — if true and segments missing, restore polling
+  // 滚动位置恢复：chapters 更新（非初始加载）后恢复滚动位置
+  const isInitialMount = useRef<boolean>(true);
   useEffect(() => {
-    if (isGenerating) {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    // 非初始挂载，chapters 有变化，恢复滚动
+    requestAnimationFrame(() => {
+      const el = document.querySelector('[class*="tabContent"]');
+      if (el && tabContentScrollRef.current > 0) {
+        el.scrollTop = tabContentScrollRef.current;
+      }
+    });
+  }, [chapters]);
+
+  // 仅在脚本阶段任务进行中启用脚本轮询，避免视频/TTS阶段触发全量刷新导致闪烁
+  useEffect(() => {
+    const shouldPollScript = isGenerating && generatingTaskType === 'episode';
+    if (shouldPollScript) {
       startScriptPolling();
     } else {
       stopScriptPolling();
     }
-  }, [isGenerating, startScriptPolling, stopScriptPolling]);
+  }, [isGenerating, generatingTaskType, startScriptPolling, stopScriptPolling]);
 
   // Restore generating UI state from backend after page refresh
   useEffect(() => {
@@ -624,6 +648,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   const refreshProductionStatuses = useCallback(async (episodeId: number) => {
     if (!projectId) return;
+    // Guard: skip if already refreshing this episode
+    if (refreshInFlightRef.current.has(episodeId)) return;
+    refreshInFlightRef.current.add(episodeId);
     try {
       const res = await getBatchProductionStatuses(projectId, episodeId);
       if ((res.code !== 0 && res.code !== 200) || !res.data) return;
@@ -645,8 +672,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               if (status.videoProgress != null && status.videoProgress !== seg.videoProgress) { hasChanges = true; break; }
               if (status.videoStatus === 'completed' && status.videoUrl && status.videoUrl !== seg.videoUrl) { hasChanges = true; break; }
               if (status.ttsStatus === 'completed' && status.ttsAudioUrl && status.ttsAudioUrl !== seg.ttsAudioUrl) { hasChanges = true; break; }
-              if (status.gridStatus && status.gridStatus !== seg.gridStatus) { hasChanges = true; break; }
-              if (status.mergeStatus && status.mergeStatus !== seg.mergeStatus) { hasChanges = true; break; }
+              // Normalize null vs undefined for gridStatus/mergeStatus
+              const apiGridStatus = status.gridStatus ?? null;
+              const localGridStatus = seg.gridStatus ?? null;
+              if (apiGridStatus !== localGridStatus) { hasChanges = true; break; }
+              const apiMergeStatus = status.mergeStatus ?? null;
+              const localMergeStatus = seg.mergeStatus ?? null;
+              if (apiMergeStatus !== localMergeStatus) { hasChanges = true; break; }
               if (status.videoWithNarrationUrl && status.videoWithNarrationUrl !== seg.videoWithNarrationUrl) { hasChanges = true; break; }
             }
             if (hasChanges) break;
@@ -692,6 +724,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       });
     } catch (err) {
       console.error('刷新生产状态失败:', err);
+    } finally {
+      refreshInFlightRef.current.delete(episodeId);
     }
   }, [projectId]);
 
@@ -709,16 +743,42 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   useSseProgress(projectId, {
     onEpisodeScriptDone: (data) => {
-      // SSE event only contains metadata, must reload full episode data to get shots
-      loadEpisodes();
+      // stage=stage1: script (Stage 1) 完成 → 精准更新 scriptStatus，不全量刷新
+      setGeneratingScript(null);
+      setChapters(prev => prev.map(ch => ({
+        ...ch,
+        episodes: ch.episodes.map(ep =>
+          ep.episodeIndex === data.episodeNum
+            ? { ...ep, scriptStatus: 'done' as const }
+            : ep
+        ),
+      })));
+      // 重新加载 panels 数据
       const ep = chapters.flatMap(ch => ch.episodes).find(e => e.episodeIndex === data.episodeNum);
       if (ep) {
         panelsLoadedRef.current.delete(ep.episodeId);
         loadPanelsForEpisode(ep.episodeId);
       }
     },
+    onEpisodeStoryboardDone: (data) => {
+      // Stage 2 (storyboard) 完成 → 精准更新 storyboardStatus，不全量刷新
+      setGeneratingScript(null);
+      setChapters(prev => prev.map(ch => ({
+        ...ch,
+        episodes: ch.episodes.map(ep =>
+          ep.episodeId === data.episodeId
+            ? { ...ep, storyboardStatus: 'done' as const }
+            : ep
+        ),
+      })));
+      if (data.episodeId) {
+        panelsLoadedRef.current.delete(data.episodeId);
+        loadPanelsForEpisode(data.episodeId);
+        refreshProductionStatuses(data.episodeId);
+      }
+    },
     onEpisodePanelDone: (data) => {
-      loadEpisodes();
+      // 重新加载 panels 数据（loadPanelsForEpisode 内部会 setChapters）
       if (data.episodeId) {
         panelsLoadedRef.current.delete(data.episodeId);
         loadPanelsForEpisode(data.episodeId);
@@ -737,8 +797,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         panelsLoadedRef.current.delete(data.episodeId);
         loadPanelsForEpisode(data.episodeId);
         refreshProductionStatuses(data.episodeId);
-        // gridStatus 变为 generated/approved/failed 时全量刷新以获取 gridImages、splitShots 等
-        loadEpisodes();
+        // loadPanelsForEpisode 和 refreshProductionStatuses 会精准更新数据，不需要全量 loadEpisodes
       }
     },
     onPanelVideoDone: (data) => {
@@ -768,16 +827,15 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       if (data.episodeId) refreshProductionStatuses(data.episodeId);
     },
     onStatusChange: (data) => {
-      if (projectId && data.to) { syncStatus(projectId); loadEpisodes(); }
-      // task-complete 或状态变为非生成中时，重置前端 generating 状态
-      if (data.eventType === 'task-complete' || data.to === 'completed') {
+      // task-complete 或 completed 时停止脚本轮询
+      if ((data as any).eventType === 'task-complete' || data.to === 'completed') {
         setGeneratingScript(null);
         setGeneratingGrid(null);
         stopScriptPolling();
       }
     },
     onReconnect: () => {
-      if (projectId) { syncStatus(projectId); loadEpisodes(); }
+      // 重连时不需要任何操作，SSE 会推送最新状态
     },
   });
 
@@ -810,10 +868,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   // ==================== Actions ====================
 
-  // Generate script per episode (backend regenerates ALL episodes for the project)
+  // Generate script per episode (single episode generation)
   const handleGenerateScript = useCallback(async (episodeId: number) => {
     if (!projectId || generatingScript) return;
-    setGeneratingScript(-1); // -1 = batch generating
+    setGeneratingScript(episodeId); // specific episode generating
     try {
       await generateEpisodeScripts(projectId, episodeId);
       startScriptPolling();
@@ -853,11 +911,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   }, [projectId, loadEpisodes, rejectingEpisodeId]);
 
   // Generate grid per episode
-  const handleGenerateGrid = useCallback(async (episodeId: number) => {
+  const handleGenerateGrid = useCallback(async (episodeId: number, customHint?: string) => {
     if (!projectId || generatingGrid) return;
     setGeneratingGrid(episodeId);
     try {
-      await regenerateEpisodeGrid(projectId, episodeId);
+      await regenerateEpisodeGrid(projectId, episodeId, customHint);
       // 轮询等待九宫格生成完成（SSE 可能断连）
       const pollGrid = async () => {
         for (let i = 0; i < 60; i++) {
@@ -1314,6 +1372,27 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId, isBatchMergeLoading]);
 
+  // 打开提示词模态框（稳定的 useCallback，避免子组件不必要重渲染）
+  const openPromptModal = useCallback(async (episodeId: number, panelId: string) => {
+    const panelKey = `${episodeId}-${panelId}`;
+    setPromptModalPanelKey(panelKey);
+    setPromptModalTab('view');
+    setPromptText('');
+    setPromptLoading(true);
+    try {
+      const res = await getVideoPrompt(projectId!, episodeId, Number(panelId));
+      setPromptText(res.data?.prompt || '');
+    } catch {
+      setPromptText('');
+    } finally {
+      setPromptLoading(false);
+    }
+  }, [projectId]);
+
+  const handleRetryLoad = useCallback(() => {
+    void loadEpisodes();
+  }, [loadEpisodes]);
+
   // ==================== Render Helpers ====================
 
   const toggleChapter = useCallback((chapterIndex: number) => {
@@ -1339,11 +1418,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const totalPanels = allEpisodes.reduce((sum, ep) => sum + ep.segments.length, 0);
   const completedVideos = allEpisodes.reduce((sum, ep) =>
     sum + ep.segments.filter(seg => seg.pipelineStep === 'video_completed').length, 0);
-  const ttsCompletedCount = allEpisodes.reduce((sum, ep) =>
-    sum + ep.segments.filter(seg => seg.ttsStatus === 'completed' || !!seg.ttsAudioUrl).length, 0);
-  const ttsTotalCount = allEpisodes.reduce((sum, ep) => sum + ep.segments.length, 0);
   const allSegments = allEpisodes.flatMap(ep => ep.segments);
-  const mergeCompletedCount = allSegments.filter(s => s.mergeStatus === 'completed').length;
   const mergeTotalCount = allSegments.filter(s => (s.ttsStatus === 'completed' || !!s.ttsAudioUrl) && (s.pipelineStep === 'video_completed' || !!s.videoUrl)).length;
   const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
 
@@ -1365,7 +1440,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       <div className={styles.pageContainer}>
         <div className={styles.errorState}>
           <p>{error}</p>
-          <button onClick={loadEpisodes} className={styles.retryButton}>重试</button>
+          <button onClick={handleRetryLoad} className={styles.retryButton}>重试</button>
         </div>
       </div>
     );
@@ -1482,7 +1557,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       )}
 
       {/* Tab Content */}
-      <div className={styles.tabContent}>
+      <div
+        className={styles.tabContent}
+        onScroll={e => { tabContentScrollRef.current = (e.target as HTMLElement).scrollTop; }}
+      >
 
         {/* ==================== Tab 4a: Script ==================== */}
         {activeTab === 'script' && (
@@ -1502,132 +1580,23 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                   {chapterOpen && (
                   <div className={styles.episodeList}>
                     {chapter.episodes.map(ep => (
-                      <div key={ep.episodeId} className={`${styles.episodeScriptCard} ${(generatingScript === ep.episodeId || generatingScript === -1) ? styles.cardGenerating : ''}`}>
-                        <div className={styles.episodeScriptHeader}>
-                          <div>
-                            <h3 className={styles.episodeScriptTitle}>
-                              第{ep.episodeIndex}集 {ep.title}
-                            </h3>
-                            <span className={styles.episodeScriptCount}>
-                              {ep.segments.length > 0 ? `${ep.segments.length} 个分镜` : '暂无分镜数据'}
-                            </span>
-                          </div>
-                          <div className={styles.episodeScriptActions}>
-                            <button
-                              className={styles.btnPrimary}
-                              onClick={() => handleGenerateScript(ep.episodeId)}
-                              disabled={generatingScript === ep.episodeId || generatingScript === -1}
-                            >
-                              {(generatingScript === ep.episodeId || generatingScript === -1) ? <><SpinIcon /> 生成中...</> : '生成脚本'}
-                            </button>
-                            {ep.segments.length > 0 && (
-                              <>
-                                <button
-                                  className={styles.btnSuccess}
-                                  onClick={() => handleApproveScript(ep.episodeId)}
-                                  disabled={approvingEpisodeId === ep.episodeId || rejectingEpisodeId === ep.episodeId}
-                                >
-                                  {approvingEpisodeId === ep.episodeId ? <><SpinIcon /> 审核中...</> : '通过'}
-                                </button>
-                                <button
-                                  className={styles.btnDanger}
-                                  onClick={() => {
-                                    const reason = prompt('请给出你的优化建议:');
-                                    if (reason) handleRejectScript(ep.episodeId, reason!);
-                                  }}
-                                  disabled={approvingEpisodeId === ep.episodeId || rejectingEpisodeId === ep.episodeId}
-                                >
-                                  {rejectingEpisodeId === ep.episodeId ? <><SpinIcon /> 退回中...</> : '退回'}
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Expand to show script text */}
-                        <button
-                          className={styles.expandToggle}
-                          onClick={() => toggleEpisode(ep.episodeId)}
-                        >
-                          {expandedEpisodeId === ep.episodeId ? '收起' : '展开'}分镜文本 &#9660;
-                        </button>
-
-                        {expandedEpisodeId === ep.episodeId && ep.segments.length > 0 && (
-                          <div className={styles.scriptSegmentList}>
-                            {ep.segments.map((seg, idx) => (
-                              <div key={idx} className={styles.scriptSegmentItem}>
-                                <div className={styles.scriptSegmentTitle}>分镜 {idx + 1}</div>
-                                {seg.synopsis && (
-                                  <div className={styles.scriptSegmentDetail}>
-                                    <span>画面：</span>{seg.synopsis}
-                                  </div>
-                                )}
-                                {seg.panelData?.dialogue && (
-                                  <div className={styles.scriptSegmentDetail}>
-                                    <span>对话：</span><span style={{ whiteSpace: 'pre-wrap' }}>{seg.panelData.dialogue}</span>
-                                  </div>
-                                )}
-                                {seg.characterAvatars.length > 0 && (
-                                  <div className={styles.scriptSegmentCharacters}>
-                                    <span>角色：</span>{seg.characterAvatars.map(a => a.name).join('、')}
-                                  </div>
-                                )}
-                                {seg.panelData?.composition && (
-                                  <div className={styles.scriptSegmentDetail}>
-                                    <span>镜头：</span>{seg.panelData.composition}
-                                    {seg.panelData?.cameraAngle && ` / ${seg.panelData.cameraAngle}`}
-                                    {seg.panelData?.cameraMovement && ` / ${seg.panelData.cameraMovement}`}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-
-                            {/* 集 Prompt 预览 */}
-                            {expandedEpisodeId === ep.episodeId && ep.segments.length > 0 && (() => {
-                              const allShots = ep.segments.map(s => s.shots?.[0]).filter(Boolean);
-                              const visualStyle = ep.segments[0]?.panelData?.visualStyle || 'ANIME';
-                              const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
-                              if (allShots.length === 0) return null;
-                              return (
-                                <div className={styles.episodePromptPreview}>
-                                  <button
-                                    className={styles.episodePromptToggle}
-                                    onClick={() => setExpandedPanelKey(
-                                      expandedPanelKey === `prompt-image-${ep.episodeId}` ? null : `prompt-image-${ep.episodeId}`
-                                    )}
-                                  >
-                                    图片生成 Prompt（九宫格）
-                                    <span className={styles.episodePromptArrow}>
-                                      {expandedPanelKey === `prompt-image-${ep.episodeId}` ? '▾' : '▸'}
-                                    </span>
-                                  </button>
-                                  {expandedPanelKey === `prompt-image-${ep.episodeId}` && (
-                                    <pre className={styles.episodePromptBlock}>
-                                      {buildGridPromptText(visualStyle, allShots, isComicCommentary)}
-                                    </pre>
-                                  )}
-                                  <button
-                                    className={styles.episodePromptToggle}
-                                    onClick={() => setExpandedPanelKey(
-                                      expandedPanelKey === `prompt-video-${ep.episodeId}` ? null : `prompt-video-${ep.episodeId}`
-                                    )}
-                                  >
-                                    视频生成 Prompt（多镜头）
-                                    <span className={styles.episodePromptArrow}>
-                                      {expandedPanelKey === `prompt-video-${ep.episodeId}` ? '▾' : '▸'}
-                                    </span>
-                                  </button>
-                                  {expandedPanelKey === `prompt-video-${ep.episodeId}` && (
-                                    <pre className={styles.episodePromptBlock}>
-                                      {buildMultiShotPromptText(visualStyle, allShots, isComicCommentary)}
-                                    </pre>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        )}
-                      </div>
+                      <ScriptEpisodeCard
+                        key={ep.episodeId}
+                        episode={ep}
+                        project={project}
+                        generatingScript={generatingScript}
+                        approvingEpisodeId={approvingEpisodeId}
+                        rejectingEpisodeId={rejectingEpisodeId}
+                        expandedEpisodeId={expandedEpisodeId}
+                        expandedPanelKey={expandedPanelKey}
+                        onGenerateScript={handleGenerateScript}
+                        onApproveScript={handleApproveScript}
+                        onRejectScript={handleRejectScript}
+                        onToggleEpisode={toggleEpisode}
+                        onTogglePromptPreview={setExpandedPanelKey}
+                        buildGridPromptText={buildGridPromptText}
+                        buildMultiShotPromptText={buildMultiShotPromptText}
+                      />
                     ))}
                   </div>
                   )}
@@ -1675,92 +1644,20 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                   </button>
                   {chapterOpen && (
                   <div className={styles.episodeList}>
-                    {chapter.episodes.map(ep => {
-                      const badge = getGridStatusBadge(ep.gridStatus || 'pending');
-                      return (
-                        <div key={ep.episodeId} className={styles.episodeGridCard}>
-                          <div className={styles.episodeGridHeader}>
-                            <div>
-                              <h3 className={styles.episodeGridTitle}>
-                                第{ep.episodeIndex}集 {ep.title}
-                              </h3>
-                              <span className={`${styles.statusBadge} ${badge.className}`}>
-                                <span className={`${styles.statusDot} ${badge.pulse ? styles.statusDotPulse : ''}`} />
-                                {badge.text}
-                              </span>
-                              {ep.gridRejectionFeedback && (
-                                <div className={styles.gridRejectionFeedback}>
-                                  退回原因：{ep.gridRejectionFeedback}
-                                </div>
-                              )}
-                            </div>
-                            <div className={styles.episodeGridActions}>
-                              {ep.gridStatus !== 'approved' && ep.gridStatus !== 'generated' && (
-                              <button
-                                className={styles.btnPrimary}
-                                onClick={() => handleGenerateGrid(ep.episodeId)}
-                                disabled={generatingGrid === ep.episodeId}
-                              >
-                                {generatingGrid === ep.episodeId ? <><SpinIcon /> 排队中...</> : '生成九宫格'}
-                              </button>
-                              )}
-                              {(ep.gridStatus === 'generated' || ep.gridStatus === 'rejected') && (
-                                <>
-                                  <button
-                                    className={styles.btnSuccess}
-                                    onClick={() => handleApproveGrid(ep.episodeId)}
-                                    disabled={approvingEpisodeId === ep.episodeId || rejectingEpisodeId === ep.episodeId}
-                                  >
-                                    {approvingEpisodeId === ep.episodeId ? <><SpinIcon /> 审核中...</> : '通过'}
-                                  </button>
-                                  <button
-                                    className={styles.btnDanger}
-                                    onClick={() => {
-                                      const reason = prompt('请给出你的优化建议:');
-                                      if (reason) handleRejectGrid(ep.episodeId, reason!);
-                                    }}
-                                    disabled={approvingEpisodeId === ep.episodeId || rejectingEpisodeId === ep.episodeId}
-                                  >
-                                    {rejectingEpisodeId === ep.episodeId ? <><SpinIcon /> 退回中...</> : '退回'}
-                                  </button>
-                                  <button
-                                    className={styles.btnGhost}
-                                    onClick={() => {
-                                      if (confirm('确定要退回脚本阶段吗？九宫格数据将被清除。')) {
-                                        handleRejectToScript(ep.episodeId);
-                                      }
-                                    }}
-                                    disabled={rejectingEpisodeId === ep.episodeId}
-                                  >
-                                    退回脚本
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Grid images */}
-                          {ep.gridImages && ep.gridImages.length > 0 && (
-                            <div className={styles.gridImagesContainer}>
-                              {ep.gridImages.map((url, idx) => (
-                                <img
-                                  key={idx}
-                                  src={url}
-                                  alt={`九宫格 ${idx + 1}`}
-                                  className={styles.gridImage}
-                                  onClick={() => setLightboxUrl(url)}
-                                />
-                              ))}
-                            </div>
-                          )}
-                          {(!ep.gridImages || ep.gridImages.length === 0) && (
-                            <div className={styles.gridEmptyState}>
-                              暂无九宫格图片
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                    {chapter.episodes.map(ep => (
+                      <GridEpisodeCard
+                        key={ep.episodeId}
+                        episode={ep}
+                        generatingGrid={generatingGrid}
+                        approvingEpisodeId={approvingEpisodeId}
+                        rejectingEpisodeId={rejectingEpisodeId}
+                        onGenerateGrid={handleGenerateGrid}
+                        onApproveGrid={handleApproveGrid}
+                        onRejectGrid={handleRejectGrid}
+                        onRejectToScript={handleRejectToScript}
+                        onOpenLightbox={setLightboxUrl}
+                      />
+                    ))}
                   </div>
                   )}
                 </div>
@@ -1901,206 +1798,23 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
                           {/* Panel video rows */}
                           <div className={styles.panelVideoList}>
-                            {ep.segments.map((seg, idx) => {
-                              const panelId = seg.panelData?.panelId;
-                              const isGenerating = generatingVideoKeys.has(`${ep.episodeId}-${panelId}`);
-                              const isFailed = seg.pipelineStep === 'video_failed';
-                              const isDone = !isGenerating && (!!seg.videoUrl || seg.pipelineStep === 'video_completed');
-                              const panelKey = `${ep.episodeId}-${panelId}`;
-                              const isExpanded = expandedPanelKey === panelKey;
-                              const shotDescriptions = (seg.shots || [])
-                                .map((s: any) => s.visualDescription || s.visual_description || s.scene || '')
-                                .filter(Boolean);
-                              return (
-                                <div key={idx} className={styles.panelVideoCard}>
-                                  <div className={styles.panelVideoRow}>
-                                    <span className={styles.panelVideoNumber}>
-                                      {seg.title}
-                                    </span>
-                                    <span className={styles.panelVideoSynopsis}>
-                                      {seg.synopsis}
-                                    </span>
-                                    {isDone ? (
-                                      <span className={styles.panelVideoStatus}>已完成</span>
-                                    ) : isGenerating && !isFailed ? (
-                                      <span className={styles.panelVideoGenerating}>
-                                        <SpinIcon /> {seg.videoProgress != null ? `${seg.videoProgress}%` : '生成中...'}
-                                      </span>
-                                    ) : isFailed ? (
-                                      <span className={styles.panelVideoFailed}>
-                                        生成失败
-                                        <button
-                                          className={styles.btnPrimary}
-                                          style={{ marginLeft: 8 }}
-                                          onClick={() => panelId && handleGenerateVideo(ep.episodeId, panelId)}
-                                          disabled={!panelId}
-                                        >
-                                          重试
-                                        </button>
-                                      </span>
-                                    ) : (
-                                      <button
-                                        className={styles.btnPrimary}
-                                        onClick={() => panelId && handleGenerateVideo(ep.episodeId, panelId)}
-                                        disabled={!panelId}
-                                      >
-                                        生成视频
-                                      </button>
-                                    )}
-                                    {seg.videoUrl && (
-                                      <button
-                                        className={styles.panelVideoPreview}
-                                        onClick={() => setExpandedPanelKey(isExpanded ? null : panelKey)}
-                                      >
-                                        {isExpanded ? '收起' : <><PlayIcon /> 预览</>}
-                                      </button>
-                                    )}
-                                    {/* 提示词按钮 */}
-                                    {panelId && (
-                                      <button
-                                        className={styles.btnGhost}
-                                        onClick={() => {
-                                          setPromptModalPanelKey(panelKey);
-                                          setPromptModalTab('view');
-                                          setPromptText('');
-                                          setPromptLoading(true);
-                                          getVideoPrompt(projectId!, ep.episodeId, Number(panelId))
-                                            .then(res => setPromptText(res.data?.prompt || ''))
-                                            .catch(() => setPromptText(''))
-                                            .finally(() => setPromptLoading(false));
-                                        }}
-                                      >
-                                        提示词
-                                      </button>
-                                    )}
-                                    {/* 展开详情按钮 */}
-                                    <button
-                                      className={styles.panelExpandBtn}
-                                      onClick={() => setExpandedPanelKey(isExpanded ? null : panelKey)}
-                                    >
-                                      {isExpanded ? '收起' : '详情'} &#9660;
-                                    </button>
-                                  </div>
-                                  {/* 视频播放器 */}
-                                  {isExpanded && seg.videoUrl && (
-                                    <div className={styles.panelVideoPlayerWrap}>
-                                      <video
-                                        key={seg.videoUrl}
-                                        className={styles.panelVideoPlayer}
-                                        controls
-                                        autoPlay
-                                        src={seg.videoUrl!}
-                                      />
-                                    </div>
-                                  )}
-                                  {/* 进度条 */}
-                                  {isGenerating && (
-                                    <div className={styles.panelVideoProgressBar}>
-                                      <div
-                                        className={styles.panelVideoProgressFill}
-                                        style={{ width: `${seg.videoProgress || 0}%` }}
-                                      />
-                                    </div>
-                                  )}
-                                  {/* 元信息：积分、任务ID、错峰 */}
-                                  {(seg.videoCredits != null || seg.videoTaskId || seg.videoOffPeak || seg.videoModel) && (
-                                    <div className={styles.panelVideoMeta}>
-                                      {seg.videoModel && <span className={styles.panelVideoTag}>{seg.videoModel === 'pro' ? 'Pro' : seg.videoModel === 'turbo' ? 'Turbo' : seg.videoModel}</span>}
-                                      {seg.videoOffPeak && <span className={styles.panelVideoTag}>错峰</span>}
-                                      {seg.videoCredits != null && <span className={styles.panelVideoTag}>{seg.videoCredits} 积分</span>}
-                                    </div>
-                                  )}
-                                  {isExpanded && (
-                                    <div className={`${styles.panelDetailContent} ${styles.twoColumn}`}>
-                                      {/* Left column: existing video content */}
-                                      <div className={styles.leftColumn}>
-                                      {seg.fusionImageUrl && (
-                                        <div className={styles.panelDetailSection}>
-                                          <span className={styles.panelDetailLabel}>融合参考图</span>
-                                          <img src={seg.fusionImageUrl} alt="融合参考图" className={styles.panelFusionImage} />
-                                        </div>
-                                      )}
-                                      {shotDescriptions.length > 0 && (
-                                        <div className={styles.panelDetailSection}>
-                                          <span className={styles.panelDetailLabel}>分镜描述</span>
-                                          <div className={styles.panelPromptList}>
-                                            {shotDescriptions.map((desc: string, sIdx: number) => (
-                                              <div key={sIdx} className={styles.panelPromptItem}>
-                                                <span className={styles.panelPromptIndex}>{sIdx + 1}</span>
-                                                <span className={styles.panelPromptText}>{desc}</span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                      </div>
-
-                                      {/* Right column: TTS narration management */}
-                                      <div className={styles.rightColumn}>
-                                        <div className={styles.narrationHeader}>
-                                          <span>旁白语音</span>
-                                          <button
-                                            className={styles.btnPrimary}
-                                            disabled={seg.ttsStatus === 'generating' || !panelId}
-                                            onClick={() => panelId && handleGenerateTts(ep.episodeId, panelId)}
-                                          >
-                                            {seg.ttsStatus === 'generating' ? <><SpinIcon /> 生成中...</> : seg.ttsStatus === 'completed' || seg.ttsAudioUrl ? '重新生成' : '生成旁白'}
-                                          </button>
-                                        </div>
-                                        <div className={styles.shotList}>
-                                          {(seg.shots || []).map((shot: any, sIdx: number) => {
-                                            const hasDialogue = !!(shot.dialogue && shot.dialogue !== '无' && shot.dialogue !== '');
-                                            const narration = shot.narration || (shot.speaker === '旁白' ? shot.dialogue : '') || '';
-                                            return (
-                                              <div key={sIdx} className={styles.shotItem}>
-                                                <span className={styles.shotLabel}>分镜{sIdx + 1}</span>
-                                                <span className={hasDialogue ? styles.hasDialogue : styles.hasNarration}>
-                                                  {hasDialogue ? `[台词] ${shot.dialogue}` : `[旁白] ${narration || '—'}`}
-                                                </span>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                        {(seg.ttsStatus === 'completed' || seg.ttsAudioUrl) && (
-                                          <div className={styles.ttsPlayer}>
-                                            <audio controls src={seg.ttsAudioUrl!} style={{ width: '100%' }} />
-                                          </div>
-                                        )}
-                                        {seg.ttsStatus === 'failed' && (
-                                          <div className={styles.gridRejectionFeedback}>
-                                            旁白生成失败，请重试
-                                          </div>
-                                        )}
-                                        {/* 合成旁白视频 */}
-                                        {(seg.ttsStatus === 'completed' || seg.ttsAudioUrl) && isComicCommentary && (
-                                          <div style={{ marginTop: 12 }}>
-                                            <button
-                                              className={styles.btnPrimary}
-                                              disabled={seg.mergeStatus === 'generating' || !panelId}
-                                              onClick={() => panelId && handleMergeAudio(ep.episodeId, panelId)}
-                                            >
-                                              {seg.mergeStatus === 'generating' ? <><SpinIcon /> 合成中...</> : seg.mergeStatus === 'completed' ? '重新合成' : '合成旁白视频'}
-                                            </button>
-                                            {seg.mergeStatus === 'completed' && seg.videoWithNarrationUrl && (
-                                              <div style={{ marginTop: 8 }}>
-                                                <video
-                                                  controls
-                                                  src={seg.videoWithNarrationUrl}
-                                                  style={{ width: '100%', maxHeight: 200 }}
-                                                />
-                                              </div>
-                                            )}
-                                            {seg.mergeStatus === 'failed' && (
-                                              <span style={{ color: '#ff4d4f', fontSize: 12 }}>合成失败，请重试</span>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
+                            {ep.segments.map((seg, idx) => (
+                              <VideoSegmentRow
+                                key={idx}
+                                episode={ep}
+                                segment={seg}
+                                segmentIndex={idx}
+                                isComicCommentary={isComicCommentary}
+                                generatingVideoKeys={generatingVideoKeys}
+                                expandedPanelKey={expandedPanelKey}
+                                onGenerateVideo={handleGenerateVideo}
+                                onGenerateTts={handleGenerateTts}
+                                onMergeAudio={handleMergeAudio}
+                                onTogglePanel={setExpandedPanelKey}
+                                onOpenPromptModal={openPromptModal}
+                                onOpenLightbox={setLightboxUrl}
+                              />
+                            ))}
                           </div>
                         </div>
                       )
@@ -2200,7 +1914,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                     </div>
                   ) : (
                     <div className={styles.modalPromptEdit}>
-                      <div className={styles.modalPromptHint}>修改提示词可以更好地控制视频生成效果。修改后的提示词会用于生成。</div>
+                      <div className={styles.modalPromptHint}>你编辑的内容会作为最终 Prompt 直接下发给视频模型（覆盖增强版原文）。</div>
                       <textarea
                         className={styles.modalTextarea}
                         value={promptText}

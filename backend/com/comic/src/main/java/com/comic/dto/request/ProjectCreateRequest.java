@@ -14,7 +14,7 @@ public class ProjectCreateRequest {
     private Integer episodeDuration;  // 单集时长（秒）
     private String visualStyle;       // 视觉风格（如 3D、ANIME、COMIC 等）
     private String imageProvider;     // "seedream" | "nanobanana"
-    private String videoProvider;     // "vidu" | "sora"
+    private String videoProvider;     // "vidu" | "sora" | "grok"
     private String videoModel;        // "viduq3-pro" | "viduq3-turbo"
     /** realtime_animation | comic_commentary，缺省由服务端写 realtime_animation */
     private String productionMode;

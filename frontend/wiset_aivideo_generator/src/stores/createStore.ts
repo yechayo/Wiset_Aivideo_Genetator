@@ -59,28 +59,9 @@ export const useCreateStore = create<CreateState>()((set, get) => ({
   },
 
   startPolling: (projectId: string) => {
-    if (get().isPolling && get().statusInfo?.projectId === projectId) return;
-
-    set({ isPolling: true });
-
-    const poll = async () => {
-      if (!get().isPolling) return;
-
-      try {
-        const response = await getProjectStatus(projectId);
-        if ((response.code === 0 || response.code === 200) && response.data) {
-          set({ statusInfo: normalizeStatusInfo(response.data) });
-        }
-      } catch (error) {
-        console.error('Failed to poll project status', error);
-      }
-
-      if (!get().isPolling) return;
-      const interval = get().statusInfo?.isGenerating ? 3000 : 5000;
-      pollingTimerId = setTimeout(poll, interval);
-    };
-
-    poll();
+    // TEMPORARILY DISABLED: store polling causes infinite re-render loops
+    // Status updates are handled via SSE callbacks in Step4Production
+    return;
   },
 
   stopPolling: () => {
