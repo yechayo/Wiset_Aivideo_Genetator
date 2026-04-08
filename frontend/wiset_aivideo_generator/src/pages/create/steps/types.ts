@@ -57,6 +57,19 @@ export interface SegmentState {
 /** Episode 级九宫格状态 */
 export type EpisodeGridStatus = 'pending' | 'text_ready' | 'generating' | 'generated' | 'approved' | 'rejected' | 'failed';
 
+/** Episode pipeline stage (frontend-derived, not stored in backend) */
+export type PipelineStage = 'script' | 'grid' | 'video';
+
+/** Derive current pipeline stage from panelApproved + gridStatus */
+export function getPipelineStage(ep: {
+  panelApproved?: boolean;
+  gridStatus?: EpisodeGridStatus;
+}): PipelineStage {
+  if (!ep.panelApproved) return 'script';
+  if (ep.gridStatus === 'approved') return 'video';
+  return 'grid';
+}
+
 /** 切割后的分镜（带完整元数据） */
 export interface SplitShot {
   shotNumber: number;
