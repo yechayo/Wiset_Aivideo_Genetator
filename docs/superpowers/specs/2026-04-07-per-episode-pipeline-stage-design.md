@@ -1,5 +1,7 @@
 # 逐集流水线阶段设计
 
+> **Review 2026-04-08**: 代码自 4/7 以来无实质改动，spec 仍然可行。已补充 gridStatus 中间态说明、移除自动切 tab 行为、明确退回脚本接口为必须项。
+
 ## 问题
 
 当前步骤 4 使用**全有或全无的标签页解锁**机制：
@@ -20,8 +22,9 @@ tab4cUnlocked = 所有集数 gridApproved
 ## 设计决策
 
 - **标签页交互**：保留 4a/4b/4c 标签页，每个标签页按当前阶段筛选集数。
-- **阶段模型**：`pipelineStage` 由现有的 `panelApproved` + `gridStatus` 字段推导得出（仅前端，无需后端改动）。
-- **驳回**：在 4b 中驳回后仍留在 4b；可通过单独的操作驳回回 4a。
+- **阶段模型**：`pipelineStage` 由现有的 `panelApproved` + `gridStatus` 字段推导得出（前端计算，无需新增后端字段）。
+- **驳回**：在 4b 中驳回后仍留在 4b；可通过单独的操作退回 4a。
+- **退回脚本接口**：必须新增后端接口，现有 `/panel/reject` 只设 `panelApproved=false`，不会清 `gridStatus/gridImages/splitShots`。
 
 ## 阶段推导逻辑
 
@@ -31,6 +34,9 @@ pipelineStage:
   panelApproved == true && gridStatus != "approved"  →  "grid"
   panelApproved == true && gridStatus == "approved"  →  "video"
 ```
+
+`gridStatus` 可能的值：`pending`, `text_ready`, `generating`, `generated`, `rejected`, `failed`, `approved`。
+推导逻辑中 `!= "approved"` 自然覆盖所有中间态，无需特殊处理。
 
 无需新增后端字段。
 
@@ -60,20 +66,20 @@ pipelineStage:
 ### `Step4Production.tsx`
 
 1. **移除全局解锁逻辑**（`tab4bUnlocked`、`tab4cUnlocked`）。
-2. **新增 `pipelineStage` 计算属性**到 `EpisodeState` 或内联推导。
-3. **按标签页筛选集数**，基于 `pipelineStage`。
-4. **渲染折叠"已完成"区域**，在 4a 和 4b 标签页底部。
-5. **移除锁定图标**，从标签按钮上。
-6. **更新标签页完成指示器**：基于各标签页集数计数显示勾选标记，而非全局解锁。
+2. **移除通过后自动切 tab 行为**（当前 approvePanel/approveGrid 成功后自动跳转下一个 tab，逐集模式下不再适用）。
+3. **新增 `pipelineStage` 计算属性**到 `EpisodeState` 或内联推导。
+4. **按标签页筛选集数**，基于 `pipelineStage`。
+5. **渲染折叠"已完成"区域**，在 4a 和 4b 标签页底部。
+6. **移除锁定图标**，从标签按钮上。
+7. **更新标签页完成指示器**：基于各标签页集数计数显示勾选标记，而非全局解锁。
 
 ### `types.ts`
 
 - 添加 `pipelineStage` 字段到 `EpisodeState`（或在组件中计算）。
-- 如需要，添加"退回脚本阶段"操作类型。
 
 ## 后端改动
 
-### 可选：新增退回脚本阶段接口
+### 必须新增：退回脚本阶段接口
 
 ```
 PUT /api/projects/{projectId}/episodes/{episodeId}/panel/reject-to-script
@@ -81,13 +87,13 @@ PUT /api/projects/{projectId}/episodes/{episodeId}/panel/reject-to-script
 
 设置 `panelApproved = false`，重置 `gridStatus` 为 `pending`，清空 `gridImages`/`splitShots`。
 
-如果不希望新增接口，可以从 4b 标签页上下文调用现有的驳回脚本接口（前端构造调用）。
+现有 `/panel/reject` 只设 `panelApproved = false`，不清 grid 数据，不能直接复用。
 
 ## 需要修改的文件
 
 | 文件 | 改动 |
 |---|---|
-| `Step4Production.tsx` | 标签页筛选、解锁逻辑移除、折叠区域 |
+| `Step4Production.tsx` | 标签页筛选、解锁逻辑移除、自动切 tab 移除、折叠区域 |
 | `types.ts` | 添加 `pipelineStage` 类型 |
-| `Step4Production.module.css` | 折叠底部样式、已完成标记样式 |
-| `EpisodeController.java`（可选） | 新增退回脚本阶段接口 |
+| `Step4Production.module.less` | 折叠底部样式、已完成标记样式 |
+| `EpisodeController.java` | 新增退回脚本阶段接口 |

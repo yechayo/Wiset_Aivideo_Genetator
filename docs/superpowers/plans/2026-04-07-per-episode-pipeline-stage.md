@@ -672,7 +672,7 @@ git commit -m "feat: add tab count badge and passed episodes section styles"
 
 ---
 
-### Task 7: （可选）后端新增"退回脚本阶段"接口
+### Task 7: 后端新增"退回脚本阶段"接口
 
 **Files:**
 - Modify: `comic/src/main/java/com/comic/controller/EpisodeController.java`
