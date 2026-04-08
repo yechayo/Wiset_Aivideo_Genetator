@@ -1696,6 +1696,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                             buildGridPromptText={buildGridPromptText}
                             buildMultiShotPromptText={buildMultiShotPromptText}
                             nextStageLabel="→ 视频"
+                            showGridPrompt={true}
+                            showGridImages={true}
                           />
                         );
                       }
@@ -2004,6 +2006,12 @@ interface DoneEpisodeCardProps {
   buildGridPromptText?: (visualStyle: string, shots: any[], isComicCommentary?: boolean) => string;
   buildMultiShotPromptText?: (visualStyle: string, shots: any[], isComicCommentary?: boolean) => string;
   nextStageLabel: string;
+  /** 是否显示九宫格提示词（4B 已完成时） */
+  showGridPrompt?: boolean;
+  /** 是否显示视频提示词（4C 已完成时） */
+  showVideoPrompt?: boolean;
+  /** 是否显示九宫格图片（4B 已完成时） */
+  showGridImages?: boolean;
 }
 
 const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
@@ -2014,6 +2022,9 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
   buildGridPromptText,
   buildMultiShotPromptText,
   nextStageLabel,
+  showGridPrompt = false,
+  showVideoPrompt = false,
+  showGridImages = false,
 }: DoneEpisodeCardProps) {
   const isExpanded = expandedPassedEpisodeId === episode.episodeId;
   const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
@@ -2044,10 +2055,10 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
         </div>
       </div>
 
-      {isExpanded && (
+      {isExpanded && (showGridPrompt || showVideoPrompt || showGridImages) && (
         <div style={{ padding: '12px', borderTop: '1px solid var(--color-border)' }}>
-          {/* 脚本提示词预览 */}
-          {allShots.length > 0 && buildGridPromptText && buildMultiShotPromptText && (
+          {/* 九宫格提示词 */}
+          {showGridPrompt && allShots.length > 0 && buildGridPromptText && (
             <div className={styles.episodePromptPreview}>
               <div
                 style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 8, cursor: 'pointer' }}
@@ -2061,7 +2072,12 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
               <pre className={styles.episodePromptBlock} style={{ maxHeight: 150, overflow: 'auto', fontSize: 11 }}>
                 {buildGridPromptText(visualStyle, allShots, isComicCommentary)}
               </pre>
-              <button className={styles.episodePromptToggle} style={{ marginTop: 10, marginBottom: 4 }}>
+            </div>
+          )}
+          {/* 视频提示词 */}
+          {showVideoPrompt && allShots.length > 0 && buildMultiShotPromptText && (
+            <div className={styles.episodePromptPreview}>
+              <button className={styles.episodePromptToggle} style={{ marginBottom: 4 }}>
                 视频生成 Prompt（多镜头）
               </button>
               <pre className={styles.episodePromptBlock} style={{ maxHeight: 150, overflow: 'auto', fontSize: 11 }}>
@@ -2069,8 +2085,8 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
               </pre>
             </div>
           )}
-          {/* 九宫格图片预览 */}
-          {episode.gridImages && episode.gridImages.length > 0 && (
+          {/* 九宫格图片 */}
+          {showGridImages && episode.gridImages && episode.gridImages.length > 0 && (
             <div style={{ marginTop: 12 }}>
               <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
                 九宫格图片（{episode.gridImages.length} 张）
