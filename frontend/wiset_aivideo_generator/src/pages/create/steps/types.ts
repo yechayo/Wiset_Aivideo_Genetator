@@ -113,6 +113,11 @@ export interface EpisodeState {
   storyboardStatus?: 'pending' | 'generating' | 'done';
   /** Raw episodeInfo from backend Episode entity */
   episodeInfo?: Record<string, any>;
+  // === 逐集合成视频 ===
+  /** 逐集合成视频 URL */
+  composedVideoUrl?: string | null;
+  /** 逐集合成状态 */
+  composedVideoStatus?: string;
 }
 
 /** 章节状态 */
