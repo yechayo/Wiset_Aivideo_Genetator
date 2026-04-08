@@ -172,6 +172,28 @@ public class EpisodeController {
         return Result.ok();
     }
 
+    @PutMapping("/{episodeId}/panel/reject-to-script")
+    @Operation(summary = "退回脚本阶段", description = "将已通过脚本审核的剧集退回4a，清除九宫格相关数据")
+    public Result<Void> rejectToScript(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) throw new BusinessException("剧集不存在");
+        Map<String, Object> info = episode.getEpisodeInfo();
+        if (info == null) info = new HashMap<>();
+
+        info.put("panelApproved", false);
+        info.put("gridStatus", "pending");
+        info.remove("gridImages");
+        info.remove("splitShots");
+        info.put("gridRejectionFeedback", null);
+        episode.setEpisodeInfo(info);
+        episodeRepository.updateById(episode);
+
+        log.info("剧集退回脚本阶段: episodeId={}", episodeId);
+        return Result.ok();
+    }
+
     /**
      * 检查所有 episode 的分镜文本是否都已审核通过，如果是则批量触发九宫格生成
      */

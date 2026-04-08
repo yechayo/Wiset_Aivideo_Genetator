@@ -116,6 +116,17 @@ export async function rejectPanel(
   );
 }
 
+/**
+ * 退回脚本阶段（从4b退回4a，清除九宫格数据）
+ */
+export async function rejectToScript(
+  projectId: string, episodeId: number,
+): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panel/reject-to-script`,
+  );
+}
+
 // ================= 九宫格审核 API =================
 
 /** 审核通过九宫格 */
