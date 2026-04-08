@@ -104,9 +104,16 @@ const CreateLayout = () => {
 
   // 从 statusInfo 取 completedSteps，无 statusInfo 时为空
   // COMPLETED 状态时所有步骤都可自由浏览
-  const effectiveCompletedSteps = isCompleted
-    ? [1, 2, 3, 4, 5]
-    : (statusInfo?.completedSteps ?? []);
+  // 非 COMPLETED 时，当前 backendStep 也应可点击（用户需要在 Step 4/5 之间自由切换）
+  const effectiveCompletedSteps = useMemo(() => {
+    if (isCompleted) return [1, 2, 3, 4, 5];
+    const steps = [...(statusInfo?.completedSteps ?? [])];
+    const backendStep = statusInfo?.currentStep ?? 1;
+    if (!steps.includes(backendStep)) {
+      steps.push(backendStep);
+    }
+    return steps;
+  }, [isCompleted, statusInfo]);
 
   // 已完成步骤 + COMPLETED 状态允许点击步骤导航
   const handleStepClick = (stepId: number) => {
