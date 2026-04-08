@@ -119,6 +119,38 @@
   margin-bottom: 16px;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.deleteButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  &:hover {
+    color: rgba(239, 68, 68, 0.8);
+    background: rgba(239, 68, 68, 0.1);
+  }
+}
+
 .projectTitle {
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);

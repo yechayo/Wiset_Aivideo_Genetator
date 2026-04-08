@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import styles from './ProjectsPage.module.less';
 import { PlusIcon } from '../../components/icons/Icons';
-import { getProjects } from '../../services/projectService';
+import { getProjects, deleteProject } from '../../services/projectService';
 import type { ProjectListItem } from '../../services/types/project.types';
 
 // 根据状态类型返回样式类
@@ -28,6 +28,21 @@ function formatDate(dateString?: string): string {
 function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 删除项目
+  async function handleDeleteProject(e: React.MouseEvent, projectId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    const confirmed = window.confirm('确定要删除该项目吗？');
+    if (!confirmed) return;
+    try {
+      await deleteProject(projectId);
+      setProjects((prev) => prev.filter((p) => p.projectId !== projectId));
+    } catch (error) {
+      console.error('删除项目失败:', error);
+      alert('删除项目失败，请稍后重试');
+    }
+  }
 
   // 获取项目列表
   useEffect(() => {
@@ -80,11 +95,28 @@ function ProjectsPage() {
                     ? project.storyPrompt.slice(0, 50) + '...'
                     : project.storyPrompt}
                 </h3>
-                <span
-                  className={`${styles.projectStatus} ${getStatusClass(project)}`}
-                >
-                  {project.statusDescription}
-                </span>
+                <div className={styles.headerActions}>
+                  <button
+                    className={styles.deleteButton}
+                    onClick={(e) => handleDeleteProject(e, project.projectId)}
+                    title="删除项目"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path
+                        d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                  <span
+                    className={`${styles.projectStatus} ${getStatusClass(project)}`}
+                  >
+                    {project.statusDescription}
+                  </span>
+                </div>
               </div>
 
               <div className={styles.projectMeta}>

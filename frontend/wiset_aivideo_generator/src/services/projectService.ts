@@ -2,7 +2,7 @@
  * 项目相关API服务
  */
 
-import { get, post, patch } from './apiClient';
+import { del, get, post, patch } from './apiClient';
 import type {
   CreateProjectRequest,
   CreateProjectResponse,
@@ -139,6 +139,16 @@ export async function getProjects(params?: GetProjectsParams): Promise<ApiRespon
  * 获取项目详情
  * @param projectId 项目ID
  * @returns 项目详情
+ */
+/**
+ * 删除项目（逻辑删除）
+ */
+export async function deleteProject(projectId: string): Promise<ApiResponse<void>> {
+  return del<ApiResponse<void>>(`/api/projects/${projectId}`);
+}
+
+/**
+ * 获取项目详情
  */
 export async function getProject(projectId: string): Promise<ApiResponse<Project>> {
   return get<ApiResponse<Project>>(`/api/projects/${projectId}`);
