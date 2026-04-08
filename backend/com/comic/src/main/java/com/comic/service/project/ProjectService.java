@@ -326,6 +326,10 @@ public class ProjectService {
                 completedSteps.add(1);
                 completedSteps.add(2);
                 completedSteps.add(3);
+                // 有视频完成后解锁 Step 5，允许用户提前查看合成页面
+                if (completed > 0) {
+                    completedSteps.add(5);
+                }
                 break;
             }
 

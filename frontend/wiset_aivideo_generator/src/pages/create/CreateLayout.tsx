@@ -77,6 +77,9 @@ const CreateLayout = () => {
       lastRedirectedStep.current = backendStep;
       navigate(getStepUrl(backendStep), { replace: true });
     } else if (urlStep > backendStep) {
+      // 已完成的步骤允许自由浏览，不拉回
+      const completedSteps = statusInfo?.completedSteps ?? [];
+      if (completedSteps.includes(urlStep)) return;
       // URL 步骤超过后端 → 路由守卫拉回
       lastRedirectedStep.current = backendStep;
       navigate(getStepUrl(backendStep), { replace: true });
@@ -105,10 +108,12 @@ const CreateLayout = () => {
     ? [1, 2, 3, 4, 5]
     : (statusInfo?.completedSteps ?? []);
 
-  // COMPLETED 状态允许点击步骤导航自由浏览
-  const handleStepClick = isCompleted
-    ? (stepId: number) => navigate(getStepUrl(stepId), { replace: true })
-    : undefined;
+  // 已完成步骤 + COMPLETED 状态允许点击步骤导航
+  const handleStepClick = (stepId: number) => {
+    if (isCompleted || effectiveCompletedSteps.includes(stepId)) {
+      navigate(getStepUrl(stepId), { replace: true });
+    }
+  };
 
   // 渲染当前步骤内容
   const renderStepContent = () => {
