@@ -2365,37 +2365,42 @@
   &:hover { border-color: #ff4d4f; color: #ff4d4f; }
 }
 
-.shotEditForm {
+// 分镜内联编辑
+.scriptSegmentBody {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px;
-  background: #fafafa;
-  border-radius: 4px;
+  gap: 6px;
 }
 
-.shotFieldRow {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.shotFieldLabel {
-  min-width: 70px;
-  font-size: 13px;
-  color: #666;
-  line-height: 28px;
-  flex-shrink: 0;
-}
-
-.shotFieldInput {
+.shotInlineInput {
   flex: 1;
-  border: 1px solid #d9d9d9;
+  border: 1px solid #bae0ff;
   border-radius: 4px;
   padding: 4px 8px;
   font-size: 13px;
   resize: vertical;
   font-family: inherit;
+  background: #f6fbff;
   &:focus { border-color: #4096ff; outline: none; box-shadow: 0 0 0 2px rgba(64, 150, 255, 0.2); }
+}
+
+.shotCameraRow {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.shotCameraRow .shotInlineInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.shotInlineRow {
+  display: flex;
+  gap: 12px;
+}
+
+.shotInlineRow > .scriptSegmentDetail {
+  flex: 1;
+  min-width: 0;
 }

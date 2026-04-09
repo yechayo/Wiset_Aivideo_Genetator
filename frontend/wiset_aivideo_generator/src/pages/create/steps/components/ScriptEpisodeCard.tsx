@@ -27,7 +27,7 @@ const FIELD_LABELS: Record<string, string> = {
   transitionHint: '过渡提示',
 };
 
-const MULTI_LINE_FIELDS = new Set(['visualDescription', 'narration', 'dialogue']);
+const MULTI_LINE_FIELDS = new Set(['visualDescription', 'narration', 'dialogue', 'scene']);
 
 interface ScriptEpisodeCardProps {
   episode: EpisodeState;
@@ -182,46 +182,133 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
                   )}
                 </div>
 
-                {isEditing ? (
-                  <div className={styles.shotEditForm}>
-                    {EDITABLE_FIELDS.map(field => (
-                      <div key={field} className={styles.shotFieldRow}>
-                        <label className={styles.shotFieldLabel}>{FIELD_LABELS[field]}</label>
+                <div className={styles.scriptSegmentBody}>
+                    {/* 画面描述 */}
+                    <div className={styles.scriptSegmentDetail}>
+                      <span>画面：</span>
+                      {isEditing ? (
                         <textarea
-                          className={styles.shotFieldInput}
-                          value={editData[field] || ''}
-                          onChange={e => handleFieldChange(field, e.target.value)}
-                          rows={MULTI_LINE_FIELDS.has(field) ? 2 : 1}
+                          className={styles.shotInlineInput}
+                          value={editData['visualDescription'] ?? seg.synopsis ?? ''}
+                          onChange={e => handleFieldChange('visualDescription', e.target.value)}
+                          rows={2}
+                        />
+                      ) : seg.synopsis}
+                    </div>
+                    {/* 旁白 */}
+                    {isEditing && (
+                      <div className={styles.scriptSegmentDetail}>
+                        <span>旁白：</span>
+                        <textarea
+                          className={styles.shotInlineInput}
+                          value={editData['narration'] ?? shot?.narration ?? ''}
+                          onChange={e => handleFieldChange('narration', e.target.value)}
+                          rows={2}
                         />
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <>
-                    {seg.synopsis && (
+                    )}
+                    {/* 对白 */}
+                    {(isEditing || (seg.panelData?.dialogue && seg.panelData.dialogue !== '无')) && (
                       <div className={styles.scriptSegmentDetail}>
-                        <span>画面：</span>{seg.synopsis}
+                        <span>对话：</span>
+                        {isEditing ? (
+                          <textarea
+                            className={styles.shotInlineInput}
+                            value={editData['dialogue'] ?? seg.panelData?.dialogue ?? ''}
+                            onChange={e => handleFieldChange('dialogue', e.target.value)}
+                            rows={2}
+                          />
+                        ) : (
+                          <span style={{ whiteSpace: 'pre-wrap' }}>{seg.panelData?.dialogue}</span>
+                        )}
                       </div>
                     )}
-                    {seg.panelData?.dialogue && (
+                    {/* 说话人 */}
+                    {isEditing && (
                       <div className={styles.scriptSegmentDetail}>
-                        <span>对话：</span><span style={{ whiteSpace: 'pre-wrap' }}>{seg.panelData.dialogue}</span>
+                        <span>说话人：</span>
+                        <input
+                          className={styles.shotInlineInput}
+                          value={editData['speaker'] ?? shot?.speaker ?? ''}
+                          onChange={e => handleFieldChange('speaker', e.target.value)}
+                        />
                       </div>
                     )}
+                    {/* 镜头参数 */}
+                    {(isEditing || seg.panelData?.composition) && (
+                      <div className={styles.scriptSegmentDetail}>
+                        <span>镜头：</span>
+                        {isEditing ? (
+                          <div className={styles.shotCameraRow}>
+                            <input className={styles.shotInlineInput} placeholder="景别"
+                              value={editData['shotSize'] ?? seg.panelData?.composition ?? ''} onChange={e => handleFieldChange('shotSize', e.target.value)} />
+                            <input className={styles.shotInlineInput} placeholder="角度"
+                              value={editData['cameraAngle'] ?? seg.panelData?.cameraAngle ?? ''} onChange={e => handleFieldChange('cameraAngle', e.target.value)} />
+                            <input className={styles.shotInlineInput} placeholder="运镜"
+                              value={editData['cameraMovement'] ?? seg.panelData?.cameraMovement ?? ''} onChange={e => handleFieldChange('cameraMovement', e.target.value)} />
+                          </div>
+                        ) : (
+                          <>{seg.panelData?.composition}
+                          {seg.panelData?.cameraAngle && ` / ${seg.panelData.cameraAngle}`}
+                          {seg.panelData?.cameraMovement && ` / ${seg.panelData.cameraMovement}`}
+                        </>}
+                      </div>
+                    )}
+                    {/* 场景 */}
+                    {isEditing && (
+                      <div className={styles.scriptSegmentDetail}>
+                        <span>场景：</span>
+                        <textarea
+                          className={styles.shotInlineInput}
+                          value={editData['scene'] ?? shot?.scene ?? ''}
+                          onChange={e => handleFieldChange('scene', e.target.value)}
+                          rows={1}
+                        />
+                      </div>
+                    )}
+                    {/* 语气 & 特效 */}
+                    {isEditing && (
+                      <div className={styles.shotInlineRow}>
+                        <div className={styles.scriptSegmentDetail}>
+                          <span>旁白语气：</span>
+                          <input className={styles.shotInlineInput}
+                            value={editData['narrationTone'] ?? shot?.narrationTone ?? ''} onChange={e => handleFieldChange('narrationTone', e.target.value)} />
+                        </div>
+                        <div className={styles.scriptSegmentDetail}>
+                          <span>对白语气：</span>
+                          <input className={styles.shotInlineInput}
+                            value={editData['dialogueTone'] ?? shot?.dialogueTone ?? ''} onChange={e => handleFieldChange('dialogueTone', e.target.value)} />
+                        </div>
+                      </div>
+                    )}
+                    {isEditing && (
+                      <div className={styles.shotInlineRow}>
+                        <div className={styles.scriptSegmentDetail}>
+                          <span>视觉特效：</span>
+                          <input className={styles.shotInlineInput}
+                            value={editData['visualEffects'] ?? shot?.visualEffects ?? ''} onChange={e => handleFieldChange('visualEffects', e.target.value)} />
+                        </div>
+                        <div className={styles.scriptSegmentDetail}>
+                          <span>音效：</span>
+                          <input className={styles.shotInlineInput}
+                            value={editData['audioEffects'] ?? shot?.audioEffects ?? ''} onChange={e => handleFieldChange('audioEffects', e.target.value)} />
+                        </div>
+                      </div>
+                    )}
+                    {isEditing && (
+                      <div className={styles.scriptSegmentDetail}>
+                        <span>过渡：</span>
+                        <input className={styles.shotInlineInput}
+                          value={editData['transitionHint'] ?? shot?.transitionHint ?? ''} onChange={e => handleFieldChange('transitionHint', e.target.value)} />
+                      </div>
+                    )}
+                    {/* 角色（始终只读） */}
                     {seg.characterAvatars.length > 0 && (
                       <div className={styles.scriptSegmentCharacters}>
                         <span>角色：</span>{seg.characterAvatars.map(a => a.name).join('、')}
                       </div>
                     )}
-                    {seg.panelData?.composition && (
-                      <div className={styles.scriptSegmentDetail}>
-                        <span>镜头：</span>{seg.panelData.composition}
-                        {seg.panelData?.cameraAngle && ` / ${seg.panelData.cameraAngle}`}
-                        {seg.panelData?.cameraMovement && ` / ${seg.panelData.cameraMovement}`}
-                      </div>
-                    )}
-                  </>
-                )}
+                  </div>
               </div>
             );
           })}
