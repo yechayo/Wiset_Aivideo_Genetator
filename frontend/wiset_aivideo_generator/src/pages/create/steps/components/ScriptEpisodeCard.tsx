@@ -251,7 +251,8 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
                           <>{seg.panelData?.composition}
                           {seg.panelData?.cameraAngle && ` / ${seg.panelData.cameraAngle}`}
                           {seg.panelData?.cameraMovement && ` / ${seg.panelData.cameraMovement}`}
-                        </>}
+                          </>
+                        )}
                       </div>
                     )}
                     {/* 场景 */}
