@@ -46,9 +46,9 @@
 
 ### 新增端点
 
-**1. PUT /api/projects/{projectId}/episodes/{episodeId}/shots/{shotIndex}**
+**PUT /api/projects/{projectId}/episodes/{episodeId}/shots/{shotIndex}**
 
-更新单个分镜的可编辑字段。
+更新单个分镜的可编辑字段（含 `locked` 字段）。
 
 ```java
 @PutMapping("/{episodeId}/shots/{shotIndex}")
@@ -61,27 +61,14 @@ public Result<Void> updateShot(
 
 Service 逻辑：
 - 读取 `episodeInfo.shots[shotIndex]`
-- 白名单字段过滤：`visualDescription, narration, dialogue, speaker, narrationTone, dialogueTone, shotSize, cameraAngle, cameraMovement, scene, visualEffects, audioEffects, transitionHint`
+- 白名单字段过滤：`visualDescription, narration, dialogue, speaker, narrationTone, dialogueTone, shotSize, cameraAngle, cameraMovement, scene, visualEffects, audioEffects, transitionHint, locked`
 - duration/characters/characterRefs 不在白名单，直接忽略
 - 保存 episode
 
-**2. PUT /api/projects/{projectId}/episodes/{episodeId}/shots/{shotIndex}/lock**
-
-锁定或解锁分镜。
-
-```java
-@PutMapping("/{episodeId}/shots/{shotIndex}/lock")
-public Result<Void> toggleShotLock(
-    @PathVariable String projectId,
-    @PathVariable Long episodeId,
-    @PathVariable int shotIndex,
-    @RequestBody Map<String, Boolean> body) // { "locked": true/false }
-```
-
-Service 逻辑：
-- 读取 `episodeInfo.shots[shotIndex]`
-- 设置 `locked` 字段
-- 保存 episode
+**锁定调用方式（合并到同一接口）：**
+- 仅锁定：`{ "locked": true }`
+- 编辑 + 锁定：`{ "narration": "...", "locked": true }`
+- 仅编辑不改变锁定状态：不传 `locked` 字段
 
 ### 现有端点改造
 
@@ -167,14 +154,14 @@ if (isRefinement) {
 
 | 文件 | 变更 |
 |------|------|
-| `EpisodeController.java` | 新增 updateShot、toggleShotLock 两个端点 |
-| `PanelProductionService.java` | 改造 generateSingleEpisodeScript（精修跳过 Stage 1）、改造 generateStoryboardForEpisode（接收 lockedShots + 合并）、新增 updateShot/toggleShotLock |
+| `EpisodeController.java` | 新增 updateShot 端点（含 locked 字段） |
+| `PanelProductionService.java` | 改造 generateSingleEpisodeScript（精修跳过 Stage 1）、改造 generateStoryboardForEpisode（接收 lockedShots + 合并）、新增 updateShot |
 | `DeepSeekTextService.java` | 新增精修 prompt 构建（locked 标注），改造 generateStoryboard/generatePanelAwareStoryboard 支持精修模式 |
 
 ### 前端
 
 | 文件 | 变更 |
 |------|------|
-| `episodeService.ts` | 新增 updateShot、toggleShotLock API 调用 |
+| `episodeService.ts` | 新增 updateShot API 调用（含 locked） |
 | `ScriptEpisodeCard.tsx` | 重构为可编辑分镜卡片（锁定 toggle、原位编辑、保存） |
 | `Step4Production.tsx` | 移除退回逻辑，按钮文案切换，移除 rejectingEpisodeId 状态 |

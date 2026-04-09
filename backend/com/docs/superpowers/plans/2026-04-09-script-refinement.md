@@ -4,19 +4,24 @@
 
 **Goal:** 在 4A 页面实现分镜级别的编辑、锁定和精修重新生成功能。
 
-**Architecture:** 后端在 EpisodeController 新增 2 个 shot 级 CRUD 端点，改造现有 `/script` 端点的 service 层支持精修模式（跳过 Stage 1，保留 locked shots）。前端 ScriptEpisodeCard 改为可编辑卡片，新增锁定 toggle 和原位编辑。改造 DeepSeekTextService 的 prompt 构建以支持 locked 标注。
+**Architecture:** 后端在 EpisodeController 新增 1 个 shot 级 update 端点（`locked` 字段合并在同一接口中），改造现有 `/script` 端点的 service 层支持精修模式（跳过 Stage 1，保留 locked shots）。前端 ScriptEpisodeCard 改为可编辑卡片，新增锁定 toggle 和原位编辑。改造 DeepSeekTextService 的 prompt 构建以支持 locked 标注。
 
 **Tech Stack:** Java Spring Boot (后端), React + TypeScript + Less (前端), DeepSeek API (AI)
 
 ---
 
-### Task 1: 后端 — 新增 updateShot 和 toggleShotLock 端点
+### Task 1: 后端 — 新增 updateShot 端点（含 locked 字段）
 
 **Files:**
 - Modify: `backend/com/comic/src/main/java/com/comic/controller/EpisodeController.java` (line ~117, after `getEpisodeScript`)
-- Modify: `backend/com/comic/src/main/java/com/comic/service/production/PanelProductionService.java` (append two new methods)
+- Modify: `backend/com/comic/src/main/java/com/comic/service/production/PanelProductionService.java` (append new method)
 
-- [ ] **Step 1: 在 EpisodeController 新增两个端点**
+**设计说明：** 不单独提供 lock 端点，`locked` 字段合并到 `updateShot` 的白名单中。前端调用方式：
+- 仅锁定：`updateShot(epId, shotIndex, { locked: true })`
+- 编辑 + 锁定：`updateShot(epId, shotIndex, { narration: "...", locked: true })`
+- 仅编辑不改变锁定：不传 `locked` 字段
+
+- [ ] **Step 1: 在 EpisodeController 新增端点**
 
 在 `// ================= 分镜文本审核 =================` 注释之前（约 line 119），新增：
 
@@ -33,20 +38,9 @@ public Result<Void> updateShot(
     panelProductionService.updateShot(projectId, episodeId, shotIndex, updates);
     return Result.ok();
 }
-
-@PutMapping("/{episodeId}/shots/{shotIndex}/lock")
-@Operation(summary = "锁定/解锁分镜")
-public Result<Void> toggleShotLock(
-        @PathVariable String projectId,
-        @PathVariable Long episodeId,
-        @PathVariable int shotIndex,
-        @RequestBody Map<String, Boolean> body) {
-    panelProductionService.toggleShotLock(projectId, episodeId, shotIndex, body.get("locked"));
-    return Result.ok();
-}
 ```
 
-- [ ] **Step 2: 在 PanelProductionService 新增 updateShot 和 toggleShotLock 方法**
+- [ ] **Step 2: 在 PanelProductionService 新增 updateShot 方法**
 
 在类末尾（约 line 1128 之后）新增：
 
@@ -54,7 +48,8 @@ public Result<Void> toggleShotLock(
 private static final Set<String> SHOT_EDITABLE_FIELDS = new java.util.HashSet<>(java.util.Arrays.asList(
     "visualDescription", "narration", "dialogue", "speaker",
     "narrationTone", "dialogueTone", "shotSize", "cameraAngle",
-    "cameraMovement", "scene", "visualEffects", "audioEffects", "transitionHint"
+    "cameraMovement", "scene", "visualEffects", "audioEffects", "transitionHint",
+    "locked"
 ));
 
 public void updateShot(String projectId, Long episodeId, int shotIndex, Map<String, Object> updates) {
@@ -80,24 +75,6 @@ public void updateShot(String projectId, Long episodeId, int shotIndex, Map<Stri
     episodeRepository.updateById(episode);
     log.info("[Shot] 分镜已更新: episodeId={}, shotIndex={}", episodeId, shotIndex);
 }
-
-public void toggleShotLock(String projectId, Long episodeId, int shotIndex, Boolean locked) {
-    Episode episode = episodeRepository.selectById(episodeId);
-    if (episode == null) throw new BusinessException("剧集不存在");
-    Map<String, Object> info = episode.getEpisodeInfo();
-    if (info == null) throw new BusinessException("剧集数据为空");
-
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
-    if (shots == null || shotIndex < 0 || shotIndex >= shots.size()) {
-        throw new BusinessException("分镜索引无效: " + shotIndex);
-    }
-
-    shots.get(shotIndex).put("locked", locked != null && locked);
-    episode.setEpisodeInfo(info);
-    episodeRepository.updateById(episode);
-    log.info("[Shot] 分镜锁定状态: episodeId={}, shotIndex={}, locked={}", episodeId, shotIndex, locked);
-}
 ```
 
 - [ ] **Step 3: 编译验证**
@@ -110,7 +87,7 @@ Expected: BUILD SUCCESS
 ```bash
 git add backend/com/comic/src/main/java/com/comic/controller/EpisodeController.java
 git add backend/com/comic/src/main/java/com/comic/service/production/PanelProductionService.java
-git commit -m "feat: 新增单分镜编辑和锁定 API 端点"
+git commit -m "feat: 新增单分镜编辑 API 端点（含 locked 字段）"
 ```
 
 ---
@@ -526,7 +503,7 @@ git commit -m "feat: DeepSeek 精修 prompt 支持锁定分镜标注"
 
 ---
 
-### Task 5: 前端 — 新增 updateShot 和 toggleShotLock API
+### Task 5: 前端 — 新增 updateShot API
 
 **Files:**
 - Modify: `frontend/wiset_aivideo_generator/src/services/episodeService.ts` (after line 55)
@@ -536,7 +513,7 @@ git commit -m "feat: DeepSeek 精修 prompt 支持锁定分镜标注"
 ```typescript
 // ================= 单分镜编辑 API =================
 
-/** 更新单个分镜的可编辑字段 */
+/** 更新单个分镜（可编辑字段 + locked） */
 export async function updateShot(
   projectId: string,
   episodeId: number,
@@ -546,19 +523,6 @@ export async function updateShot(
   return put<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/shots/${shotIndex}`,
     updates,
-  );
-}
-
-/** 锁定或解锁分镜 */
-export async function toggleShotLock(
-  projectId: string,
-  episodeId: number,
-  shotIndex: number,
-  locked: boolean,
-): Promise<ApiResponse<void>> {
-  return put<ApiResponse<void>>(
-    `/api/projects/${projectId}/episodes/${episodeId}/shots/${shotIndex}/lock`,
-    { locked },
   );
 }
 ```
@@ -572,7 +536,7 @@ Expected: 无新增错误
 
 ```bash
 git add frontend/wiset_aivideo_generator/src/services/episodeService.ts
-git commit -m "feat: 新增单分镜编辑和锁定前端 API"
+git commit -m "feat: 新增单分镜编辑前端 API"
 ```
 
 ---
@@ -596,7 +560,7 @@ git commit -m "feat: 新增单分镜编辑和锁定前端 API"
 ```typescript
 import React, { useCallback, useState } from 'react';
 import type { EpisodeState } from '../types';
-import { updateShot, toggleShotLock } from '../../../../services/episodeService';
+import { updateShot } from '../../../../services/episodeService';
 import styles from '../Step4Production.module.less';
 
 const SpinIcon = () => <span className={styles.btnSpinner} />;
@@ -676,7 +640,7 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
   const handleToggleLock = useCallback(async (idx: number, currentLocked: boolean) => {
     if (!projectId) return;
     try {
-      await toggleShotLock(projectId, episode.episodeId, idx, !currentLocked);
+      await updateShot(projectId, episode.episodeId, idx, { locked: !currentLocked });
       onToggleEpisode(episode.episodeId);
     } catch (err: any) {
       alert(err?.message || '锁定操作失败');
