@@ -125,7 +125,7 @@ const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentar
   shots.forEach((shot, i) => {
     const row = Math.floor(i / 3) + 1;
     const col = i % 3 + 1;
-    let line = `第${row}行第${col}列: ${shot.visualDescription || shot.visual_description || ''}`;
+    let line = `第${row}行第${col}列: ${shot.visualDescription || ''}`;
     if (shot.shotSize) line += `，${shot.shotSize}`;
     if (shot.cameraAngle) line += `，${shot.cameraAngle}`;
     if (shot.cameraMovement) line += `，${shot.cameraMovement}`;
@@ -165,7 +165,7 @@ const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicComm
   shots.forEach((shot, i) => {
     lines.push(`【镜头${i + 1}】`);
     lines.push(`duration: ${shot.duration || 5}s`);
-    lines.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || shot.visual_description || ''}`);
+    lines.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || ''}`);
 
     const dialogue = typeof shot.dialogue === 'string' ? shot.dialogue : '';
     if (dialogue && dialogue !== '无') {
@@ -256,7 +256,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptEnhancing, setPromptEnhancing] = useState(false);
   const [batchEnhancingEpisodeId, setBatchEnhancingEpisodeId] = useState<number | null>(null);
-  const [generatingScript, setGeneratingScript] = useState<number | null>(null);
+  // generatingScript 持久化到 sessionStorage，刷新后恢复
+  const [generatingScript, setGeneratingScript] = useState<number | null>(() => {
+    const saved = projectId && sessionStorage.getItem(`gen_script_${projectId}`);
+    return saved ? (saved === '-1' ? -1 : Number(saved)) : null;
+  });
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [generatingGrid, setGeneratingGrid] = useState<number | null>(null);
   const [generatingVideoKeys, setGeneratingVideoKeys] = useState<Set<string>>(new Set()); // "episodeId-panelId"
@@ -269,6 +273,16 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   // 已完成剧集的展开状态
   const [expandedPassedEpisodeId, setExpandedPassedEpisodeId] = useState<number | null>(null);
   const hasInitialLoadRef = useRef(false);
+
+  // 持久化 generatingScript 到 sessionStorage
+  useEffect(() => {
+    if (!projectId) return;
+    if (generatingScript !== null) {
+      sessionStorage.setItem(`gen_script_${projectId}`, String(generatingScript));
+    } else {
+      sessionStorage.removeItem(`gen_script_${projectId}`);
+    }
+  }, [projectId, generatingScript]);
 
   // ==================== Script Polling ====================
   const scriptPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -398,8 +412,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               }
 
               // Build synopsis: prefer visualDescription, fallback to scene, then scene_summary
-              const synopsis = shot.visualDescription || shot.visual_description
-                || shot.scene_summary || shot.scene || '';
+              const synopsis = shot.visualDescription
+                || shot.sceneSummary || shot.scene || '';
 
               textSegments.push({
                 segmentIndex: sIdx,
@@ -536,41 +550,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [isGenerating, generatingTaskType, startScriptPolling, stopScriptPolling]);
 
-  // Restore generating UI state from backend after page refresh
-  useEffect(() => {
-    if (!isGenerating) {
-      setGeneratingScript(null);
-      setGeneratingGrid(null);
-      // 不清除 generatingVideoKeys — 视频生成进度由 polling 独立管理
-      return;
-    }
-    const taskType = generatingTaskType;
-    // "episode" = script generation in progress
-    if (taskType === 'episode') {
-      setGeneratingScript(-1); // -1 = batch generating, unknown specific episode
-      // Switch to script tab
-      switchTab('script');
-    }
-    // "panel" = grid/video generation in progress
-    if (taskType === 'panel') {
-      const hasVideoGenerating = chapters.some(ch =>
-        ch.episodes.some(ep => ep.segments.some(seg =>
-          seg.pipelineStep === 'video_generating'
-        ))
-      );
-      const hasGridGenerating = chapters.some(ch =>
-        ch.episodes.some(ep => ep.segments.some(seg =>
-          seg.pipelineStep === 'grid_generating'
-        ))
-      );
-      if (hasVideoGenerating) {
-        switchTab('video');
-      } else if (hasGridGenerating) {
-        switchTab('grid');
-      }
-    }
-  }, [isGenerating, generatingTaskType, chapters]);
-
   // ==================== Panel Loading ====================
 
   const loadPanelsForEpisode = useCallback(async (episodeId: number) => {
@@ -591,7 +570,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         const synopsis = isGroupedPanel
           ? shots.map((s: any) => {
               const speaker = s.speaker && s.speaker !== '无' ? `【${s.speaker}】` : '';
-              const desc = s.visualDescription || s.visual_description || s.scene || '';
+              const desc = s.visualDescription || s.scene || '';
               return speaker ? `${speaker} ${desc}` : desc;
             }).filter(Boolean).join('\n')
           : (info.scene_summary || shots[0]?.visualDescription || '');
@@ -740,8 +719,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   useSseProgress(projectId, {
     onEpisodeScriptDone: (data) => {
-      // stage=stage1: script (Stage 1) 完成 → 精准更新 scriptStatus，不全量刷新
-      setGeneratingScript(null);
+      // Stage 1 (script) 完成 → 更新 scriptStatus，重新加载 panels 数据
       setChapters(prev => prev.map(ch => ({
         ...ch,
         episodes: ch.episodes.map(ep =>
@@ -756,9 +734,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         panelsLoadedRef.current.delete(ep.episodeId);
         loadPanelsForEpisode(ep.episodeId);
       }
+      // 刷新全量 episodes 确保拿到最新的 scriptStatus 和 storyboardStatus
+      void loadEpisodes();
     },
     onEpisodeStoryboardDone: (data) => {
-      // Stage 2 (storyboard) 完成 → 精准更新 storyboardStatus，不全量刷新
+      // Stage 2 (storyboard) 完成 → 清除 generatingScript，停轮询
       setGeneratingScript(null);
       setChapters(prev => prev.map(ch => ({
         ...ch,
@@ -773,6 +753,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         loadPanelsForEpisode(data.episodeId);
         refreshProductionStatuses(data.episodeId);
       }
+      // 刷新全量 episodes 确保拿到最新的数据
+      void loadEpisodes();
     },
     onEpisodePanelDone: (data) => {
       // 重新加载 panels 数据（loadPanelsForEpisode 内部会 setChapters）
@@ -852,11 +834,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       if (data.episodeId) refreshProductionStatuses(data.episodeId);
     },
     onStatusChange: (data) => {
-      // task-complete 或 completed 时停止脚本轮询
+      // task-complete 或 completed 时停止脚本轮询，并刷新全量数据
       if ((data as any).eventType === 'task-complete' || data.to === 'completed') {
         setGeneratingScript(null);
         setGeneratingGrid(null);
         stopScriptPolling();
+        // 刷新全量 episodes 数据，确保 UI 显示最新状态
+        void loadEpisodes();
       }
     },
     onReconnect: () => {

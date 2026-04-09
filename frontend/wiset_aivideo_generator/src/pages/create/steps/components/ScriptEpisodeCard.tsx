@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+
 import type { EpisodeState } from '../types';
 import { updateShot } from '../../../../services/episodeService';
 import styles from '../Step4Production.module.less';
@@ -53,16 +54,38 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
   const [savingIdx, setSavingIdx] = useState<number | null>(null);
 
   const handleEdit = useCallback((idx: number) => {
-    const shot = episode.episodeInfo?.shots?.[idx];
-    if (!shot) return;
+    const seg = episode.segments[idx];
+    const shot = seg?.shots?.[0] || episode.episodeInfo?.shots?.[idx];
+    const pd = seg?.panelData;
+
     const data: Record<string, string> = {};
-    for (const field of EDITABLE_FIELDS) {
-      const val = shot[field];
-      if (val != null) data[field] = String(val);
-    }
+    // 从 shot 读取字段，fallback 到 seg 的显示数据
+    const trySet = (field: string, fallback?: string) => {
+      const val = shot?.[field];
+      if (val != null) {
+        data[field] = String(val);
+      } else if (fallback != null && fallback !== '') {
+        data[field] = fallback;
+      }
+    };
+
+    trySet('visualDescription', seg?.synopsis);
+    trySet('narration', shot?.narration);
+    trySet('dialogue', pd?.dialogue);
+    trySet('speaker', shot?.speaker);
+    trySet('narrationTone', shot?.narrationTone);
+    trySet('dialogueTone', shot?.dialogueTone);
+    trySet('shotSize', pd?.composition);
+    trySet('cameraAngle', pd?.cameraAngle);
+    trySet('cameraMovement', pd?.cameraMovement);
+    trySet('scene', pd?.scene);
+    trySet('visualEffects', shot?.visualEffects);
+    trySet('audioEffects', shot?.audioEffects);
+    trySet('transitionHint', shot?.transitionHint);
+
     setEditData(data);
     setEditingIdx(idx);
-  }, [episode.episodeInfo?.shots]);
+  }, [episode.segments, episode.episodeInfo?.shots]);
 
   const handleSave = useCallback(async (idx: number) => {
     if (!projectId) return;
@@ -141,7 +164,7 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
       {isExpanded && hasShots && (
         <div className={styles.scriptSegmentList}>
           {episode.segments.map((seg, idx) => {
-            const shot = episode.episodeInfo?.shots?.[idx];
+            const shot = seg.shots?.[0] || episode.episodeInfo?.shots?.[idx];
             const isLocked = shot?.locked === true;
             const isEditing = editingIdx === idx;
 
@@ -156,8 +179,23 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
                     className={`${styles.lockBtn} ${isLocked ? styles.lockBtnActive : ''}`}
                     onClick={() => handleToggleLock(idx, isLocked)}
                     title={isLocked ? '解锁此分镜' : '锁定此分镜（重新生成时保持不变）'}
+                    aria-label={isLocked ? '解锁此分镜' : '锁定此分镜'}
                   >
-                    {isLocked ? '🔒' : '🔓'}
+                    {isLocked ? (
+                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={styles.lockBtnIcon}>
+                        <path d="M5.5 6V4.75a2.5 2.5 0 1 1 5 0V6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                        <rect x="3.75" y="6" width="8.5" height="6.75" rx="1.8" stroke="currentColor" strokeWidth="1.4" />
+                        <circle cx="8" cy="9.2" r="0.8" fill="currentColor" />
+                        <path d="M8 10v1.15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={styles.lockBtnIcon}>
+                        <path d="M10.5 6V4.75a2.5 2.5 0 1 0-5 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                        <rect x="3.75" y="6" width="8.5" height="6.75" rx="1.8" stroke="currentColor" strokeWidth="1.4" />
+                        <circle cx="8" cy="9.2" r="0.8" fill="currentColor" />
+                        <path d="M8 10v1.15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                      </svg>
+                    )}
                   </button>
                   {isEditing ? (
                     <div className={styles.shotEditActions}>

@@ -1263,6 +1263,62 @@
   gap: var(--space-2);
 }
 
+.scriptSegmentHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  padding: 6px 10px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: rgba(247, 249, 252, 0.035);
+  border: 1px solid rgba(247, 249, 252, 0.05);
+}
+
+.shotLocked .scriptSegmentHeader {
+  background: rgba(114, 183, 255, 0.06);
+  border-color: rgba(114, 183, 255, 0.12);
+}
+
+.shotDuration {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.lockBtn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(247, 249, 252, 0.08);
+  background: rgba(247, 249, 252, 0.04);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--easing-standard);
+
+  &:hover {
+    color: var(--color-text-primary);
+    border-color: rgba(247, 249, 252, 0.14);
+    background: rgba(247, 249, 252, 0.08);
+  }
+}
+
+.lockBtnActive {
+  color: var(--color-accent);
+  border-color: rgba(114, 183, 255, 0.22);
+  background: rgba(114, 183, 255, 0.12);
+}
+
+.lockBtnIcon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  flex-shrink: 0;
+}
+
 // ============================================================
 // Tab 4b: Grid Review
 // ============================================================
@@ -2291,116 +2347,275 @@
   }
 }
 
-// 分镜编辑相关
+// ============================================================
+// 分镜编辑 - 电影调色台风格 (Cinematic Dark)
+// ============================================================
+
+// 分镜项容器 - 深色电影感背景
+.scriptSegmentItem {
+  background: linear-gradient(145deg, #1e1c1a 0%, #252220 100%);
+  border: 1px solid #3a3632;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+  &:hover {
+    border-color: #4a4640;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.shotLocked {
+  border-left: 3px solid #d4a853;
+  background: linear-gradient(145deg, #201e1a 0%, #2a2722 100%);
+
+  .scriptSegmentHeader {
+    background: rgba(212, 168, 83, 0.06);
+    border-color: rgba(212, 168, 83, 0.12);
+  }
+}
+
+// 分镜头部
 .scriptSegmentHeader {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(8px);
 }
 
-.shotDuration {
+// 分镜标题
+.scriptSegmentTitle {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
-  color: #999;
-  background: #f0f0f0;
-  padding: 1px 6px;
-  border-radius: 4px;
+  font-weight: 600;
+  color: #e8e0d5;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
-.lockBtn {
-  background: none;
-  border: 1px solid #d9d9d9;
+// 时长标签
+.shotDuration {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #a09080;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
   border-radius: 4px;
-  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-weight: 500;
+}
+
+// 锁定按钮
+.lockBtn {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px;
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
-  transition: all 0.2s;
-  &:hover { border-color: #4096ff; }
+  transition: all 0.2s ease;
+  color: #8a8070;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    background: rgba(212, 168, 83, 0.1);
+    border-color: rgba(212, 168, 83, 0.3);
+    color: #d4a853;
+  }
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
 }
 
 .lockBtnActive {
-  border-color: #faad14;
-  background: #fffbe6;
+  border-color: #d4a853;
+  background: rgba(212, 168, 83, 0.12);
+  color: #d4a853;
+
+  &:hover {
+    background: rgba(212, 168, 83, 0.18);
+  }
 }
 
-.shotLocked {
-  border-left: 3px solid #faad14;
-}
-
+// 编辑操作区
 .shotEditActions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   margin-left: auto;
 }
 
 .btnEdit {
-  background: none;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
-  padding: 2px 8px;
+  background: rgba(114, 183, 255, 0.1);
+  border: 1px solid rgba(114, 183, 255, 0.2);
+  border-radius: 5px;
+  padding: 4px 12px;
   cursor: pointer;
   font-size: 12px;
-  color: #4096ff;
-  &:hover { border-color: #4096ff; background: #e6f4ff; }
+  font-weight: 500;
+  color: #72b7ff;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(114, 183, 255, 0.15);
+    border-color: rgba(114, 183, 255, 0.35);
+  }
 }
 
 .btnSave {
-  background: #4096ff;
-  color: #fff;
+  background: linear-gradient(135deg, #d4a853 0%, #c49843 100%);
+  color: #1a1814;
   border: none;
-  border-radius: 4px;
-  padding: 2px 10px;
+  border-radius: 5px;
+  padding: 4px 14px;
   cursor: pointer;
   font-size: 12px;
-  &:disabled { opacity: 0.6; cursor: not-allowed; }
+  font-weight: 600;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(212, 168, 83, 0.25);
+
+  &:hover {
+    background: linear-gradient(135deg, #e0b563 0%, #d4a853 100%);
+    box-shadow: 0 3px 12px rgba(212, 168, 83, 0.35);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
 }
 
 .btnCancel {
-  background: none;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
-  padding: 2px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  padding: 4px 14px;
   cursor: pointer;
   font-size: 12px;
-  &:hover { border-color: #ff4d4f; color: #ff4d4f; }
+  color: #a09080;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(242, 119, 123, 0.1);
+    border-color: rgba(242, 119, 123, 0.25);
+    color: #f2777b;
+  }
 }
 
-// 分镜内联编辑
+// 分镜内容主体
 .scriptSegmentBody {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
+  padding: 14px 16px;
 }
 
+// 分镜详情行
+.scriptSegmentDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+
+  span:first-child {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: #8a8070;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &:not(span:first-child) {
+    color: #c8c0b5;
+  }
+}
+
+// 内联输入框
 .shotInlineInput {
   flex: 1;
-  border: 1px solid #bae0ff;
-  border-radius: 4px;
-  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  padding: 8px 12px;
   font-size: 13px;
   resize: vertical;
   font-family: inherit;
-  background: #f6fbff;
-  &:focus { border-color: #4096ff; outline: none; box-shadow: 0 0 0 2px rgba(64, 150, 255, 0.2); }
+  background: rgba(0, 0, 0, 0.25);
+  color: #e8e0d5;
+  transition: all 0.2s ease;
+  line-height: 1.5;
+
+  &::placeholder {
+    color: #6a6258;
+  }
+
+  &:focus {
+    border-color: rgba(212, 168, 83, 0.5);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(212, 168, 83, 0.1), inset 0 1px 3px rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  // 非编辑状态下的纯文本显示
+  &:not(textarea) {
+    padding: 6px 10px;
+  }
 }
 
+// 镜头参数行
 .shotCameraRow {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex: 1;
+
+  .shotInlineInput {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
-.shotCameraRow .shotInlineInput {
-  flex: 1;
-  min-width: 0;
-}
-
+// 双列布局
 .shotInlineRow {
   display: flex;
-  gap: 12px;
+  gap: 16px;
+
+  > .scriptSegmentDetail {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
-.shotInlineRow > .scriptSegmentDetail {
-  flex: 1;
-  min-width: 0;
+// 角色标签
+.scriptSegmentCharacters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(212, 168, 83, 0.06);
+  border: 1px solid rgba(212, 168, 83, 0.12);
+  border-radius: 5px;
+  font-size: 12px;
+
+  span:first-child {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: #8a8070;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  color: #c8c0b5;
 }
