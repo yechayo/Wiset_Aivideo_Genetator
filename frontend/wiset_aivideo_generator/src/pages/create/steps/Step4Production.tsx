@@ -261,7 +261,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [generatingGrid, setGeneratingGrid] = useState<number | null>(null);
   const [generatingVideoKeys, setGeneratingVideoKeys] = useState<Set<string>>(new Set()); // "episodeId-panelId"
   const [approvingEpisodeId, setApprovingEpisodeId] = useState<number | null>(null);
-  const [rejectingEpisodeId, setRejectingEpisodeId] = useState<number | null>(null);
   const [isBatchTtsLoading, setIsBatchTtsLoading] = useState(false);
   const [isBatchMergeLoading, setIsBatchMergeLoading] = useState(false);
   // Track which chapter/project batch scope is active (e.g., "enhance-ch-1", "tts-project")
@@ -921,19 +920,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       setApprovingEpisodeId(null);
     }
   }, [projectId, loadEpisodes, approvingEpisodeId]);
-
-  const handleRejectScript = useCallback(async (episodeId: number, reason: string) => {
-    if (!projectId || rejectingEpisodeId) return;
-    setRejectingEpisodeId(episodeId);
-    try {
-      await rejectPanel(projectId, episodeId, reason);
-      await loadEpisodes();
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || '退回失败');
-    } finally {
-      setRejectingEpisodeId(null);
-    }
-  }, [projectId, loadEpisodes, rejectingEpisodeId]);
 
   // Generate grid per episode
   const handleGenerateGrid = useCallback(async (episodeId: number, fullPrompt?: string) => {
@@ -1642,13 +1628,12 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                         <ScriptEpisodeCard
                           key={ep.episodeId}
                           episode={ep}
+                          projectId={projectId!}
                           generatingScript={generatingScript}
                           approvingEpisodeId={approvingEpisodeId}
-                          rejectingEpisodeId={rejectingEpisodeId}
                           expandedEpisodeId={expandedEpisodeId}
                           onGenerateScript={handleGenerateScript}
                           onApproveScript={handleApproveScript}
-                          onRejectScript={handleRejectScript}
                           onToggleEpisode={toggleEpisode}
                         />
                       );

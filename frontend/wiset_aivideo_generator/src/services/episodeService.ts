@@ -54,6 +54,21 @@ export async function generateEpisodeScripts(
   );
 }
 
+// ================= 单分镜编辑 API =================
+
+/** 更新单个分镜（可编辑字段 + locked） */
+export async function updateShot(
+  projectId: string,
+  episodeId: number,
+  shotIndex: number,
+  updates: Record<string, any>,
+): Promise<ApiResponse<void>> {
+  return put<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/shots/${shotIndex}`,
+    updates,
+  );
+}
+
 // ================= 整集九宫格审核 API（新流程） =================
 
 /** 获取整集九宫格状态 */

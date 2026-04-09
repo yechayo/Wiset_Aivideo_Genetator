@@ -2290,3 +2290,112 @@
     flex-direction: column;
   }
 }
+
+// 分镜编辑相关
+.scriptSegmentHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shotDuration {
+  font-size: 12px;
+  color: #999;
+  background: #f0f0f0;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.lockBtn {
+  background: none;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: all 0.2s;
+  &:hover { border-color: #4096ff; }
+}
+
+.lockBtnActive {
+  border-color: #faad14;
+  background: #fffbe6;
+}
+
+.shotLocked {
+  border-left: 3px solid #faad14;
+}
+
+.shotEditActions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.btnEdit {
+  background: none;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #4096ff;
+  &:hover { border-color: #4096ff; background: #e6f4ff; }
+}
+
+.btnSave {
+  background: #4096ff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.btnCancel {
+  background: none;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  &:hover { border-color: #ff4d4f; color: #ff4d4f; }
+}
+
+.shotEditForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px;
+  background: #fafafa;
+  border-radius: 4px;
+}
+
+.shotFieldRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.shotFieldLabel {
+  min-width: 70px;
+  font-size: 13px;
+  color: #666;
+  line-height: 28px;
+  flex-shrink: 0;
+}
+
+.shotFieldInput {
+  flex: 1;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  resize: vertical;
+  font-family: inherit;
+  &:focus { border-color: #4096ff; outline: none; box-shadow: 0 0 0 2px rgba(64, 150, 255, 0.2); }
+}
