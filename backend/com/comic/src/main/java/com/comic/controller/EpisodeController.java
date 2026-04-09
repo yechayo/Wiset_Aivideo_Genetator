@@ -116,6 +116,19 @@ public class EpisodeController {
         return Result.ok(episode.getEpisodeInfo());
     }
 
+    // ================= 单分镜编辑 =================
+
+    @PutMapping("/{episodeId}/shots/{shotIndex}")
+    @Operation(summary = "更新单个分镜文本")
+    public Result<Void> updateShot(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable int shotIndex,
+            @RequestBody Map<String, Object> updates) {
+        panelProductionService.updateShot(projectId, episodeId, shotIndex, updates);
+        return Result.ok();
+    }
+
     // ================= 分镜文本审核 =================
 
     @PutMapping("/{episodeId}/panel/approve")

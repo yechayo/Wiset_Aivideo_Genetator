@@ -472,6 +472,73 @@ public class DeepSeekTextService implements TextGenerationService {
     }
 
     /**
+     * @param lockedShots 精修模式下的锁定分镜，非空时进入精修模式
+     */
+    public List<Map<String, Object>> generateStoryboard(
+            String episodeContent, String characters, int totalDuration, String visualStyle,
+            boolean comicCommentary, String revisionNote,
+            List<Map<String, Object>> lockedShots) {
+        int recommendedShots = Math.max(1, totalDuration / 4);
+        int minShots = Math.max(1, (int) Math.ceil((double) totalDuration / 6));
+        int maxShots = Math.max(minShots, totalDuration / 3);
+
+        String systemPrompt = buildStoryboardSystemPrompt(
+                totalDuration, minShots, maxShots, recommendedShots, comicCommentary);
+
+        StringBuilder promptBuilder = new StringBuilder();
+        promptBuilder.append("剧本内容：\n").append(episodeContent).append("\n\n")
+            .append("角色：").append(characters).append("\n")
+            .append("视觉风格：").append(visualStyle).append("\n")
+            .append("目标总时长：").append(totalDuration).append("秒\n\n");
+
+        if (revisionNote != null && !revisionNote.trim().isEmpty()) {
+            promptBuilder.append("**修改建议**：").append(revisionNote.trim()).append("\n\n");
+        }
+
+        if (lockedShots != null && !lockedShots.isEmpty()) {
+            promptBuilder.append("【精修模式】以下是当前全部分镜，标记 [LOCKED] 的分镜必须保持不变，请仅为其余分镜重新生成内容。\n");
+            promptBuilder.append("保持与锁定分镜的叙事连贯性。\n\n");
+            for (Map<String, Object> locked : lockedShots) {
+                promptBuilder.append("[LOCKED] 第").append(locked.get("shotNumber")).append("镜\n");
+            }
+            promptBuilder.append("\n请为未锁定的分镜重新生成内容，输出完整的 JSON 数组（包含所有分镜，locked 的保持原样）。\n\n");
+        }
+
+        promptBuilder.append("请生成详细的分镜脚本 JSON 数组。");
+
+        String response = generateStream(systemPrompt, promptBuilder.toString());
+        List<Map<String, Object>> shots = parseJsonArray(response);
+
+        if (shots == null || shots.isEmpty()) {
+            throw new BusinessException("分镜生成结果为空，请重试");
+        }
+
+        if (comicCommentary) {
+            normalizeComicNarrationFields(shots);
+        }
+
+        int currentTime = 0;
+        for (Map<String, Object> shot : shots) {
+            int duration = ((Number) shot.get("duration")).intValue();
+            duration = Math.max(2, Math.min(4, duration));
+            shot.put("duration", duration);
+            shot.put("startTime", currentTime);
+            currentTime += duration;
+            shot.put("endTime", currentTime);
+        }
+
+        while (currentTime > totalDuration && !shots.isEmpty()) {
+            Map<String, Object> removed = shots.remove(shots.size() - 1);
+            currentTime -= ((Number) removed.get("duration")).intValue();
+        }
+        if (!shots.isEmpty()) {
+            shots.get(shots.size() - 1).put("endTime", currentTime);
+        }
+
+        return shots;
+    }
+
+    /**
      * 生成集级别旁白稿
      *
      * @param episodeContent     集剧本 content
@@ -646,6 +713,121 @@ public class DeepSeekTextService implements TextGenerationService {
         return panelShots;
     }
 
+    public List<List<Map<String, Object>>> generatePanelAwareStoryboard(
+            String episodeContent, String characters, int totalDuration, String visualStyle,
+            String revisionNote, String narrationPerspective,
+            List<Map<String, Object>> lockedShots) {
+
+        String systemPrompt = buildPanelAwareSystemPrompt(totalDuration, true, narrationPerspective);
+
+        StringBuilder promptBuilder = new StringBuilder();
+        promptBuilder.append("剧本内容：\n").append(episodeContent).append("\n\n")
+            .append("角色：").append(characters).append("\n")
+            .append("视觉风格：").append(visualStyle).append("\n")
+            .append("目标总时长：").append(totalDuration).append("秒\n\n");
+
+        if (revisionNote != null && !revisionNote.trim().isEmpty()) {
+            promptBuilder.append("**修改建议**：").append(revisionNote.trim()).append("\n\n");
+        }
+
+        if (lockedShots != null && !lockedShots.isEmpty()) {
+            promptBuilder.append("【精修模式】以下是当前全部分镜，标记 [LOCKED] 的分镜必须保持不变，请仅为其余分镜重新生成内容。\n");
+            promptBuilder.append("保持与锁定分镜的叙事连贯性。\n\n");
+            for (Map<String, Object> locked : lockedShots) {
+                promptBuilder.append("[LOCKED] 第").append(locked.get("shotNumber")).append("镜\n");
+            }
+            promptBuilder.append("\n请为未锁定的分镜重新生成内容，输出完整的 Panel-Aware JSON（包含所有分镜，locked 的保持原样）。\n\n");
+        }
+
+        if ("third_person".equals(narrationPerspective)) {
+            promptBuilder.append("**重要：旁白必须使用第三人称叙述，用角色名字或他/她指代，严禁使用「我」**。\n\n");
+        } else if ("first_person".equals(narrationPerspective)) {
+            promptBuilder.append("**重要：旁白必须使用第一人称「我」叙述，以主角口吻讲述**。\n\n");
+        }
+        promptBuilder.append("请生成 Panel-Aware 分镜脚本 JSON。");
+
+        String response = generateStream(systemPrompt, promptBuilder.toString());
+        List<List<Map<String, Object>>> panelShots = parsePanelAwareJson(response);
+
+        if (panelShots == null || panelShots.isEmpty()) {
+            throw new BusinessException("Panel-Aware 分镜生成结果为空，请重试");
+        }
+
+        // Post-processing: same as existing generatePanelAwareStoryboard
+        int globalShotNumber = 0;
+        for (List<Map<String, Object>> panelShotList : panelShots) {
+            normalizeComicNarrationFields(panelShotList);
+
+            int panelStartTime = 0;
+            for (List<Map<String, Object>> prevPanel : panelShots) {
+                if (prevPanel == panelShotList) break;
+                for (Map<String, Object> ps : prevPanel) {
+                    panelStartTime += toSafeInt(ps.get("duration"), 3);
+                }
+            }
+
+            int currentTime = panelStartTime;
+            for (Map<String, Object> shot : panelShotList) {
+                int duration = toSafeInt(shot.get("duration"), 3);
+                duration = Math.max(2, Math.min(4, duration));
+                shot.put("duration", duration);
+                shot.put("startTime", currentTime);
+                currentTime += duration;
+                shot.put("endTime", currentTime);
+                globalShotNumber++;
+                shot.put("globalShotNumber", globalShotNumber);
+            }
+
+            int panelDuration = currentTime - panelStartTime;
+            while (panelDuration > 10 && panelShotList.size() > 2) {
+                Map<String, Object> removed = panelShotList.remove(panelShotList.size() - 1);
+                int removedDur = toSafeInt(removed.get("duration"), 3);
+                panelDuration -= removedDur;
+                globalShotNumber--;
+                currentTime -= removedDur;
+            }
+            if (!panelShotList.isEmpty()) {
+                panelShotList.get(panelShotList.size() - 1).put("endTime", currentTime);
+            }
+        }
+
+        int totalActual = 0;
+        for (List<Map<String, Object>> ps : panelShots) {
+            for (Map<String, Object> s : ps) {
+                totalActual += toSafeInt(s.get("duration"), 3);
+            }
+        }
+        while (totalActual > totalDuration && panelShots.size() > 1) {
+            List<Map<String, Object>> removed = panelShots.remove(panelShots.size() - 1);
+            for (Map<String, Object> s : removed) {
+                totalActual -= toSafeInt(s.get("duration"), 3);
+            }
+        }
+
+        for (List<Map<String, Object>> panelShotList : panelShots) {
+            String prevNarration = "";
+            for (Map<String, Object> shot : panelShotList) {
+                String dialogue = str(shot.get("dialogue"));
+                String narration = str(shot.get("narration"));
+                if (!"无".equals(dialogue) && !dialogue.isEmpty()) {
+                    if (!"无".equals(narration) && !narration.isEmpty()) {
+                        log.warn("Shot {} 违反互斥原则，清除 narration 保留 dialogue", shot.get("shotNumber"));
+                        shot.put("narration", "无");
+                    }
+                }
+                narration = str(shot.get("narration"));
+                if (!"无".equals(narration) && !narration.isEmpty() && narration.equals(prevNarration)) {
+                    log.warn("Shot {} narration 与上一镜完全重复，已清除", shot.get("shotNumber"));
+                    shot.put("narration", "无");
+                }
+                prevNarration = str(shot.get("narration"));
+                shot.remove("narrationType");
+            }
+        }
+
+        return panelShots;
+    }
+
     // ==================== Stage 2: Sequential Narration Refinement ====================
 
     private static final Set<String> VALID_NARRATION_TONES = new java.util.HashSet<>(
@@ -685,6 +867,13 @@ public class DeepSeekTextService implements TextGenerationService {
                     if (!nar.isEmpty() && !"无".equals(nar) && (dlg.isEmpty() || "无".equals(dlg))) {
                         narrationShots.add(shot);
                     }
+                }
+
+                boolean allLocked = panel.stream().allMatch(s -> Boolean.TRUE.equals(s.get("locked")));
+                if (allLocked) {
+                    log.info("[Stage2] Panel {} all shots locked, skipping", panelIdx + 1);
+                    appendNarrationContext(narrationContext, panel);
+                    continue;
                 }
 
                 if (narrationShots.isEmpty()) {
