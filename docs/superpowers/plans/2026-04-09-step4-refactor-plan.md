@@ -1736,7 +1736,7 @@ git commit -m "refactor(step4): 完善乐观更新和细粒度 polling 追踪"
 
 **Files:**
 - Modify: `frontend/wiset_aivideo_generator/src/pages/create/steps/store/step4Store.ts`
-- Modify: `frontend/wiset_aivideo_generator/src/pages/create/steps/types.ts`
+- Modify: `frontend/wiset_aivideo_generator/src/pages/create/steps/store/step4Types.ts`
 
 - [ ] **Step 1: 在 SegmentRecord 中添加编辑态**
 
@@ -1957,7 +1957,7 @@ git commit -m "refactor(step4): 拆分 ScriptTab/GridTab/VideoTab 容器组件"
 
 ```bash
 git add frontend/wiset_aivideo_generator/src/pages/create/steps/Step4Production.tsx
-git commit -m "refactor(step4): 最终精简 Step4Production.tsx 至 300 行以内"
+git commit -m "refactor(step4): 最终精简 Step4Production.tsx 至 200 行以内"
 ```
 
 ---
@@ -1968,6 +1968,6 @@ git commit -m "refactor(step4): 最终精简 Step4Production.tsx 至 300 行以�
 - [ ] SSE 事件正确更新 store（无状态丢失）
 - [ ] 乐观更新在视频/TTS/合并操作中正常工作
 - [ ] 回滚机制在 API 失败时正确恢复状态
-- [ ] `Step4Production.tsx` < 300 行
+- [ ] `Step4Production.tsx` < 200 行
 - [ ] 所有子组件通过 store 读取状态，不再有 prop drilling
 - [ ] 每个 Phase 完成后功能验证通过
