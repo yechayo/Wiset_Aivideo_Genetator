@@ -72,6 +72,13 @@ export async function lockSingleCharacter(projectId: string, charId: string): Pr
 }
 
 /**
+ * 驳回单个角色，重置图片生成状态，回到配置阶段
+ */
+export async function rejectSingleCharacter(projectId: string, charId: string): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/${charId}/reject`);
+}
+
+/**
  * 获取角色生成状态详情
  */
 export async function getCharacterStatus(projectId: string, charId: string): Promise<ApiResponse<CharacterStatus>> {

@@ -105,6 +105,8 @@ export interface EpisodeState {
   gridRejectionFeedback?: string | null;
   /** 4B 图片生成附加提示词（用户可编辑） */
   gridPromptHint?: string;
+  /** 九宫格完整提示词（用户直接编辑后保存） */
+  gridPrompt?: string;
   /** 分镜脚本审核通过标记（4a 审核通过后由后端设置） */
   panelApproved?: boolean;
   /** 是否使用新流程（episodeInfo 中有 gridStatus 字段） */

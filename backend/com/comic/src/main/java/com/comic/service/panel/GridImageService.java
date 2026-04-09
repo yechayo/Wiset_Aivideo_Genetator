@@ -212,14 +212,25 @@ public class GridImageService {
             List<String> gridImageUrls = new ArrayList<>();
             String lastPagePrompt = null;
 
+            // 检查是否有用户自定义的 prompt 覆盖（直接编辑后的完整 prompt）
+            String promptOverride = episodeInfo.containsKey("gridPromptOverride")
+                ? (String) episodeInfo.get("gridPromptOverride") : null;
+
             // 逐页生成九宫格
             for (int page = 0; page < pageCount; page++) {
                 int fromIdx = page * SHOTS_PER_PAGE;
                 int toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, shots.size());
                 List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
 
-                String prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames);
-                prompt = appendUserHintToPrompt(prompt, customHint);
+                String prompt;
+                if (promptOverride != null && page == 0) {
+                    // 用户直接编辑的 prompt 仅应用于第一页（覆盖内容描述该页镜头）
+                    // 后续页面仍使用自动生成的 per-page prompt，避免内容错位
+                    prompt = promptOverride;
+                } else {
+                    prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames);
+                    prompt = appendUserHintToPrompt(prompt, customHint);
+                }
                 lastPagePrompt = prompt;
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
@@ -263,10 +274,11 @@ public class GridImageService {
             episodeInfo.put("gridPageCount", pageCount);
             // 保存最后一个 page 的 prompt（包含完整九宫格布局信息）
             episodeInfo.put("gridPrompt", lastPagePrompt);
+            // 清除用户覆盖的 prompt，下次生成需重新编辑
+            episodeInfo.remove("gridPromptOverride");
             episode.setEpisodeInfo(episodeInfo);
             episodeRepository.updateById(episode);
 
-            // 发布九宫格生成完成事件
             if (gridProjectId != null) {
                 eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, "generated");
             }

@@ -63,7 +63,6 @@ const imageProviderOptions = [
 // 视频生成商选项
 const videoProviderOptions = [
   { value: 'vidu', label: 'Vidu' },
-  { value: 'sora', label: 'Sora2' },
   { value: 'grok', label: 'Grok' },
 ];
 

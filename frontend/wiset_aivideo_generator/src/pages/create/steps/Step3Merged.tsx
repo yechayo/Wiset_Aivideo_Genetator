@@ -14,6 +14,7 @@ import {
   retryGeneration,
   confirmSingleCharacter,
   lockSingleCharacter,
+  rejectSingleCharacter,
   setVisualStyle,
 } from '../../../services/characterService';
 import { useCreateStore } from '../../../stores/createStore';
@@ -284,6 +285,17 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
     }
   };
 
+  // 驳回角色：回到配置阶段，允许修改描述后重新生成
+  const handleRejectChar = async (charId: string) => {
+    if (!projectId) return;
+    try {
+      await rejectSingleCharacter(projectId, charId);
+      loadCharacters();
+    } catch (err: any) {
+      alert(err.message || '驳回失败');
+    }
+  };
+
   const getGenStatusText = (status: string | undefined, label: string) => {
     switch (status) {
       case 'GENERATING': return `${label}生成中...`;
@@ -370,7 +382,7 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
             <div className={styles.imagePlaceholder}><span>未生成</span></div>
           )}
         </div>
-        {!isGenerating && phase !== 'locked' && (
+        {!isGenerating && phase !== 'locked' && phase !== 'review' && (
           status === 'GENERATING' ? null : status === 'COMPLETED' ? (
             <button className={styles.retryBtn} onClick={() => handleRetryChar(char.charId, type!)}>重新生成</button>
           ) : status === 'FAILED' ? (
@@ -437,10 +449,13 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
               if (!projectId) return;
               setGeneratingIds(prev => new Set(prev).add(char.charId));
               try {
+                await updateCharacter(projectId, char.charId, editForm);
                 await confirmSingleCharacter(projectId, char.charId);
+                loadCharacters();
               } catch (err: any) {
                 alert(err.message || '生成失败');
                 setGeneratingIds(prev => { const next = new Set(prev); next.delete(char.charId); return next; });
+                loadCharacters();
               }
             }} disabled={generatingIds.has(char.charId)}>
               {generatingIds.has(char.charId) ? '生成中...' : '生成素材'}
@@ -482,9 +497,14 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
           {renderImageItem('三视图', st?.threeViewGridUrl, char.threeViewStatus ?? undefined, st?.threeViewError, 'threeView')}
         </div>
         {phase === 'review' && (
-          <button className={styles.confirmCharBtn} onClick={() => projectId && lockSingleCharacter(projectId, char.charId).then(loadCharacters)}>
-            确认锁定
-          </button>
+          <div className={styles.reviewActions}>
+            <button className={styles.rejectBtn} onClick={() => handleRejectChar(char.charId)}>
+              驳回
+            </button>
+            <button className={styles.approveBtn} onClick={() => projectId && lockSingleCharacter(projectId, char.charId).then(loadCharacters)}>
+              通过
+            </button>
+          </div>
         )}
       </div>
     );
@@ -623,7 +643,7 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
             )}
             {hasReview && (
               <button className={styles.confirmButton} onClick={handleLockAll} disabled={batchLoading}>
-                {batchLoading ? '锁定中...' : '一键锁定全部'}
+                {batchLoading ? '通过中...' : '一键通过全部'}
               </button>
             )}
             {allLocked && (

@@ -398,6 +398,17 @@ public class EpisodeController {
             }
         }
 
+        // 处理完整的自定义 prompt（用户直接编辑的 prompt）
+        String requestedFullPrompt = body != null ? body.get("fullPrompt") : null;
+        if (requestedFullPrompt != null) {
+            String normalized = requestedFullPrompt.trim();
+            if (normalized.isEmpty()) {
+                info.remove("gridPromptOverride");
+            } else {
+                info.put("gridPromptOverride", normalized);
+            }
+        }
+
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
         String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");

@@ -45,13 +45,6 @@ interface Step4ProductionProps {
   onNextStep?: () => void;
 }
 
-const BookIcon = () => (
-  <svg className={styles.chapterIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-  </svg>
-);
-
 const CheckIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20 6 9 17 4 12" />
@@ -455,10 +448,12 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             splitShots: ep.episodeInfo?.splitShots || [],
             gridRejectionFeedback: ep.episodeInfo?.gridRejectionFeedback || null,
             gridPromptHint: ep.episodeInfo?.gridPromptHint || '',
+            gridPrompt: ep.episodeInfo?.gridPrompt || '',
             panelApproved: ep.episodeInfo?.panelApproved ?? false,
             isNewFlow: !!ep.episodeInfo?.gridStatus,
             scriptStatus: ep.episodeInfo?.scriptStatus || 'pending',
             storyboardStatus: ep.episodeInfo?.storyboardStatus || 'pending',
+            episodeInfo: ep.episodeInfo,
           };
         });
 
@@ -814,6 +809,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                           splitShots: updatedEp.episodeInfo?.splitShots || [],
                           gridPromptHint: updatedEp.episodeInfo?.gridPromptHint || '',
                           gridRejectionFeedback: updatedEp.episodeInfo?.gridRejectionFeedback || null,
+                          gridPrompt: updatedEp.episodeInfo?.gridPrompt || '',
+                          episodeInfo: updatedEp.episodeInfo,
                         }
                       : ep
                   ),
@@ -939,11 +936,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   }, [projectId, loadEpisodes, rejectingEpisodeId]);
 
   // Generate grid per episode
-  const handleGenerateGrid = useCallback(async (episodeId: number, customHint?: string) => {
+  const handleGenerateGrid = useCallback(async (episodeId: number, fullPrompt?: string) => {
     if (!projectId || generatingGrid) return;
     setGeneratingGrid(episodeId);
     try {
-      await regenerateEpisodeGrid(projectId, episodeId, customHint);
+      await regenerateEpisodeGrid(projectId, episodeId, fullPrompt);
       // 轮询等待九宫格生成完成（SSE 可能断连）
       const pollGrid = async () => {
         for (let i = 0; i < 60; i++) {
@@ -1490,8 +1487,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
           const count = step.key === 'script' ? scriptCount
             : step.key === 'grid' ? gridCount
             : videoCount;
-          // Tab is "completed" when no episodes remain at this stage
-          const completed = count === 0 && allEpisodes.length > 0;
+          // Tab is "completed" when no episodes remain at this stage AND at least one episode has progressed beyond it
+          const completed = count === 0 && allEpisodes.length > 0
+            && (step.key === 'script' ? (gridCount + videoCount > 0)
+              : step.key === 'grid' ? videoCount > 0
+              : false);
           const stepClasses = [
             styles.stepItem,
             isActive && styles.stepItemActive,
@@ -1602,16 +1602,23 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 const doneCount = doneEps.size;
                 return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
-                  <button className={styles.chapterHeader} onClick={() => toggleChapter(chapter.chapterIndex)}>
-                    <ChevronIcon open={chapterOpen} />
-                    <BookIcon />
-                    <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
-                    {doneCount > 0 && (
-                      <span style={{ marginLeft: 8, fontSize: 12, color: '#52c41a' }}>
-                        ✓ {doneCount} 集已完成
+                  <div className={styles.chapterHeader}>
+                    <button className={styles.chapterHeaderLeft} onClick={() => toggleChapter(chapter.chapterIndex)}>
+                      <span className={styles.chapterNumberBadge}>
+                        {String(chapter.chapterIndex).padStart(2, '0')}
                       </span>
-                    )}
-                  </button>
+                      <div className={styles.chapterInfo}>
+                        <h2 className={styles.chapterTitle}>{chapter.title.replace(/^#+\s*/, '')}</h2>
+                      </div>
+                      {doneCount > 0 && (
+                        <span className={styles.chapterDoneBadge}>
+                          <span className={styles.chapterDoneBadgeDot} />
+                          {doneCount} 集已完成
+                        </span>
+                      )}
+                      <ChevronIcon open={chapterOpen} />
+                    </button>
+                  </div>
                   {chapterOpen && (
                   <div className={styles.episodeList}>
                     {chapter.episodes.map(ep => {
@@ -1627,6 +1634,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                             buildGridPromptText={buildGridPromptText}
                             buildMultiShotPromptText={buildMultiShotPromptText}
                             nextStageLabel="→ 九宫格"
+                            showScriptContent={true}
                           />
                         );
                       }
@@ -1634,19 +1642,14 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                         <ScriptEpisodeCard
                           key={ep.episodeId}
                           episode={ep}
-                          project={project}
                           generatingScript={generatingScript}
                           approvingEpisodeId={approvingEpisodeId}
                           rejectingEpisodeId={rejectingEpisodeId}
                           expandedEpisodeId={expandedEpisodeId}
-                          expandedPanelKey={expandedPanelKey}
                           onGenerateScript={handleGenerateScript}
                           onApproveScript={handleApproveScript}
                           onRejectScript={handleRejectScript}
                           onToggleEpisode={toggleEpisode}
-                          onTogglePromptPreview={setExpandedPanelKey}
-                          buildGridPromptText={buildGridPromptText}
-                          buildMultiShotPromptText={buildMultiShotPromptText}
                         />
                       );
                     })}
@@ -1671,16 +1674,23 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 const doneCount = doneEps.size;
                 return (
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
-                  <button className={styles.chapterHeader} onClick={() => toggleChapter(chapter.chapterIndex)}>
-                    <ChevronIcon open={chapterOpen} />
-                    <BookIcon />
-                    <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
-                    {doneCount > 0 && (
-                      <span style={{ marginLeft: 8, fontSize: 12, color: '#52c41a' }}>
-                        ✓ {doneCount} 集已完成
+                  <div className={styles.chapterHeader}>
+                    <button className={styles.chapterHeaderLeft} onClick={() => toggleChapter(chapter.chapterIndex)}>
+                      <span className={styles.chapterNumberBadge}>
+                        {String(chapter.chapterIndex).padStart(2, '0')}
                       </span>
-                    )}
-                  </button>
+                      <div className={styles.chapterInfo}>
+                        <h2 className={styles.chapterTitle}>{chapter.title.replace(/^#+\s*/, '')}</h2>
+                      </div>
+                      {doneCount > 0 && (
+                        <span className={styles.chapterDoneBadge}>
+                          <span className={styles.chapterDoneBadgeDot} />
+                          {doneCount} 集已完成
+                        </span>
+                      )}
+                      <ChevronIcon open={chapterOpen} />
+                    </button>
+                  </div>
                   {chapterOpen && (
                   <div className={styles.episodeList}>
                     {chapter.episodes.map(ep => {
@@ -1713,6 +1723,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                           onRejectGrid={handleRejectGrid}
                           onRejectToScript={handleRejectToScript}
                           onOpenLightbox={setLightboxUrl}
+                          buildGridPromptText={buildGridPromptText}
                         />
                       );
                     })}
@@ -1742,12 +1753,16 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 <div key={chapter.chapterIndex} className={styles.chapterGroup}>
                   <div className={styles.chapterHeader}>
                     <button className={styles.chapterHeaderLeft} onClick={() => toggleChapter(chapter.chapterIndex)}>
-                      <ChevronIcon open={chapterOpen} />
-                      <BookIcon />
-                      <h2 className={styles.chapterTitle}>第{chapter.chapterIndex}章 {chapter.title}</h2>
+                      <span className={styles.chapterNumberBadge}>
+                        {String(chapter.chapterIndex).padStart(2, '0')}
+                      </span>
+                      <div className={styles.chapterInfo}>
+                        <h2 className={styles.chapterTitle}>{chapter.title.replace(/^#+\s*/, '')}</h2>
+                      </div>
                       <span className={styles.chapterProgress}>
                         <span className={styles.chapterProgressText}>{chDoneCount}/{chTotalCount}</span>
                       </span>
+                      <ChevronIcon open={chapterOpen} />
                     </button>
                     <div className={styles.chapterBatchActions}>
                       <button
@@ -2006,6 +2021,8 @@ interface DoneEpisodeCardProps {
   buildGridPromptText?: (visualStyle: string, shots: any[], isComicCommentary?: boolean) => string;
   buildMultiShotPromptText?: (visualStyle: string, shots: any[], isComicCommentary?: boolean) => string;
   nextStageLabel: string;
+  /** 是否显示脚本内容（4A 已完成时） */
+  showScriptContent?: boolean;
   /** 是否显示九宫格提示词（4B 已完成时） */
   showGridPrompt?: boolean;
   /** 是否显示视频提示词（4C 已完成时） */
@@ -2022,6 +2039,7 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
   buildGridPromptText,
   buildMultiShotPromptText,
   nextStageLabel,
+  showScriptContent = false,
   showGridPrompt = false,
   showVideoPrompt = false,
   showGridImages = false,
@@ -2032,7 +2050,7 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
   const visualStyle = episode.segments[0]?.panelData?.visualStyle || 'ANIME';
 
   return (
-    <div className={styles.episodeScriptCard} style={{ opacity: 0.85, borderLeft: '3px solid #52c41a' }}>
+    <div className={`${styles.episodeScriptCard} ${styles.episodeCardDone}`}>
       <div
         className={styles.episodeScriptHeader}
         style={{ cursor: 'pointer' }}
@@ -2041,35 +2059,67 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
         <div>
           <h3 className={styles.episodeScriptTitle}>
             第{episode.episodeIndex}集 {episode.title}
-            <span style={{ marginLeft: 8, fontSize: 12, color: '#52c41a', fontWeight: 'normal' }}>✓ 已通过</span>
+            <span className={styles.episodeCardDoneLabel}>✓ 已通过</span>
           </h3>
           <span className={styles.episodeScriptCount}>
             {episode.segments.length > 0 ? `${episode.segments.length} 个分镜` : '暂无分镜数据'}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 12, color: '#52c41a' }}>{nextStageLabel}</span>
-          <span style={{ color: isExpanded ? '#1890ff' : 'var(--color-text-secondary)', fontSize: 16 }}>
+        <div className={styles.episodeCardExpand}>
+          <span className={styles.episodeCardNextStage}>{nextStageLabel}</span>
+          <span className={`${styles.episodeCardExpandIcon} ${isExpanded ? styles.episodeCardExpandIconOpen : ''}`}>
             {isExpanded ? '▾' : '▸'}
           </span>
         </div>
       </div>
 
-      {isExpanded && (showGridPrompt || showVideoPrompt || showGridImages) && (
-        <div style={{ padding: '12px', borderTop: '1px solid var(--color-border)' }}>
+      {isExpanded && (showScriptContent || showGridPrompt || showVideoPrompt || showGridImages) && (
+        <div className={styles.episodeCardExpandedContent}>
+          {/* 脚本内容 */}
+          {showScriptContent && episode.segments.length > 0 && (
+            <div className={styles.scriptSegmentList}>
+              {episode.segments.map((seg, idx) => (
+                <div key={idx} className={styles.scriptSegmentItem}>
+                  <div className={styles.scriptSegmentTitle}>分镜 {idx + 1}</div>
+                  {seg.synopsis && (
+                    <div className={styles.scriptSegmentDetail}>
+                      <span>画面：</span>{seg.synopsis}
+                    </div>
+                  )}
+                  {seg.panelData?.dialogue && (
+                    <div className={styles.scriptSegmentDetail}>
+                      <span>对话：</span><span style={{ whiteSpace: 'pre-wrap' }}>{seg.panelData.dialogue}</span>
+                    </div>
+                  )}
+                  {seg.characterAvatars.length > 0 && (
+                    <div className={styles.scriptSegmentCharacters}>
+                      <span>角色：</span>{seg.characterAvatars.map(a => a.name).join('、')}
+                    </div>
+                  )}
+                  {seg.panelData?.composition && (
+                    <div className={styles.scriptSegmentDetail}>
+                      <span>镜头：</span>{seg.panelData.composition}
+                      {seg.panelData?.cameraAngle && ` / ${seg.panelData.cameraAngle}`}
+                      {seg.panelData?.cameraMovement && ` / ${seg.panelData.cameraMovement}`}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {/* 九宫格提示词 */}
           {showGridPrompt && allShots.length > 0 && buildGridPromptText && (
             <div className={styles.episodePromptPreview}>
               <div
-                style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 8, cursor: 'pointer' }}
+                className={styles.episodePromptCollapse}
                 onClick={() => onToggleExpanded(isExpanded ? null : episode.episodeId)}
               >
                 收起 ▲
               </div>
-              <button className={styles.episodePromptToggle} style={{ marginBottom: 4 }}>
+              <button className={styles.episodePromptToggle}>
                 图片生成 Prompt（九宫格）
               </button>
-              <pre className={styles.episodePromptBlock} style={{ maxHeight: 150, overflow: 'auto', fontSize: 11 }}>
+              <pre className={styles.episodePromptBlock}>
                 {buildGridPromptText(visualStyle, allShots, isComicCommentary)}
               </pre>
             </div>
@@ -2077,18 +2127,18 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
           {/* 视频提示词 */}
           {showVideoPrompt && allShots.length > 0 && buildMultiShotPromptText && (
             <div className={styles.episodePromptPreview}>
-              <button className={styles.episodePromptToggle} style={{ marginBottom: 4 }}>
+              <button className={styles.episodePromptToggle}>
                 视频生成 Prompt（多镜头）
               </button>
-              <pre className={styles.episodePromptBlock} style={{ maxHeight: 150, overflow: 'auto', fontSize: 11 }}>
+              <pre className={styles.episodePromptBlock}>
                 {buildMultiShotPromptText(visualStyle, allShots, isComicCommentary)}
               </pre>
             </div>
           )}
           {/* 九宫格图片 */}
           {showGridImages && episode.gridImages && episode.gridImages.length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
+            <div className={styles.episodeGridSection}>
+              <div className={styles.episodeGridSectionLabel}>
                 九宫格图片（{episode.gridImages.length} 张）
               </div>
               <div className={styles.gridImagesContainer}>

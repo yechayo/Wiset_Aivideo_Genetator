@@ -109,6 +109,15 @@ public class CharacterController {
         return Result.ok();
     }
 
+    @PostMapping("/{charId}/reject")
+    @Operation(summary = "驳回单个角色", description = "驳回单个角色，重置图片生成状态，回到配置阶段允许修改角色描述后重新生成")
+    public Result<Void> rejectSingleCharacter(
+            @PathVariable String projectId,
+            @PathVariable String charId) {
+        characterImageGenerationService.rejectSingleCharacter(projectId, charId);
+        return Result.ok();
+    }
+
     // ================= 图片生成接口 =================
 
     @PostMapping("/{charId}/generate/expression")

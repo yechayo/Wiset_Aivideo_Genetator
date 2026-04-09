@@ -88,11 +88,13 @@ export async function rejectEpisodeGrid(
 export async function regenerateEpisodeGrid(
   projectId: string,
   episodeId: number,
-  customHint?: string,
+  fullPrompt?: string,
 ): Promise<ApiResponse<void>> {
+  const body: Record<string, string> = {};
+  if (fullPrompt !== undefined) body.fullPrompt = fullPrompt;
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/grid/regenerate`,
-    customHint !== undefined ? { customHint } : undefined,
+    Object.keys(body).length > 0 ? body : undefined,
   );
 }
 

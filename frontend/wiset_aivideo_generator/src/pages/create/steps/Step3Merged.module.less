@@ -576,6 +576,49 @@
   }
 }
 
+// 审核操作栏（通过 + 驳回）
+.reviewActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.rejectBtn {
+  padding: 7px 24px;
+  background: var(--color-danger);
+  color: var(--color-bg-canvas);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: all 180ms var(--easing-standard);
+
+  &:hover {
+    opacity: 0.88;
+  }
+}
+
+.approveBtn {
+  padding: 7px 24px;
+  background: var(--color-success);
+  color: var(--color-bg-canvas);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: all 180ms var(--easing-standard);
+
+  &:hover {
+    opacity: 0.88;
+  }
+}
+
 // ============================================================
 // 底部操作栏
 // ============================================================
@@ -695,6 +738,8 @@
   .generateBtn,
   .retryBtn,
   .confirmCharBtn,
+  .approveBtn,
+  .rejectBtn,
   .deleteBtn,
   .collapseBtn,
   .retryButton {

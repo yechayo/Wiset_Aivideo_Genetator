@@ -306,6 +306,43 @@ public class CharacterImageGenerationService {
         return dto;
     }
 
+    // ==================== 单角色驳回 ====================
+
+    /**
+     * 驳回单个角色：重置图片生成状态，允许用户修改角色描述后重新生成
+     */
+    @Transactional
+    public void rejectSingleCharacter(String projectId, String charId) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在: " + charId);
+        }
+
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IMAGES_LOCKED))) {
+            throw new BusinessException("角色已锁定，无法驳回");
+        }
+
+        Map<String, Object> info = ensureCharInfo(character);
+        // 重置生成状态
+        info.put(CharacterInfoKeys.EXPRESSION_STATUS, null);
+        info.put(CharacterInfoKeys.EXPRESSION_ERROR, null);
+        info.put(CharacterInfoKeys.EXPRESSION_GRID_URL, null);
+        info.put(CharacterInfoKeys.EXPRESSION_GRID_PROMPT, null);
+        info.put(CharacterInfoKeys.IS_GENERATING_EXPRESSION, false);
+        info.put(CharacterInfoKeys.THREE_VIEW_STATUS, null);
+        info.put(CharacterInfoKeys.THREE_VIEW_ERROR, null);
+        info.put(CharacterInfoKeys.THREE_VIEW_GRID_URL, null);
+        info.put(CharacterInfoKeys.THREE_VIEW_GRID_PROMPT, null);
+        info.put(CharacterInfoKeys.IS_GENERATING_THREE_VIEW, false);
+        // 回到配置状态
+        info.put(CharacterInfoKeys.CONFIRMED, false);
+        info.put(CharacterInfoKeys.CHAR_STATUS, "configuring");
+        character.setCharacterInfo(info);
+        characterRepository.updateById(character);
+
+        log.info("角色已驳回，回到配置状态: charId={}, name={}", charId, getCharInfoStr(character, CharacterInfoKeys.NAME));
+    }
+
     // ==================== 单角色确认与锁定 ====================
 
     /**

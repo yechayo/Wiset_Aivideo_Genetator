@@ -6,7 +6,6 @@ import com.comic.ai.image.SeedreamImageService;
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.ai.video.GrokVideoService;
-import com.comic.ai.video.SoraVideoService;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.ai.video.ViduVideoService;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +31,6 @@ public class AiServiceConfiguration {
             SeedreamImageService seedreamImageService,
             NanobananaImageService nanobananaImageService,
             ViduVideoService viduVideoService,
-            SoraVideoService soraVideoService,
             GrokVideoService grokVideoService
     ) {
         Map<String, ImageGenerationService> imageMap = new HashMap<>();
@@ -42,7 +40,6 @@ public class AiServiceConfiguration {
 
         Map<String, VideoGenerationService> videoMap = new HashMap<>();
         videoMap.put("vidu", viduVideoService);
-        videoMap.put("sora", soraVideoService);
         videoMap.put("grok", grokVideoService);
         this.videoServices = videoMap;
         log.info("AI 服务配置初始化: 图片={}, 视频={}", imageServices.keySet(), videoServices.keySet());

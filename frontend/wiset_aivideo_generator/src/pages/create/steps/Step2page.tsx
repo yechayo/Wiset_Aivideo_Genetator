@@ -597,11 +597,13 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
                   <button
                     className={styles.batchGenerateButton}
                     onClick={handleGenerateAll}
-                    disabled={isBatchGenerating}
+                    disabled={isBatchGenerating || isGenerating || !!statusInfo?.isGenerating}
                   >
-                    {isBatchGenerating
+                    {isBatchGenerating || isGenerating || !!statusInfo?.isGenerating
                       ? '批量生成中...'
-                      : `一键生成全部剩余章节 (${scriptData.pendingChapters.length} 章)`}
+                      : (scriptData.generatedChapters?.length > 0
+                        ? `生成剩余剧集 (${scriptData.pendingChapters.length} 章)`
+                        : `一键生成全部剧集 (${scriptData.pendingChapters.length} 章)`)}
                   </button>
                 </div>
               )}
