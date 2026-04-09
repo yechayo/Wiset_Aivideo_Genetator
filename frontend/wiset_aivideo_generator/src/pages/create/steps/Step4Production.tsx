@@ -261,6 +261,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [generatingGrid, setGeneratingGrid] = useState<number | null>(null);
   const [generatingVideoKeys, setGeneratingVideoKeys] = useState<Set<string>>(new Set()); // "episodeId-panelId"
   const [approvingEpisodeId, setApprovingEpisodeId] = useState<number | null>(null);
+  const [rejectingEpisodeId, setRejectingEpisodeId] = useState<number | null>(null);
   const [isBatchTtsLoading, setIsBatchTtsLoading] = useState(false);
   const [isBatchMergeLoading, setIsBatchMergeLoading] = useState(false);
   // Track which chapter/project batch scope is active (e.g., "enhance-ch-1", "tts-project")
