@@ -38,11 +38,12 @@ interface ScriptEpisodeCardProps {
   onGenerateScript: (episodeId: number) => void;
   onApproveScript: (episodeId: number) => void;
   onToggleEpisode: (episodeId: number) => void;
+  onRefreshEpisode: (episodeId: number) => void;
 }
 
 const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
   episode, projectId, generatingScript, approvingEpisodeId,
-  expandedEpisodeId, onGenerateScript, onApproveScript, onToggleEpisode,
+  expandedEpisodeId, onGenerateScript, onApproveScript, onToggleEpisode, onRefreshEpisode,
 }: ScriptEpisodeCardProps) {
   const isGenerating = generatingScript === episode.episodeId || generatingScript === -1;
   const isExpanded = expandedEpisodeId === episode.episodeId;
@@ -69,23 +70,23 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
     try {
       await updateShot(projectId, episode.episodeId, idx, editData);
       setEditingIdx(null);
-      onToggleEpisode(episode.episodeId);
+      onRefreshEpisode(episode.episodeId);
     } catch (err: any) {
       alert(err?.message || '保存失败');
     } finally {
       setSavingIdx(null);
     }
-  }, [projectId, episode.episodeId, editData, onToggleEpisode]);
+  }, [projectId, episode.episodeId, editData, onRefreshEpisode]);
 
   const handleToggleLock = useCallback(async (idx: number, currentLocked: boolean) => {
     if (!projectId) return;
     try {
       await updateShot(projectId, episode.episodeId, idx, { locked: !currentLocked });
-      onToggleEpisode(episode.episodeId);
+      onRefreshEpisode(episode.episodeId);
     } catch (err: any) {
       alert(err?.message || '锁定操作失败');
     }
-  }, [projectId, episode.episodeId, onToggleEpisode]);
+  }, [projectId, episode.episodeId, onRefreshEpisode]);
 
   const handleFieldChange = useCallback((field: string, value: string) => {
     setEditData(prev => ({ ...prev, [field]: value }));

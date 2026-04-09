@@ -418,57 +418,8 @@ public class DeepSeekTextService implements TextGenerationService {
     public List<Map<String, Object>> generateStoryboard(
             String episodeContent, String characters, int totalDuration, String visualStyle,
             boolean comicCommentary, String revisionNote) {
-        int recommendedShots = Math.max(1, totalDuration / 4);
-        int minShots = Math.max(1, (int) Math.ceil((double) totalDuration / 6));
-        int maxShots = Math.max(minShots, totalDuration / 3);
-
-        String systemPrompt = buildStoryboardSystemPrompt(
-                totalDuration, minShots, maxShots, recommendedShots, comicCommentary);
-
-        StringBuilder promptBuilder = new StringBuilder();
-        promptBuilder.append("剧本内容：\n").append(episodeContent).append("\n\n")
-            .append("角色：").append(characters).append("\n")
-            .append("视觉风格：").append(visualStyle).append("\n")
-            .append("目标总时长：").append(totalDuration).append("秒\n\n");
-        if (revisionNote != null && !revisionNote.trim().isEmpty()) {
-            promptBuilder.append("**修改建议**：").append(revisionNote.trim()).append("\n\n");
-        }
-        promptBuilder.append("请生成详细的分镜脚本 JSON 数组。");
-
-        String response = generateStream(systemPrompt, promptBuilder.toString());
-        List<Map<String, Object>> shots = parseJsonArray(response);
-
-        if (shots == null || shots.isEmpty()) {
-            throw new BusinessException("分镜生成结果为空，请重试");
-        }
-
-        if (comicCommentary) {
-            normalizeComicNarrationFields(shots);
-        }
-
-        // 钳制时长到 2-4 秒，并自动计算 startTime/endTime
-        int currentTime = 0;
-        for (Map<String, Object> shot : shots) {
-            int duration = ((Number) shot.get("duration")).intValue();
-            duration = Math.max(2, Math.min(4, duration));
-            shot.put("duration", duration);
-            shot.put("startTime", currentTime);
-            currentTime += duration;
-            shot.put("endTime", currentTime);
-        }
-
-        // 如果总时长超出目标，从末尾移除多余分镜
-        while (currentTime > totalDuration && !shots.isEmpty()) {
-            Map<String, Object> removed = shots.remove(shots.size() - 1);
-            currentTime -= ((Number) removed.get("duration")).intValue();
-        }
-        // 修正最后一个分镜的 endTime
-        if (!shots.isEmpty()) {
-            Map<String, Object> lastShot = shots.get(shots.size() - 1);
-            lastShot.put("endTime", currentTime);
-        }
-
-        return shots;
+        return generateStoryboard(episodeContent, characters, totalDuration, visualStyle,
+                comicCommentary, revisionNote, null);
     }
 
     /**
@@ -498,8 +449,14 @@ public class DeepSeekTextService implements TextGenerationService {
         if (lockedShots != null && !lockedShots.isEmpty()) {
             promptBuilder.append("【精修模式】以下是当前全部分镜，标记 [LOCKED] 的分镜必须保持不变，请仅为其余分镜重新生成内容。\n");
             promptBuilder.append("保持与锁定分镜的叙事连贯性。\n\n");
-            for (Map<String, Object> locked : lockedShots) {
-                promptBuilder.append("[LOCKED] 第").append(locked.get("shotNumber")).append("镜\n");
+            try {
+                String lockedJson = new ObjectMapper().writeValueAsString(lockedShots);
+                promptBuilder.append("[LOCKED 分镜内容]\n").append(lockedJson).append("\n\n");
+            } catch (Exception e) {
+                log.warn("序列化 lockedShots 失败，回退为 shotNumber 列表");
+                for (Map<String, Object> locked : lockedShots) {
+                    promptBuilder.append("[LOCKED] 第").append(locked.get("shotNumber")).append("镜\n");
+                }
             }
             promptBuilder.append("\n请为未锁定的分镜重新生成内容，输出完整的 JSON 数组（包含所有分镜，locked 的保持原样）。\n\n");
         }
@@ -606,111 +563,8 @@ public class DeepSeekTextService implements TextGenerationService {
     public List<List<Map<String, Object>>> generatePanelAwareStoryboard(
             String episodeContent, String characters, int totalDuration, String visualStyle,
             String revisionNote, String narrationPerspective) {
-
-        String systemPrompt = buildPanelAwareSystemPrompt(totalDuration, true, narrationPerspective);
-
-        StringBuilder promptBuilder = new StringBuilder();
-        promptBuilder.append("剧本内容：\n").append(episodeContent).append("\n\n")
-            .append("角色：").append(characters).append("\n")
-            .append("视觉风格：").append(visualStyle).append("\n")
-            .append("目标总时长：").append(totalDuration).append("秒\n\n");
-        if (revisionNote != null && !revisionNote.trim().isEmpty()) {
-            promptBuilder.append("**修改建议**：").append(revisionNote.trim()).append("\n\n");
-        }
-        if ("third_person".equals(narrationPerspective)) {
-            promptBuilder.append("**重要：旁白必须使用第三人称叙述，用角色名字或他/她指代，严禁使用「我」**。\n\n");
-        } else if ("first_person".equals(narrationPerspective)) {
-            promptBuilder.append("**重要：旁白必须使用第一人称「我」叙述，以主角口吻讲述**。\n\n");
-        }
-        promptBuilder.append("请生成 Panel-Aware 分镜脚本 JSON。");
-
-        String response = generateStream(systemPrompt, promptBuilder.toString());
-        List<List<Map<String, Object>>> panelShots = parsePanelAwareJson(response);
-
-        if (panelShots == null || panelShots.isEmpty()) {
-            throw new BusinessException("Panel-Aware 分镜生成结果为空，请重试");
-        }
-
-        int globalShotNumber = 0;
-
-        for (List<Map<String, Object>> panelShotList : panelShots) {
-            normalizeComicNarrationFields(panelShotList);
-
-            // 计算 panelStartTime：统计前面所有 panel 的时长
-            int panelStartTime = 0;
-            for (List<Map<String, Object>> prevPanel : panelShots) {
-                if (prevPanel == panelShotList) break;
-                for (Map<String, Object> ps : prevPanel) {
-                    panelStartTime += toSafeInt(ps.get("duration"), 3);
-                }
-            }
-
-            int currentTime = panelStartTime;
-            for (Map<String, Object> shot : panelShotList) {
-                int duration = toSafeInt(shot.get("duration"), 3);
-                duration = Math.max(2, Math.min(4, duration));
-                shot.put("duration", duration);
-                shot.put("startTime", currentTime);
-                currentTime += duration;
-                shot.put("endTime", currentTime);
-                globalShotNumber++;
-                shot.put("globalShotNumber", globalShotNumber);
-            }
-
-            // 裁掉超出 10s 的尾部 shots（保底至少 2 个）
-            int panelDuration = currentTime - panelStartTime;
-            while (panelDuration > 10 && panelShotList.size() > 2) {
-                Map<String, Object> removed = panelShotList.remove(panelShotList.size() - 1);
-                int removedDur = toSafeInt(removed.get("duration"), 3);
-                panelDuration -= removedDur;
-                globalShotNumber--;
-                currentTime -= removedDur;
-            }
-            if (!panelShotList.isEmpty()) {
-                panelShotList.get(panelShotList.size() - 1).put("endTime", currentTime);
-            }
-        }
-
-        // 裁掉总时长超出的尾部 panels
-        int totalActual = 0;
-        for (List<Map<String, Object>> ps : panelShots) {
-            for (Map<String, Object> s : ps) {
-                totalActual += toSafeInt(s.get("duration"), 3);
-            }
-        }
-        while (totalActual > totalDuration && panelShots.size() > 1) {
-            List<Map<String, Object>> removed = panelShots.remove(panelShots.size() - 1);
-            for (Map<String, Object> s : removed) {
-                totalActual -= toSafeInt(s.get("duration"), 3);
-            }
-        }
-
-        // 后处理：互斥原则强制校验 + 去重
-        for (List<Map<String, Object>> panelShotList : panelShots) {
-            String prevNarration = "";
-            for (Map<String, Object> shot : panelShotList) {
-                String dialogue = str(shot.get("dialogue"));
-                String narration = str(shot.get("narration"));
-                // 互斥：有对白的 shot，清除 narration
-                if (!"无".equals(dialogue) && !dialogue.isEmpty()) {
-                    if (!"无".equals(narration) && !narration.isEmpty()) {
-                        log.warn("Shot {} 违反互斥原则，清除 narration 保留 dialogue", shot.get("shotNumber"));
-                        shot.put("narration", "无");
-                    }
-                }
-                // 去重：如果与上一镜旁白完全相同，清除
-                narration = str(shot.get("narration"));
-                if (!"无".equals(narration) && !narration.isEmpty() && narration.equals(prevNarration)) {
-                    log.warn("Shot {} narration 与上一镜完全重复，已清除", shot.get("shotNumber"));
-                    shot.put("narration", "无");
-                }
-                prevNarration = str(shot.get("narration"));
-                // 清理残留的 narrationType 字段
-                shot.remove("narrationType");
-            }
-        }
-
-        return panelShots;
+        return generatePanelAwareStoryboard(episodeContent, characters, totalDuration, visualStyle,
+                revisionNote, narrationPerspective, null);
     }
 
     public List<List<Map<String, Object>>> generatePanelAwareStoryboard(
@@ -733,8 +587,14 @@ public class DeepSeekTextService implements TextGenerationService {
         if (lockedShots != null && !lockedShots.isEmpty()) {
             promptBuilder.append("【精修模式】以下是当前全部分镜，标记 [LOCKED] 的分镜必须保持不变，请仅为其余分镜重新生成内容。\n");
             promptBuilder.append("保持与锁定分镜的叙事连贯性。\n\n");
-            for (Map<String, Object> locked : lockedShots) {
-                promptBuilder.append("[LOCKED] 第").append(locked.get("shotNumber")).append("镜\n");
+            try {
+                String lockedJson = new ObjectMapper().writeValueAsString(lockedShots);
+                promptBuilder.append("[LOCKED 分镜内容]\n").append(lockedJson).append("\n\n");
+            } catch (Exception e) {
+                log.warn("序列化 lockedShots 失败，回退为 shotNumber 列表");
+                for (Map<String, Object> locked : lockedShots) {
+                    promptBuilder.append("[LOCKED] 第").append(locked.get("shotNumber")).append("镜\n");
+                }
             }
             promptBuilder.append("\n请为未锁定的分镜重新生成内容，输出完整的 Panel-Aware JSON（包含所有分镜，locked 的保持原样）。\n\n");
         }

@@ -1426,6 +1426,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     setExpandedEpisodeId(prev => prev === episodeId ? null : episodeId);
   }, []);
 
+  const refreshEpisode = useCallback(async (episodeId: number) => {
+    await loadEpisodes();
+  }, [loadEpisodes]);
+
   // Stats
   const totalPanels = allEpisodes.reduce((sum, ep) => sum + ep.segments.length, 0);
   const completedVideos = allEpisodes.reduce((sum, ep) =>
@@ -1636,6 +1640,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                           onGenerateScript={handleGenerateScript}
                           onApproveScript={handleApproveScript}
                           onToggleEpisode={toggleEpisode}
+                          onRefreshEpisode={refreshEpisode}
                         />
                       );
                     })}
