@@ -1519,6 +1519,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             >
               {activeBatchScope === 'enhance-project' ? <><SpinIcon /> 润色中...</> : '全部润色'}
             </button>
+            {isComicCommentary && (
             <button
               className={styles.btnGhost}
               onClick={handleProjectBatchTts}
@@ -1526,6 +1527,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             >
               {activeBatchScope === 'tts-project' ? <><SpinIcon /> 生成中...</> : `全部旁白`}
             </button>
+            )}
             {isComicCommentary && (
               <button
                 className={styles.btnGhost}
@@ -1754,6 +1756,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                       >
                         {activeBatchScope === chScope('enhance') ? <><SpinIcon /> 润色中...</> : '润色'}
                       </button>
+                      {isComicCommentary && (
                       <button
                         className={styles.btnGhost}
                         onClick={() => handleChapterBatchTts(chapter.chapterIndex)}
@@ -1761,6 +1764,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                       >
                         {activeBatchScope === chScope('tts') ? <><SpinIcon /> 生成中...</> : '旁白'}
                       </button>
+                      )}
                       {isComicCommentary && (
                         <button
                           className={styles.btnGhost}
@@ -1809,6 +1813,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                   {batchEnhancingEpisodeId === ep.episodeId ? <><SpinIcon /> 润色中...</> : '批量润色'}
                                 </button>
                               )}
+                              {isComicCommentary && (
                               <button
                                 className={styles.btnGhost}
                                 onClick={() => handleBatchGenerateTts(ep.episodeId)}
@@ -1816,6 +1821,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                               >
                                 {isBatchTtsLoading ? <><SpinIcon /> 生成中...</> : `批量旁白 (${epTtsCompletedCount}/${epTtsTotalCount})`}
                               </button>
+                              )}
                               {isComicCommentary && (
                                 <button
                                   className={styles.btnGhost}
@@ -1934,15 +1940,17 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                     <div className={styles.modalLoading}>加载中...</div>
                   ) : promptModalTab === 'view' ? (
                     <div className={styles.modalPromptView}>
-                      <div className={styles.modalPromptHint}>以下是 AI 根据分镜内容自动生成的提示词，用于视频生成</div>
+                      <div className={styles.modalPromptHeader}>
+                        <div className={styles.modalPromptHint}>以下是 AI 根据分镜内容自动生成的提示词，用于视频生成</div>
+                        <button
+                          className={styles.modalEnhanceBtn}
+                          onClick={handleEnhance}
+                          disabled={promptEnhancing || promptLoading}
+                        >
+                          {promptEnhancing ? '优化中...' : 'AI 优化提示词（消耗1积分）'}
+                        </button>
+                      </div>
                       <pre className={styles.modalPromptPre}>{promptText || '(暂无提示词)'}</pre>
-                      <button
-                        className={styles.modalEnhanceBtn}
-                        onClick={handleEnhance}
-                        disabled={promptEnhancing || promptLoading}
-                      >
-                        {promptEnhancing ? '优化中...' : 'AI 优化提示词（消耗1积分）'}
-                      </button>
                     </div>
                   ) : (
                     <div className={styles.modalPromptEdit}>

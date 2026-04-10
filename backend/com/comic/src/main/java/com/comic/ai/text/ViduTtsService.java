@@ -34,36 +34,88 @@ public class ViduTtsService {
      * TTS 文本拼接算法
      * 按 shot 顺序拼接：
      * - 无台词 shot：输出 narration 文本
-     * - 有台词 shot：插入 &lt;#duration#&gt; 静音标记
+     * - 有台词 shot：累积时长到待插入的静音段
+     *
+     * MiniMax TTS API 限制：
+     * - &lt;#x#&gt; 停顿标记不可连续使用
+     * - x 范围 [0.01, 99.99]，小于等于 0 时不输出
+     *
+     * 健壮性处理：
+     * - 多个连续有台词 shot → 合并为一个静音段（总时长）
+     * - 静音段前后已无朗读文本 → 跳过（如首尾）
+     * - duration <= 0 → 忽略
+     * - narration 为空/无 → 不输出
      */
     public String buildTtsText(List<Map<String, Object>> shots) {
         if (shots == null || shots.isEmpty()) return "";
 
         List<String> segments = new ArrayList<>();
+        // 待插入的静音总时长（处理连续多个有台词 shot 的场景）
+        double pendingSilenceSeconds = 0;
+
         for (Map<String, Object> shot : shots) {
             boolean hasDialogue = hasDialogue(shot);
             String narration = extractNarration(shot);
 
             if (hasDialogue) {
+                // 有台词 → 累加时长，静音段由后续旁白或结束时统一吐出
                 Object durationObj = shot.get("duration");
                 if (durationObj != null) {
                     double duration = toDouble(durationObj);
-                    segments.add("<#" + duration + "#>");
+                    if (duration > 0) {
+                        pendingSilenceSeconds += duration;
+                    }
                 }
             } else if (narration != null && !narration.isEmpty() && !"无".equals(narration)) {
+                // 无台词 + 有旁白 → 先吐出之前累积的静音段（>0 才输出）
+                if (pendingSilenceSeconds > 0) {
+                    // 检查前一个 segment 是否已是静音段，避免连续（理论上不会有，但防御性检查）
+                    if (segments.isEmpty() || !segments.get(segments.size() - 1).startsWith("<#")) {
+                        segments.add("<#" + formatDuration(pendingSilenceSeconds) + "#>");
+                    } else {
+                        // 前一个也是静音段，合并（追加时长）
+                        String last = segments.remove(segments.size() - 1);
+                        double prev = parseLastDuration(last);
+                        segments.add("<#" + formatDuration(prev + pendingSilenceSeconds) + "#>");
+                    }
+                    pendingSilenceSeconds = 0;
+                }
                 segments.add(narration);
+            }
+            // 既无台词也无旁白 → 跳过（不产生任何输出）
+        }
+
+        // 循环结束后：吐出末尾累积的静音段
+        if (pendingSilenceSeconds > 0) {
+            // 末尾静音段前面已有朗读文本才输出，否则首段停顿需去掉
+            if (!segments.isEmpty()) {
+                segments.add("<#" + formatDuration(pendingSilenceSeconds) + "#>");
             }
         }
 
+        // 注意：不删除首位静音
+        // TTS 与视频从头到尾严格对齐，第一个 shot 可能是纯台词（无旁白），
+        // 此时需要在 TTS 开头插入对应时长的静音，才能与视频时间轴完全对齐。
         String result = String.join("", segments);
-        // 移除首段停顿（前面没有语音）
-        if (result.startsWith("<#")) {
-            int endIdx = result.indexOf(">");
-            if (endIdx > 0) {
-                result = result.substring(endIdx + 1);
-            }
-        }
         return result;
+    }
+
+    /** 保留两位小数，避免浮点精度问题 */
+    private String formatDuration(double seconds) {
+        return String.format(Locale.US, "%.2f", seconds);
+    }
+
+    /** 从 "&lt;#x#&gt;" 字符串中解析 x 值 */
+    private double parseLastDuration(String silenceTag) {
+        try {
+            int start = silenceTag.indexOf("<#") + 2;
+            int end = silenceTag.indexOf("#>", start);
+            if (start > 1 && end > start) {
+                return Double.parseDouble(silenceTag.substring(start, end));
+            }
+        } catch (Exception ignored) {
+        }
+        return 0;
     }
 
     /**

@@ -459,13 +459,15 @@ public class GridImageService {
                     log.warn("融合图加载失败: shot {}", i);
                 }
             }
-            // 绘制编号
-            g.setColor(Color.BLACK);
-            g.fillRect(x + 2, y + 2, 48, 36);
+            // 绘制编号 + 中文标注 + 秒数
+            g.setColor(new Color(0, 0, 0, 200));
+            g.fillRect(x + 2, y + 2, 72, 48);
             g.setColor(Color.WHITE);
-            g.setFont(new Font("SansSerif", Font.BOLD, 26));
-            String label = NumberFormatter.toCircled(i + 1);
-            g.drawString(label, x + 6, y + 28);
+            g.setFont(new Font("SansSerif", Font.BOLD, 30));
+            g.drawString("分镜" + (i + 1) + "号", x + 5, y + 30);
+            Integer duration = (Integer) shots.get(i).get("duration");
+            g.setFont(new Font("SansSerif", Font.BOLD, 22));
+            g.drawString(duration != null ? duration + "秒" : "", x + 5, y + 46);
 
             // 角色名字只展示在底部角色参考图区域，避免覆盖到分镜场景图。
         }
@@ -490,12 +492,12 @@ public class GridImageService {
                     int drawY = charY + (charH - drawH) / 2;
                     g.drawImage(charImg, drawX, drawY, drawW, drawH, null);
 
-                    // 角色编号
-                    g.setColor(Color.BLACK);
-                    g.fillRect(charX + 2, charY + 2, 36, 28);
+                    // 角色编号（放大）
+                    g.setColor(new Color(0, 0, 0, 200));
+                    g.fillRect(charX + 2, charY + 2, 56, 40);
                     g.setColor(Color.WHITE);
-                    g.setFont(new Font("SansSerif", Font.BOLD, 18));
-                    g.drawString("C" + (i + 1), charX + 5, charY + 22);
+                    g.setFont(new Font("SansSerif", Font.BOLD, 26));
+                    g.drawString("C" + (i + 1), charX + 8, charY + 30);
 
                     // 角色名字 + 设定信息
                     CharRef cr = charRefs.get(i);

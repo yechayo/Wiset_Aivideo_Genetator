@@ -196,6 +196,7 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
           </div>
 
           {/* Right column: TTS narration management */}
+          {isComicCommentary && (
           <div className={styles.rightColumn}>
             <div className={styles.narrationHeader}>
               <span>旁白语音</span>
@@ -231,7 +232,7 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
                 旁白生成失败，请重试
               </div>
             )}
-            {(segment.ttsStatus === 'completed' || segment.ttsAudioUrl) && isComicCommentary && (
+            {(segment.ttsStatus === 'completed' || segment.ttsAudioUrl) && (
               <div style={{ marginTop: 12 }}>
                 <button
                   className={styles.btnPrimary}
@@ -255,6 +256,7 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
               </div>
             )}
           </div>
+          )}
         </div>
       )}
     </div>
