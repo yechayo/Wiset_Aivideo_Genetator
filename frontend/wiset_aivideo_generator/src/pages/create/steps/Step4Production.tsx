@@ -325,6 +325,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const isVidu = videoProvider.toLowerCase() === 'vidu';
   const isGrok = videoProvider.toLowerCase() === 'grok';
 
+  // 同步 videoProvider prop 变化（其他端或 SSE 推送更新后）
+  useEffect(() => {
+    if (project?.projectInfo?.videoProvider) {
+      setVideoProvider(project.projectInfo.videoProvider as string);
+    }
+  }, [project?.projectInfo?.videoProvider]);
+
   // 切换视频提供商（先调 API，成功后再更新 UI 状态）
   // 注意：updateProject 是 PATCH 接口，支持部分字段更新
   const handleVideoProviderChange = useCallback(async (provider: string) => {
@@ -362,10 +369,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const generateVideoAbortRef = useRef<AbortController | null>(null);
   // 滚动位置恢复：防止 chapters 更新时列表跳回顶部
   const tabContentScrollRef = useRef<number>(0);
+  // 九宫格轮询定时器引用（用于 unmount 时清理）
+  const gridPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       generateVideoAbortRef.current?.abort();
+      if (gridPollTimerRef.current) clearTimeout(gridPollTimerRef.current);
     };
   }, []);
 
@@ -934,10 +944,15 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   // Generate grid per episode
   const handleGenerateGrid = useCallback(async (episodeId: number, fullPrompt?: string, gridPrompts?: string[]) => {
     if (!projectId || generatingGrid) return;
+    // 清理上一次未完成的轮询
+    if (gridPollTimerRef.current) {
+      clearTimeout(gridPollTimerRef.current);
+      gridPollTimerRef.current = null;
+    }
     setGeneratingGrid(episodeId);
     try {
       await regenerateEpisodeGrid(projectId, episodeId, fullPrompt, gridPrompts);
-      // 轮询等待九宫格生成完成（SSE 可能断连）
+      // 轮询等待九宫格生成完成（SSE 可能断连）；使用 setTimeout 链式调用以便清理
       const pollGrid = async () => {
         for (let i = 0; i < 60; i++) {
           await new Promise(r => setTimeout(r, 5000));
@@ -957,7 +972,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         // 超时后也刷新一次
         loadEpisodes();
       };
-      pollGrid();
+      gridPollTimerRef.current = setTimeout(() => { void pollGrid(); }, 0);
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '生成九宫格失败');
     } finally {

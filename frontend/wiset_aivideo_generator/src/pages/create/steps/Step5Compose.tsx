@@ -169,13 +169,28 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
   useEffect(() => { loadData(); }, [loadData]);
 
   // 页面从隐藏恢复时，确保数据是最新的（防止从 Step4 切回时遗漏 SSE 事件）
+  // 使用 debounce 避免快速切换标签页时触发多次 loadData
+  const visibilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') loadData();
+      if (document.visibilityState === 'visible') {
+        if (visibilityTimerRef.current) clearTimeout(visibilityTimerRef.current);
+        visibilityTimerRef.current = setTimeout(() => loadData(), 300);
+      }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (visibilityTimerRef.current) clearTimeout(visibilityTimerRef.current);
+    };
   }, [loadData]);
+
+  // 同步 project prop 中的 finalVideoUrl（其他端合成或 SSE 推送后可能更新）
+  useEffect(() => {
+    if (project?.projectInfo?.finalVideoUrl) {
+      setFinalVideoUrl(project.projectInfo.finalVideoUrl);
+    }
+  }, [project?.projectInfo?.finalVideoUrl]);
 
   // All episodes
   const allEpisodes = useMemo(() => chapters.flatMap(ch => ch.episodes), [chapters]);
@@ -236,6 +251,7 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
       await loadData();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '合并失败');
+    } finally {
       setMerging(false);
     }
   }, [projectId, merging, loadData]);

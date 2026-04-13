@@ -137,7 +137,8 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
         setEditedPrompts(prompts);
       }
     }
-  }, [episode.gridPrompt, episode.gridPrompts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [episode.gridPrompt, episode.gridPrompts, canEditPrompt, getAllShots, buildPagePrompt]);
 
   // 更新某一页的 prompt
   const updatePrompt = useCallback((pageIndex: number, value: string) => {
