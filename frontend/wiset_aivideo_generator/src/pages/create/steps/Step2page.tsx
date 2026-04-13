@@ -68,7 +68,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
 
   // Store
   const getProjectId = useProjectStore((state) => state.getProjectId);
-  const { statusInfo } = useCreateStore();
+  const { statusInfo, syncStatus } = useCreateStore();
 
   // 稳定的项目 ID
   const projectIdRef = useRef<string | null>(
@@ -83,6 +83,9 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     onEpisodeScriptDone(data) {
       // 某集生成完成，刷新 script 数据
       refreshScript();
+      // 同时同步状态，让 phase 能正确推导（显示/隐藏下一步按钮）
+      const pid = projectIdRef.current;
+      if (pid) syncStatus(pid);
     },
     onStatusChange() {
       // 里程碑变更，刷新 script 数据
@@ -300,7 +303,8 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     setIsLoading(true);
     try {
       await confirmScript(pid);
-      // 后端 milestone 变更会通过 SSE / 轮询自动同步
+      // 立即同步状态，确保 statusInfo 更新后再继续
+      await syncStatus(pid);
       await refreshScript();
     } catch (err) {
       console.error('确认大纲失败:', err);
@@ -308,7 +312,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     } finally {
       setIsLoading(false);
     }
-  }, [refreshScript]);
+  }, [refreshScript, syncStatus]);
 
   // ======== Phase 3: 剧情生成操作 ========
   const handleGenerateAll = useCallback(async () => {
@@ -375,7 +379,6 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   }, [selectedChapter, scriptData, refreshScript]);
 
   // ======== Phase 4: 确认剧情 ========
-  const { syncStatus } = useCreateStore();
 
   const handleConfirmEpisodes = useCallback(async () => {
     const pid = projectIdRef.current;
@@ -665,18 +668,22 @@ function derivePhase(
     case 'outline_review':
       return 'outline_review';
     case 'outline_confirmed':
-      // 大纲已确认 → 如果还有 pendingChapters 则 episode_generating，否则 episode_review
-      // 但 outline_confirmed 时后端 statusCode 会变成 episode_review 生成后
-      // 这里先按 episode_generating 处理，后续 statusCode 更新会自动切换
+      // 大纲已确认：若所有章节已生成则以本地数据为准（后端 statusCode 可能未及时更新）
+      if (scriptData && scriptData.pendingChapters.length === 0) {
+        return 'episode_review';
+      }
       return 'episode_generating';
     case 'episode_review':
-      return 'episode_review';
     case 'episode_confirmed':
       // 已确认 → 由 CreateLayout 路由守卫跳转 Step 3
       return 'episode_review';
     case 'draft':
     default:
-      // statusCode 为 undefined 时（store 未加载），以本地 scriptData 为准
+      // statusCode 为 undefined 或其他 Step 3/4/5 的状态码时（store 未加载或从其他步骤导航回来），
+      // 以本地 scriptData 为准：有已生成剧集则展示剧情审核，仅有大纲则展示大纲审核
+      if (scriptData?.episodes?.length > 0) {
+        return 'episode_review';
+      }
       if (scriptData?.outline) {
         return 'outline_review';
       }

@@ -28,7 +28,7 @@ import {
   batchMergeAudio,
   rejectToScript,
 } from '../../../services/episodeService';
-import { advanceStatus } from '../../../services/projectService';
+import { advanceStatus, updateProject } from '../../../services/projectService';
 import { useCreateStore } from '../../../stores/createStore';
 import { useSseProgress } from './hooks/useSseProgress';
 import ScriptEpisodeCard from './components/ScriptEpisodeCard';
@@ -318,8 +318,31 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     });
   }, []);
 
+  // 视频提供商状态（支持 Vidu / Grok）
+  const [videoProvider, setVideoProvider] = useState<string>(() =>
+    (project?.projectInfo?.videoProvider as string) || 'vidu'
+  );
+  const isVidu = videoProvider.toLowerCase() === 'vidu';
+  const isGrok = videoProvider.toLowerCase() === 'grok';
+
+  // 切换视频提供商（先调 API，成功后再更新 UI 状态）
+  // 注意：updateProject 是 PATCH 接口，支持部分字段更新
+  const handleVideoProviderChange = useCallback(async (provider: string) => {
+    if (!projectId) {
+      setVideoProvider(provider);
+      return;
+    }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await updateProject(projectId, { videoProvider: provider } as any);
+      setVideoProvider(provider);
+    } catch (err) {
+      console.error('更新视频提供商失败:', err);
+      alert('更新视频提供商失败，请重试');
+    }
+  }, [projectId]);
+
   // Video model toggle (pro/turbo), only for Vidu
-  const isVidu = (project?.projectInfo?.videoProvider || '').toLowerCase() === 'vidu';
   const [videoModel, setVideoModel] = useState<'pro' | 'turbo'>(() =>
     (localStorage.getItem('video_model') as 'pro' | 'turbo') || 'turbo'
   );
@@ -463,6 +486,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             gridRejectionFeedback: ep.episodeInfo?.gridRejectionFeedback || null,
             gridPromptHint: ep.episodeInfo?.gridPromptHint || '',
             gridPrompt: ep.episodeInfo?.gridPrompt || '',
+            gridPrompts: ep.episodeInfo?.gridPrompts || [],
             panelApproved: ep.episodeInfo?.panelApproved ?? false,
             isNewFlow: !!ep.episodeInfo?.gridStatus,
             scriptStatus: ep.episodeInfo?.scriptStatus || 'pending',
@@ -792,6 +816,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                           gridPromptHint: updatedEp.episodeInfo?.gridPromptHint || '',
                           gridRejectionFeedback: updatedEp.episodeInfo?.gridRejectionFeedback || null,
                           gridPrompt: updatedEp.episodeInfo?.gridPrompt || '',
+                          gridPrompts: updatedEp.episodeInfo?.gridPrompts || [],
                           episodeInfo: updatedEp.episodeInfo,
                         }
                       : ep
@@ -907,11 +932,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   }, [projectId, loadEpisodes, approvingEpisodeId]);
 
   // Generate grid per episode
-  const handleGenerateGrid = useCallback(async (episodeId: number, fullPrompt?: string) => {
+  const handleGenerateGrid = useCallback(async (episodeId: number, fullPrompt?: string, gridPrompts?: string[]) => {
     if (!projectId || generatingGrid) return;
     setGeneratingGrid(episodeId);
     try {
-      await regenerateEpisodeGrid(projectId, episodeId, fullPrompt);
+      await regenerateEpisodeGrid(projectId, episodeId, fullPrompt, gridPrompts);
       // 轮询等待九宫格生成完成（SSE 可能断连）
       const pollGrid = async () => {
         for (let i = 0; i < 60; i++) {
@@ -1452,6 +1477,42 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       <div className={styles.pageHeader}>
         <div className={styles.titleSection}>
           <h1 className={styles.pageTitle}>分镜生产</h1>
+        </div>
+        {/* 视频提供商 + 模型选择器 */}
+        <div className={styles.headerVideoModelSelector}>
+          {/* 视频提供商选择 */}
+          <div className={styles.headerVideoProviderTabs}>
+            <button
+              className={`${styles.headerVideoProviderTab} ${isVidu ? styles.headerVideoProviderTabActive : ''}`}
+              onClick={() => handleVideoProviderChange('vidu')}
+            >
+              Vidu
+            </button>
+            <button
+              className={`${styles.headerVideoProviderTab} ${isGrok ? styles.headerVideoProviderTabActive : ''}`}
+              onClick={() => handleVideoProviderChange('grok')}
+            >
+              Grok
+            </button>
+          </div>
+          {/* Vidu 模型选择 */}
+          {isVidu && (
+            <div className={styles.headerVideoModelTabs}>
+              <span className={styles.headerVideoModelLabel}>模型：</span>
+              <button
+                className={`${styles.headerVideoModelTab} ${videoModel === 'pro' ? styles.headerVideoModelTabActive : ''}`}
+                onClick={() => setVideoModel('pro')}
+              >
+                Pro
+              </button>
+              <button
+                className={`${styles.headerVideoModelTab} ${videoModel === 'turbo' ? styles.headerVideoModelTabActive : ''}`}
+                onClick={() => setVideoModel('turbo')}
+              >
+                Turbo
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

@@ -383,17 +383,26 @@ public class PanelService {
             tempDir = Files.createTempDirectory("episode-compose-");
             List<String> inputFiles = new ArrayList<>();
 
-            // 下载所有视频
+            // 下载所有视频并去掉前5帧
             String urlKey = useNarrationVideo ? "videoWithNarrationUrl" : "videoUrl";
             for (int i = 0; i < sourcePanels.size(); i++) {
                 Panel panel = sourcePanels.get(i);
                 String url = (String) panel.getPanelInfo().get(urlKey);
-                File localFile = tempDir.resolve(String.format("panel_%03d.mp4", i)).toFile();
-                ossService.downloadToFile(url, localFile.getAbsolutePath());
-                inputFiles.add(localFile.getAbsolutePath());
+
+                // 下载原视频
+                File originalFile = tempDir.resolve(String.format("panel_%03d_original.mp4", i)).toFile();
+                ossService.downloadToFile(url, originalFile.getAbsolutePath());
+
+                // 去掉前5帧
+                File trimmedFile = tempDir.resolve(String.format("panel_%03d.mp4", i)).toFile();
+                removeFirstFrames(originalFile.toPath(), trimmedFile.toPath(), 5);
+
+                // 删除原始文件
+                Files.deleteIfExists(originalFile.toPath());
+                inputFiles.add(trimmedFile.getAbsolutePath());
             }
 
-            // FFmpeg concat
+            // FFmpeg concat（所有视频已去掉前5帧）
             String outputFile = tempDir.resolve("episode_full.mp4").toAbsolutePath().toString();
 
             // 创建 concat 文件列表
@@ -473,6 +482,37 @@ public class PanelService {
                         try { Files.delete(p); } catch (IOException ignored) {}
                     });
         } catch (IOException ignored) {}
+    }
+
+    /**
+     * 去掉视频前 N 帧
+     */
+    private void removeFirstFrames(Path inputPath, Path outputPath, int framesToSkip) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("ffmpeg");
+        command.add("-i");
+        command.add(inputPath.toString());
+        command.add("-vf");
+        command.add("select='gt(n," + (framesToSkip - 1) + ")'");
+        command.add("-vsync");
+        command.add("0");
+        command.add("-y");
+        command.add(outputPath.toString());
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int len;
+        while ((len = process.getInputStream().read(buffer)) != -1) {
+            baos.write(buffer, 0, len);
+        }
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new RuntimeException("FFmpeg 切帧失败: " + baos.toString());
+        }
     }
 
     private void updatePanelInfo(Panel panel, String key, Object value) {

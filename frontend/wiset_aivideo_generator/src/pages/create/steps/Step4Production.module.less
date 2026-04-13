@@ -23,10 +23,85 @@
   flex-shrink: 0;
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--color-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .titleSection {
   margin-bottom: 0;
+}
+
+// Header 视频模型选择器
+.headerVideoModelSelector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.headerVideoModelLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+// 视频提供商 Tab
+.headerVideoProviderTabs {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.headerVideoProviderTab {
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--easing-standard);
+
+  &:hover {
+    color: var(--color-text-primary);
+  }
+}
+
+.headerVideoProviderTabActive {
+  background: rgba(114, 183, 255, 0.2);
+  color: var(--color-primary);
+}
+
+// 视频模型 Tab（Vidu 专用）
+.headerVideoModelTabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+}
+
+.headerVideoModelTab {
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--easing-standard);
+
+  &:hover {
+    color: var(--color-text-primary);
+  }
+}
+
+.headerVideoModelTabActive {
+  background: var(--color-primary);
+  color: #fff;
 }
 
 .pageTitle {
@@ -1481,6 +1556,54 @@
 .gridPromptTip {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
+}
+
+// 多页编辑区域
+.gridPageSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.gridPromptEditorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.gridPromptPageHint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+// 页码 Tab 切换
+.gridPageTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.gridPageTab {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--easing-standard);
+
+  &:hover {
+    border-color: rgba(114, 183, 255, 0.4);
+    color: var(--color-text-primary);
+  }
+}
+
+.gridPageTabActive {
+  background: rgba(114, 183, 255, 0.15);
+  border-color: rgba(114, 183, 255, 0.4);
+  color: var(--color-primary);
 }
 
 // Grid images

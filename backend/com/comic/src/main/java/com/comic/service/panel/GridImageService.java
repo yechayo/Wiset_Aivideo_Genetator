@@ -178,17 +178,23 @@ public class GridImageService {
      */
     @Async
     public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle, String imageProvider) {
-        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, null);
+        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, null, null);
     }
 
     @Async
     public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle,
                                         String imageProvider, String customHint) {
-        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, customHint);
+        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, customHint, null);
+    }
+
+    @Async
+    public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle,
+                                        String imageProvider, String customHint, List<String> gridPrompts) {
+        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, customHint, gridPrompts);
     }
 
     private void doGenerateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle,
-                                           String imageProvider, String customHint) {
+                                           String imageProvider, String customHint, List<String> gridPrompts) {
         // 获取 projectId（在 try 外声明，catch 中也需要用）
         String gridProjectId = null;
         try {
@@ -210,9 +216,10 @@ public class GridImageService {
             List<CharRef> charRefsWithNames = getCharacterReferencesWithNames(episodeId);
             int pageCount = calculatePageCount(shots.size(), SHOTS_PER_PAGE);
             List<String> gridImageUrls = new ArrayList<>();
-            String lastPagePrompt = null;
+            List<String> allPagePrompts = new ArrayList<>();
 
             // 检查是否有用户自定义的 prompt 覆盖（直接编辑后的完整 prompt）
+            // 优先使用传入的 gridPrompts 数组（多页独立编辑），否则降级到单页 promptOverride
             String promptOverride = episodeInfo.containsKey("gridPromptOverride")
                 ? (String) episodeInfo.get("gridPromptOverride") : null;
 
@@ -223,15 +230,17 @@ public class GridImageService {
                 List<Map<String, Object>> pageShots = shots.subList(fromIdx, toIdx);
 
                 String prompt;
-                if (promptOverride != null && page == 0) {
-                    // 用户直接编辑的 prompt 仅应用于第一页（覆盖内容描述该页镜头）
-                    // 后续页面仍使用自动生成的 per-page prompt，避免内容错位
+                if (gridPrompts != null && page < gridPrompts.size() && gridPrompts.get(page) != null && !gridPrompts.get(page).isEmpty()) {
+                    // 用户多页独立编辑的 prompts：每页使用对应的 prompt
+                    prompt = gridPrompts.get(page);
+                } else if (promptOverride != null && page == 0) {
+                    // 兼容旧逻辑：用户直接编辑的 prompt 仅应用于第一页
                     prompt = promptOverride;
                 } else {
                     prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames);
                     prompt = appendUserHintToPrompt(prompt, customHint);
                 }
-                lastPagePrompt = prompt;
+                allPagePrompts.add(prompt);
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
                     imageUrl = imageService.generateWithMultipleReferences(
@@ -273,7 +282,8 @@ public class GridImageService {
             episodeInfo.put("gridStatus", "generated");
             episodeInfo.put("gridPageCount", pageCount);
             // 保存最后一个 page 的 prompt（包含完整九宫格布局信息）
-            episodeInfo.put("gridPrompt", lastPagePrompt);
+            episodeInfo.put("gridPrompt", allPagePrompts.isEmpty() ? null : allPagePrompts.get(allPagePrompts.size() - 1));
+            episodeInfo.put("gridPrompts", allPagePrompts);
             // 清除用户覆盖的 prompt，下次生成需重新编辑
             episodeInfo.remove("gridPromptOverride");
             episode.setEpisodeInfo(episodeInfo);

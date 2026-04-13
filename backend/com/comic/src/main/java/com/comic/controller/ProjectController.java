@@ -22,6 +22,7 @@ import com.comic.statemachine.enums.ProjectMilestoneEventType;
 import com.comic.statemachine.enums.ProjectMilestone;
 import com.comic.service.production.PanelProductionService;
 import com.comic.service.production.VideoCompositionService;
+import com.comic.service.panel.PanelService;
 import com.comic.service.script.ScriptService;
 import com.comic.service.character.CharacterExtractService;
 import com.comic.service.character.CharacterImageGenerationService;
@@ -29,10 +30,12 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +44,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/projects")
 @RequiredArgsConstructor
+@Slf4j
 @SecurityRequirement(name = "bearerAuth")
 public class ProjectController {
 
@@ -52,6 +56,7 @@ public class ProjectController {
     private final PanelRepository panelRepository;
     private final PanelProductionService panelProductionService;
     private final VideoCompositionService videoCompositionService;
+    private final PanelService panelService;
     private final ScriptService scriptService;
     private final CharacterExtractService characterExtractService;
     private final CharacterImageGenerationService characterImageGenerationService;
@@ -227,49 +232,63 @@ public class ProjectController {
     }
 
     @PostMapping("/{projectId}/videos/merge")
-    @Operation(summary = "拼接所有面板视频（去掉前5帧）")
+    @Operation(summary = "合并所有剧集视频为完整视频")
     public Result<Map<String, String>> mergePanelVideos(@PathVariable String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) return Result.fail("项目不存在");
         boolean isComicCommentary = "comic_commentary".equals(
                 project.getProjectInfo().getOrDefault("productionMode", ""));
+        String productionMode = isComicCommentary ? "comic_commentary" : "normal";
 
-        // 获取项目所有剧集
+        // 获取项目所有剧集，按 episodeNum 排序
         List<Episode> episodes = episodeRepository.findByProjectId(projectId);
+        episodes.sort(Comparator.comparing((Episode ep) -> {
+            Map<String, Object> info = ep.getEpisodeInfo();
+            Object num = info != null ? info.get("episodeNum") : null;
+            return num instanceof Number ? ((Number) num).intValue() : 0;
+        }));
 
-        // 获取所有面板的视频URL
-        List<String> videoUrls;
-        if (isComicCommentary) {
-            // 解说模式：使用已合并的旁白视频
-            videoUrls = episodes.stream()
-                    .flatMap(episode -> panelRepository.findByEpisodeId(episode.getId()).stream())
-                    .filter(panel -> panel.getPanelInfo() != null)
-                    .filter(panel -> "completed".equals(panel.getPanelInfo().get("mergeStatus")))
-                    .filter(panel -> panel.getPanelInfo().get("videoWithNarrationUrl") != null)
-                    .map(panel -> (String) panel.getPanelInfo().get("videoWithNarrationUrl"))
-                    .collect(Collectors.toList());
-        } else {
-            // 实时动画模式：使用原始视频
-            videoUrls = episodes.stream()
-                    .flatMap(episode -> panelRepository.findByEpisodeId(episode.getId()).stream())
-                    .filter(panel -> panel.getPanelInfo() != null)
-                    .filter(panel -> panel.getPanelInfo().containsKey("videoUrl"))
-                    .filter(panel -> {
-                        String status = (String) panel.getPanelInfo().get("videoStatus");
-                        return "completed".equals(status);
-                    })
-                    .map(panel -> (String) panel.getPanelInfo().get("videoUrl"))
-                    .collect(Collectors.toList());
+        List<String> episodeVideoUrls = new java.util.ArrayList<>();
+        int composed = 0, skipped = 0;
+
+        for (Episode episode : episodes) {
+            Map<String, Object> epInfo = episode.getEpisodeInfo();
+            String composedUrl = epInfo != null ? (String) epInfo.get("composedVideoUrl") : null;
+            String composedStatus = epInfo != null ? (String) epInfo.get("composedVideoStatus") : null;
+
+            if (composedUrl != null && "completed".equals(composedStatus)) {
+                // 已有分集合成视频，直接使用
+                episodeVideoUrls.add(composedUrl);
+                composed++;
+            } else {
+                // 未合成，先合成该集
+                try {
+                    panelService.composeEpisode(episode.getId(), productionMode);
+                    // 重新读取合成后的 URL
+                    Episode refreshed = episodeRepository.selectById(episode.getId());
+                    Map<String, Object> refreshedInfo = refreshed.getEpisodeInfo();
+                    String newUrl = refreshedInfo != null ? (String) refreshedInfo.get("composedVideoUrl") : null;
+                    if (newUrl != null) {
+                        episodeVideoUrls.add(newUrl);
+                    } else {
+                        log.warn("剧集 {} 合成后未找到视频URL，跳过", episode.getId());
+                        skipped++;
+                    }
+                } catch (Exception e) {
+                    log.warn("剧集 {} 合成失败，跳过: {}", episode.getId(), e.getMessage());
+                    skipped++;
+                }
+            }
         }
 
-        if (videoUrls.isEmpty()) {
-            return Result.fail(isComicCommentary
-                    ? "没有已合成旁白的视频可拼接，请先在各面板合成音视频"
-                    : "没有已完成的视频可拼接");
+        if (episodeVideoUrls.isEmpty()) {
+            return Result.fail("没有任何可合并的剧集视频");
         }
 
-        // 执行拼接
-        String finalVideoUrl = videoCompositionService.mergePanelVideos(videoUrls);
+        log.info("合并项目视频: projectId={}, 剧集数={}, 已合成={}, 跳过={}", projectId, episodes.size(), composed, skipped);
+
+        // 执行拼接（分集视频已各自去掉前5帧，此处直接 concat）
+        String finalVideoUrl = videoCompositionService.mergePanelVideos(episodeVideoUrls);
 
         // 存储合并结果到 projectInfo
         if (project != null) {

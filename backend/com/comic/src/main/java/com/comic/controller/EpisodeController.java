@@ -391,7 +391,7 @@ public class EpisodeController {
     public Result<Void> regenerateEpisodeGrid(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
-            @RequestBody(required = false) Map<String, String> body) {
+            @RequestBody(required = false) Map<String, Object> body) {
         Episode episode = episodeRepository.selectById(episodeId);
         if (episode == null) throw new BusinessException("剧集不存在");
         Map<String, Object> info = episode.getEpisodeInfo();
@@ -399,7 +399,9 @@ public class EpisodeController {
         String effectiveCustomHint = info.get("gridPromptHint") instanceof String
             ? (String) info.get("gridPromptHint")
             : null;
-        String requestedHint = body != null ? body.get("customHint") : null;
+        String requestedHint = body != null && body.get("customHint") instanceof String
+            ? (String) body.get("customHint")
+            : null;
         if (requestedHint != null) {
             String normalized = requestedHint.trim();
             if (normalized.isEmpty()) {
@@ -411,8 +413,10 @@ public class EpisodeController {
             }
         }
 
-        // 处理完整的自定义 prompt（用户直接编辑的 prompt）
-        String requestedFullPrompt = body != null ? body.get("fullPrompt") : null;
+        // 处理完整的自定义 prompt（用户直接编辑的 prompt - 单页兼容）
+        String requestedFullPrompt = body != null && body.get("fullPrompt") instanceof String
+            ? (String) body.get("fullPrompt")
+            : null;
         if (requestedFullPrompt != null) {
             String normalized = requestedFullPrompt.trim();
             if (normalized.isEmpty()) {
@@ -421,6 +425,12 @@ public class EpisodeController {
                 info.put("gridPromptOverride", normalized);
             }
         }
+
+        // 处理多页自定义 prompts（每页一个 prompt）
+        @SuppressWarnings("unchecked")
+        List<String> requestedGridPrompts = body != null && body.get("gridPrompts") instanceof List
+            ? (List<String>) body.get("gridPrompts")
+            : null;
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
@@ -445,13 +455,14 @@ public class EpisodeController {
             panelRepository.deleteById(p.getId());
         }
 
-        // 异步重新生成
+        // 异步重新生成（传入多页 prompts）
         gridImageService.generateGridsForEpisode(
             episodeId,
             shots,
             visualStyle,
             panelProductionService.getImageProvider(projectId),
-            (effectiveCustomHint != null && !effectiveCustomHint.trim().isEmpty()) ? effectiveCustomHint.trim() : null
+            (effectiveCustomHint != null && !effectiveCustomHint.trim().isEmpty()) ? effectiveCustomHint.trim() : null,
+            requestedGridPrompts
         );
 
         return Result.ok();

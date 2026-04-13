@@ -3,7 +3,7 @@
  * 每集独立合成，支持按集/按章/全部批量操作
  * 只有所有 panel 视频完成的剧集才可合成
  */
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import styles from './Step5Compose.module.less';
 import type { EpisodeState } from './types';
 import {
@@ -12,6 +12,7 @@ import {
   composeEpisode,
 } from '../../../services/episodeService';
 import { mergeVideos } from '../../../services/projectService';
+import { useSseProgress } from './hooks/useSseProgress';
 
 interface ChapterState {
   chapterIndex: number;
@@ -70,6 +71,44 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
   const [expandedEpisodeId, setExpandedEpisodeId] = useState<number | null>(null);
   // episodeId → boolean: 是否所有 panel 视频已完成
   const [episodeReadyMap, setEpisodeReadyMap] = useState<Record<number, boolean>>({});
+  // 项目合并后的完整视频 URL
+  const [finalVideoUrl, setFinalVideoUrl] = useState<string | null>(project?.projectInfo?.finalVideoUrl || null);
+  // 防止同一 episode 并发重复刷新
+  const refreshInFlightRef = useRef<Set<number>>(new Set());
+
+  /**
+   * 检查并更新单个 episode 的就绪状态
+   */
+  const refreshEpisodeReady = useCallback(async (episodeId: number) => {
+    if (!projectId || refreshInFlightRef.current.has(episodeId)) return;
+    refreshInFlightRef.current.add(episodeId);
+    try {
+      const panelRes = await getPanels(projectId, episodeId);
+      const panels = panelRes.data || [];
+      const ready = checkAllPanelsReady(panels, isComicCommentary);
+      setEpisodeReadyMap(prev => ({ ...prev, [episodeId]: ready }));
+    } catch {
+      // 忽略错误，保持原状态
+    } finally {
+      refreshInFlightRef.current.delete(episodeId);
+    }
+  }, [projectId, isComicCommentary]);
+
+  // 监听视频生成完成事件，实时刷新对应 episode 的就绪状态
+  useSseProgress(projectId, {
+    onPanelVideoDone: (data) => {
+      if (data.episodeId) refreshEpisodeReady(data.episodeId);
+    },
+    onPanelVideoFailed: (data) => {
+      if (data.episodeId) refreshEpisodeReady(data.episodeId);
+    },
+    onPanelMergeDone: (data) => {
+      if (data.episodeId) refreshEpisodeReady(data.episodeId);
+    },
+    onPanelMergeFailed: (data) => {
+      if (data.episodeId) refreshEpisodeReady(data.episodeId);
+    },
+  });
 
   // Load episodes + check panel readiness
   const loadData = useCallback(async () => {
@@ -114,26 +153,29 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
 
       // Load panels for each episode to check readiness
       const allEps = chs.flatMap(ch => ch.episodes);
+      // 先全部设为 false，完成后按需更新
       const readyMap: Record<number, boolean> = {};
-      const panelChecks = allEps.map(async (ep) => {
-        try {
-          const panelRes = await getPanels(projectId, ep.episodeId);
-          const panels = panelRes.data || [];
-          readyMap[ep.episodeId] = checkAllPanelsReady(panels, isComicCommentary);
-        } catch {
-          readyMap[ep.episodeId] = false;
-        }
-      });
-      await Promise.all(panelChecks);
+      allEps.forEach(ep => { readyMap[ep.episodeId] = false; });
       setEpisodeReadyMap(readyMap);
+      // 并发刷新每个 episode 的就绪状态
+      await Promise.all(allEps.map(ep => refreshEpisodeReady(ep.episodeId)));
     } catch {
       console.error('加载数据失败');
     } finally {
       setLoading(false);
     }
-  }, [projectId, isComicCommentary]);
+  }, [projectId, isComicCommentary, refreshEpisodeReady]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // 页面从隐藏恢复时，确保数据是最新的（防止从 Step4 切回时遗漏 SSE 事件）
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadData();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [loadData]);
 
   // All episodes
   const allEpisodes = useMemo(() => chapters.flatMap(ch => ch.episodes), [chapters]);
@@ -188,7 +230,9 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
     if (!projectId || merging) return;
     setMerging(true);
     try {
-      await mergeVideos(projectId);
+      const res = await mergeVideos(projectId);
+      const url = res?.data?.finalVideoUrl;
+      if (url) setFinalVideoUrl(url);
       await loadData();
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '合并失败');
@@ -381,6 +425,33 @@ const Step5Compose: React.FC<Step5ComposeProps> = ({ project }) => {
             >
               {merging ? <><SpinIcon /> 合并中...</> : '合并为完整视频'}
             </button>
+          </div>
+        )}
+
+        {/* 完整视频播放器 */}
+        {finalVideoUrl && (
+          <div className={styles.projectMergeSection}>
+            <div className={styles.projectMergeInfo}>
+              <span>完整视频</span>
+            </div>
+            <div className={styles.videoWrap}>
+              <video
+                className={styles.videoPlayer}
+                controls
+                src={finalVideoUrl}
+                preload="metadata"
+              />
+            </div>
+            <a
+              className={styles.btnSuccess}
+              href={finalVideoUrl}
+              download
+              target="_blank"
+              rel="noreferrer"
+              style={{ marginTop: 12, display: 'inline-flex' }}
+            >
+              <CheckIcon /> 下载完整视频
+            </a>
           </div>
         )}
       </div>

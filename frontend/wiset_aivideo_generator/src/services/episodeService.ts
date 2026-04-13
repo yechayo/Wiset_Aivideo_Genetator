@@ -104,9 +104,12 @@ export async function regenerateEpisodeGrid(
   projectId: string,
   episodeId: number,
   fullPrompt?: string,
+  /** 多页提示词数组（每页一个 prompt） */
+  gridPrompts?: string[],
 ): Promise<ApiResponse<void>> {
-  const body: Record<string, string> = {};
+  const body: Record<string, any> = {};
   if (fullPrompt !== undefined) body.fullPrompt = fullPrompt;
+  if (gridPrompts !== undefined) body.gridPrompts = gridPrompts;
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/grid/regenerate`,
     Object.keys(body).length > 0 ? body : undefined,
