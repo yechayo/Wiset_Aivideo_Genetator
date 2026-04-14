@@ -439,7 +439,7 @@ public class PanelProductionService {
         if (Boolean.TRUE.equals(info.get("videoRefMode"))) {
             AbstractMap.SimpleEntry<List<String>, List<String>> refPair = collectReferenceImagesWithNames(panel);
             if (refPair.getKey() != null && !refPair.getKey().isEmpty()) {
-                return buildRefImagePromptAnnotation(basePrompt, refPair.getKey(), refPair.getValue());
+                return buildRefImagePromptAnnotation(basePrompt, panel, refPair.getKey(), refPair.getValue());
             }
         }
 
@@ -581,7 +581,7 @@ public class PanelProductionService {
             String basePrompt = resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
 
             // 构建含参考图下标的完整提示词（与 ViduReference2VideoService.buildReferenceImagePrompt 一致）
-            String fullPrompt = buildRefImagePromptAnnotation(basePrompt, refImages, charNames);
+            String fullPrompt = buildRefImagePromptAnnotation(basePrompt, panel, refImages, charNames);
             info.put("finalVideoPrompt", fullPrompt);
 
             // 计算总时长
@@ -973,26 +973,83 @@ public class PanelProductionService {
     }
 
     /**
-     * 构建含参考图下标的提示词（与 ViduReference2VideoService 一致格式）
+     * 构建含参考图下标的提示词：每个分镜内部注入图片引用，末尾附完整清单
+     * @param prompt   基础提示词（包含【镜头N】分镜标题）
+     * @param panel    Panel 实体（用于获取分镜数量）
+     * @param images   参考图 URL 列表（分镜图在前，角色图在后）
+     * @param characterNames 角色名列表（与后半部分图片对应）
      */
-    private String buildRefImagePromptAnnotation(String prompt, List<String> images, List<String> characterNames) {
+    @SuppressWarnings("unchecked")
+    private String buildRefImagePromptAnnotation(String prompt, Panel panel, List<String> images, List<String> characterNames) {
         if (images == null || images.isEmpty()) return prompt;
-        StringBuilder sb = new StringBuilder();
-        sb.append(prompt).append("\n\n参考图片说明：");
-        int storyboardCount = images.size() - (characterNames != null ? characterNames.size() : 0);
-        int storyboardIdx = 1;
-        int characterIdx = 0;
-        for (int i = 0; i < images.size(); i++) {
-            if (i < storyboardCount) {
-                sb.append("\n- 图片").append(i + 1).append("（分镜图").append(storyboardIdx).append("）");
-                storyboardIdx++;
-            } else {
-                String characterName = (characterNames != null && characterIdx < characterNames.size())
-                    ? characterNames.get(characterIdx) : "角色" + (characterIdx + 1);
-                sb.append("\n- 图片").append(i + 1).append("（角色图-").append(characterName).append("）");
-                characterIdx++;
+
+        // 计算分镜图数量：从 panel.shots 取分镜数量，最多3张
+        Map<String, Object> info = panel.getPanelInfo();
+        int splitCount = 0;
+        if (info != null) {
+            List<Map<String, Object>> panelShots = (List<Map<String, Object>>) info.get("shots");
+            if (panelShots != null) splitCount = Math.min(3, panelShots.size());
+        }
+        if (splitCount <= 0) splitCount = images.size(); // fallback
+
+        final int storyboardCount = splitCount;
+        final List<String> charNameList = characterNames;
+
+        // 在每个【镜头N】标题后注入图片引用标注
+        String annotatedPrompt = injectRefAfterShots(prompt, storyboardCount, images, charNameList);
+
+        // 末尾追加完整参考图清单
+        StringBuilder imgList = new StringBuilder();
+        imgList.append("\n\n========== 参考图清单 ==========");
+        imgList.append("\n【分镜图】（用于每个镜头的环境和构图）:");
+        for (int i = 0; i < storyboardCount && i < images.size(); i++) {
+            imgList.append("\n- 图片").append(i + 1).append("（分镜图").append(i + 1).append("）");
+        }
+        if (charNameList != null && !charNameList.isEmpty()) {
+            imgList.append("\n\n【角色图】（全局适用，每个镜头的人物都可参考）:");
+            for (int i = 0; i < charNameList.size(); i++) {
+                int imgIdx = storyboardCount + i;
+                if (imgIdx < images.size()) {
+                    imgList.append("\n- 图片").append(imgIdx + 1).append("（角色图-").append(charNameList.get(i)).append("）");
+                }
             }
         }
+        imgList.append("\n================================");
+        return annotatedPrompt + imgList.toString();
+    }
+
+    /**
+     * 在 prompt 的每个【镜头N】标题后注入参考图标注
+     */
+    private String injectRefAfterShots(String prompt, int storyboardCount, List<String> images, List<String> characterNames) {
+        // 匹配【镜头数字】模式，在其后注入图片引用
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("【镜头(\\d+)】");
+        java.util.regex.Matcher matcher = pattern.matcher(prompt);
+        StringBuffer sb = new StringBuffer();
+        while (matcher.find()) {
+            int shotIdx;
+            try {
+                shotIdx = Integer.parseInt(matcher.group(1)) - 1;
+            } catch (Exception e) {
+                shotIdx = 0;
+            }
+            StringBuilder refLine = new StringBuilder();
+            // 本镜头的分镜图
+            if (shotIdx < storyboardCount && shotIdx < images.size()) {
+                refLine.append("\n参考图：图片").append(shotIdx + 1).append("（分镜图").append(shotIdx + 1).append("）");
+            }
+            // 全局角色图（所有镜头共享）
+            if (characterNames != null && !characterNames.isEmpty()) {
+                for (int ci = 0; ci < characterNames.size(); ci++) {
+                    int imgIdx = storyboardCount + ci;
+                    if (imgIdx < images.size()) {
+                        refLine.append(" · 图片").append(imgIdx + 1).append("（角色图-").append(characterNames.get(ci)).append("）");
+                    }
+                }
+            }
+            matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(matcher.group(0) + refLine));
+        }
+        matcher.appendTail(sb);
         return sb.toString();
     }
 
