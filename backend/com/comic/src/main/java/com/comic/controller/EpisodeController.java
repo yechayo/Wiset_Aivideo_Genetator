@@ -8,8 +8,10 @@ import com.comic.dto.response.EpisodeListItemResponse;
 import com.comic.dto.response.PaginatedResponse;
 import com.comic.entity.Episode;
 import com.comic.entity.Panel;
+import com.comic.entity.Project;
 import com.comic.repository.EpisodeRepository;
 import com.comic.repository.PanelRepository;
+import com.comic.repository.ProjectRepository;
 import com.comic.service.episode.EpisodeService;
 import com.comic.service.panel.GridImageService;
 import com.comic.service.panel.PanelService;
@@ -43,6 +45,7 @@ public class EpisodeController {
     private final GridImageService gridImageService;
     private final EpisodeRepository episodeRepository;
     private final PanelRepository panelRepository;
+    private final ProjectRepository projectRepository;
 
     @GetMapping
     @Operation(summary = "剧集列表（分页）")
@@ -302,6 +305,11 @@ public class EpisodeController {
         List<Map<String, Object>> splitShots = (List<Map<String, Object>>) info.get("splitShots");
         String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
 
+        // 判断项目是否使用参考图视频模式
+        Project project = projectRepository.findByProjectId(projectId);
+        boolean videoRefMode = project != null
+            && Boolean.TRUE.equals(project.getProjectInfo().get("videoRefMode"));
+
         if (splitShots == null || splitShots.isEmpty()) {
             throw new BusinessException("切割分镜数据为空，无法创建 Panel");
         }
@@ -345,15 +353,20 @@ public class EpisodeController {
             panelInfo.put("videoStatus", "pending");
             panelInfo.put("visualStyle", visualStyle);
             panelInfo.put("gridImages", new ArrayList<String>());
+            panelInfo.put("videoRefMode", videoRefMode);
 
-            // 生成融合图
-            try {
-                BufferedImage fusionImage = gridImageService.createFusionImageForPanelWithNames(group, charRefsWithNames);
-                String fusionUrl = gridImageService.uploadFusionImageForPanel(fusionImage, episodeId, group);
-                panelInfo.put("fusionImageUrl", fusionUrl);
-            } catch (Exception e) {
-                // 融合图生成失败不阻断流程，但记录 error 级别日志
-                log.error("Panel 融合图生成失败: episodeId={}, shots={}", episodeId, group.size(), e);
+            if (!videoRefMode) {
+                // 首帧视频模式：生成融合参考图
+                try {
+                    BufferedImage fusionImage = gridImageService.createFusionImageForPanelWithNames(group, charRefsWithNames);
+                    String fusionUrl = gridImageService.uploadFusionImageForPanel(fusionImage, episodeId, group);
+                    panelInfo.put("fusionImageUrl", fusionUrl);
+                } catch (Exception e) {
+                    log.error("Panel 融合图生成失败: episodeId={}, shots={}", episodeId, group.size(), e);
+                }
+            } else {
+                // 参考图视频模式：跳过融合图
+                panelInfo.put("fusionImageUrl", null);
             }
 
             panel.setPanelInfo(panelInfo);
