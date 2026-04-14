@@ -242,6 +242,23 @@ public class ComicCommentaryPanelPromptBuilder {
                     }
                     sb.append(": ").append(dialogue).append("\n");
                 }
+                // 旁白（解说口播稿）：仅当 narration 有内容时输出
+                String narration = effectiveNarrationText(shot);
+                if (narration != null && !narration.isEmpty()) {
+                    String narSpeaker = speaker != null && !speaker.isEmpty() ? speaker : "旁白";
+                    String narTone = (String) shot.get("dialogueTone");
+                    sb.append("旁白");
+                    if (!"旁白".equals(narSpeaker)) {
+                        sb.append("(").append(narSpeaker);
+                        if (narTone != null && !"无".equals(narTone) && !narTone.isEmpty()) {
+                            sb.append("，").append(narTone);
+                        }
+                        sb.append(")");
+                    } else if (narTone != null && !"无".equals(narTone) && !narTone.isEmpty()) {
+                        sb.append("(").append(narTone).append(")");
+                    }
+                    sb.append(": ").append(narration).append("\n");
+                }
                 String audioEffects = (String) shot.get("audioEffects");
                 if (audioEffects != null && !"无".equals(audioEffects)) {
                     sb.append("音效: [").append(audioEffects).append("]\n");
