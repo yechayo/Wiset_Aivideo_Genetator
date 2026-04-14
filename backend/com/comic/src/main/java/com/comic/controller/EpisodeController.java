@@ -339,6 +339,7 @@ public class EpisodeController {
 
         // 每组创建 Panel
         List<GridImageService.CharRef> charRefsWithNames = gridImageService.getCharacterReferencesWithNamesForEpisode(episodeId);
+        int splitShotStartIndex = 0;
         for (List<Map<String, Object>> group : groups) {
             Panel panel = new Panel();
             panel.setEpisodeId(episodeId);
@@ -346,6 +347,7 @@ public class EpisodeController {
             panel.setDeleted(false);
             Map<String, Object> panelInfo = new HashMap<>();
             panelInfo.put("shots", group);
+            panelInfo.put("splitShotStartIndex", splitShotStartIndex);
             panelInfo.put("totalShots", group.size());
             panelInfo.put("totalDuration",
                 group.stream().mapToInt(s -> ((Number) s.get("duration")).intValue()).sum());
@@ -371,6 +373,7 @@ public class EpisodeController {
 
             panel.setPanelInfo(panelInfo);
             panelRepository.insert(panel);
+            splitShotStartIndex += group.size();
         }
 
         // 检查是否所有 Episode 的九宫格都已审核通过

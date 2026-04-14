@@ -194,6 +194,13 @@ public class PanelController {
             @PathVariable Long episodeId,
             @PathVariable Long panelId,
             @RequestBody(required = false) Map<String, Object> body) {
+        // 服务端校验：只有开启了参考图视频模式的 panel 才能调用此接口
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
+        Map<String, Object> info = panel.getPanelInfo();
+        if (!Boolean.TRUE.equals(info.get("videoRefMode"))) {
+            throw new BusinessException("当前面板未启用参考图视频模式");
+        }
         boolean offPeak = body != null && Boolean.TRUE.equals(body.get("offPeak"));
         String customPrompt = body != null ? (String) body.get("customPrompt") : null;
         String videoModel = body != null ? (String) body.get("videoModel") : null;

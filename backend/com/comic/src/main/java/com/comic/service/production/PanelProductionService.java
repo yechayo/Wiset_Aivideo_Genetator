@@ -922,17 +922,23 @@ public class PanelProductionService {
         List<Map<String, Object>> allSplitShots = (List<Map<String, Object>>) episode.getEpisodeInfo().get("splitShots");
 
         if (panelShots != null && !panelShots.isEmpty() && allSplitShots != null) {
-            // 找到 panel 第一个 shot 在 splitShots 中的起始位置
-            String firstShotDesc = (String) panelShots.get(0).get("visualDescription");
-            int startIndex = -1;
-            for (int i = 0; i < allSplitShots.size(); i++) {
-                String desc = (String) allSplitShots.get(i).get("visualDescription");
-                if (firstShotDesc != null && firstShotDesc.equals(desc)) {
-                    startIndex = i;
-                    break;
+            // 优先使用 panel 创建时记录的 splitShotStartIndex（精确索引）
+            int startIndex = 0;
+            Object storedIdx = panelInfo.get("splitShotStartIndex");
+            if (storedIdx instanceof Number) {
+                startIndex = ((Number) storedIdx).intValue();
+            } else {
+                // 回退：通过 visualDescription 匹配（兼容旧数据）
+                String firstShotDesc = (String) panelShots.get(0).get("visualDescription");
+                if (firstShotDesc != null) {
+                    for (int i = 0; i < allSplitShots.size(); i++) {
+                        if (firstShotDesc.equals(allSplitShots.get(i).get("visualDescription"))) {
+                            startIndex = i;
+                            break;
+                        }
+                    }
                 }
             }
-            if (startIndex < 0) startIndex = 0;
 
             int shotCount = Math.min(3, panelShots.size());
             for (int i = 0; i < shotCount && (startIndex + i) < allSplitShots.size(); i++) {

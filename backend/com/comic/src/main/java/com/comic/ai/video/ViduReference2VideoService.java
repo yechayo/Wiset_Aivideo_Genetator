@@ -40,8 +40,8 @@ public class ViduReference2VideoService implements VideoGenerationService {
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    // 并发控制
-    private final Semaphore semaphore = new Semaphore(1);
+    // 并发控制：允许5个参考图视频并发请求
+    private final Semaphore semaphore = new Semaphore(5);
 
     @Override
     public String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage) {
