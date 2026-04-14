@@ -1,5 +1,6 @@
 package com.comic.ai.video;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,6 +32,24 @@ public interface VideoGenerationService {
      */
     default String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage, boolean offPeak, String model) {
         return generateAsync(prompt, duration, aspectRatio, referenceImage, offPeak);
+    }
+
+    /**
+     * 多图参考视频生成（reference2video 模式）
+     *
+     * @param prompt          视频描述提示词
+     * @param duration        视频时长（秒）
+     * @param aspectRatio     宽高比
+     * @param referenceImages 参考图 URL 列表（最多7张）
+     * @param characterNames  角色名列表（与 referenceImages 后半段角色图对应）
+     * @param offPeak         错峰模式
+     * @param model           视频模型
+     * @return 任务ID
+     */
+    default String generateAsyncMultiImage(String prompt, int duration, String aspectRatio,
+                                           List<String> referenceImages, List<String> characterNames,
+                                           boolean offPeak, String model) {
+        throw new UnsupportedOperationException("多图参考视频生成未实现");
     }
 
     /**
