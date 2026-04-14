@@ -74,21 +74,24 @@ public class PanelPromptBuilder {
     }
 
     /**
-     * 构建九宫格图片生成提示词（含角色描述锚定）
+     * 构建九宫格图片生成提示词（含角色描述锚定），支持自适应网格尺寸
      * @param visualStyle 风格
      * @param shots 分镜列表
      * @param charRefs 角色参考（含物种、外貌等描述），可为 null
+     * @param gridCols 网格列数
+     * @param gridRows 网格行数
      */
     public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots,
-                                   List<?> charRefs) {
+                                   List<?> charRefs, int gridCols, int gridRows) {
+        int totalSlots = gridCols * gridRows;
         StringBuilder sb = new StringBuilder();
         sb.append(buildSceneStylePrefix(visualStyle));
         sb.append("专业动画关键帧级别，电影级画面构图，精致光影与色彩。\n\n");
 
         // ===== 布局要求 =====
         sb.append("【布局要求 - 必须严格遵守】\n");
-        sb.append("输出一张严格 3×3 九宫格分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
-        sb.append("图片必须被 2 条黑色竖线（约 4px 宽）和 2 条黑色横线（约 4px 宽）均匀分割为 3 行 3 列，共 9 个等大的格子。\n");
+        sb.append("输出一张严格 ").append(gridCols).append("×").append(gridRows).append(" 分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
+        sb.append("图片必须被 ").append(gridCols - 1).append(" 条黑色竖线（约 4px 宽）和 ").append(gridRows - 1).append(" 条黑色横线（约 4px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");
         sb.append("每个格子是一个完全独立的分镜画面，场景、人物、时间可以不同。\n");
         sb.append("绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。\n");
         sb.append("图片中不包含任何文字、数字、标号或水印。\n\n");
@@ -136,13 +139,13 @@ public class PanelPromptBuilder {
         }
 
         // ===== 分镜内容 =====
-        sb.append("【分镜内容 - 按从左到右、从上到下填入九宫格，每个格子必须是精致的关键帧画面】\n");
+        sb.append("【分镜内容 - 按从左到右、从上到下填入格子，每个格子必须是精致的关键帧画面】\n");
         sb.append("每个分镜必须包含：完整的场景环境细节（光影、色调、空间纵深）、角色的精确外貌与服装、");
         sb.append("细腻的面部表情和肢体语言、精心设计的构图与景深关系。画面要有电影级质感。\n\n");
         for (int i = 0; i < shots.size(); i++) {
             Map<String, Object> shot = shots.get(i);
-            int row = i / 3 + 1;
-            int col = i % 3 + 1;
+            int row = i / gridCols + 1;
+            int col = i % gridCols + 1;
             sb.append("第").append(row).append("行第").append(col).append("列: ");
             String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
             if (sceneDescription != null && !sceneDescription.isEmpty()) {
@@ -177,7 +180,7 @@ public class PanelPromptBuilder {
             sb.append("\n");
         }
 
-        int emptySlots = 9 - shots.size();
+        int emptySlots = totalSlots - shots.size();
         if (emptySlots > 0) {
             sb.append("剩余 ").append(emptySlots).append(" 个格子留空（纯黑色填充，不绘制任何内容）。\n\n");
         }
@@ -186,6 +189,17 @@ public class PanelPromptBuilder {
         sb.append("负面提示词：文字、水印、标签、签名、人体结构错误、肢体融合、多余手指、多余肢体、");
         sb.append("面部变形、眼睛异常、模糊、低质量、色块 artefact、粗糙线条、草稿感。");
         return sb.toString();
+    }
+
+    /**
+     * 构建九宫格图片生成提示词（含角色描述锚定）- 默认 3×3 九宫格
+     * @param visualStyle 风格
+     * @param shots 分镜列表
+     * @param charRefs 角色参考（含物种、外貌等描述），可为 null
+     */
+    public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots,
+                                   List<?> charRefs) {
+        return buildGridPrompt(visualStyle, shots, charRefs, 3, 3);
     }
 
     /**

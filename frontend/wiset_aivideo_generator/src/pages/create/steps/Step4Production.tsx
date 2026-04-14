@@ -84,7 +84,10 @@ const toCircledNumber = (n: number): string => {
 };
 
 /** 构建九宫格图片生成提示词（与后端 PanelPromptBuilder / ComicCommentaryPanelPromptBuilder 一致） */
-const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentary?: boolean): string => {
+const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentary?: boolean, gridCols?: number, gridRows?: number): string => {
+  const cols = gridCols ?? 3;
+  const rows = gridRows ?? 3;
+  const totalCells = cols * rows;
   const stylePrefix = STYLE_PREFIX_MAP[visualStyle] || '高质量，杰作级别，精细插画，柔光效果，色彩鲜艳。';
   const lines: string[] = [];
 
@@ -92,8 +95,8 @@ const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentar
   lines.push('');
 
   lines.push('【布局要求 - 必须严格遵守】');
-  lines.push('输出一张严格 3×3 九宫格分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。');
-  lines.push('图片必须被 2 条黑色竖线（约 4px 宽）和 2 条黑色横线（约 4px 宽）均匀分割为 3 行 3 列，共 9 个等大的格子。');
+  lines.push(`输出一张严格 ${cols}×${rows} 宫格分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。`);
+  lines.push(`图片必须被 ${cols - 1} 条黑色竖线（约 4px 宽）和 ${rows - 1} 条黑色横线（约 4px 宽）均匀分割为 ${rows} 行 ${cols} 列，共 ${totalCells} 个等大的格子。`);
   lines.push('每个格子是一个完全独立的分镜画面，场景、人物、时间可以不同。');
   lines.push('绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。');
   lines.push('图片中不包含任何文字、数字、标号或水印。');
@@ -119,13 +122,13 @@ const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentar
     lines.push('');
   }
 
-  lines.push('【分镜内容 - 按从左到右、从上到下填入九宫格，每个格子必须是精致的关键帧画面】');
+  lines.push(`【分镜内容 - 按从左到右、从上到下填入${cols}×${rows}宫格，每个格子必须是精致的关键帧画面】`);
   lines.push('每个分镜必须包含：完整的场景环境细节（光影、色调、空间纵深）、角色的精确外貌与服装、细腻的面部表情和肢体语言、精心设计的构图与景深关系。画面要有电影级质感。');
   lines.push('');
 
   shots.forEach((shot, i) => {
-    const row = Math.floor(i / 3) + 1;
-    const col = i % 3 + 1;
+    const row = Math.floor(i / cols) + 1;
+    const col = i % cols + 1;
     let line = `第${row}行第${col}列: ${shot.sceneDescription || shot.visualDescription || ''}`;
     if (shot.shotSize) line += `，${shot.shotSize}`;
     if (shot.cameraAngle) line += `，${shot.cameraAngle}`;
@@ -138,7 +141,7 @@ const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentar
     }
   });
 
-  const emptySlots = 9 - shots.length;
+  const emptySlots = totalCells - shots.length;
   if (emptySlots > 0) {
     lines.push(`剩余 ${emptySlots} 个格子留空（纯黑色填充，不绘制任何内容）。`);
     lines.push('');
@@ -500,6 +503,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             gridPromptHint: ep.episodeInfo?.gridPromptHint || '',
             gridPrompt: ep.episodeInfo?.gridPrompt || '',
             gridPrompts: ep.episodeInfo?.gridPrompts || [],
+            gridConfigs: ep.episodeInfo?.gridConfigs,
             panelApproved: ep.episodeInfo?.panelApproved ?? false,
             isNewFlow: !!ep.episodeInfo?.gridStatus,
             scriptStatus: ep.episodeInfo?.scriptStatus || 'pending',
@@ -2269,7 +2273,7 @@ interface DoneEpisodeCardProps {
   project: any;
   expandedPassedEpisodeId: number | null;
   onToggleExpanded: (episodeId: number | null) => void;
-  buildGridPromptText?: (visualStyle: string, shots: any[], isComicCommentary?: boolean) => string;
+  buildGridPromptText?: (visualStyle: string, shots: any[], isComicCommentary?: boolean, gridCols?: number, gridRows?: number) => string;
   buildMultiShotPromptText?: (visualStyle: string, shots: any[], isComicCommentary?: boolean) => string;
   nextStageLabel: string;
   /** 是否显示脚本内容（4A 已完成时） */
@@ -2424,6 +2428,41 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
                   </pre>
                 )}
               </div>
+              {(() => {
+                // 支持 gridConfigs 分页提示词
+                const configs = (episode as any).gridConfigs;
+                const pageCount = configs?.length || Math.ceil(allShots.length / 9) || 1;
+                const pages: string[] = [];
+                for (let pi = 0; pi < pageCount; pi++) {
+                  if (episode.gridPrompts && episode.gridPrompts.length > pi) {
+                    pages.push(episode.gridPrompts[pi]);
+                  } else if (pi === 0 && episode.gridPrompt) {
+                    pages.push(episode.gridPrompt);
+                  } else {
+                    const config = configs?.[pi];
+                    const cols = config?.gridCols ?? 3;
+                    const rows = config?.gridRows ?? 3;
+                    const capacity = cols * rows;
+                    let fromIdx = 0;
+                    if (configs && configs.length > pi) {
+                      for (let i = 0; i < pi; i++) {
+                        fromIdx += configs[i].shotCount ?? (configs[i].gridCols * configs[i].gridRows);
+                      }
+                    } else {
+                      fromIdx = pi * 9;
+                    }
+                    const toIdx = Math.min(fromIdx + capacity, allShots.length);
+                    const pageShots = allShots.slice(fromIdx, toIdx);
+                    pages.push(buildGridPromptText(visualStyle, pageShots, isComicCommentary, cols, rows));
+                  }
+                }
+                return pages.map((prompt, idx) => (
+                  <pre key={idx} className={styles.episodePromptBlock}>
+                    {pageCount > 1 && <div style={{ marginBottom: 8, color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>第 {idx + 1} 页 / 共 {pageCount} 页</div>}
+                    {prompt}
+                  </pre>
+                ));
+              })()}
             </div>
           )}
           {/* 视频提示词 */}

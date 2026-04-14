@@ -38,14 +38,24 @@ public class ComicCommentaryPanelPromptBuilder {
         this.panelPromptBuilder = panelPromptBuilder;
     }
 
-    public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots, List<?> charRefs) {
+    /**
+     * 构建漫剧解说风格分镜图生成提示词，支持自适应网格尺寸
+     * @param visualStyle 风格
+     * @param shots 分镜列表
+     * @param charRefs 角色参考（含物种、外貌等描述），可为 null
+     * @param gridCols 网格列数
+     * @param gridRows 网格行数
+     */
+    public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots,
+                                   List<?> charRefs, int gridCols, int gridRows) {
+        int totalSlots = gridCols * gridRows;
         StringBuilder sb = new StringBuilder();
         sb.append(panelPromptBuilder.buildSceneStylePrefix(visualStyle));
         sb.append("漫剧解说风格关键帧：每格为独立「漫画分镜式」画面，适合旁白解说与字幕叠加，构图清晰、主体突出。\n\n");
 
         sb.append("【布局要求 - 必须严格遵守】\n");
-        sb.append("输出一张严格 3×3 九宫格分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
-        sb.append("图片必须被 2 条黑色竖线（约 4px 宽）和 2 条黑色横线（约 4px 宽）均匀分割为 3 行 3 列，共 9 个等大的格子。\n");
+        sb.append("输出一张严格 ").append(gridCols).append("×").append(gridRows).append(" 分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
+        sb.append("图片必须被 ").append(gridCols - 1).append(" 条黑色竖线（约 4px 宽）和 ").append(gridRows - 1).append(" 条黑色横线（约 4px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");
         sb.append("每个格子是一个完全独立的画面，可表现不同时间或场景；整体像动态漫/条漫分格，便于后期加解说与花字。\n");
         sb.append("绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。\n");
         sb.append("图片中不包含任何文字、数字、标号或水印（解说与字幕由后期添加）。\n\n");
@@ -92,12 +102,12 @@ public class ComicCommentaryPanelPromptBuilder {
         sb.append("【景别约束】解说模式以中景、近景、特写为主；远景/大远景仅用于开场或转场，总数不超过 2 格。\n");
         sb.append("【字幕安全区】构图需留出上方约 1/4 区域，避免关键内容被花字遮挡。\n\n");
 
-        sb.append("【分镜内容 - 从左到右、从上到下填入九宫格；每格信息密度适中，利于口播节奏】\n");
+        sb.append("【分镜内容 - 从左到右、从上到下填入格子；每格信息密度适中，利于口播节奏】\n");
         sb.append("每格需交代清楚场景氛围与角色状态，情绪对比可略夸张以增强解说张力。\n\n");
         for (int i = 0; i < shots.size(); i++) {
             Map<String, Object> shot = shots.get(i);
-            int row = i / 3 + 1;
-            int col = i % 3 + 1;
+            int row = i / gridCols + 1;
+            int col = i % gridCols + 1;
             sb.append("第").append(row).append("行第").append(col).append("列: ");
             String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
             if (sceneDescription != null && !sceneDescription.isEmpty()) {
@@ -132,7 +142,7 @@ public class ComicCommentaryPanelPromptBuilder {
             sb.append("\n");
         }
 
-        int emptySlots = 9 - shots.size();
+        int emptySlots = totalSlots - shots.size();
         if (emptySlots > 0) {
             sb.append("剩余 ").append(emptySlots).append(" 个格子留空（纯黑色填充，不绘制任何内容）。\n\n");
         }
@@ -142,6 +152,13 @@ public class ComicCommentaryPanelPromptBuilder {
         sb.append("字幕、旁白文字、屏幕上的任何文字。\n");
         sb.append("禁止快速运动、剧烈动作、突然变向。");
         return sb.toString();
+    }
+
+    /**
+     * 构建漫剧解说风格分镜图生成提示词 - 默认 3×3 九宫格
+     */
+    public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots, List<?> charRefs) {
+        return buildGridPrompt(visualStyle, shots, charRefs, 3, 3);
     }
 
     public String buildMultiShotPrompt(String visualStyle, Map<String, Object> panelInfo) {
