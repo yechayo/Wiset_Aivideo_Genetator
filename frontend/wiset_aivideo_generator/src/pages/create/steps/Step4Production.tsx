@@ -1576,7 +1576,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             </button>
           </div>
           {/* Vidu 模型选择 */}
-          {isVidu && (
+          {isVidu && !isVideoRefMode && (
             <div className={styles.headerVideoModelTabs}>
               <span className={styles.headerVideoModelLabel}>模型：</span>
               <button
@@ -1590,6 +1590,21 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 onClick={() => setVideoModel('turbo')}
               >
                 Turbo
+              </button>
+            </div>
+          )}
+          {isVidu && isVideoRefMode && (
+            <div className={styles.headerVideoModelTabs}>
+              <span className={styles.headerVideoModelLabel}>模型：</span>
+              <button
+                className={`${styles.headerVideoModelTab} ${projectVideoModel === 'viduq3-mix' ? styles.headerVideoModelTabActive : ''}`}
+              >
+                Q3 Mix
+              </button>
+              <button
+                className={`${styles.headerVideoModelTab} ${projectVideoModel === 'viduq3' ? styles.headerVideoModelTabActive : ''}`}
+              >
+                Q3
               </button>
             </div>
           )}
@@ -1691,7 +1706,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               <span className={styles.toggleLabel}>错峰</span>
             </button>
             )}
-            {isVidu && (
+            {isVidu && !isVideoRefMode && (
               <button
                 className={styles.modelToggle}
                 onClick={toggleVideoModel}
