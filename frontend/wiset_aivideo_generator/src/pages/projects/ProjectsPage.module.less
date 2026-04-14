@@ -39,11 +39,13 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color var(--duration-fast) var(--easing-standard),
+              background var(--duration-fast) var(--easing-standard),
+              box-shadow var(--duration-fast) var(--easing-standard);
   text-decoration: none;
 
   &:hover {
-    background: #e9eef7;
+    background: rgba(247, 249, 252, 0.85);
   }
 }
 
@@ -95,7 +97,9 @@
   border: 1px solid rgba(247, 249, 252, 0.12);
   border-radius: var(--radius-lg);
   text-decoration: none;
-  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color var(--duration-fast) var(--easing-standard),
+              background var(--duration-fast) var(--easing-standard),
+              box-shadow var(--duration-fast) var(--easing-standard);
   cursor: pointer;
   min-height: 200px;
 
@@ -115,14 +119,14 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .headerActions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   flex-shrink: 0;
 }
 
@@ -138,7 +142,8 @@
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: color 0.2s ease, background 0.2s ease;
+  transition: color var(--duration-fast) var(--easing-standard),
+              background var(--duration-fast) var(--easing-standard);
 
   svg {
     width: 16px;
@@ -200,8 +205,8 @@
 
 .projectMeta {
   display: flex;
-  gap: 24px;
-  margin-bottom: 12px;
+  gap: var(--space-6);
+  margin-bottom: var(--space-3);
 }
 
 .metaItem {
@@ -224,11 +229,11 @@
 
 .projectInfo {
   flex: 1;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 .targetAudience {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }
 
@@ -236,7 +241,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-top: 16px;
+  padding-top: var(--space-4);
   border-top: 1px solid var(--color-border-subtle);
 }
 
@@ -249,7 +254,8 @@
   width: 18px;
   height: 18px;
   color: var(--color-text-muted);
-  transition: color 0.2s ease, transform 0.2s ease;
+  transition: color var(--duration-fast) var(--easing-standard),
+              transform var(--duration-fast) var(--easing-standard);
 
   svg {
     width: 100%;
@@ -310,10 +316,12 @@
   border: none;
   border-radius: var(--radius-md);
   color: var(--color-bg-canvas);
-  font-size: 15px;
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color var(--duration-fast) var(--easing-standard),
+              background var(--duration-fast) var(--easing-standard),
+              box-shadow var(--duration-fast) var(--easing-standard);
   text-decoration: none;
 
   svg {
@@ -322,7 +330,7 @@
   }
 
   &:hover {
-    background: #e9eef7;
+    background: rgba(247, 249, 252, 0.85);
   }
 }
 

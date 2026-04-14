@@ -12,11 +12,11 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeIn 0.3s ease forwards;
+  animation: fadeIn var(--duration-normal) ease forwards;
 }
 
 .overlayLeaving {
-  animation: fadeOut 0.35s ease forwards;
+  animation: fadeOut var(--duration-normal) ease forwards;
 }
 
 @keyframes fadeIn {
@@ -36,16 +36,16 @@
   align-items: center;
   text-align: center;
   padding: 60px 80px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid rgba(247, 249, 252, 0.08);
+  border-radius: var(--radius-xl);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   max-width: 440px;
-  animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: slideUp var(--duration-normal) cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 .contentLeaving {
-  animation: slideDown 0.35s ease forwards;
+  animation: slideDown var(--duration-normal) ease forwards;
 }
 
 @keyframes slideUp {
@@ -75,7 +75,7 @@
   position: relative;
   width: 80px;
   height: 80px;
-  margin-bottom: 24px;
+  margin-bottom: var(--space-6);
 }
 
 // 旋转圆环
@@ -86,7 +86,7 @@
   width: 100%;
   height: 100%;
   border: 3px solid transparent;
-  border-top-color: #ffffff;
+  border-top-color: var(--color-text-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -108,7 +108,7 @@
   right: 8px;
   bottom: 8px;
   border: 3px solid transparent;
-  border-top-color: rgba(255, 255, 255, 0.5);
+  border-top-color: rgba(247, 249, 252, 0.5);
   border-radius: 50%;
   animation: spin 1.5s linear infinite reverse;
 }
@@ -121,7 +121,7 @@
   transform: translate(-50%, -50%);
   width: 40px;
   height: 40px;
-  background: #ffffff;
+  background: var(--color-text-primary);
   border-radius: 50%;
   opacity: 0.3;
   animation: pulse 1.5s ease-in-out infinite;
@@ -141,60 +141,60 @@
 // 阶段指示器
 .phaseIndicator {
   display: flex;
-  gap: 8px;
-  margin-bottom: 28px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-7);
 }
 
 .phaseDot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  transition: all 0.4s ease;
+  transition: all var(--duration-slow) var(--easing-standard);
 }
 
 .phaseDotPending {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(247, 249, 252, 0.15);
 }
 
 .phaseDotActive {
-  background: #ffffff;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+  background: var(--color-text-primary);
+  box-shadow: 0 0 8px rgba(247, 249, 252, 0.6);
   transform: scale(1.2);
 }
 
 .phaseDotDone {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(247, 249, 252, 0.5);
 }
 
 // 消息容器
 .messageContainer {
-  margin-bottom: 28px;
+  margin-bottom: var(--space-7);
 }
 
 .title {
-  font-size: 24px;
+  font-size: var(--font-size-xl);
   font-weight: 700;
-  color: #ffffff;
-  margin: 0 0 12px 0;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-3) 0;
   letter-spacing: -0.02em;
 }
 
 .message {
-  font-size: 15px;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--font-size-md);
+  color: rgba(247, 249, 252, 0.6);
   margin: 0;
   line-height: 1.6;
 }
 
 // 提示信息
 .tips {
-  padding-top: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: var(--space-5);
+  border-top: 1px solid rgba(247, 249, 252, 0.08);
 }
 
 .tipText {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.35);
+  font-size: var(--font-size-sm);
+  color: rgba(247, 249, 252, 0.35);
   margin: 0;
   line-height: 1.6;
 }

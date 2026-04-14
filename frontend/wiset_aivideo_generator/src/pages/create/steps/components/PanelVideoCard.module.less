@@ -9,7 +9,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transition: background 0.2s ease;
+  transition: background var(--duration-fast) var(--easing-standard);
 
   &:hover {
     background: var(--color-bg-card-hover);
@@ -99,10 +99,11 @@
   color: var(--color-text-primary);
   border: none;
   border-radius: var(--radius-md);
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.2s ease, transform 0.15s ease;
+  transition: opacity var(--duration-fast) var(--easing-standard),
+              transform var(--duration-fast) var(--easing-standard);
 
   &:hover {
     opacity: 0.85;
@@ -125,10 +126,11 @@
   color: var(--color-accent);
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background var(--duration-fast) var(--easing-standard),
+              color var(--duration-fast) var(--easing-standard);
 
   &:hover {
     background: var(--color-accent);

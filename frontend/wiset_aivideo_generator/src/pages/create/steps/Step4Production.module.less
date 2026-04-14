@@ -70,7 +70,7 @@
 
 .headerVideoProviderTabActive {
   background: rgba(114, 183, 255, 0.2);
-  color: var(--color-primary);
+  color: var(--color-accent);
 }
 
 // 视频模型 Tab（Vidu 专用）
@@ -100,8 +100,8 @@
 }
 
 .headerVideoModelTabActive {
-  background: var(--color-primary);
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-bg-canvas);
 }
 
 .pageTitle {
@@ -523,7 +523,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #fbbf24;
+  background: var(--color-warning);
 }
 
 .dotPending {
@@ -531,7 +531,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #474747;
+  background: var(--color-border-strong);
 }
 
 .chapterProgress {
@@ -820,7 +820,7 @@
   margin-bottom: 6px;
 
   &:hover {
-    background: var(--color-bg-hover, #f5f5f5);
+    background: var(--color-bg-elevated);
   }
 }
 
@@ -1459,7 +1459,7 @@
 
 .statusGenerated {
   background: rgba(240, 192, 108, 0.08);
-  color: #f0c06c;
+  color: var(--color-warning);
   border: 1px solid rgba(240, 192, 108, 0.16);
 }
 
@@ -1603,7 +1603,7 @@
 .gridPageTabActive {
   background: rgba(114, 183, 255, 0.15);
   border-color: rgba(114, 183, 255, 0.4);
-  color: var(--color-primary);
+  color: var(--color-accent);
 }
 
 // Grid images
@@ -1756,7 +1756,7 @@
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #ef4444;
+  color: var(--color-danger);
   font-weight: var(--font-weight-medium);
   white-space: nowrap;
   flex-shrink: 0;
@@ -1896,7 +1896,7 @@
 
 .clickableImage {
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity var(--duration-fast) var(--easing-standard);
 
   &:hover {
     opacity: 0.85;
@@ -2207,18 +2207,18 @@
 
 .lightboxClose {
   position: fixed;
-  top: 20px;
-  right: 24px;
+  top: var(--space-5);
+  right: var(--space-6);
   width: 40px;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(247, 249, 252, 0.1);
+  border: 1px solid rgba(247, 249, 252, 0.15);
   border-radius: 50%;
-  color: #fff;
-  font-size: 22px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
   cursor: pointer;
   transition: background var(--duration-fast) var(--easing-standard);
   z-index: 1002;

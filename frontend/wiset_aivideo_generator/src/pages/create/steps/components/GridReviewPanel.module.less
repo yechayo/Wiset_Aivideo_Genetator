@@ -30,7 +30,7 @@
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
-  color: #090b10;
+  color: var(--color-bg-canvas);
 }
 
 .miniSpinner {
@@ -54,12 +54,12 @@
 }
 
 .rejectionNote {
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   background-color: rgba(242, 119, 123, 0.1);
   border: 1px solid rgba(242, 119, 123, 0.3);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
-  color: #f2777b;
+  color: var(--color-danger);
 }
 
 .rejectionLabel {
@@ -81,7 +81,7 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
     opacity: 0.85;
@@ -96,13 +96,13 @@
 .rejectButton {
   padding: var(--space-3) var(--space-4);
   background-color: transparent;
-  color: #f2777b;
-  border: 1px solid #f2777b;
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color 0.15s;
+  transition: background-color var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
     background-color: rgba(242, 119, 123, 0.1);
@@ -117,16 +117,16 @@
 .regenerateButton {
   padding: var(--space-3) var(--space-4);
   background-color: transparent;
-  color: #fbbf24;
-  border: 1px solid #fbbf24;
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color 0.15s;
+  transition: background-color var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
-    background-color: rgba(251, 191, 36, 0.1);
+    background-color: rgba(240, 192, 108, 0.1);
   }
 
   &:disabled {
@@ -138,8 +138,8 @@
 .rejectInputContainer {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   background-color: var(--color-bg-canvas);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
@@ -147,10 +147,10 @@
 
 .rejectInput {
   width: 100%;
-  padding: 8px;
+  padding: var(--space-2);
   background-color: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   font-family: inherit;
@@ -164,7 +164,7 @@
 
   &:focus {
     outline: none;
-    border-color: #f2777b;
+    border-color: var(--color-danger);
   }
 
   &:disabled {
@@ -175,18 +175,19 @@
 
 .rejectActions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: flex-end;
 }
 
 .rejectConfirmButton {
   padding: 4px 12px;
-  background-color: #f2777b;
-  color: white;
+  background-color: var(--color-danger);
+  color: var(--color-bg-canvas);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   cursor: pointer;
+  transition: opacity var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
     opacity: 0.85;
@@ -203,9 +204,10 @@
   background-color: transparent;
   color: var(--color-text-muted);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   cursor: pointer;
+  transition: color var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
     color: var(--color-text-primary);

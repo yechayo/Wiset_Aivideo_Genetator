@@ -25,9 +25,9 @@
 
 .progressFill {
   height: 100%;
-  background-color: #4ade80;
+  background-color: var(--color-success);
   border-radius: 2px;
-  transition: width 0.3s ease;
+  transition: width var(--duration-normal) var(--easing-standard);
 }
 
 .statsText {
@@ -36,7 +36,7 @@
 }
 
 .approved {
-  color: #4ade80;
+  color: var(--color-success);
   font-weight: var(--font-weight-medium);
 }
 
@@ -51,11 +51,11 @@
 }
 
 .pending {
-  color: #fbbf24;
+  color: var(--color-warning);
 }
 
 .approveAllButton {
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
   background-color: var(--color-text-primary);
   color: var(--color-bg-canvas);
   border: none;
@@ -64,7 +64,7 @@
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   white-space: nowrap;
-  transition: opacity 0.15s;
+  transition: opacity var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
     opacity: 0.85;

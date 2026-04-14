@@ -1,7 +1,7 @@
 .outlineEditor {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
+  background: rgba(247, 249, 252, 0.03);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   flex: 1;
   min-height: 0;
@@ -17,9 +17,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: rgba(247, 249, 252, 0.02);
   cursor: pointer;
   user-select: none;
 }
@@ -27,7 +27,7 @@
 .toolbarLeft {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .collapseButton {
@@ -39,13 +39,13 @@
   padding: 0;
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-text-muted);
   cursor: pointer;
-  border-radius: 4px;
-  transition: color 0.2s;
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast) var(--easing-standard);
 
   &:hover {
-    color: #ffffff;
+    color: var(--color-text-primary);
   }
 
   svg {
@@ -55,48 +55,48 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--font-size-md);
   font-weight: 600;
-  color: #ffffff;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .toolbarRight {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .editButton {
-  padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #ffffff;
-  font-size: 13px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(247, 249, 252, 0.05);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-fast) var(--easing-standard);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(247, 249, 252, 0.1);
+    border-color: var(--color-border-strong);
   }
 }
 
 .saveButton {
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
   border: none;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #171717;
-  font-size: 13px;
+  border-radius: var(--radius-sm);
+  background: var(--color-text-primary);
+  color: var(--color-bg-canvas);
+  font-size: var(--font-size-sm);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: opacity var(--duration-fast) var(--easing-standard);
 
   &:hover {
-    background: #f3f4f6;
+    opacity: 0.85;
   }
 }
 
@@ -111,19 +111,19 @@
 }
 
 .cancelButton {
-  padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-fast) var(--easing-standard);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #ffffff;
+    background: rgba(247, 249, 252, 0.05);
+    color: var(--color-text-primary);
   }
 }
 
@@ -137,38 +137,38 @@
   }
 
   &::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(247, 249, 252, 0.02);
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--color-border-subtle);
     border-radius: 4px;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.15);
+      background: var(--color-border-strong);
     }
   }
 }
 
 .preview {
-  padding: 20px;
+  padding: var(--space-5);
 }
 
 .textarea {
   width: 100%;
   height: 100%;
-  padding: 20px;
+  padding: var(--space-5);
   background: transparent;
   border: none;
-  color: #ffffff;
-  font-size: 14px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
   line-height: 1.7;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-sans);
   resize: none;
   box-sizing: border-box;
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.3);
+    color: var(--color-text-muted);
   }
 
   &:focus {
@@ -177,41 +177,41 @@
 }
 
 .markdownContent {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 14px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
   line-height: 1.7;
 
   h1 {
-    font-size: 24px;
+    font-size: var(--font-size-xl);
     font-weight: 700;
-    margin: 0 0 16px 0;
-    color: #ffffff;
+    margin: 0 0 var(--space-4) 0;
+    color: var(--color-text-primary);
   }
 
   h2 {
-    font-size: 20px;
+    font-size: var(--font-size-lg);
     font-weight: 600;
-    margin: 20px 0 12px 0;
-    color: #ffffff;
+    margin: var(--space-5) 0 var(--space-3) 0;
+    color: var(--color-text-primary);
   }
 
   h3 {
-    font-size: 17px;
+    font-size: var(--font-size-md);
     font-weight: 600;
-    margin: 16px 0 10px 0;
-    color: #ffffff;
+    margin: var(--space-4) 0 var(--space-2) 0;
+    color: var(--color-text-primary);
   }
 
   h4 {
-    font-size: 15px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
-    margin: 14px 0 8px 0;
-    color: #ffffff;
+    margin: var(--space-3) 0 var(--space-2) 0;
+    color: var(--color-text-primary);
   }
 
   strong {
     font-weight: 600;
-    color: #ffffff;
+    color: var(--color-text-primary);
   }
 
   em {
@@ -219,27 +219,27 @@
   }
 
   ul {
-    margin: 12px 0;
-    padding-left: 24px;
+    margin: var(--space-3) 0;
+    padding-left: var(--space-6);
 
     li {
-      margin: 6px 0;
-      color: rgba(255, 255, 255, 0.85);
+      margin: var(--space-1) 0;
+      color: var(--color-text-secondary);
 
       &::marker {
-        color: rgba(255, 255, 255, 0.4);
+        color: var(--color-text-muted);
       }
     }
   }
 
   hr {
     border: none;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    margin: 20px 0;
+    border-top: 1px solid var(--color-border-subtle);
+    margin: var(--space-5) 0;
   }
 
   p {
-    margin: 8px 0;
-    color: rgba(255, 255, 255, 0.85);
+    margin: var(--space-2) 0;
+    color: var(--color-text-secondary);
   }
 }

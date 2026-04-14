@@ -23,7 +23,7 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-fast) var(--easing-standard);
 
   &:hover {
     background: rgba(247, 249, 252, 0.1);
@@ -48,11 +48,11 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-fast) var(--easing-standard);
   text-decoration: none;
 
   &:hover {
-    background: #e9eef7;
+    background: rgba(247, 249, 252, 0.85);
     transform: translateY(-1px);
   }
 
@@ -86,7 +86,7 @@
 }
 
 .projectTitle {
-  font-size: 24px;
+  font-size: var(--font-size-xl);
   font-weight: var(--font-weight-bold);
   margin: 0;
   color: var(--color-text-primary);
@@ -102,7 +102,7 @@
 .projectStatus {
   padding: 6px 14px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
 }
 
@@ -141,13 +141,13 @@
 }
 
 .sectionTitle {
-  font-size: 16px;
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-4) 0;
   color: var(--color-text-primary);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 
   &::before {
     content: '';
@@ -162,7 +162,7 @@
 .infoGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 .infoItem {
@@ -178,7 +178,7 @@
 }
 
 .infoValue {
-  font-size: 15px;
+  font-size: var(--font-size-md);
   color: rgba(247, 249, 252, 0.9);
   line-height: 1.5;
 }
@@ -186,28 +186,18 @@
 // 时间信息
 .timeInfo {
   display: flex;
-  gap: 40px;
+  gap: var(--space-10);
 }
 
 .timeItem {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-.timeLabel {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-}
-
-.timeValue {
-  font-size: var(--font-size-sm);
-  color: rgba(247, 249, 252, 0.8);
+  gap: var(--space-1);
 }
 
 // 修改意见
 .revisionNote {
-  padding: 16px 20px;
+  padding: var(--space-4) var(--space-5);
   background: rgba(247, 249, 252, 0.03);
   border: 1px solid rgba(247, 249, 252, 0.08);
   border-radius: var(--radius-md);
@@ -218,7 +208,7 @@
 
 // 剧本大纲
 .outlineContent {
-  padding: 20px 24px;
+  padding: var(--space-5) var(--space-6);
   background: rgba(247, 249, 252, 0.02);
   border: 1px solid rgba(247, 249, 252, 0.08);
   border-radius: var(--radius-md);
@@ -228,7 +218,7 @@
   pre {
     margin: 0;
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: var(--font-size-sm);
     color: rgba(247, 249, 252, 0.85);
     line-height: 1.7;
     white-space: pre-wrap;
@@ -240,23 +230,23 @@
   }
 
   &::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(247, 249, 252, 0.05);
     border-radius: 3px;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(247, 249, 252, 0.2);
     border-radius: 3px;
   }
 }
 
 // 当前章节
 .selectedChapter {
-  padding: 16px 20px;
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px solid rgba(139, 92, 246, 0.2);
-  border-radius: 12px;
-  font-size: 14px;
+  padding: var(--space-4) var(--space-5);
+  background: rgba(167, 139, 250, 0.1);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
   color: rgba(167, 139, 250, 1);
   line-height: 1.6;
 }
@@ -294,20 +284,20 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 100px 20px;
+  padding: 100px var(--space-5);
   text-align: center;
 
   h2 {
-    font-size: 20px;
+    font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
-    margin: 0 0 8px 0;
+    margin: 0 0 var(--space-2) 0;
     color: var(--color-text-primary);
   }
 
   p {
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
-    margin: 0 0 24px 0;
+    margin: 0 0 var(--space-6) 0;
   }
 }
 
@@ -315,18 +305,18 @@
 @media (max-width: 768px) {
   .header {
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
     align-items: stretch;
   }
 
   .cardHeader {
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .timeInfo {
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .infoGrid {

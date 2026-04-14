@@ -255,28 +255,28 @@
   }
 
   &.completed {
-    background-color: #4ade80;
-    color: #ffffff;
+    background-color: var(--color-success);
+    color: var(--color-text-primary);
   }
 
   &.active {
-    background-color: #fbbf24;
-    color: #ffffff;
+    background-color: var(--color-warning);
+    color: var(--color-text-primary);
     animation: pulse 1.5s ease-in-out infinite;
 
     @keyframes pulse {
       0%, 100% {
-        box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4);
+        box-shadow: 0 0 0 0 rgba(240, 192, 108, 0.4);
       }
       50% {
-        box-shadow: 0 0 0 4px rgba(251, 191, 36, 0);
+        box-shadow: 0 0 0 4px rgba(240, 192, 108, 0);
       }
     }
   }
 
   &.pending {
-    background-color: #474747;
-    color: rgba(255, 255, 255, 0.5);
+    background-color: var(--color-border-strong);
+    color: rgba(247, 249, 252, 0.5);
   }
 }
 
@@ -286,11 +286,11 @@
   border-radius: 1px;
 
   &.completed {
-    background-color: #4ade80;
+    background-color: var(--color-success);
   }
 
   &.pending {
-    background-color: #474747;
+    background-color: var(--color-border-strong);
   }
 }
 
@@ -421,9 +421,9 @@
 }
 
 .revisionSection {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   border-top: 1px solid var(--color-border-subtle);
-  padding-top: 12px;
+  padding-top: var(--space-3);
 }
 
 .revisionHeader {
@@ -434,7 +434,7 @@
 }
 
 .revisionTitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -443,7 +443,7 @@
   display: flex;
   gap: 0;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -454,15 +454,15 @@
   border: none;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-fast) var(--easing-standard);
 
   &:hover {
     color: var(--color-text-primary);
   }
 
   &.activeTab {
-    background: var(--color-primary);
-    color: #fff;
+    background: var(--color-accent);
+    color: var(--color-bg-canvas);
   }
 }
 
@@ -476,18 +476,18 @@
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--color-bg-input);
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   line-height: 1.5;
   resize: vertical;
   min-height: 60px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color var(--duration-fast) var(--easing-standard);
 
   &:focus {
-    border-color: var(--color-primary);
+    border-color: var(--color-accent);
   }
 
   &:disabled {
@@ -509,18 +509,18 @@
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--color-bg-input);
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   line-height: 1.5;
   resize: vertical;
   min-height: 50px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color var(--duration-fast) var(--easing-standard);
 
   &:focus {
-    border-color: var(--color-primary);
+    border-color: var(--color-accent);
   }
 
   &:disabled {
@@ -533,15 +533,15 @@
   align-self: flex-end;
   padding: 6px 16px;
   border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-fast) var(--easing-standard);
 
   &:not(:disabled) {
-    background: var(--color-primary);
-    color: #fff;
+    background: var(--color-accent);
+    color: var(--color-bg-canvas);
 
     &:hover {
       opacity: 0.9;
@@ -579,7 +579,7 @@
 
 .promptDetailArrow {
   font-size: 10px;
-  transition: transform 0.2s;
+  transition: transform var(--duration-fast) var(--easing-standard);
 
   &.expanded {
     transform: rotate(90deg);
@@ -670,8 +670,8 @@
   display: inline-block;
   padding: 1px 6px;
   border-radius: 3px;
-  background: #3b82f6;
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-bg-canvas);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -681,8 +681,8 @@
   display: inline-block;
   padding: 1px 6px;
   border-radius: 3px;
-  background: #f59e0b;
-  color: #fff;
+  background: var(--color-warning);
+  color: var(--color-bg-canvas);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.03em;

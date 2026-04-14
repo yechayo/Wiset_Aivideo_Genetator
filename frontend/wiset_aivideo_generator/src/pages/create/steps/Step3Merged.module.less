@@ -66,8 +66,8 @@
   padding: var(--space-4);
   cursor: pointer;
   transition:
-    border-color 200ms var(--easing-standard),
-    box-shadow 200ms var(--easing-standard);
+    border-color var(--duration-fast) var(--easing-standard),
+    box-shadow var(--duration-fast) var(--easing-standard);
 
   &:hover {
     border-color: var(--color-border-strong);
@@ -276,14 +276,14 @@
 .formInput,
 .formTextarea,
 .formSelect {
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   outline: none;
-  transition: border-color 180ms var(--easing-standard);
+  transition: border-color var(--duration-fast) var(--easing-standard);
   font-family: inherit;
 
   &:focus {
@@ -323,7 +323,7 @@
   border-radius: var(--radius-sm);
   font-size: 12px;
   cursor: pointer;
-  transition: background 180ms var(--easing-standard);
+  transition: background var(--duration-fast) var(--easing-standard);
 
   &:hover {
     background: rgba(242, 119, 123, 0.1);
@@ -338,7 +338,7 @@
   border-radius: var(--radius-sm);
   font-size: 12px;
   cursor: pointer;
-  transition: all 180ms var(--easing-standard);
+  transition: all var(--duration-fast) var(--easing-standard);
 
   &:hover {
     background: rgba(247, 249, 252, 0.05);
@@ -355,7 +355,7 @@
   font-size: 13px;
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: opacity 180ms var(--easing-standard);
+  transition: opacity var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
     opacity: 0.88;
@@ -527,7 +527,7 @@
   font-size: 12px;
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background 180ms var(--easing-standard);
+  transition: background var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
     background: var(--color-accent-strong);
@@ -544,7 +544,7 @@
   font-size: 12px;
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background 180ms var(--easing-standard);
+  transition: background var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
     background: rgba(240, 192, 108, 0.08);
@@ -569,7 +569,7 @@
   font-size: 12px;
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background 180ms var(--easing-standard);
+  transition: background var(--duration-fast) var(--easing-standard);
 
   &:hover {
     background: var(--color-accent-strong);
@@ -596,7 +596,7 @@
   font-size: 13px;
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: all 180ms var(--easing-standard);
+  transition: opacity var(--duration-fast) var(--easing-standard);
 
   &:hover {
     opacity: 0.88;
@@ -612,7 +612,7 @@
   font-size: 13px;
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: all 180ms var(--easing-standard);
+  transition: opacity var(--duration-fast) var(--easing-standard);
 
   &:hover {
     opacity: 0.88;
@@ -642,7 +642,7 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: background 200ms var(--easing-standard);
+  transition: background var(--duration-fast) var(--easing-standard);
 
   &:hover:not(:disabled) {
     background: var(--color-accent-strong);
@@ -701,7 +701,7 @@
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   cursor: pointer;
-  transition: background 180ms var(--easing-standard);
+  transition: background var(--duration-fast) var(--easing-standard);
 
   &:hover {
     background: rgba(247, 249, 252, 0.06);

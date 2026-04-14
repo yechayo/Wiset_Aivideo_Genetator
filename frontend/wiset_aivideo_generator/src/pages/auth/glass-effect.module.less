@@ -17,7 +17,7 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: #000000;
+  background: var(--color-bg-canvas);
   z-index: 0;
 }
 
@@ -26,29 +26,29 @@
   position: relative;
   z-index: 1;
   width: 420px;
-  padding: 48px 40px;
+  padding: var(--space-10) var(--space-10);
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 24px;
+  border-radius: var(--radius-xl);
   box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
 }
 
 // 标题样式
 .loginTitle {
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--space-2) 0;
   font-size: 32px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--color-text-primary);
   text-align: center;
   letter-spacing: 1px;
 }
 
 .loginSubtitle {
-  margin: 0 0 32px 0;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.8);
+  margin: 0 0 var(--space-8) 0;
+  font-size: var(--font-size-sm);
+  color: rgba(247, 249, 252, 0.8);
   text-align: center;
 }
 
@@ -56,7 +56,7 @@
 .loginForm {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 // 输入框容器
@@ -71,20 +71,20 @@
   padding: 14px 16px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  color: #ffffff;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
   outline: none;
-  transition: all 0.3s ease;
+  transition: all var(--duration-normal) var(--easing-standard);
   box-sizing: border-box;
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(247, 249, 252, 0.4);
   }
 
   &:focus {
-    border-color: rgba(255, 255, 255, 0.4);
-    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(247, 249, 252, 0.4);
+    background: rgba(247, 249, 252, 0.1);
   }
 
   &:disabled {
@@ -123,10 +123,10 @@
   background: transparent;
   border: none;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.5);
-  transition: opacity 0.3s ease;
-  border-radius: 6px;
-  padding: 4px;
+  color: rgba(247, 249, 252, 0.5);
+  transition: opacity var(--duration-normal) var(--easing-standard);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
 
   svg {
     width: 18px;
@@ -134,8 +134,8 @@
   }
 
   &:hover {
-    color: rgba(255, 255, 255, 0.9);
-    background: rgba(255, 255, 255, 0.1);
+    color: rgba(247, 249, 252, 0.9);
+    background: rgba(247, 249, 252, 0.1);
   }
 
   &:active {
@@ -143,7 +143,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.3);
+    outline: 2px solid rgba(247, 249, 252, 0.3);
     outline-offset: 2px;
   }
 }
@@ -152,18 +152,18 @@
 .loginButton {
   width: 100%;
   padding: 14px;
-  margin-top: 8px;
+  margin-top: var(--space-2);
   border: none;
-  background: #ffffff;
-  color: #171717;
-  font-size: 16px;
+  background: var(--color-text-primary);
+  color: var(--color-bg-canvas);
+  font-size: var(--font-size-md);
   font-weight: 600;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all var(--duration-normal) var(--easing-standard);
 
   &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(247, 249, 252, 0.9);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   }
@@ -178,7 +178,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.5);
+    outline: 2px solid rgba(247, 249, 252, 0.5);
     outline-offset: 2px;
   }
 }
@@ -188,58 +188,58 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 
 .footerLink {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--font-size-sm);
+  color: rgba(247, 249, 252, 0.6);
   text-decoration: none;
-  transition: color 0.3s ease;
+  transition: color var(--duration-normal) var(--easing-standard);
 
   &:hover {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(247, 249, 252, 0.9);
     text-decoration: underline;
   }
 }
 
 .modeToggleBtn {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(247, 249, 252, 0.6);
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: color 0.3s ease;
+  transition: color var(--duration-normal) var(--easing-standard);
   padding: 0;
 
   &:hover {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(247, 249, 252, 0.9);
     text-decoration: underline;
   }
 
   &:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.3);
+    outline: 2px solid rgba(247, 249, 252, 0.3);
     outline-offset: 2px;
   }
 }
 
 // 底部协议文字
 .agreementText {
-  margin-top: 20px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  margin-top: var(--space-5);
+  font-size: var(--font-size-xs);
+  color: rgba(247, 249, 252, 0.5);
   text-align: center;
   line-height: 1.5;
 }
 
 .agreementLink {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(247, 249, 252, 0.7);
   text-decoration: none;
-  transition: color 0.3s ease;
+  transition: color var(--duration-normal) var(--easing-standard);
 
   &:hover {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(247, 249, 252, 0.9);
     text-decoration: underline;
   }
 }
@@ -248,15 +248,15 @@
 .rememberMeSection {
   display: flex;
   align-items: center;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
 }
 
 .checkboxLabel {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: rgba(247, 249, 252, 0.7);
   cursor: pointer;
   user-select: none;
 
@@ -264,7 +264,7 @@
     width: 16px;
     height: 16px;
     cursor: pointer;
-    accent-color: #ffffff;
+    accent-color: var(--color-text-primary);
   }
 }
 
@@ -273,36 +273,36 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 16px;
+  margin-top: var(--space-4);
 
   > div {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 }
 
 .footerDivider {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: var(--font-size-sm);
+  color: rgba(247, 249, 252, 0.3);
 }
 
 .clearCredentialsBtn {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--font-size-sm);
+  color: rgba(247, 249, 252, 0.6);
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: color 0.3s ease;
+  transition: color var(--duration-normal) var(--easing-standard);
   padding: 0;
 
   &:hover {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(247, 249, 252, 0.9);
     text-decoration: underline;
   }
 
   &:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.3);
+    outline: 2px solid rgba(247, 249, 252, 0.3);
     outline-offset: 2px;
   }
 }

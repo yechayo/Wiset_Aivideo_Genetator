@@ -34,7 +34,8 @@
   border-radius: 4px;
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color var(--duration-fast) var(--easing-standard),
+              color var(--duration-fast) var(--easing-standard);
 
   &:hover {
     background-color: rgba(255, 255, 255, 0.05);
@@ -59,12 +60,12 @@
 .fields {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .fieldRow {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: var(--font-size-sm);
 }
 

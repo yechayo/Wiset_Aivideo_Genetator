@@ -19,24 +19,23 @@
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-muted);
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--duration-fast) var(--easing-standard);
   flex-shrink: 0;
 
   &:hover:not(:disabled) {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(114, 183, 255, 0.1);
     color: var(--color-accent);
   }
 
   &.playing {
     background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    color: var(--color-danger);
 
     &:hover:not(:disabled) {
       background: rgba(239, 68, 68, 0.16);
-      color: #dc2626;
     }
   }
 

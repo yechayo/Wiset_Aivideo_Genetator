@@ -13,17 +13,17 @@
 
   // 状态边框颜色
   &.completed {
-    border-color: #4ade80;
+    border-color: var(--color-success);
     border-left-width: 3px;
   }
 
   &.in-progress {
-    border-color: #ffffff;
+    border-color: var(--color-text-primary);
     border-left-width: 3px;
   }
 
   &.not-started {
-    border-color: #474747;
+    border-color: var(--color-border-strong);
     opacity: 0.72;
     border-left-width: 3px;
   }
@@ -95,18 +95,18 @@
   background: rgba(247, 249, 252, 0.08);
   color: var(--color-text-secondary);
   border: 1px solid rgba(247, 249, 252, 0.12);
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-fast) var(--easing-standard);
   flex-shrink: 0;
   white-space: nowrap;
 
   &:hover:not(:disabled) {
     background: rgba(247, 249, 252, 0.14);
     color: var(--color-text-primary);
-    border-color: rgba(247, 249, 252, 0.22);
+    border-color: var(--color-border-strong);
   }
 
   &:disabled {
@@ -128,7 +128,7 @@
   border-top-color: var(--color-text-secondary);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
-  margin-right: 6px;
+  margin-right: var(--space-2);
   vertical-align: middle;
 }
 
@@ -145,9 +145,9 @@
   background: rgba(247, 249, 252, 0.06);
   color: var(--color-text-muted);
   border: 1px solid rgba(247, 249, 252, 0.08);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-fast) var(--easing-standard);
   flex-shrink: 0;
 
   &:hover {
@@ -162,7 +162,7 @@
   }
 
   svg {
-    transition: transform 0.4s ease;
+    transition: transform var(--duration-normal) var(--easing-standard);
   }
 
   &:focus-visible {
@@ -195,15 +195,15 @@
   justify-content: center;
 
   &.completed {
-    color: #4ade80;
+    color: var(--color-success);
   }
 
   &.inProgress {
-    color: #fbbf24;
+    color: var(--color-warning);
   }
 
   &.notStarted {
-    color: #474747;
+    color: var(--color-border-strong);
   }
 
   svg {
@@ -330,13 +330,13 @@
 
 /* 整集九宫格审核视图 */
 .episodeGridReview {
-  padding: 16px 0;
+  padding: var(--space-4) 0;
 }
 
 .gridImageList {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .gridImagePage {
@@ -346,55 +346,55 @@
 }
 
 .gridPageLabel {
-  font-size: 12px;
-  color: #999;
-  margin-bottom: 8px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
   text-align: center;
 }
 
 .gridImage {
   width: 100%;
-  border-radius: 8px;
-  border: 1px solid #2a2a2e;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
 }
 
 /* 分割分镜列表 */
 .splitShotList {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid #2a2a2e;
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-strong);
 }
 
 .splitShotTitle {
-  font-size: 13px;
-  color: #999;
-  margin-bottom: 12px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
 }
 
 .splitShotGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .splitShotItem {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background: #1a1a1c;
-  font-size: 13px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: rgba(247, 249, 252, 0.03);
+  font-size: var(--font-size-sm);
 }
 
 .splitShotNumber {
-  color: #6c6cff;
+  color: var(--color-accent);
   font-weight: 600;
   min-width: 30px;
 }
 
 .splitShotDesc {
-  color: #ccc;
+  color: var(--color-text-secondary);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -402,19 +402,19 @@
 }
 
 .splitShotDuration {
-  color: #888;
-  font-size: 12px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
 /* 退回原因 */
 .rejectionFeedback {
-  margin-top: 16px;
-  padding: 12px;
-  border-radius: 8px;
-  background: rgba(255, 77, 79, 0.1);
-  border: 1px solid rgba(255, 77, 79, 0.3);
-  color: #ff8a8d;
-  font-size: 13px;
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: rgba(242, 119, 123, 0.1);
+  border: 1px solid rgba(242, 119, 123, 0.3);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
 }
 
 // ===== 集级生成进度加载态 =====
@@ -422,14 +422,14 @@
 .episodeGenerating {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 0;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }
 
 .skeletonBar {
-  background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 75%);
+  background: linear-gradient(90deg, rgba(247,249,252,0.06) 25%, rgba(247,249,252,0.12) 50%, rgba(247,249,252,0.06) 75%);
   background-size: 200% 100%;
   animation: skeletonShimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -437,7 +437,7 @@
 }
 
 .skeletonBarTitle {
-  background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 75%);
+  background: linear-gradient(90deg, rgba(247,249,252,0.06) 25%, rgba(247,249,252,0.12) 50%, rgba(247,249,252,0.06) 75%);
   background-size: 200% 100%;
   animation: skeletonShimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -447,7 +447,7 @@
 }
 
 .skeletonBarDesc {
-  background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 75%);
+  background: linear-gradient(90deg, rgba(247,249,252,0.06) 25%, rgba(247,249,252,0.12) 50%, rgba(247,249,252,0.06) 75%);
   background-size: 200% 100%;
   animation: skeletonShimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -459,7 +459,7 @@
   padding: 10px 12px;
   margin-bottom: 6px;
   border-radius: var(--radius-sm);
-  background: rgba(255,255,255,0.03);
+  background: rgba(247, 249, 252, 0.03);
   border: 1px solid var(--color-border-subtle);
 }
 
@@ -468,12 +468,12 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   width: 120px;
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 .skeletonGridCell {
   aspect-ratio: 1;
-  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+  background: linear-gradient(90deg, rgba(247,249,252,0.04) 25%, rgba(247,249,252,0.08) 50%, rgba(247,249,252,0.04) 75%);
   background-size: 200% 100%;
   animation: skeletonShimmer 1.5s ease-in-out infinite;
   border-radius: 3px;
