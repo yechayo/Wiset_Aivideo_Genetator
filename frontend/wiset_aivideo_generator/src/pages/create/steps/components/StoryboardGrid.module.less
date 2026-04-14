@@ -5,9 +5,10 @@
 }
 
 .gridContainer {
-  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  aspect-ratio: 3 / 3;
   background-color: var(--color-bg-canvas);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
@@ -16,8 +17,7 @@
 
 .gridImage {
   width: 100%;
-  height: 100%;
-  object-fit: contain;
+  display: block;
 }
 
 .overlay {

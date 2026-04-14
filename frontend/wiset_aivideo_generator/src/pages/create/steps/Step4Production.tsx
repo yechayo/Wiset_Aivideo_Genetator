@@ -1009,32 +1009,30 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     setGeneratingGrid(episodeId);
     try {
       await regenerateEpisodeGrid(projectId, episodeId, fullPrompt, gridPrompts);
-      // 轮询等待九宫格生成完成（SSE 可能断连）；使用 setTimeout 链式调用以便清理
-      const pollGrid = async () => {
-        for (let i = 0; i < 60; i++) {
-          await new Promise(r => setTimeout(r, 5000));
-          const res = await getEpisodes(projectId);
-          const ep = (res.data?.items || []).find((e: any) => e.id === episodeId);
-          if (!ep) continue;
-          const status = ep.episodeInfo?.gridStatus;
-          if (status === 'generated' || status === 'approved') {
-            loadEpisodes();
-            return;
-          }
-          if (status === 'failed' || status === 'rejected') {
-            loadEpisodes();
-            return;
-          }
-        }
-        // 超时后也刷新一次
-        loadEpisodes();
-      };
-      gridPollTimerRef.current = setTimeout(() => { void pollGrid(); }, 0);
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '生成九宫格失败');
-    } finally {
       setGeneratingGrid(null);
+      return;
     }
+    // 轮询等待九宫格生成完成（SSE 可能断连）
+    const pollGrid = async () => {
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        const res = await getEpisodes(projectId);
+        const ep = (res.data?.items || []).find((e: any) => e.id === episodeId);
+        if (!ep) continue;
+        const status = ep.episodeInfo?.gridStatus;
+        if (status === 'generated' || status === 'approved' || status === 'failed' || status === 'rejected') {
+          setGeneratingGrid(null);
+          loadEpisodes();
+          return;
+        }
+      }
+      // 超时后也清除生成状态并刷新
+      setGeneratingGrid(null);
+      loadEpisodes();
+    };
+    void pollGrid();
   }, [projectId, generatingGrid, loadEpisodes]);
 
   // Approve/reject grid per episode

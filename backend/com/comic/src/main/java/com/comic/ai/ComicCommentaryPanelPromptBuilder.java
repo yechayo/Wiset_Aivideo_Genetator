@@ -53,6 +53,7 @@ public class ComicCommentaryPanelPromptBuilder {
         sb.append(panelPromptBuilder.buildSceneStylePrefix(visualStyle));
         sb.append("漫剧解说风格关键帧：每格为独立「漫画分镜式」画面，适合旁白解说与字幕叠加，构图清晰、主体突出。\n\n");
 
+        sb.append("【重要：以下所有说明均为中文，请使用中文理解并执行】\n");
         sb.append("【布局要求 - 必须严格遵守】\n");
         sb.append("输出一张严格 ").append(gridCols).append("×").append(gridRows).append(" 分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
         sb.append("图片必须被 ").append(gridCols - 1).append(" 条黑色竖线（约 4px 宽）和 ").append(gridRows - 1).append(" 条黑色横线（约 4px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");

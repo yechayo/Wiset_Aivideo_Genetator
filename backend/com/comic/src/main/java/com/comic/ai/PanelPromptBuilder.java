@@ -89,6 +89,7 @@ public class PanelPromptBuilder {
         sb.append("专业动画关键帧级别，电影级画面构图，精致光影与色彩。\n\n");
 
         // ===== 布局要求 =====
+        sb.append("【重要：以下所有说明均为中文，请使用中文理解并执行】\n");
         sb.append("【布局要求 - 必须严格遵守】\n");
         sb.append("输出一张严格 ").append(gridCols).append("×").append(gridRows).append(" 分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
         sb.append("图片必须被 ").append(gridCols - 1).append(" 条黑色竖线（约 4px 宽）和 ").append(gridRows - 1).append(" 条黑色横线（约 4px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");

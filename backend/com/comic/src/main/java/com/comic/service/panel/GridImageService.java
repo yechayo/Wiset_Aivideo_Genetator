@@ -414,7 +414,6 @@ public class GridImageService {
      */
     public static int[] calculateGridSize(int shotCount) {
         if (shotCount <= 4) return new int[]{2, 2}; // 四宫格 2×2
-        if (shotCount <= 6) return new int[]{3, 2}; // 六宫格 3×2
         return new int[]{3, 3}; // 九宫格 3×3
     }
 

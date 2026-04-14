@@ -32,7 +32,6 @@ interface GridEpisodeCardProps {
 /** 根据分镜数量计算网格布局（与后端一致） */
 function getGridSize(shotCount: number): { cols: number; rows: number } {
   if (shotCount <= 4) return { cols: 2, rows: 2 };
-  if (shotCount <= 6) return { cols: 3, rows: 2 };
   return { cols: 3, rows: 3 };
 }
 
@@ -189,9 +188,9 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
   const handleGenerateClick = useCallback(() => {
     // 只有用户手动编辑过 prompt 时才传前端 prompts，否则让后端重新动态生成
     if (hasLocalEditRef.current && editedPrompts.length > 0) {
-      onGenerateGrid(episodeId, editedPrompts[0], editedPrompts);
+      onGenerateGrid(episode.episodeId, editedPrompts[0], editedPrompts);
     } else {
-      onGenerateGrid(episodeId);
+      onGenerateGrid(episode.episodeId);
     }
   }, [episode.episodeId, onGenerateGrid, editedPrompts, canEditPrompt]);
 
