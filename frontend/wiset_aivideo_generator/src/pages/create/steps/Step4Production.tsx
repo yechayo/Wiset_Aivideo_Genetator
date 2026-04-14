@@ -726,6 +726,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                       ttsCredits: status.ttsCredits ?? seg.ttsCredits,
                       videoWithNarrationUrl: status.videoWithNarrationUrl || seg.videoWithNarrationUrl,
                       mergeStatus: status.mergeStatus === 'completed' ? 'completed' : (status.mergeStatus || seg.mergeStatus),
+                      videoRefMode: status.videoRefMode ?? seg.videoRefMode,
+                      referenceImages: status.referenceImages || seg.referenceImages,
+                      referenceImageLabels: status.referenceImageLabels || seg.referenceImageLabels,
                     };
                   }),
                 }

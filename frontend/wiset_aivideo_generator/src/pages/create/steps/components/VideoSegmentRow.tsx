@@ -184,8 +184,27 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
             )}
             {isVideoRefMode && (
               <div className={styles.panelDetailSection}>
-                <span className={styles.panelDetailLabel}>参考图模式</span>
-                <span className={styles.panelVideoTag}>分镜切分图 + 角色图</span>
+                <span className={styles.panelDetailLabel}>参考图（{segment.referenceImages?.length || 0}张）</span>
+                {segment.referenceImages && segment.referenceImages.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {segment.referenceImages.map((url: string, idx: number) => (
+                      <img
+                        key={idx}
+                        src={url}
+                        alt={segment.referenceImageLabels?.[idx] || `参考图${idx + 1}`}
+                        title={segment.referenceImageLabels?.[idx] || `参考图${idx + 1}`}
+                        className={`${styles.panelFusionImage} ${styles.clickableImage}`}
+                        style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 6 }}
+                        onClick={() => onOpenLightbox(url)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {(!segment.referenceImages || segment.referenceImages.length === 0) && (
+                  <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                    分镜切分图 + 角色图
+                  </span>
+                )}
               </div>
             )}
             {shotDescriptions.length > 0 && (

@@ -46,6 +46,8 @@ export interface SegmentState {
   videoProgress?: number | null;     // 0-100
   videoCredits?: number | null;      // 积分消耗
   videoRefMode?: boolean | null;
+  referenceImages?: string[];
+  referenceImageLabels?: string[];
   // === TTS 旁白语音 ===
   ttsAudioUrl?: string | null;
   ttsStatus?: 'pending' | 'generating' | 'completed' | 'failed';

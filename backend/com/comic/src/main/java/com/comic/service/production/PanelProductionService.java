@@ -249,6 +249,36 @@ public class PanelProductionService {
         status.put("ttsCredits", panelInfo.get("ttsCredits"));
         status.put("videoWithNarrationUrl", panelInfo.get("videoWithNarrationUrl"));
         status.put("mergeStatus", panelInfo.getOrDefault("mergeStatus", "pending"));
+
+        // 参考图视频模式：返回参考图列表（分镜切分图 + 角色图 URL）
+        boolean videoRefMode = Boolean.TRUE.equals(panelInfo.get("videoRefMode"));
+        if (videoRefMode) {
+            status.put("videoRefMode", true);
+            List<String> refImages = new ArrayList<>();
+            List<String> refImageLabels = new ArrayList<>();
+            try {
+                AbstractMap.SimpleEntry<List<String>, List<String>> refPair = collectReferenceImagesWithNames(panel);
+                int shotCount = refPair.getKey().size() - refPair.getValue().size();
+                for (int i = 0; i < refPair.getKey().size(); i++) {
+                    refImages.add(refPair.getKey().get(i));
+                    if (i < shotCount) {
+                        refImageLabels.add("分镜" + (i + 1));
+                    } else {
+                        int charIdx = i - shotCount;
+                        if (charIdx < refPair.getValue().size()) {
+                            refImageLabels.add(refPair.getValue().get(charIdx));
+                        } else {
+                            refImageLabels.add("角色" + (charIdx + 1));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("收集参考图失败: panelId={}, error={}", panelId, e.getMessage());
+            }
+            status.put("referenceImages", refImages);
+            status.put("referenceImageLabels", refImageLabels);
+        }
+
         return status;
     }
 
