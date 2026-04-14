@@ -6,6 +6,7 @@ import com.comic.ai.PanelPromptBuilder;
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.ai.text.NarrationAllocator;
 import com.comic.ai.video.VideoGenerationService;
+import com.comic.ai.video.ViduReference2VideoService;
 import com.comic.ai.video.ViduVideoService;
 import com.comic.config.AiServiceConfiguration;
 import com.comic.constant.ProjectInfoKeys;
@@ -36,6 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.AbstractMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -58,6 +60,7 @@ public class PanelProductionService {
     private final AiServiceConfiguration aiServiceConfig;
     private final VideoGenerationService videoGenerationService;
     private final ViduVideoService viduVideoService;
+    private final ViduReference2VideoService viduReference2VideoService;
     private final OssService ossService;
     private final ApplicationContext applicationContext;
     private final DeepSeekTextService deepSeekTextService;
@@ -82,6 +85,7 @@ public class PanelProductionService {
                                    AiServiceConfiguration aiServiceConfig,
                                    VideoGenerationService videoGenerationService,
                                    ViduVideoService viduVideoService,
+                                   ViduReference2VideoService viduReference2VideoService,
                                    OssService ossService,
                                    ApplicationContext applicationContext,
                                    DeepSeekTextService deepSeekTextService,
@@ -97,6 +101,7 @@ public class PanelProductionService {
         this.aiServiceConfig = aiServiceConfig;
         this.videoGenerationService = videoGenerationService;
         this.viduVideoService = viduVideoService;
+        this.viduReference2VideoService = viduReference2VideoService;
         this.ossService = ossService;
         this.applicationContext = applicationContext;
         this.deepSeekTextService = deepSeekTextService;
@@ -130,6 +135,13 @@ public class PanelProductionService {
         if (project == null || project.getProjectInfo() == null) return null;
         Object model = project.getProjectInfo().get(ProjectInfoKeys.VIDEO_MODEL);
         return model != null ? model.toString() : null;
+    }
+
+    private String getAspectRatio(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId);
+        if (project == null || project.getProjectInfo() == null) return "16:9";
+        Object ratio = project.getProjectInfo().get(ProjectInfoKeys.VIDEO_ASPECT_RATIO);
+        return ratio != null ? ratio.toString() : "16:9";
     }
 
     /** 按项目 productionMode 选择实时动画或漫剧解说多镜头视频 prompt */
@@ -359,6 +371,25 @@ public class PanelProductionService {
     }
 
     /**
+     * 参考图视频生成（videoRefMode=true 时调用）
+     */
+    public void generateVideoRefByPanelId(Long panelId, boolean offPeak, String customPrompt, String videoModel) {
+        Panel panel = panelRepository.selectById(panelId);
+        if (panel == null) throw new BusinessException("分镜不存在");
+        Map<String, Object> info = panel.getPanelInfo();
+        String gridStatus = info != null ? getStr(info, "gridStatus") : null;
+        if (!"approved".equals(gridStatus)) {
+            throw new BusinessException("九宫格未审核通过，请先审核");
+        }
+        if (customPrompt != null && !customPrompt.trim().isEmpty()) {
+            info.put("customVideoPrompt", customPrompt);
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+        }
+        self().doGenerateVideoRefByPanelId(panelId, offPeak, videoModel);
+    }
+
+    /**
      * 获取 Panel 的视频生成提示词
      */
     public String getVideoPrompt(Long panelId) {
@@ -481,6 +512,79 @@ public class PanelProductionService {
     }
 
     @Async
+    public void doGenerateVideoRefByPanelId(Long panelId, boolean offPeak, String overrideVideoModel) {
+        try {
+            Panel panel = panelRepository.selectById(panelId);
+            if (panel == null) throw new BusinessException("分镜不存在");
+            Map<String, Object> info = panel.getPanelInfo();
+
+            // 更新状态
+            info.put("videoStatus", "generating");
+            info.remove("videoProgress");
+            info.remove("videoCredits");
+            info.remove("errorMessage");
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+
+            // 收集参考图
+            AbstractMap.SimpleEntry<List<String>, List<String>> refPair = collectReferenceImagesWithNames(panel);
+            List<String> refImages = refPair.getKey();
+            List<String> charNames = refPair.getValue();
+
+            // 构建提示词
+            String prompt = resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
+
+            // 计算总时长
+            int totalDuration = 0;
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
+            if (shots != null) {
+                for (Map<String, Object> shot : shots) {
+                    Object dur = shot.get("duration");
+                    if (dur instanceof Number) totalDuration += ((Number) dur).intValue();
+                }
+            }
+            if (totalDuration <= 0) totalDuration = 5;
+            if (totalDuration > 10) totalDuration = 10;
+
+            // 获取视频模型
+            String projectId = getProjectIdByPanelIdForProvider(panelId);
+            String videoModel = (overrideVideoModel != null && !overrideVideoModel.trim().isEmpty())
+                ? overrideVideoModel
+                : (projectId != null ? getVideoModel(projectId) : null);
+
+            // viduq3-mix 强制关闭 off_peak
+            boolean effectiveOffPeak = offPeak;
+            if (videoModel != null && videoModel.contains("mix")) {
+                effectiveOffPeak = false;
+            }
+
+            // 调用参考图视频生成服务
+            String aspectRatio = getAspectRatio(projectId != null ? projectId : "");
+            String taskId = viduReference2VideoService.generateAsyncMultiImage(
+                prompt, totalDuration, aspectRatio, refImages, charNames, effectiveOffPeak, videoModel);
+
+            info.put("videoTaskId", taskId);
+            info.put("offPeak", effectiveOffPeak);
+            if (videoModel != null && !videoModel.isEmpty()) {
+                info.put("videoModel", videoModel);
+            }
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+
+            // 使用 viduReference2VideoService 轮询
+            self().pollNewVideoTaskWithService(panelId, taskId, effectiveOffPeak, viduReference2VideoService);
+            log.info("参考图视频生成已提交: panelId={}, taskId={}, images={}, offPeak={}",
+                panelId, taskId, refImages.size(), effectiveOffPeak);
+        } catch (Exception e) {
+            log.error("参考图视频生成失败: panelId={}", panelId, e);
+            updatePanelState(panelId, "videoStatus", "failed", e.getMessage());
+            publishPanelFailure(panelId, e.getMessage());
+            throw new BusinessException("参考图视频生成失败: " + e.getMessage());
+        }
+    }
+
+    @Async
     public void pollNewVideoTask(Long panelId, String taskId, boolean offPeak) {
         // 轮询间隔5秒，错峰模式最多2880次(4h)，即时模式最多120次(10min)
         int intervalSeconds = 5;
@@ -559,6 +663,81 @@ public class PanelProductionService {
             log.error("视频任务轮询异常: panelId={}", panelId, e);
             updatePanelState(panelId, "videoStatus", "failed", "视频生成异常");
             publishPanelFailure(panelId, "视频生成异常: " + e.getMessage());
+        }
+    }
+
+    @Async
+    public void pollNewVideoTaskWithService(Long panelId, String taskId, boolean offPeak,
+                                         VideoGenerationService videoService) {
+        int intervalSeconds = 5;
+        int maxPolls = offPeak ? 2880 : 120;
+
+        try {
+            for (int i = 0; i < maxPolls; i++) {
+                VideoGenerationService.TaskStatus status = videoService.getTaskStatus(taskId);
+                if (status == null) { Thread.sleep(intervalSeconds * 1000L); continue; }
+
+                // 更新进度和积分
+                Panel progressPanel = panelRepository.selectById(panelId);
+                if (progressPanel != null) {
+                    Map<String, Object> info = progressPanel.getPanelInfo();
+                    info.put("videoProgress", status.getProgress());
+                    if (status.getCredits() != null) info.put("videoCredits", status.getCredits());
+                    progressPanel.setPanelInfo(info);
+                    panelRepository.updateById(progressPanel);
+                }
+
+                switch (status.getStatus()) {
+                    case "completed":
+                        String videoUrl = status.getVideoUrl();
+                        if (videoUrl == null) videoUrl = videoService.downloadVideo(status.getTaskId());
+                        boolean videoUrlPermanent = false;
+                        try {
+                            String ossVideoUrl = ossService.uploadVideoFromUrl(videoUrl, null);
+                            videoUrl = ossVideoUrl;
+                            videoUrlPermanent = true;
+                        } catch (Exception e) {
+                            log.error("视频上传OSS失败: panelId={}", panelId, e);
+                        }
+                        Panel panel = panelRepository.selectById(panelId);
+                        if (panel != null) {
+                            Map<String, Object> info = panel.getPanelInfo();
+                            info.put("videoUrl", videoUrl);
+                            info.put("videoUrlPermanent", videoUrlPermanent);
+                            info.put("videoStatus", "completed");
+                            info.put("videoProgress", 100);
+                            if (status.getCredits() != null) info.put("videoCredits", status.getCredits());
+                            info.put("errorMessage", null);
+                            panel.setPanelInfo(info);
+                            panelRepository.updateById(panel);
+                        }
+                        log.info("参考图视频生成完成: panelId={}", panelId);
+                        String projId = getProjectIdByPanelId(panelId);
+                        if (projId != null && panel != null) {
+                            eventPublisher.publishPanelVideoDone(projId, panel.getEpisodeId(), panelId, videoUrl);
+                        }
+                        return;
+                    case "failed":
+                        String errMsg = status.getErrorMessage();
+                        updatePanelState(panelId, "videoStatus", "failed", errMsg);
+                        publishPanelFailure(panelId, errMsg);
+                        log.error("参考图视频生成失败: panelId={}, error={}", panelId, errMsg);
+                        return;
+                    default:
+                        Thread.sleep(intervalSeconds * 1000L);
+                        break;
+                }
+            }
+            log.warn("参考图视频轮询超时: panelId={}", panelId);
+            updatePanelState(panelId, "videoStatus", "failed", "视频生成超时");
+            publishPanelFailure(panelId, "视频生成超时");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("参考图视频轮询被中断: panelId={}", panelId);
+        } catch (Exception e) {
+            log.error("参考图视频轮询异常: panelId={}", panelId, e);
+            updatePanelState(panelId, "videoStatus", "failed", e.getMessage());
+            publishPanelFailure(panelId, e.getMessage());
         }
     }
 
@@ -658,6 +837,50 @@ public class PanelProductionService {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * 收集参考图及角色名：分镜图优先（最多3张）+ 角色图补足至7张
+     * 返回 AbstractMap.SimpleEntry: key=参考图URL列表, value=角色名列表
+     */
+    @SuppressWarnings("unchecked")
+    private AbstractMap.SimpleEntry<List<String>, List<String>> collectReferenceImagesWithNames(Panel panel) {
+        Long episodeId = panel.getEpisodeId();
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null || episode.getEpisodeInfo() == null) {
+            throw new BusinessException("剧集信息不存在");
+        }
+
+        List<String> refImageUrls = new ArrayList<>();
+        List<String> charNames = new ArrayList<>();
+
+        // 1. 从 episodeInfo.splitShots 取分镜图（最多3张）
+        List<Map<String, Object>> splitShots = (List<Map<String, Object>>) episode.getEpisodeInfo().get("splitShots");
+        if (splitShots != null) {
+            int shotCount = Math.min(3, splitShots.size());
+            for (int i = 0; i < shotCount; i++) {
+                String url = (String) splitShots.get(i).get("splitImageUrl");
+                if (url != null && !url.isEmpty()) refImageUrls.add(url);
+            }
+        }
+
+        // 2. 角色图补足至7张（含角色名）
+        List<GridImageService.CharRef> charRefs = gridImageService.getCharacterReferencesWithNamesForEpisode(episodeId);
+        for (GridImageService.CharRef cr : charRefs) {
+            if (refImageUrls.size() >= 7) break;
+            if (cr.url != null && !cr.url.isEmpty() && !refImageUrls.contains(cr.url)) {
+                refImageUrls.add(cr.url);
+                charNames.add(cr.name != null ? cr.name : "未知角色");
+            }
+        }
+
+        if (refImageUrls.isEmpty()) {
+            throw new BusinessException("参考图数量不足，无法生成视频");
+        }
+
+        log.info("收集参考图: panelId={}, 分镜图={}, 角色图={}, 总计={}",
+            panel.getId(), refImageUrls.size() - charNames.size(), charNames.size(), refImageUrls.size());
+        return new AbstractMap.SimpleEntry<>(refImageUrls, charNames);
     }
 
     private void updatePanelInfo(Panel panel, Map<String, Object> info) {
