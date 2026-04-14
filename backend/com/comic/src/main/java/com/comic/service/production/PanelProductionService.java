@@ -427,6 +427,12 @@ public class PanelProductionService {
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
 
+        // 参考图视频模式：返回含参考图标注的完整提示词
+        String finalPrompt = getStr(info, "finalVideoPrompt");
+        if (finalPrompt != null && !finalPrompt.isEmpty()) {
+            return finalPrompt;
+        }
+
         return resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
     }
 
@@ -561,8 +567,12 @@ public class PanelProductionService {
             List<String> refImages = refPair.getKey();
             List<String> charNames = refPair.getValue();
 
-            // 构建提示词
-            String prompt = resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
+            // 构建提示词：基础 prompt + 参考图标注
+            String basePrompt = resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
+
+            // 构建含参考图下标的完整提示词（与 ViduReference2VideoService.buildReferenceImagePrompt 一致）
+            String fullPrompt = buildRefImagePromptAnnotation(basePrompt, refImages, charNames);
+            info.put("finalVideoPrompt", fullPrompt);
 
             // 计算总时长
             int totalDuration = 0;
@@ -589,10 +599,10 @@ public class PanelProductionService {
                 effectiveOffPeak = false;
             }
 
-            // 调用参考图视频生成服务
+            // 调用参考图视频生成服务（发送 basePrompt，服务内部会添加参考图标注）
             String aspectRatio = getAspectRatio(projectId != null ? projectId : "");
             String taskId = viduReference2VideoService.generateAsyncMultiImage(
-                prompt, totalDuration, aspectRatio, refImages, charNames, effectiveOffPeak, videoModel);
+                basePrompt, totalDuration, aspectRatio, refImages, charNames, effectiveOffPeak, videoModel);
 
             info.put("videoTaskId", taskId);
             info.put("offPeak", effectiveOffPeak);
@@ -950,6 +960,30 @@ public class PanelProductionService {
     private void updatePanelInfo(Panel panel, Map<String, Object> info) {
         panel.setPanelInfo(info);
         panelRepository.updateById(panel);
+    }
+
+    /**
+     * 构建含参考图下标的提示词（与 ViduReference2VideoService 一致格式）
+     */
+    private String buildRefImagePromptAnnotation(String prompt, List<String> images, List<String> characterNames) {
+        if (images == null || images.isEmpty()) return prompt;
+        StringBuilder sb = new StringBuilder();
+        sb.append(prompt).append("\n\n参考图片说明：");
+        int storyboardCount = images.size() - (characterNames != null ? characterNames.size() : 0);
+        int storyboardIdx = 1;
+        int characterIdx = 0;
+        for (int i = 0; i < images.size(); i++) {
+            if (i < storyboardCount) {
+                sb.append("\n- 图片").append(i + 1).append("（分镜图").append(storyboardIdx).append("）");
+                storyboardIdx++;
+            } else {
+                String characterName = (characterNames != null && characterIdx < characterNames.size())
+                    ? characterNames.get(characterIdx) : "角色" + (characterIdx + 1);
+                sb.append("\n- 图片").append(i + 1).append("（角色图-").append(characterName).append("）");
+                characterIdx++;
+            }
+        }
+        return sb.toString();
     }
 
     private void updatePanelState(Long panelId, String stateKey, String stateValue, String errorMsg) {
