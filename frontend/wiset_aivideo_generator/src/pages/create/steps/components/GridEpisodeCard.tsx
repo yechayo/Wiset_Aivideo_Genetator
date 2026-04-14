@@ -187,11 +187,11 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
   }, [episode.episodeId, onRejectGrid]);
 
   const handleGenerateClick = useCallback(() => {
-    // pending、generated、rejected 状态如果有编辑过的 prompts，传多页 prompts
-    if (canEditPrompt && editedPrompts.length > 0) {
-      onGenerateGrid(episode.episodeId, editedPrompts[0], editedPrompts);
+    // 只有用户手动编辑过 prompt 时才传前端 prompts，否则让后端重新动态生成
+    if (hasLocalEditRef.current && editedPrompts.length > 0) {
+      onGenerateGrid(episodeId, editedPrompts[0], editedPrompts);
     } else {
-      onGenerateGrid(episode.episodeId);
+      onGenerateGrid(episodeId);
     }
   }, [episode.episodeId, onGenerateGrid, editedPrompts, canEditPrompt]);
 

@@ -558,6 +558,44 @@
   padding: 5px 0;
 }
 
+.profileSection {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-2);
+}
+
+.profileSectionHeader {
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.profileGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.profileField {
+  display: flex;
+  gap: var(--space-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.profileFieldLabel {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  min-width: 56px;
+  font-weight: var(--font-weight-medium);
+}
+
+.profileFieldValue {
+  color: var(--color-text-secondary);
+  word-break: break-all;
+}
+
 .confirmCharBtn {
   align-self: flex-start;
   margin-top: var(--space-1);

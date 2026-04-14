@@ -496,6 +496,35 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
           {!isSupporting && renderImageItem('九宫格表情', st?.expressionGridUrl, char.expressionStatus ?? undefined, st?.expressionError, 'expression')}
           {renderImageItem('三视图', st?.threeViewGridUrl, char.threeViewStatus ?? undefined, st?.threeViewError, 'threeView')}
         </div>
+        <div className={styles.profileSection}>
+          <div className={styles.profileSectionHeader}>角色设定</div>
+          <div className={styles.profileGrid}>
+            {(char.personality || editForm.personality) && (
+              <div className={styles.profileField}>
+                <span className={styles.profileFieldLabel}>性格描述</span>
+                <span className={styles.profileFieldValue}>{editForm.personality || char.personality}</span>
+              </div>
+            )}
+            {(char.appearance || editForm.appearance) && (
+              <div className={styles.profileField}>
+                <span className={styles.profileFieldLabel}>外貌描述</span>
+                <span className={styles.profileFieldValue}>{editForm.appearance || char.appearance}</span>
+              </div>
+            )}
+            {(char.voice || editForm.voice) && (
+              <div className={styles.profileField}>
+                <span className={styles.profileFieldLabel}>声音描述</span>
+                <span className={styles.profileFieldValue}>{editForm.voice || char.voice}</span>
+              </div>
+            )}
+            {(char.background || editForm.background) && (
+              <div className={styles.profileField}>
+                <span className={styles.profileFieldLabel}>背景故事</span>
+                <span className={styles.profileFieldValue}>{editForm.background || char.background}</span>
+              </div>
+            )}
+          </div>
+        </div>
         {phase === 'review' && (
           <div className={styles.reviewActions}>
             <button className={styles.rejectBtn} onClick={() => handleRejectChar(char.charId)}>
