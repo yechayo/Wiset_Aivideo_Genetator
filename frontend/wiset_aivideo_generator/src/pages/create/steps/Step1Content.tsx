@@ -98,6 +98,12 @@ const viduModelOptions = [
   { value: 'viduq3-turbo', label: 'Vidu Q3 Turbo（速度快）' },
 ];
 
+// 视频模式选项
+const videoModeOptions = [
+  { value: 'first_frame', label: '首帧视频' },
+  { value: 'reference_images', label: '参考图视频' },
+];
+
 // AI生成图标
 function SparklesIcon({ className = '' }: { className?: string }) {
   return (
@@ -155,6 +161,7 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
   const [narrationPerspective, setNarrationPerspective] = useState<'first_person' | 'third_person' | ''>(() => (info?.narrationPerspective as 'first_person' | 'third_person') || '');
   const [narrationVoiceId, setNarrationVoiceId] = useState(() => info?.narrationVoiceId || '');
   const [protagonistVoiceId, setProtagonistVoiceId] = useState(() => info?.protagonistVoiceId || '');
+  const [videoRefMode, setVideoRefMode] = useState<boolean>(() => info?.videoRefMode === true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ========== 音色试听 ==========
@@ -216,6 +223,7 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
       imageProvider,
       videoProvider,
       videoModel,
+      videoRefMode: videoRefMode || undefined,
       productionMode,
       narrationPerspective: narrationPerspective || undefined,
       narrationVoiceId: narrationPerspective === 'third_person' ? narrationVoiceId || undefined : undefined,
@@ -436,6 +444,29 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
                 onChange={setVideoProvider}
               />
             </div>
+
+            {/* 视频模式选择（仅 Vidu） */}
+            {videoProvider === 'vidu' && (
+              <div className={styles.configSection}>
+                <label className={styles.configLabel}>视频模式</label>
+                <Select
+                  options={videoModeOptions}
+                  value={videoRefMode ? 'reference_images' : 'first_frame'}
+                  onChange={(val) => {
+                    const isRef = val === 'reference_images';
+                    setVideoRefMode(isRef);
+                    if (isRef && videoModel !== 'viduq3-mix') {
+                      setVideoModel('viduq3-mix');
+                    }
+                  }}
+                />
+                {videoRefMode && (
+                  <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginTop: 4 }}>
+                    已自动切换至 viduq3-mix，不支持错峰模式
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Vidu 模型选择 */}
             {videoProvider === 'vidu' && (
