@@ -427,13 +427,23 @@ public class PanelProductionService {
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
 
-        // 参考图视频模式：返回含参考图标注的完整提示词
+        // 参考图视频模式：优先返回已存储的完整提示词
         String finalPrompt = getStr(info, "finalVideoPrompt");
         if (finalPrompt != null && !finalPrompt.isEmpty()) {
             return finalPrompt;
         }
 
-        return resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
+        String basePrompt = resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
+
+        // 参考图视频模式（尚未生成过视频，finalVideoPrompt 未存储）：动态构建含标注的提示词
+        if (Boolean.TRUE.equals(info.get("videoRefMode"))) {
+            AbstractMap.SimpleEntry<List<String>, List<String>> refPair = collectReferenceImagesWithNames(panel);
+            if (refPair.getKey() != null && !refPair.getKey().isEmpty()) {
+                return buildRefImagePromptAnnotation(basePrompt, refPair.getKey(), refPair.getValue());
+            }
+        }
+
+        return basePrompt;
     }
 
     /**
