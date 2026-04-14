@@ -98,10 +98,11 @@ const viduModelOptions = [
   { value: 'viduq3-turbo', label: 'Vidu Q3 Turbo（速度快）' },
 ];
 
-// Vidu 模型选项（参考图视频，仅 q3 和 q3-mix 支持 reference2video）
+// Vidu 模型选项（参考图视频，q3 / q3-turbo / q3-mix 支持 reference2video）
 const viduRefModelOptions = [
   { value: 'viduq3-mix', label: 'Vidu Q3 Mix（推荐）' },
   { value: 'viduq3', label: 'Vidu Q3' },
+  { value: 'viduq3-turbo', label: 'Vidu Q3 Turbo' },
 ];
 
 // 视频模式选项

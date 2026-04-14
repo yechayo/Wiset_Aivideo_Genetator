@@ -1623,6 +1623,16 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               >
                 Q3
               </button>
+              <button
+                className={`${styles.headerVideoModelTab} ${refVideoModel === 'viduq3-turbo' ? styles.headerVideoModelTabActive : ''}`}
+                onClick={async () => {
+                  if (refVideoModel === 'viduq3-turbo') return;
+                  setRefVideoModel('viduq3-turbo');
+                  if (projectId) await updateProject(projectId, { videoModel: 'viduq3-turbo' } as any).catch(console.error);
+                }}
+              >
+                Q3 Turbo
+              </button>
             </div>
           )}
         </div>

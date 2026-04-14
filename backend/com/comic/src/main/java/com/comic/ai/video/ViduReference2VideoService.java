@@ -85,7 +85,7 @@ public class ViduReference2VideoService implements VideoGenerationService {
             requestBody.put("images", images);
             requestBody.put("prompt", enhancedPrompt);
             requestBody.put("duration", duration);
-            // viduq3 支持 540p/720p/1080p，viduq3-mix 仅支持 720p/1080p
+            // viduq3 / viduq3-turbo 支持 540p/720p/1080p，viduq3-mix 仅支持 720p/1080p
             String resolution = "viduq3-mix".equals(effectiveModel) ? "720p" : "540p";
             requestBody.put("resolution", resolution);
             requestBody.put("aspect_ratio", aspectRatio);
