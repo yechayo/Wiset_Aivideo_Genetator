@@ -84,6 +84,7 @@ export interface SplitShot {
   cameraAngle: string;
   cameraMovement: string;
   visualDescription: string;
+  sceneDescription?: string;
   dialogue: string;
   visualEffects: string;
   audioEffects: string;
@@ -97,6 +98,12 @@ export interface EpisodeState {
   /** panelPlan JSON 解析后的 scene_summary 映射：panel_id → scene_summary */
   sceneSummaryMap: Record<string, string>;
   segments: SegmentState[];
+  /**
+   * Shot-level segments for 4A script editing and 4B grid display.
+   * Built from episodeInfo.shots (one per shot, e.g. 11 shots per episode).
+   * Kept separate from panel-level 'segments' used by 4C for batch video generation.
+   */
+  shotSegments?: SegmentState[];
   // === 新流程：Episode 级九宫格 ===
   /** 整集九宫格状态 */
   gridStatus?: EpisodeGridStatus;

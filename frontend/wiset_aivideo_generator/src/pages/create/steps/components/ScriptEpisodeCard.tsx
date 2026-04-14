@@ -7,12 +7,13 @@ import styles from '../Step4Production.module.less';
 const SpinIcon = () => <span className={styles.btnSpinner} />;
 
 const EDITABLE_FIELDS = [
-  'visualDescription', 'narration', 'dialogue', 'speaker',
+  'sceneDescription', 'visualDescription', 'narration', 'dialogue', 'speaker',
   'narrationTone', 'dialogueTone', 'shotSize', 'cameraAngle',
   'cameraMovement', 'scene', 'visualEffects', 'audioEffects', 'transitionHint',
 ] as const;
 
 const FIELD_LABELS: Record<string, string> = {
+  sceneDescription: '分镜描述',
   visualDescription: '画面描述',
   narration: '旁白',
   dialogue: '对白',
@@ -28,7 +29,7 @@ const FIELD_LABELS: Record<string, string> = {
   transitionHint: '过渡提示',
 };
 
-const MULTI_LINE_FIELDS = new Set(['visualDescription', 'narration', 'dialogue', 'scene']);
+const MULTI_LINE_FIELDS = new Set(['sceneDescription', 'visualDescription', 'narration', 'dialogue', 'scene']);
 
 interface ScriptEpisodeCardProps {
   episode: EpisodeState;
@@ -48,7 +49,13 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
 }: ScriptEpisodeCardProps) {
   const isGenerating = generatingScript === episode.episodeId || generatingScript === -1;
   const isExpanded = expandedEpisodeId === episode.episodeId;
+  // 如果已通过审核，不显示操作按钮
+  const hasApproved = episode.panelApproved === true;
   const hasShots = episode.segments.length > 0;
+  // 有分镜且未通过审核：可精修、可审核通过
+  const canRefine = hasShots && !hasApproved;
+  // 没有分镜且未通过审核：可生成脚本
+  const canGenerate = !hasShots && !hasApproved;
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editData, setEditData] = useState<Record<string, string>>({});
   const [savingIdx, setSavingIdx] = useState<number | null>(null);
@@ -70,6 +77,7 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
     };
 
     trySet('visualDescription', seg?.synopsis);
+    trySet('sceneDescription', shot?.sceneDescription);
     trySet('narration', shot?.narration);
     trySet('dialogue', pd?.dialogue);
     trySet('speaker', shot?.speaker);
@@ -135,14 +143,25 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
           </div>
         </div>
         <div className={styles.episodeScriptActions}>
-          <button
-            className={styles.btnPrimary}
-            onClick={() => onGenerateScript(episode.episodeId)}
-            disabled={isGenerating}
-          >
-            {isGenerating ? <><SpinIcon /> {hasShots ? '精修中...' : '生成中...'}</> : (hasShots ? '重新生成' : '生成脚本')}
-          </button>
-          {hasShots && (
+          {canGenerate && (
+            <button
+              className={styles.btnPrimary}
+              onClick={() => onGenerateScript(episode.episodeId)}
+              disabled={isGenerating}
+            >
+              {isGenerating ? <><SpinIcon /> 生成中...</> : '生成脚本'}
+            </button>
+          )}
+          {canRefine && (
+            <button
+              className={styles.btnPrimary}
+              onClick={() => onGenerateScript(episode.episodeId)}
+              disabled={isGenerating}
+            >
+              {isGenerating ? <><SpinIcon /> 精修中...</> : '重新生成'}
+            </button>
+          )}
+          {canRefine && (
             <button
               className={styles.btnSuccess}
               onClick={() => onApproveScript(episode.episodeId)}
@@ -221,17 +240,19 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
                 </div>
 
                 <div className={styles.scriptSegmentBody}>
-                    {/* 画面描述 */}
+                    {/* 分镜描述（融合运镜+画面） */}
                     <div className={styles.scriptSegmentDetail}>
-                      <span>画面：</span>
+                      <span>分镜描述：</span>
                       {isEditing ? (
                         <textarea
                           className={styles.shotInlineInput}
-                          value={editData['visualDescription'] ?? seg.synopsis ?? ''}
-                          onChange={e => handleFieldChange('visualDescription', e.target.value)}
-                          rows={2}
+                          value={editData['sceneDescription'] ?? editData['visualDescription'] ?? seg.synopsis ?? ''}
+                          onChange={e => handleFieldChange('sceneDescription', e.target.value)}
+                          rows={4}
                         />
-                      ) : seg.synopsis}
+                      ) : (
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{seg.synopsis}</span>
+                      )}
                     </div>
                     {/* 旁白 */}
                     {isEditing && (
@@ -272,8 +293,8 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
                         />
                       </div>
                     )}
-                    {/* 镜头参数 */}
-                    {(isEditing || seg.panelData?.composition) && (
+                    {/* 镜头参数（短标签） */}
+                    {(isEditing || seg.panelData?.composition || seg.panelData?.cameraAngle) && (
                       <div className={styles.scriptSegmentDetail}>
                         <span>镜头：</span>
                         {isEditing ? (
@@ -282,14 +303,12 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
                               value={editData['shotSize'] ?? seg.panelData?.composition ?? ''} onChange={e => handleFieldChange('shotSize', e.target.value)} />
                             <input className={styles.shotInlineInput} placeholder="角度"
                               value={editData['cameraAngle'] ?? seg.panelData?.cameraAngle ?? ''} onChange={e => handleFieldChange('cameraAngle', e.target.value)} />
-                            <input className={styles.shotInlineInput} placeholder="运镜"
-                              value={editData['cameraMovement'] ?? seg.panelData?.cameraMovement ?? ''} onChange={e => handleFieldChange('cameraMovement', e.target.value)} />
                           </div>
                         ) : (
-                          <>{seg.panelData?.composition}
-                          {seg.panelData?.cameraAngle && ` / ${seg.panelData.cameraAngle}`}
-                          {seg.panelData?.cameraMovement && ` / ${seg.panelData.cameraMovement}`}
-                          </>
+                          <span className={styles.shotCameraTags}>
+                            {seg.panelData?.composition && <span className={styles.cameraTag}>{seg.panelData.composition}</span>}
+                            {seg.panelData?.cameraAngle && <span className={styles.cameraTag}>{seg.panelData.cameraAngle}</span>}
+                          </span>
                         )}
                       </div>
                     )}

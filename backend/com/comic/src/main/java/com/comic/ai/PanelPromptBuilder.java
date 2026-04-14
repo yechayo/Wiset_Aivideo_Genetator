@@ -144,8 +144,17 @@ public class PanelPromptBuilder {
             int row = i / 3 + 1;
             int col = i % 3 + 1;
             sb.append("第").append(row).append("行第").append(col).append("列: ");
-            String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
-            sb.append(visualDescription != null ? visualDescription : "");
+            String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
+            if (sceneDescription != null && !sceneDescription.isEmpty()) {
+                sb.append(sceneDescription);
+            } else {
+                String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
+                sb.append(visualDescription != null ? visualDescription : "");
+                String cameraMovement = getShotValue(shot, "cameraMovement", "camera_movement");
+                if (cameraMovement != null && !cameraMovement.isEmpty()) {
+                    sb.append("，").append(cameraMovement);
+                }
+            }
             String shotSize = getShotValue(shot, "shotSize", "shot_size");
             if (shotSize != null && !shotSize.isEmpty()) {
                 sb.append("，").append(shotSize);
@@ -153,10 +162,6 @@ public class PanelPromptBuilder {
             String cameraAngle = getShotValue(shot, "cameraAngle", "camera_angle");
             if (cameraAngle != null && !cameraAngle.isEmpty()) {
                 sb.append("，").append(cameraAngle);
-            }
-            String cameraMovement = getShotValue(shot, "cameraMovement", "camera_movement");
-            if (cameraMovement != null && !cameraMovement.isEmpty()) {
-                sb.append("，").append(cameraMovement);
             }
             String scene = getShotValue(shot, "scene");
             if (scene != null && !scene.isEmpty()) {
@@ -268,10 +273,15 @@ public class PanelPromptBuilder {
                                 String cameraAngle = getShotValue(shot, "cameraAngle", "camera_angle");
                                 String cameraMovement = getShotValue(shot, "cameraMovement", "camera_movement");
                                 String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
-                                sb.append("Scene: ").append(shotSize != null ? shotSize : "")
-                                    .append("，").append(cameraAngle != null ? cameraAngle : "")
-                                    .append("，").append(cameraMovement != null ? cameraMovement : "")
-                                    .append("，").append(visualDescription != null ? visualDescription : "").append("\n");
+                                String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
+                                if (sceneDescription != null && !sceneDescription.isEmpty()) {
+                                    sb.append("Scene: ").append(sceneDescription).append("\n");
+                                } else {
+                                    sb.append("Scene: ").append(shotSize != null ? shotSize : "")
+                                        .append("，").append(cameraAngle != null ? cameraAngle : "")
+                                        .append("，").append(cameraMovement != null ? cameraMovement : "")
+                                        .append("，").append(visualDescription != null ? visualDescription : "").append("\n");
+                                }
 
                                 if (isFlashbackShot(shot)) {
                                         sb.append("时间态: 回忆/闪回镜头，需添加柔和虚化边框（仅该镜头生效）\n");

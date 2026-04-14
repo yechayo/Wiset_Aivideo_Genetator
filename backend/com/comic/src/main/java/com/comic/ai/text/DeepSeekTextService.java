@@ -1073,8 +1073,9 @@ public class DeepSeekTextService implements TextGenerationService {
                     ? "- shotSize: 景别（大远景/远景/全景/中景/中近景/近景/特写/大特写）——解说模式以中景、近景、特写为主（占比 80%+），远景/大远景整集不超过 2 镜\n"
                     : "- shotSize: 景别（大远景/远景/全景/中景/中近景/近景/特写/大特写）\n")
             .append("- cameraAngle: 角度（视平/高位俯拍/低位仰拍/斜拍/越肩/鸟瞰/荷兰角/低角度仰拍/高角度俯拍）\n")
-            .append("- cameraMovement: 运镜描述（必须详细描述镜头的动态运动，包括：运镜方式如推/拉/摇/移/跟/升降/环绕/手持晃动/固定等，运动方向和速度如缓慢/匀速/快速/急促，起始位置和结束位置，与主体或场景的关系，营造的视觉氛围。示例：\"镜头从角色眼部特写缓慢开始，逐渐向后拉远至中景，同时向左平移30度，展现场景全貌，营造孤独空旷的压抑氛围\"或\"手持跟拍，从背后跟随角色快速奔跑，镜头有轻微晃动感，增强紧张刺激感\"或\"固定机位正前方，通过大光圈浅景深将焦点从前景的杯子缓慢转移到后景的人物脸上\"。禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇！）\n")
-            .append("- visualDescription: 画面描述（必须详细描述画面内容，包括角色具体动作姿态、面部表情、身体语言、手势、光影效果、色彩氛围。示例：\"女孩右手紧握裙摆，微微低头，眼眶泛红但强忍着泪水，头顶的夕阳余晖在她发梢形成金色光晕，背景是模糊的校园走廊\"）\n");
+            .append("- sceneDescription: 统一分镜描述（将景别、角度、运镜与画面内容融合为一段流畅的描述。开头自然融入 shotSize 和 cameraAngle（如「中景，越肩镜头...」），随后自然过渡到运镜细节与画面内容。运镜描述必须具体（运镜方式如推/拉/摇/移/跟/升降/环绕/固定，运动方向和速度，起始和结束位置，营造的视觉氛围）；画面内容必须包含角色具体动作姿态、面部表情、身体语言、光影效果、色彩氛围。示例：\"中景，越肩镜头从陆沉背后拍向镜子，缓慢跟随他踉跄的步伐前移，停在镜前形成越肩视角。陆沉双手撑在镜框两侧，死死盯着镜中自己22岁的脸庞，面部肌肉微微颤抖，镜面反射出身后凌乱的房间。暖黄色灯光从侧面打来，在他脸上形成明暗对比。\"）\n")
+            .append("- cameraMovement: [辅助字段] 从 sceneDescription 中提取的纯运镜部分，生成时可填与 sceneDescription 相同内容\n")
+            .append("- visualDescription: [辅助字段] 从 sceneDescription 中提取的纯画面部分，生成时可填与 sceneDescription 相同内容\n");
 
         if (comicCommentary) {
             sb.append("- narration: 旁白口播稿（中文口语，字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**）\n");
@@ -1099,10 +1100,10 @@ public class DeepSeekTextService implements TextGenerationService {
                 .append("  - 对白分镜：dialogue 不为「无」，narration 填「无」。\n")
                 .append("  - 旁白分镜：narration 不为「无」，dialogue 填「无」、speaker 填「无」。\n")
                 .append("  - 对白分镜分布在情感爆发力最强的节点，禁止连续出现，至少间隔 1 个旁白分镜。\n\n")
-                .append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；visualDescription 中角色状态以自然为主。\n")
+                .append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；sceneDescription 中角色状态以自然为主。\n")
                 .append("4.【景别倾向】景别以中景、近景、特写为主（占比 80%+），大远景/远景控制在 1-2 镜以内，仅用于开场定场或转场。构图需留出上方约 1/4 区域作为「字幕安全区」，避免关键视觉元素被花字遮挡。\n")
-                .append("5.【运镜风格】运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。每个镜头需有 2-3 秒画面相对静止的「解说留白」时段，供观众消化旁白信息。\n")
-                .append("6.【画面侧重点】visualDescription 应侧重角色情绪状态和场景氛围，而非复杂动作。优先描述：表情变化、眼神方向、身体朝向、光影氛围。避免描述复杂肢体动作、多人互动、快速运动。每镜画面应像一个清晰的「信息单元」——观众看一眼就能理解当前发生的事。\n")
+                .append("5.【运镜风格】sceneDescription 中的运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。每个镜头需有 2-3 秒画面相对静止的「解说留白」时段，供观众消化旁白信息。\n")
+                .append("6.【画面侧重点】sceneDescription 应侧重角色情绪状态和场景氛围，而非复杂动作。优先描述：表情变化、眼神方向、身体朝向、光影氛围。避免描述复杂肢体动作、多人互动、快速运动。每镜画面应像一个清晰的「信息单元」——观众看一眼就能理解当前发生的事。\n")
                 .append("7.【转场节奏】转场以简洁为主：硬切、淡入淡出、黑场过渡。避免复杂动势衔接或匹配剪辑，保持叙事节奏清晰。\n")
                 .append("8.【音效策略】audioEffects 字段可根据画面氛围需要填写具体音效描述。\n\n");
         }
@@ -1112,35 +1113,35 @@ public class DeepSeekTextService implements TextGenerationService {
             .append("2. dialogue 与 dialogueTone 必须严格对应。如果 dialogue 不为\"无\"，dialogueTone 不能为\"无\"，要精准刻画角色的情感状态。\n")
             .append("3. 分镜之间必须有连贯性。每个分镜的 transitionHint 要清晰描述画面如何过渡到下一个分镜，确保叙事流畅。\n")
             .append("4. 最后一个分镜的 transitionHint 必须写\"最后一个镜头，无需衔接\"。\n")
-            .append("5. cameraMovement 必须具体到运动细节（方式、方向、速度、起始/结束位置、氛围），禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇。\n")
-            .append("6. visualDescription 必须包含角色的具体动作、表情、身体语言和光影氛围，禁止笼统描述。\n\n")
+            .append("5. sceneDescription 必须具体到运镜细节（方式、方向、速度、起始/结束位置、氛围）并包含角色具体动作、表情、身体语言和光影氛围，禁止笼统描述，禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇。\n")
+            .append("6. sceneDescription 中运镜与画面内容必须自然融合为一段连贯描述，禁止写成两段独立的内容拼接。\n\n")
             .append("**角色名称约束**：characters 数组中的每个角色名必须与提供的角色描述中【】内的名称完全一致，")
             .append("禁止使用昵称、简称、别名或任何变体。例如角色描述为【墨尘（幻影）】，则必须写\"墨尘（幻影）\"，不能写\"墨尘\"或\"幻影\"。\n\n")
             .append("**AI视频生成三原则（必须严格遵守）：**\n")
             .append("1.【单主体原则】每个分镜最多只保留1个角色的动作描写，禁止两个角色同框互动（如拥抱、打斗、接触）。")
             .append("双人对话必须拆分为两个分镜（A的反应镜头 + B的反应镜头），用剪辑快切实现对话效果。")
             .append("静态多人同框（如多人站立场面）允许，但禁止动态互动。\n")
-            .append("2.【慢动作原则】cameraMovement 必须使用缓慢运动（缓慢推镜头、微平移、极慢拉远、静止等）。")
-            .append("visualDescription 中的角色动作必须是微小动作（微风吹动头发、眼皮微垂、轻微呼吸、手指轻颤、嘴角微动等），")
+            .append("2.【慢动作原则】sceneDescription 中的运镜必须使用缓慢运动（缓慢推镜头、微平移、极慢拉远、静止等）。")
+            .append("sceneDescription 中的角色动作必须是微小动作（微风吹动头发、眼皮微垂、轻微呼吸、手指轻颤、嘴角微动等），")
             .append("禁止描写剧烈运动（快速奔跑、跳跃、翻滚、打斗）。激烈场面通过多分镜快切实现，而非单镜头内的快动。\n");
 
         if (comicCommentary) {
             sb.append("3.【解说与对白】以 narration 为声画主轴；dialogue 非「无」时，说话人可有自然说话神态；无角色台词时角色保持自然状态，旁白仅存在于 narration 文本中。\n\n");
         } else {
             sb.append("3.【说话人标注原则】本视频为音画同步生成，对白和画面同时产出，必须严格区分说话人与非说话人：\n")
-                .append("  (a) 当 speaker 是 characters 中的某个画面内角色时：visualDescription 中可以描写该说话人自然的说话神态（如表情、眼神、手势）。\n")
+                .append("  (a) 当 speaker 是 characters 中的某个画面内角色时：sceneDescription 中可以描写该说话人自然的说话神态（如表情、眼神、手势）。\n")
                 .append("  (b) 当 speaker 为旁白、画外音、内心独白，或 speaker 不在 characters 列表中（即不在画面中）时：")
-                .append("visualDescription 中所有角色保持倾听、思考或感受状态。\n")
+                .append("sceneDescription 中所有角色保持倾听、思考或感受状态。\n")
                 .append("  (c) 非说话人的画面内角色：通过眼神、表情、头部动作表达反应。\n")
                 .append("  (d) speaker 字段必须精确标注说话人。有对白时 speaker 不可填\"无\"；若对白来自旁白则填\"旁白\"，内心独白则填对应角色名加\"（内心独白）\"。\n")
                 .append("  (e) dialogueTone 必须精准描述说话人的语气情绪，帮助视频模型理解谁在说话、以什么情绪说话。\n\n")
                 .append("**说话人标注强化规则：**\n")
-                .append("- 每个有对白的分镜，visualDescription 的开头必须先写明画面主体角色的状态，再自然引出说话人的反应。\n")
-                .append("- 示例（说话人在画面中）：speaker=\"小明\"，visualDescription 应写\"小明微微前倾，眼神认真注视前方，手中紧握信纸，表情从期待逐渐转为感动\"，")
+                .append("- 每个有对白的分镜，sceneDescription 的开头必须先写明画面主体角色的状态，再自然引出说话人的反应。\n")
+                .append("- 示例（说话人在画面中）：speaker=\"小明\"，sceneDescription 应写\"小明微微前倾，眼神认真注视前方，手中紧握信纸，表情从期待逐渐转为感动\"，")
                 .append("不要写\"小明张嘴说话\"或\"小明念出信的内容\"。\n")
-                .append("- 示例（说话人为旁白）：speaker=\"旁白\"，visualDescription 应写\"画面中所有人保持安静，小明低头沉思，远处夕阳缓缓沉入地平线\"，")
+                .append("- 示例（说话人为旁白）：speaker=\"旁白\"，sceneDescription 应写\"画面中所有人保持安静，小明低头沉思，远处夕阳缓缓沉入地平线\"，")
                 .append("明确体现画面内角色处于无声状态。\n")
-                .append("- 示例（说话人不在画面中）：speaker=\"小红\"但 characters=[\"小明\"]，visualDescription 应写\"小明独自站在窗前，表情凝重地望向窗外\"，")
+                .append("- 示例（说话人不在画面中）：speaker=\"小红\"但 characters=[\"小明\"]，sceneDescription 应写\"小明独自站在窗前，表情凝重地望向窗外\"，")
                 .append("体现小明在倾听画面外的声音。");
         }
 
@@ -1185,8 +1186,9 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("- characters: 出场角色数组\n");
         sb.append("- shotSize: 景别（解说模式以中景、近景、特写为主，占比 80%+，远景/大远景整集不超过 2 镜）\n");
         sb.append("- cameraAngle: 角度（视平/高位俯拍/低位仰拍/斜拍/越肩/鸟瞰/荷兰角/低角度仰拍/高角度俯拍）\n");
-        sb.append("- cameraMovement: 运镜描述（必须详细描述镜头的动态运动，包括：运镜方式如推/拉/摇/移/跟/升降/环绕/手持晃动/固定等，运动方向和速度如缓慢/匀速/快速/急促，起始位置和结束位置，与主体或场景的关系，营造的视觉氛围。示例：\"镜头从角色眼部特写缓慢开始，逐渐向后拉远至中景，同时向左平移30度，展现场景全貌，营造孤独空旷的压抑氛围\"。禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇！）\n");
-        sb.append("- visualDescription: 画面描述（必须详细描述画面内容，包括角色具体动作姿态、面部表情、身体语言、手势、光影效果、色彩氛围。示例：\"女孩右手紧握裙摆，微微低头，眼眶泛红但强忍着泪水，头顶的夕阳余晖在她发梢形成金色光晕，背景是模糊的校园走廊\"）\n");
+        sb.append("- sceneDescription: 统一分镜描述（将景别、角度、运镜与画面内容融合为一段流畅的描述。开头自然融入 shotSize 和 cameraAngle（如「中景，越肩镜头...」），随后自然过渡到运镜细节与画面内容。运镜描述必须具体（运镜方式如推/拉/摇/移/跟/升降/环绕/固定，运动方向和速度，起始和结束位置，营造的视觉氛围）；画面内容必须包含角色具体动作姿态、面部表情、身体语言、光影效果、色彩氛围。示例：\"中景，越肩镜头从陆沉背后拍向镜子，缓慢跟随他踉跄的步伐前移，停在镜前形成越肩视角。陆沉双手撑在镜框两侧，死死盯着镜中自己22岁的脸庞，面部肌肉微微颤抖，镜面反射出身后凌乱的房间。暖黄色灯光从侧面打来，在他脸上形成明暗对比。\"）\n");
+        sb.append("- cameraMovement: [辅助字段] 从 sceneDescription 中提取的纯运镜部分，生成时可填与 sceneDescription 相同内容\n");
+        sb.append("- visualDescription: [辅助字段] 从 sceneDescription 中提取的纯画面部分，生成时可填与 sceneDescription 相同内容\n");
         if ("third_person".equals(narrationPerspective)) {
             sb.append("- narration: 旁白口播稿（**第三人称叙述**，使用「他/她/它」指代角色，禁止使用「我」；中文口语；字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**；**写作风格要求：每镜旁白是微小说的碎片，必须有具象修饰语和心理外化，禁止光杆名词和抽象情绪标签，末尾留悬念或情绪钩子**）\n");
         } else {
@@ -1209,7 +1211,7 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("   - 下一个 Panel 的第一个旁白分镜的 narration 要自然承接上文\n");
         sb.append("   - 禁止在 Panel 边界处突兀地硬切话题\n");
         sb.append("3. Panel 内部：\n");
-        sb.append("   - narration 与 visualDescription 严格对齐，解说描述的必须是画面可见的\n");
+        sb.append("   - narration 与 sceneDescription 严格对齐，解说描述的必须是画面可见的\n");
         sb.append("   - 每个 Panel 内部像一个完整的叙事小节，有起承转合\n");
         sb.append("4. 第一个 Panel 的第一个 shot 要有开场引入感，最后一个 Panel 的最后一个 shot 要有收束感\n\n");
 
@@ -1272,10 +1274,10 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("- 禁止连续 3 镜使用相同句式或相同主语开头\n");
         sb.append("- 禁止旁白中直接引用对白原文\n\n");
 
-        sb.append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；visualDescription 中角色状态以自然为主。\n");
+        sb.append("3. 仍遵守慢节奏运镜与单主体等视频生成约束；sceneDescription 中角色状态以自然为主。\n");
         sb.append("4.【景别倾向】景别以中景、近景、特写为主（占比 80%+），大远景/远景控制在 1-2 镜以内，仅用于开场定场或转场。构图需留出上方约 1/4 区域作为「字幕安全区」，避免关键视觉元素被花字遮挡。\n");
-        sb.append("5.【运镜风格】运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。每个镜头需有 2-3 秒画面相对静止的「解说留白」时段，供观众消化旁白信息。\n");
-        sb.append("6.【画面侧重点】visualDescription 应侧重角色情绪状态和场景氛围，而非复杂动作。优先描述：表情变化、眼神方向、身体朝向、光影氛围。避免描述复杂肢体动作、多人互动、快速运动。每镜画面应像一个清晰的「信息单元」——观众看一眼就能理解当前发生的事。\n");
+        sb.append("5.【运镜风格】sceneDescription 中的运镜以缓慢推拉和微平移为主，禁止快速摇移或大幅度环绕。每个镜头需有 2-3 秒画面相对静止的「解说留白」时段，供观众消化旁白信息。\n");
+        sb.append("6.【画面侧重点】sceneDescription 应侧重角色情绪状态和场景氛围，而非复杂动作。优先描述：表情变化、眼神方向、身体朝向、光影氛围。避免描述复杂肢体动作、多人互动、快速运动。每镜画面应像一个清晰的「信息单元」——观众看一眼就能理解当前发生的事。\n");
         sb.append("7.【转场节奏】转场以简洁为主：硬切、淡入淡出、黑场过渡。避免复杂动势衔接或匹配剪辑，保持叙事节奏清晰。\n");
         sb.append("8.【音效策略】audioEffects 字段可根据画面氛围需要填写具体音效描述。\n\n");
 
@@ -1293,12 +1295,11 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("3. narration 与 narrationTone 必须严格对应。如果 narration 不为\"无\"，narrationTone 必须为以下枚举之一：calm、happy、sad、angry、fearful、surprised、disgusted、fluent。如果 narration 为\"无\"，narrationTone 填\"无\"。\n");
         sb.append("4. 分镜之间必须有连贯性。每个分镜的 transitionHint 要清晰描述画面如何过渡到下一个分镜。\n");
         sb.append("4. 每个 Panel 的最后一个 shot 的 transitionHint 填写\"最后一个镜头，无需衔接\"。\n");
-        sb.append("5. cameraMovement 必须具体到运动细节，禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇。\n");
-        sb.append("6. visualDescription 必须包含角色的具体动作、表情、身体语言和光影氛围，禁止笼统描述。\n\n");
+        sb.append("5. sceneDescription 必须具体到运镜细节并包含角色具体动作、表情、身体语言和光影氛围，运镜与画面内容必须自然融合为一段连贯描述，禁止笼统描述，禁止只写\"横移\"、\"推拉\"、\"固定\"等简单词汇。\n\n");
         sb.append("**角色名称约束**：characters 数组中的每个角色名必须与提供的角色描述中【】内的名称完全一致，禁止使用昵称、简称、别名或任何变体。\n\n");
         sb.append("**AI视频生成三原则（必须严格遵守）：**\n");
         sb.append("1.【单主体原则】每个分镜最多只保留1个角色的动作描写，禁止两个角色同框互动。双人对话必须拆分为两个分镜，用剪辑快切实现对话效果。静态多人同框允许，但禁止动态互动。\n");
-        sb.append("2.【慢动作原则】cameraMovement 必须使用缓慢运动。visualDescription 中的角色动作必须是微小动作，禁止描写剧烈运动。激烈场面通过多分镜快切实现。\n");
+        sb.append("2.【慢动作原则】sceneDescription 中的运镜必须使用缓慢运动。sceneDescription 中的角色动作必须是微小动作，禁止描写剧烈运动。激烈场面通过多分镜快切实现。\n");
         sb.append("3.【解说与对白】以 narration 为声画主轴；dialogue 非「无」时，说话人可有自然说话神态；无角色台词时角色保持自然状态。\n\n");
 
         return sb.toString();

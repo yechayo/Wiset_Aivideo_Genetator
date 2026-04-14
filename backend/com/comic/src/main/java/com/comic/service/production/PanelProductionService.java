@@ -955,12 +955,24 @@ public class PanelProductionService {
         }
 
         // 2. 角色图补足至7张（含角色名）
+        // FIX: Only add character images for characters that appear in this panel's shots
+        java.util.Set<String> panelCharacterNames = new java.util.HashSet<>();
+        if (panelShots != null) {
+            for (Map<String, Object> shot : panelShots) {
+                @SuppressWarnings("unchecked")
+                List<String> chars = (List<String>) shot.get("characters");
+                if (chars != null) panelCharacterNames.addAll(chars);
+            }
+        }
         List<GridImageService.CharRef> charRefs = gridImageService.getCharacterReferencesWithNamesForEpisode(episodeId);
         for (GridImageService.CharRef cr : charRefs) {
             if (refImageUrls.size() >= 7) break;
             if (cr.url != null && !cr.url.isEmpty() && !refImageUrls.contains(cr.url)) {
-                refImageUrls.add(cr.url);
-                charNames.add(cr.name != null ? cr.name : "未知角色");
+                // Only add character images for characters that appear in this panel's shots
+                if (cr.name != null && panelCharacterNames.contains(cr.name)) {
+                    refImageUrls.add(cr.url);
+                    charNames.add(cr.name);
+                }
             }
         }
 
@@ -1794,7 +1806,7 @@ public class PanelProductionService {
     // ==================== 分镜编辑 ====================
 
     private static final java.util.Set<String> SHOT_EDITABLE_FIELDS = new java.util.HashSet<>(java.util.Arrays.asList(
-        "visualDescription", "narration", "dialogue", "speaker",
+        "sceneDescription", "visualDescription", "narration", "dialogue", "speaker",
         "narrationTone", "dialogueTone", "shotSize", "cameraAngle",
         "cameraMovement", "scene", "visualEffects", "audioEffects", "transitionHint",
         "locked"

@@ -126,10 +126,10 @@ const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentar
   shots.forEach((shot, i) => {
     const row = Math.floor(i / 3) + 1;
     const col = i % 3 + 1;
-    let line = `第${row}行第${col}列: ${shot.visualDescription || ''}`;
+    let line = `第${row}行第${col}列: ${shot.sceneDescription || shot.visualDescription || ''}`;
     if (shot.shotSize) line += `，${shot.shotSize}`;
     if (shot.cameraAngle) line += `，${shot.cameraAngle}`;
-    if (shot.cameraMovement) line += `，${shot.cameraMovement}`;
+    if (!shot.sceneDescription && shot.cameraMovement) line += `，${shot.cameraMovement}`;
     if (shot.scene) line += `，场景: ${shot.scene}`;
     lines.push(line);
     if (isComicCommentary) {
@@ -166,7 +166,11 @@ const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicComm
   shots.forEach((shot, i) => {
     lines.push(`【镜头${i + 1}】`);
     lines.push(`duration: ${shot.duration || 5}s`);
-    lines.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || ''}`);
+    if (shot.sceneDescription) {
+      lines.push(`Scene: ${shot.sceneDescription}`);
+    } else {
+      lines.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || ''}`);
+    }
 
     const dialogue = typeof shot.dialogue === 'string' ? shot.dialogue : '';
     if (dialogue && dialogue !== '无') {
@@ -386,9 +390,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     if (!projectId) return;
     const silent = options?.silent ?? false;
     const showGlobalLoading = !silent && !hasInitialLoadRef.current;
-    // Guard: prevent concurrent calls
-    if (loadEpisodesControllerRef.current) return;
-    loadEpisodesControllerRef.current = new AbortController();
     if (showGlobalLoading) {
       setLoading(true);
     }
@@ -445,9 +446,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 dialogueText = shot.dialogue.map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text).join('\n');
               }
 
-              // Build synopsis: prefer visualDescription, fallback to scene, then scene_summary
-              const synopsis = shot.visualDescription
-                || shot.sceneSummary || shot.scene || '';
+              // Build synopsis: prefer sceneDescription, fallback to visualDescription, then scene, then scene_summary
+              const synopsis = shot.sceneDescription
+                || shot.visualDescription || shot.sceneSummary || shot.scene || '';
 
               textSegments.push({
                 segmentIndex: sIdx,
@@ -491,6 +492,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             title: ep.episodeInfo?.title,
             sceneSummaryMap,
             segments: textSegments,
+            shotSegments: textSegments,
             gridStatus: ep.episodeInfo?.gridStatus,
             gridImages: ep.episodeInfo?.gridImages || [],
             splitShots: ep.episodeInfo?.splitShots || [],
@@ -595,10 +597,11 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       if ((res.code !== 0 && res.code !== 200) || !res.data) return;
       const panels = res.data || [];
 
-      // If no panels exist yet (script stage), don't overwrite shot-based segments
+      // If no panels exist yet (script stage), don't overwrite
       if (panels.length === 0) return;
 
-      const segments: SegmentState[] = panels.map((panel: any, idx: number) => {
+      // Build panel-level segments (original behavior, used by 4C for batch video)
+      const panelSegments: SegmentState[] = panels.map((panel: any, idx: number) => {
         const info = panel.panelInfo || {};
         const shots = info.shots || [];
         const isGroupedPanel = shots.length > 1;
@@ -648,9 +651,55 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         };
       });
 
+      // Build a map from splitShotStartIndex → panel index for shot→panel lookup
+      const panelStartMap = new Map<number, { panelIdx: number; panel: any }>();
+      panels.forEach((panel: any, panelIdx: number) => {
+        const info = panel.panelInfo || {};
+        const startIdx = info.splitShotStartIndex ?? 0;
+        const shotCount = info.totalShots ?? (info.shots?.length ?? 0);
+        for (let i = 0; i < shotCount; i++) {
+          panelStartMap.set(startIdx + i, { panelIdx, panel });
+        }
+      });
+
       setChapters(prev => prev.map(ch => ({
         ...ch,
-        episodes: ch.episodes.map(ep => ep.episodeId === episodeId ? { ...ep, segments } : ep),
+        episodes: ch.episodes.map(ep => {
+          if (ep.episodeId !== episodeId) return ep;
+          // Update shotSegments: merge panel data into existing shot-level segments (for 4A)
+          const updatedShotSegments = (ep.shotSegments || ep.segments).map((seg, segIdx) => {
+            const mapping = panelStartMap.get(segIdx);
+            if (!mapping) return seg;
+            const { panel } = mapping;
+            const info = panel.panelInfo || {};
+            return {
+              ...seg,
+              panelData: {
+                ...seg.panelData,
+                panelId: String(panel.id),
+                planPanelId: info.panel_id || '',
+                composition: info.composition || '',
+                shotType: info.shot_type,
+                cameraAngle: info.camera_angle,
+                cameraMovement: info.camera_movement || '',
+                scene: info.scene || '',
+                pacing: info.pacing,
+                dialogue: Array.isArray(info.dialogue)
+                  ? info.dialogue.map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text).join('\n')
+                  : seg.panelData?.dialogue || '',
+                characters: info.characters || seg.panelData?.characters || [],
+                background: info.background || {},
+                imagePromptHint: info.image_prompt_hint,
+                sfx: info.sfx || [],
+                duration: info.duration || info.totalDuration || seg.panelData?.duration,
+                totalShots: info.totalShots,
+                totalDuration: info.totalDuration || seg.panelData?.totalDuration,
+                visualStyle: info.visualStyle || seg.panelData?.visualStyle,
+              },
+            };
+          });
+          return { ...ep, segments: panelSegments, shotSegments: updatedShotSegments };
+        }),
       })));
     } catch (err) {
       console.error(`加载集 ${episodeId} 分镜失败:`, err);
@@ -1807,7 +1856,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                         return (
                           <DoneEpisodeCard
                             key={ep.episodeId}
-                            episode={ep}
+                            episode={{ ...ep, segments: ep.shotSegments || ep.segments }}
                             project={project}
                             expandedPassedEpisodeId={expandedPassedEpisodeId}
                             onToggleExpanded={setExpandedPassedEpisodeId}
@@ -1815,13 +1864,16 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                             buildMultiShotPromptText={buildMultiShotPromptText}
                             nextStageLabel="→ 九宫格"
                             showScriptContent={true}
+                            showGridPrompt={true}
+                            showGridImages={true}
+                            onOpenLightbox={setLightboxUrl}
                           />
                         );
                       }
                       return (
                         <ScriptEpisodeCard
                           key={ep.episodeId}
-                          episode={ep}
+                          episode={{ ...ep, segments: ep.shotSegments || ep.segments }}
                           projectId={projectId!}
                           generatingScript={generatingScript}
                           approvingEpisodeId={approvingEpisodeId}
@@ -1888,6 +1940,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                             nextStageLabel="→ 视频"
                             showGridPrompt={true}
                             showGridImages={true}
+                            onOpenLightbox={setLightboxUrl}
                           />
                         );
                       }
@@ -2227,6 +2280,8 @@ interface DoneEpisodeCardProps {
   showVideoPrompt?: boolean;
   /** 是否显示九宫格图片（4B 已完成时） */
   showGridImages?: boolean;
+  /** 点击九宫格图片时打开大图预览 */
+  onOpenLightbox?: (url: string) => void;
 }
 
 const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
@@ -2241,11 +2296,33 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
   showGridPrompt = false,
   showVideoPrompt = false,
   showGridImages = false,
+  onOpenLightbox,
 }: DoneEpisodeCardProps) {
   const isExpanded = expandedPassedEpisodeId === episode.episodeId;
   const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
   const allShots = episode.segments.map(s => s.shots?.[0]).filter(Boolean);
   const visualStyle = episode.segments[0]?.panelData?.visualStyle || 'ANIME';
+  // 分页展示提示词和图片
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = episode.gridImages?.length || 1;
+  // 获取真实保存的 prompt（优先 gridPrompts，其次 gridPrompt，最后计算）
+  const getSavedPrompt = (pageIndex: number): string => {
+    if (episode.gridPrompts && episode.gridPrompts.length > pageIndex) {
+      return episode.gridPrompts[pageIndex];
+    }
+    if (pageIndex === 0 && episode.gridPrompt) {
+      return episode.gridPrompt;
+    }
+    // fallback: 计算
+    if (buildGridPromptText && allShots.length > 0) {
+      const SHOTS_PER_PAGE = 9;
+      const fromIdx = pageIndex * SHOTS_PER_PAGE;
+      const toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, allShots.length);
+      const pageShots = allShots.slice(fromIdx, toIdx);
+      return buildGridPromptText(visualStyle, pageShots, isComicCommentary);
+    }
+    return '';
+  };
 
   return (
     <div className={`${styles.episodeScriptCard} ${styles.episodeCardDone}`}>
@@ -2260,7 +2337,7 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
             <span className={styles.episodeCardDoneLabel}>✓ 已通过</span>
           </h3>
           <span className={styles.episodeScriptCount}>
-            {episode.segments.length > 0 ? `${episode.segments.length} 个分镜` : '暂无分镜数据'}
+            {episode.segments.length > 0 ? `${(episode as any).shotSegments?.length || episode.segments.length} 个分镜` : '暂无分镜数据'}
           </span>
         </div>
         <div className={styles.episodeCardExpand}>
@@ -2305,21 +2382,48 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
               ))}
             </div>
           )}
-          {/* 九宫格提示词 */}
-          {showGridPrompt && allShots.length > 0 && buildGridPromptText && (
-            <div className={styles.episodePromptPreview}>
-              <div
-                className={styles.episodePromptCollapse}
-                onClick={() => onToggleExpanded(isExpanded ? null : episode.episodeId)}
-              >
-                收起 ▲
+          {/* 九宫格：图片 + 提示词统一分页 */}
+          {(showGridPrompt || showGridImages) && (episode.gridImages?.length || episode.gridPrompts?.length || episode.gridPrompt) && (
+            <div className={styles.episodeGridReviewSection}>
+              <div className={styles.episodeGridReviewHeader}>
+                <span className={styles.episodeGridReviewTitle}>九宫格预览</span>
+                {totalPages > 1 && (
+                  <div className={styles.gridPageTabs}>
+                    {Array.from({ length: totalPages }, (_, idx) => (
+                      <button
+                        key={idx}
+                        className={`${styles.gridPageTab} ${currentPage === idx + 1 ? styles.gridPageTabActive : ''}`}
+                        onClick={() => setCurrentPage(idx + 1)}
+                      >
+                        第{idx + 1}页
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div
+                  className={styles.episodePromptCollapse}
+                  onClick={() => onToggleExpanded(isExpanded ? null : episode.episodeId)}
+                >
+                  收起 ▲
+                </div>
               </div>
-              <button className={styles.episodePromptToggle}>
-                图片生成 Prompt（九宫格）
-              </button>
-              <pre className={styles.episodePromptBlock}>
-                {buildGridPromptText(visualStyle, allShots, isComicCommentary)}
-              </pre>
+              {/* 左图右文布局 */}
+              <div className={styles.episodeGridReviewBody}>
+                {showGridImages && episode.gridImages?.[currentPage - 1] && (
+                  <div className={styles.episodeGridReviewImage}>
+                    <img
+                      src={episode.gridImages[currentPage - 1]}
+                      alt={`九宫格 第${currentPage}页`}
+                      onClick={() => onOpenLightbox?.(episode.gridImages![currentPage - 1])}
+                    />
+                  </div>
+                )}
+                {showGridPrompt && (
+                  <pre className={styles.episodeGridReviewPrompt}>
+                    {getSavedPrompt(currentPage - 1) || '(暂无提示词)'}
+                  </pre>
+                )}
+              </div>
             </div>
           )}
           {/* 视频提示词 */}
@@ -2331,26 +2435,6 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
               <pre className={styles.episodePromptBlock}>
                 {buildMultiShotPromptText(visualStyle, allShots, isComicCommentary)}
               </pre>
-            </div>
-          )}
-          {/* 九宫格图片 */}
-          {showGridImages && episode.gridImages && episode.gridImages.length > 0 && (
-            <div className={styles.episodeGridSection}>
-              <div className={styles.episodeGridSectionLabel}>
-                九宫格图片（{episode.gridImages.length} 张）
-              </div>
-              <div className={styles.gridImagesContainer}>
-                {episode.gridImages.map((url, idx) => (
-                  <img
-                    key={idx}
-                    src={url}
-                    alt={`九宫格 ${idx + 1}`}
-                    className={styles.gridImage}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setLightboxUrl(url)}
-                  />
-                ))}
-              </div>
             </div>
           )}
         </div>
