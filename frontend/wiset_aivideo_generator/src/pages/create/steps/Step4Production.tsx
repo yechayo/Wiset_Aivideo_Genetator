@@ -1160,10 +1160,14 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     for (const seg of episode.segments) {
       const panelId = seg.panelData?.panelId;
       if (panelId && !seg.videoUrl) {
-        await handleGenerateVideo(episodeId, panelId);
+        if (isVideoRefMode) {
+          await handleGenerateVideoRef(episodeId, panelId);
+        } else {
+          await handleGenerateVideo(episodeId, panelId);
+        }
       }
     }
-  }, [chapters, handleGenerateVideo]);
+  }, [chapters, handleGenerateVideo, handleGenerateVideoRef, isVideoRefMode]);
 
   // 批量润色提示词
   const handleBatchEnhance = useCallback(async (episodeId: number) => {
