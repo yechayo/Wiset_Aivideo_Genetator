@@ -187,6 +187,20 @@ public class PanelController {
         return Result.ok();
     }
 
+    @PostMapping("/{panelId}/video-ref")
+    @Operation(summary = "参考图视频生成（多图参考 → Vidu reference2video）")
+    public Result<Void> generateVideoRef(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable Long panelId,
+            @RequestBody(required = false) Map<String, Object> body) {
+        boolean offPeak = body != null && Boolean.TRUE.equals(body.get("offPeak"));
+        String customPrompt = body != null ? (String) body.get("customPrompt") : null;
+        String videoModel = body != null ? (String) body.get("videoModel") : null;
+        panelProductionService.generateVideoRefByPanelId(panelId, offPeak, customPrompt, videoModel);
+        return Result.ok();
+    }
+
     @PostMapping("/{panelId}/video/retry")
     @Operation(summary = "重试失败的视频生成")
     public Result<Void> retryVideo(
