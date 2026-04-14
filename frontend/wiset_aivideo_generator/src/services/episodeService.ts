@@ -271,6 +271,21 @@ export async function generateVideo(
   );
 }
 
+/** 参考图视频模式生成视频 */
+export async function generateVideoRef(
+  projectId: string,
+  episodeId: number,
+  panelId: number,
+  offPeak: boolean = false,
+  customPrompt?: string,
+  videoModel?: string,
+): Promise<ApiResponse<void>> {
+  return post<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video-ref`,
+    { offPeak, customPrompt, videoModel },
+  );
+}
+
 /** 重试失败的视频生成 */
 export async function retryVideo(
   projectId: string,

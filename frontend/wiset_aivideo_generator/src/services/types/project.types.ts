@@ -42,6 +42,7 @@ export interface CreateProjectRequest {
   narrationPerspective?: 'first_person' | 'third_person';
   narrationVoiceId?: string;
   protagonistVoiceId?: string;
+  videoRefMode?: boolean;
 }
 
 /**
@@ -176,6 +177,7 @@ export interface ProjectInfoData {
   narrationPerspective?: string;
   narrationVoiceId?: string;
   protagonistVoiceId?: string;
+  videoRefMode?: boolean;
 }
 
 /**
