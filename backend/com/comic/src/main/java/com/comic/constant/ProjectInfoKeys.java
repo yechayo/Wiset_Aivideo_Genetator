@@ -18,6 +18,7 @@ public final class ProjectInfoKeys {
     public static final String IMAGE_PROVIDER = "imageProvider";
     public static final String VIDEO_PROVIDER = "videoProvider";
     public static final String VIDEO_MODEL = "videoModel";
+    public static final String VIDEO_REF_MODE = "videoRefMode";
     public static final String PRODUCTION_MODE = "productionMode";
     public static final String NARRATION_PERSPECTIVE = "narrationPerspective";
     public static final String NARRATION_VOICE_ID = "narrationVoiceId";

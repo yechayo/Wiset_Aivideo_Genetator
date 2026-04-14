@@ -125,7 +125,7 @@ public class ProjectService {
                                 String imageProvider, String videoProvider,
                                 String videoModel, String productionMode,
                                 String narrationPerspective, String narrationVoiceId,
-                                String protagonistVoiceId) {
+                                String protagonistVoiceId, Boolean videoRefMode) {
         Project project = new Project();
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
@@ -142,6 +142,7 @@ public class ProjectService {
         info.put(ProjectInfoKeys.IMAGE_PROVIDER, imageProvider != null ? imageProvider : "seedream");
         info.put(ProjectInfoKeys.VIDEO_PROVIDER, videoProvider != null ? videoProvider : "vidu");
         info.put(ProjectInfoKeys.VIDEO_MODEL, videoModel != null ? videoModel : "viduq3-pro");
+        if (Boolean.TRUE.equals(videoRefMode)) info.put(ProjectInfoKeys.VIDEO_REF_MODE, true);
         info.put(ProjectInfoKeys.PRODUCTION_MODE, normalizeProductionModeForCreate(productionMode));
         if (narrationPerspective != null) info.put(ProjectInfoKeys.NARRATION_PERSPECTIVE, narrationPerspective);
         if (narrationVoiceId != null) info.put(ProjectInfoKeys.NARRATION_VOICE_ID, narrationVoiceId);
@@ -173,6 +174,7 @@ public class ProjectService {
         if (request.getImageProvider() != null) info.put(ProjectInfoKeys.IMAGE_PROVIDER, request.getImageProvider());
         if (request.getVideoProvider() != null) info.put(ProjectInfoKeys.VIDEO_PROVIDER, request.getVideoProvider());
         if (request.getVideoModel() != null) info.put(ProjectInfoKeys.VIDEO_MODEL, request.getVideoModel());
+        if (Boolean.TRUE.equals(request.getVideoRefMode())) info.put(ProjectInfoKeys.VIDEO_REF_MODE, true);
         if (request.getProductionMode() != null) {
             info.put(ProjectInfoKeys.PRODUCTION_MODE, normalizeProductionModeForUpdate(request.getProductionMode()));
         }
