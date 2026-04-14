@@ -756,7 +756,12 @@ public class PanelProductionService {
         info.put("errorMessage", null);
         panel.setPanelInfo(info);
         panelRepository.updateById(panel);
-        generateVideoByPanelId(panelId);
+        boolean videoRefMode = Boolean.TRUE.equals(info.get("videoRefMode"));
+        if (videoRefMode) {
+            generateVideoRefByPanelId(panelId, false, null, null);
+        } else {
+            generateVideoByPanelId(panelId);
+        }
     }
 
     /**
@@ -774,7 +779,12 @@ public class PanelProductionService {
                     info.put("errorMessage", null);
                     panel.setPanelInfo(info);
                     panelRepository.updateById(panel);
-                    generateVideoByPanelId(panel.getId());
+                    boolean videoRefMode = Boolean.TRUE.equals(info.get("videoRefMode"));
+                    if (videoRefMode) {
+                        generateVideoRefByPanelId(panel.getId(), false, null, null);
+                    } else {
+                        generateVideoByPanelId(panel.getId());
+                    }
                     retried++;
                 }
             }
@@ -841,6 +851,7 @@ public class PanelProductionService {
 
     /**
      * 收集参考图及角色名：分镜图优先（最多3张）+ 角色图补足至7张
+     * 分镜图从 panelInfo.shots 对应的 episodeInfo.splitShots 中提取（仅当前 panel 的镜头）
      * 返回 AbstractMap.SimpleEntry: key=参考图URL列表, value=角色名列表
      */
     @SuppressWarnings("unchecked")
@@ -854,12 +865,35 @@ public class PanelProductionService {
         List<String> refImageUrls = new ArrayList<>();
         List<String> charNames = new ArrayList<>();
 
-        // 1. 从 episodeInfo.splitShots 取分镜图（最多3张）
-        List<Map<String, Object>> splitShots = (List<Map<String, Object>>) episode.getEpisodeInfo().get("splitShots");
-        if (splitShots != null) {
-            int shotCount = Math.min(3, splitShots.size());
+        // 1. 从 episodeInfo.splitShots 中找到当前 panel 对应的镜头
+        Map<String, Object> panelInfo = panel.getPanelInfo();
+        List<Map<String, Object>> panelShots = panelInfo != null
+            ? (List<Map<String, Object>>) panelInfo.get("shots") : null;
+        List<Map<String, Object>> allSplitShots = (List<Map<String, Object>>) episode.getEpisodeInfo().get("splitShots");
+
+        if (panelShots != null && !panelShots.isEmpty() && allSplitShots != null) {
+            // 找到 panel 第一个 shot 在 splitShots 中的起始位置
+            String firstShotDesc = (String) panelShots.get(0).get("visualDescription");
+            int startIndex = -1;
+            for (int i = 0; i < allSplitShots.size(); i++) {
+                String desc = (String) allSplitShots.get(i).get("visualDescription");
+                if (firstShotDesc != null && firstShotDesc.equals(desc)) {
+                    startIndex = i;
+                    break;
+                }
+            }
+            if (startIndex < 0) startIndex = 0;
+
+            int shotCount = Math.min(3, panelShots.size());
+            for (int i = 0; i < shotCount && (startIndex + i) < allSplitShots.size(); i++) {
+                String url = (String) allSplitShots.get(startIndex + i).get("splitImageUrl");
+                if (url != null && !url.isEmpty()) refImageUrls.add(url);
+            }
+        } else if (allSplitShots != null) {
+            // fallback: 取前3张
+            int shotCount = Math.min(3, allSplitShots.size());
             for (int i = 0; i < shotCount; i++) {
-                String url = (String) splitShots.get(i).get("splitImageUrl");
+                String url = (String) allSplitShots.get(i).get("splitImageUrl");
                 if (url != null && !url.isEmpty()) refImageUrls.add(url);
             }
         }

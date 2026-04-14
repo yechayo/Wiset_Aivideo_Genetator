@@ -68,6 +68,9 @@ public class ViduReference2VideoService implements VideoGenerationService {
 
             // 限制最多7张图
             List<String> images = referenceImages != null ? new ArrayList<>(referenceImages) : new ArrayList<>();
+            if (images.isEmpty()) {
+                throw new IllegalArgumentException("参考图不能为空，至少需要1张图片");
+            }
             if (images.size() > MAX_IMAGES) {
                 log.warn("参考图数量 {} 超过最大限制 {}，截取前 {} 张", images.size(), MAX_IMAGES, MAX_IMAGES);
                 images = images.subList(0, MAX_IMAGES);
@@ -82,7 +85,9 @@ public class ViduReference2VideoService implements VideoGenerationService {
             requestBody.put("images", images);
             requestBody.put("prompt", enhancedPrompt);
             requestBody.put("duration", duration);
-            requestBody.put("resolution", "540p");
+            // viduq3 支持 540p/720p/1080p，viduq3-mix 仅支持 720p/1080p
+            String resolution = "viduq3-mix".equals(effectiveModel) ? "720p" : "540p";
+            requestBody.put("resolution", resolution);
             requestBody.put("aspect_ratio", aspectRatio);
             requestBody.put("watermark", false);
             // viduq3-mix 时不发送 off_peak 字段（完全 omit）

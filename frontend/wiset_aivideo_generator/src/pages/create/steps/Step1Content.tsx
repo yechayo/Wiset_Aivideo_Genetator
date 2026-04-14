@@ -447,7 +447,11 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
               <Select
                 options={videoProviderOptions}
                 value={videoProvider}
-                onChange={setVideoProvider}
+                onChange={(val) => {
+                  setVideoProvider(val);
+                  // 切换到非 Vidu 时清除参考图视频模式
+                  if (val !== 'vidu') setVideoRefMode(false);
+                }}
               />
             </div>
 
