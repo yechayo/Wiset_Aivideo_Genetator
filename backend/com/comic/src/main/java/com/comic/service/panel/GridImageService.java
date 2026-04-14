@@ -87,12 +87,16 @@ public class GridImageService {
             int remaining = shots.size();
             while (remaining > 0) {
                 int[] gridSize = calculateGridSize(remaining);
+                int capacity = shotsPerPage(gridSize[0], gridSize[1]);
+                int actualShots = Math.min(capacity, remaining);
                 pageGridSizes.add(gridSize);
-                gridConfigs.add(new HashMap<String, Object>() {{
-                    put("gridCols", gridSize[0]);
-                    put("gridRows", gridSize[1]);
-                }});
-                remaining -= shotsPerPage(gridSize[0], gridSize[1]);
+                Map<String, Object> config = new HashMap<>();
+                config.put("page", pageGridSizes.size() - 1);
+                config.put("gridCols", gridSize[0]);
+                config.put("gridRows", gridSize[1]);
+                config.put("shotCount", actualShots);
+                gridConfigs.add(config);
+                remaining -= actualShots;
             }
             int pageCount = pageGridSizes.size();
 
@@ -244,12 +248,16 @@ public class GridImageService {
             int remaining = shots.size();
             while (remaining > 0) {
                 int[] gridSize = calculateGridSize(remaining);
+                int capacity = shotsPerPage(gridSize[0], gridSize[1]);
+                int actualShots = Math.min(capacity, remaining);
                 pageGridSizes.add(gridSize);
-                gridConfigs.add(new HashMap<String, Object>() {{
-                    put("gridCols", gridSize[0]);
-                    put("gridRows", gridSize[1]);
-                }});
-                remaining -= shotsPerPage(gridSize[0], gridSize[1]);
+                Map<String, Object> config = new HashMap<>();
+                config.put("page", pageGridSizes.size() - 1);
+                config.put("gridCols", gridSize[0]);
+                config.put("gridRows", gridSize[1]);
+                config.put("shotCount", actualShots);
+                gridConfigs.add(config);
+                remaining -= actualShots;
             }
             int pageCount = pageGridSizes.size();
 

@@ -55,7 +55,7 @@ public class ComicCommentaryPanelPromptBuilder {
 
         sb.append("【布局要求 - 必须严格遵守】\n");
         sb.append("输出一张严格 ").append(gridCols).append("×").append(gridRows).append(" 分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
-        sb.append("图片必须被 ").append(gridRows - 1).append(" 条黑色竖线（约 4px 宽）和 ").append(gridCols - 1).append(" 条黑色横线（约 4px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");
+        sb.append("图片必须被 ").append(gridCols - 1).append(" 条黑色竖线（约 4px 宽）和 ").append(gridRows - 1).append(" 条黑色横线（约 4px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");
         sb.append("每个格子是一个完全独立的画面，可表现不同时间或场景；整体像动态漫/条漫分格，便于后期加解说与花字。\n");
         sb.append("绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。\n");
         sb.append("图片中不包含任何文字、数字、标号或水印（解说与字幕由后期添加）。\n\n");
