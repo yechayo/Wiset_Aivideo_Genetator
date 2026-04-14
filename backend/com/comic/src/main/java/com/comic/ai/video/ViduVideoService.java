@@ -69,8 +69,10 @@ public class ViduVideoService implements VideoGenerationService {
             // 将简写映射为 Vidu API 实际 model 名
             String effectiveModel = (model != null && !model.isEmpty()) ? model : viduProperties.getModel();
             switch (effectiveModel) {
-                case "pro":  effectiveModel = "viduq3-pro"; break;
+                case "pro":    effectiveModel = "viduq3-pro";    break;
                 case "turbo": effectiveModel = "viduq3-turbo"; break;
+                case "q3":    effectiveModel = "viduq3";       break;
+                case "mix":   effectiveModel = "viduq3-mix";    break;
                 default: break;
             }
             Map<String, Object> requestBody = new HashMap<>();

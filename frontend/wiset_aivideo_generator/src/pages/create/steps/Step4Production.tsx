@@ -350,9 +350,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId]);
 
-  // Video model toggle (pro/turbo), only for Vidu
-  const [videoModel, setVideoModel] = useState<'pro' | 'turbo'>(() =>
-    (localStorage.getItem('video_model') as 'pro' | 'turbo') || 'turbo'
+  // Video model toggle (pro/mix/q3/turbo), only for Vidu first-frame mode
+  const [videoModel, setVideoModel] = useState<'pro' | 'mix' | 'q3' | 'turbo'>(() =>
+    (localStorage.getItem('video_model') as 'pro' | 'mix' | 'q3' | 'turbo') || 'turbo'
   );
   const toggleVideoModel = useCallback(() => {
     setVideoModel(prev => {
@@ -1591,6 +1591,18 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 onClick={() => setVideoModel('pro')}
               >
                 Pro
+              </button>
+              <button
+                className={`${styles.headerVideoModelTab} ${videoModel === 'mix' ? styles.headerVideoModelTabActive : ''}`}
+                onClick={() => setVideoModel('mix')}
+              >
+                Mix
+              </button>
+              <button
+                className={`${styles.headerVideoModelTab} ${videoModel === 'q3' ? styles.headerVideoModelTabActive : ''}`}
+                onClick={() => setVideoModel('q3')}
+              >
+                Q3
               </button>
               <button
                 className={`${styles.headerVideoModelTab} ${videoModel === 'turbo' ? styles.headerVideoModelTabActive : ''}`}

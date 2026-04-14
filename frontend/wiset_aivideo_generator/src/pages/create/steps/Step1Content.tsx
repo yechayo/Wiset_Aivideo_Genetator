@@ -92,13 +92,15 @@ const narrationPerspectiveOptions = [
   { value: 'third_person', label: '第三人称（画外音旁白）' },
 ];
 
-// Vidu 模型选项（首帧视频）
+// Vidu 模型选项（首帧视频）：效果 Pro > Mix > Q3 > Turbo，价格相反
 const viduModelOptions = [
-  { value: 'viduq3-pro', label: 'Vidu Q3 Pro（效果好）' },
-  { value: 'viduq3-turbo', label: 'Vidu Q3 Turbo（速度快）' },
+  { value: 'viduq3-pro', label: 'Vidu Q3 Pro（效果最佳）' },
+  { value: 'viduq3-mix', label: 'Vidu Q3 Mix' },
+  { value: 'viduq3', label: 'Vidu Q3（性价比高）' },
+  { value: 'viduq3-turbo', label: 'Vidu Q3 Turbo（速度最快）' },
 ];
 
-// Vidu 模型选项（参考图视频，q3 / q3-turbo / q3-mix 支持 reference2video）
+// Vidu 模型选项（参考图视频，q3 / q3-turbo / q3-mix 支持 reference2video）：效果 Pro > Mix > Q3 > Turbo，价格相反
 const viduRefModelOptions = [
   { value: 'viduq3-mix', label: 'Vidu Q3 Mix（推荐）' },
   { value: 'viduq3', label: 'Vidu Q3' },
