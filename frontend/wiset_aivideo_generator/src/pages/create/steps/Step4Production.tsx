@@ -19,6 +19,7 @@ import {
   rejectEpisodeGrid,
   regenerateEpisodeGrid,
   generateVideo,
+  generateVideoRef,
   generateEpisodeScripts,
   getVideoPrompt,
   enhanceVideoPrompt as enhanceVideoPromptApi,
@@ -1082,6 +1083,67 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       });
   }, [projectId, offPeak, refreshProductionStatuses]);
 
+  // Generate video per panel (reference image mode - 参考图视频)
+  const handleGenerateVideoRef = useCallback(async (episodeId: number, panelId: string, customPrompt?: string) => {
+    if (!projectId) return;
+    const key = `${episodeId}-${panelId}`;
+    setGeneratingVideoKeys(prev => new Set(prev).add(key));
+
+    const abort = new AbortController();
+    generateVideoAbortRef.current = abort;
+    let retries = 0;
+
+    const poll = async () => {
+      while (retries < VIDEO_POLL_MAX_RETRIES && !abort.signal.aborted) {
+        await new Promise(r => setTimeout(r, VIDEO_POLL_INTERVAL));
+        if (abort.signal.aborted) return;
+        retries++;
+        try {
+          const res = await getBatchProductionStatuses(projectId, episodeId);
+          if ((res.code !== 0 && res.code !== 200) || !res.data) continue;
+          const panelStatus = res.data.find((s: any) => s.panelId === Number(panelId));
+          if (panelStatus) {
+            await refreshProductionStatuses(episodeId);
+            if (panelStatus.videoStatus === 'completed' || panelStatus.videoStatus === 'failed') {
+              setGeneratingVideoKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+              if (panelStatus.videoStatus === 'failed') alert('视频生成失败');
+              return;
+            }
+          }
+        } catch { /* continue polling */ }
+      }
+      if (retries >= VIDEO_POLL_MAX_RETRIES) console.warn('视频生成轮询超时');
+      setGeneratingVideoKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+    };
+    poll();
+
+    // 立即设置本地状态为生成中，确保进度条和 UI 立即反映
+    setChapters(prev => prev.map(ch => ({
+      ...ch,
+      episodes: ch.episodes.map(ep =>
+        ep.episodeId === episodeId
+          ? {
+              ...ep,
+              segments: ep.segments.map(seg =>
+                seg.panelData?.panelId === panelId
+                  ? { ...seg, pipelineStep: 'video_generating' as const, videoProgress: 0, videoStatus: 'generating' as any }
+                  : seg
+              ),
+            }
+          : ep
+      ),
+    })));
+
+    // viduq3-mix 强制 offPeak=false
+    const effectiveOffPeak = isMixModel ? false : offPeak;
+    generateVideoRef(projectId, episodeId, Number(panelId), effectiveOffPeak, customPrompt, projectVideoModel || undefined)
+      .catch((err: any) => {
+        abort.abort();
+        alert(err?.response?.data?.message || err?.message || '生成视频失败');
+        setGeneratingVideoKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+      });
+  }, [projectId, offPeak, refreshProductionStatuses, isMixModel, projectVideoModel]);
+
   // Batch generate videos for an episode
   const handleBatchGenerateVideo = useCallback(async (episodeId: number) => {
     const episode = chapters.flatMap(ch => ch.episodes).find(ep => ep.episodeId === episodeId);
@@ -1461,6 +1523,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const allSegments = allEpisodes.flatMap(ep => ep.segments);
   const mergeTotalCount = allSegments.filter(s => (s.ttsStatus === 'completed' || !!s.ttsAudioUrl) && (s.pipelineStep === 'video_completed' || !!s.videoUrl)).length;
   const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
+  const isVideoRefMode = project?.projectInfo?.videoRefMode === true;
+  const projectVideoModel = project?.projectInfo?.videoModel || '';
+  const isMixModel = projectVideoModel.includes('mix');
 
   // ==================== Render ====================
 
@@ -1588,6 +1653,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             >
               全部批量生成
             </button>
+            {!isVideoRefMode && (
             <button
               className={styles.btnGhost}
               onClick={handleProjectBatchEnhance}
@@ -1595,6 +1661,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             >
               {activeBatchScope === 'enhance-project' ? <><SpinIcon /> 润色中...</> : '全部润色'}
             </button>
+            )}
             {isComicCommentary && (
             <button
               className={styles.btnGhost}
@@ -1615,6 +1682,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             )}
           </div>
           <div className={styles.toolbarToggles}>
+            {!(isVideoRefMode && isMixModel) && (
             <button
               className={`${styles.offPeakToggle} ${offPeak ? styles.offPeakActive : ''}`}
               onClick={toggleOffPeak}
@@ -1622,6 +1690,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               <span className={styles.toggleTrack}><span className={styles.toggleThumb} /></span>
               <span className={styles.toggleLabel}>错峰</span>
             </button>
+            )}
             {isVidu && (
               <button
                 className={styles.modelToggle}
@@ -1825,6 +1894,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                       >
                         {chAllDone ? '已完成' : '批量生成'}
                       </button>
+                      {!isVideoRefMode && (
                       <button
                         className={styles.btnGhost}
                         onClick={() => handleChapterBatchEnhance(chapter.chapterIndex)}
@@ -1832,6 +1902,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                       >
                         {activeBatchScope === chScope('enhance') ? <><SpinIcon /> 润色中...</> : '润色'}
                       </button>
+                      )}
                       {isComicCommentary && (
                       <button
                         className={styles.btnGhost}
@@ -1880,7 +1951,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                               >
                                 {allDone ? '已完成' : '批量生成'}
                               </button>
-                              {!allDone && (
+                              {!allDone && !isVideoRefMode && (
                                 <button
                                   className={styles.btnGhost}
                                   onClick={() => handleBatchEnhance(ep.episodeId)}
@@ -1919,9 +1990,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                 segment={seg}
                                 segmentIndex={idx}
                                 isComicCommentary={isComicCommentary}
+                                isVideoRefMode={isVideoRefMode}
                                 generatingVideoKeys={generatingVideoKeys}
                                 expandedPanelKey={expandedPanelKey}
-                                onGenerateVideo={handleGenerateVideo}
+                                onGenerateVideo={isVideoRefMode ? handleGenerateVideoRef : handleGenerateVideo}
                                 onGenerateTts={handleGenerateTts}
                                 onMergeAudio={handleMergeAudio}
                                 onTogglePanel={setExpandedPanelKey}
@@ -1979,7 +2051,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
           const handleSubmitPrompt = () => {
             if (!panelId) return;
             setPromptModalPanelKey(null);
-            handleGenerateVideo(episodeId, panelId, promptModalTab === 'edit' ? promptText : undefined);
+            const handler = isVideoRefMode ? handleGenerateVideoRef : handleGenerateVideo;
+            handler(episodeId, panelId, promptModalTab === 'edit' ? promptText : undefined);
           };
 
           return (
@@ -1991,10 +2064,18 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 </div>
 
                 {/* 融合参考图 */}
-                {seg?.fusionImageUrl && (
+                {!isVideoRefMode && seg?.fusionImageUrl && (
                   <div className={styles.modalFusionWrap}>
                     <span className={styles.modalFusionLabel}>融合参考图</span>
                     <img src={seg.fusionImageUrl} alt="融合参考图" className={styles.modalFusionImg} />
+                  </div>
+                )}
+                {isVideoRefMode && (
+                  <div className={styles.modalFusionWrap}>
+                    <span className={styles.modalFusionLabel}>参考图视频模式</span>
+                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                      使用分镜切分图 + 角色图作为参考，无需融合图
+                    </span>
                   </div>
                 )}
 
@@ -2018,13 +2099,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                     <div className={styles.modalPromptView}>
                       <div className={styles.modalPromptHeader}>
                         <div className={styles.modalPromptHint}>以下是 AI 根据分镜内容自动生成的提示词，用于视频生成</div>
-                        <button
+                        {!isVideoRefMode && <button
                           className={styles.modalEnhanceBtn}
                           onClick={handleEnhance}
                           disabled={promptEnhancing || promptLoading}
                         >
                           {promptEnhancing ? '优化中...' : 'AI 优化提示词（消耗1积分）'}
-                        </button>
+                        </button>}
                       </div>
                       <pre className={styles.modalPromptPre}>{promptText || '(暂无提示词)'}</pre>
                     </div>

@@ -14,6 +14,7 @@ interface VideoSegmentRowProps {
   segment: SegmentState;
   segmentIndex: number;
   isComicCommentary: boolean;
+  isVideoRefMode?: boolean;
   generatingVideoKeys: Set<string>;
   expandedPanelKey: string | null;
   onGenerateVideo: (episodeId: number, panelId: string) => void;
@@ -29,6 +30,7 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
   segment,
   segmentIndex,
   isComicCommentary,
+  isVideoRefMode = false,
   generatingVideoKeys,
   expandedPanelKey,
   onGenerateVideo,
@@ -169,7 +171,7 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
         <div className={`${styles.panelDetailContent} ${styles.twoColumn}`}>
           {/* Left column: video content */}
           <div className={styles.leftColumn}>
-            {segment.fusionImageUrl && (
+            {!isVideoRefMode && segment.fusionImageUrl && (
               <div className={styles.panelDetailSection}>
                 <span className={styles.panelDetailLabel}>融合参考图</span>
                 <img
@@ -178,6 +180,12 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
                   className={`${styles.panelFusionImage} ${styles.clickableImage}`}
                   onClick={() => onOpenLightbox(segment.fusionImageUrl!)}
                 />
+              </div>
+            )}
+            {isVideoRefMode && (
+              <div className={styles.panelDetailSection}>
+                <span className={styles.panelDetailLabel}>参考图模式</span>
+                <span className={styles.panelVideoTag}>分镜切分图 + 角色图</span>
               </div>
             )}
             {shotDescriptions.length > 0 && (
