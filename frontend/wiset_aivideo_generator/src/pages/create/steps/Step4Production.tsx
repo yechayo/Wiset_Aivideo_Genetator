@@ -1084,8 +1084,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   }, [projectId, offPeak, refreshProductionStatuses]);
 
   const isVideoRefMode = project?.projectInfo?.videoRefMode === true;
-  const projectVideoModel = project?.projectInfo?.videoModel || '';
-  const isMixModel = projectVideoModel.includes('mix');
+  const [refVideoModel, setRefVideoModel] = useState<string>(() =>
+    (project?.projectInfo?.videoModel as string) || 'viduq3-mix'
+  );
+  const isMixModel = refVideoModel.includes('mix');
 
   // Generate video per panel (reference image mode - 参考图视频)
   const handleGenerateVideoRef = useCallback(async (episodeId: number, panelId: string, customPrompt?: string) => {
@@ -1140,13 +1142,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
     // viduq3-mix 强制 offPeak=false
     const effectiveOffPeak = isMixModel ? false : offPeak;
-    generateVideoRef(projectId, episodeId, Number(panelId), effectiveOffPeak, customPrompt, projectVideoModel || undefined)
+    generateVideoRef(projectId, episodeId, Number(panelId), effectiveOffPeak, customPrompt, refVideoModel || undefined)
       .catch((err: any) => {
         abort.abort();
         alert(err?.response?.data?.message || err?.message || '生成视频失败');
         setGeneratingVideoKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
       });
-  }, [projectId, offPeak, refreshProductionStatuses, isMixModel, projectVideoModel]);
+  }, [projectId, offPeak, refreshProductionStatuses, isMixModel, refVideoModel]);
 
   // Batch generate videos for an episode
   const handleBatchGenerateVideo = useCallback(async (episodeId: number) => {
@@ -1560,7 +1562,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         </div>
         {/* 视频提供商 + 模型选择器 */}
         <div className={styles.headerVideoModelSelector}>
-          {/* 视频提供商选择 */}
+          {/* 视频提供商选择（参考图视频仅支持 Vidu，隐藏 Grok） */}
           <div className={styles.headerVideoProviderTabs}>
             <button
               className={`${styles.headerVideoProviderTab} ${isVidu ? styles.headerVideoProviderTabActive : ''}`}
@@ -1568,12 +1570,14 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             >
               Vidu
             </button>
-            <button
-              className={`${styles.headerVideoProviderTab} ${isGrok ? styles.headerVideoProviderTabActive : ''}`}
-              onClick={() => handleVideoProviderChange('grok')}
-            >
-              Grok
-            </button>
+            {!isVideoRefMode && (
+              <button
+                className={`${styles.headerVideoProviderTab} ${isGrok ? styles.headerVideoProviderTabActive : ''}`}
+                onClick={() => handleVideoProviderChange('grok')}
+              >
+                Grok
+              </button>
+            )}
           </div>
           {/* Vidu 模型选择 */}
           {isVidu && !isVideoRefMode && (
@@ -1597,12 +1601,22 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             <div className={styles.headerVideoModelTabs}>
               <span className={styles.headerVideoModelLabel}>模型：</span>
               <button
-                className={`${styles.headerVideoModelTab} ${projectVideoModel === 'viduq3-mix' ? styles.headerVideoModelTabActive : ''}`}
+                className={`${styles.headerVideoModelTab} ${refVideoModel === 'viduq3-mix' ? styles.headerVideoModelTabActive : ''}`}
+                onClick={async () => {
+                  if (refVideoModel === 'viduq3-mix') return;
+                  setRefVideoModel('viduq3-mix');
+                  if (projectId) await updateProject(projectId, { videoModel: 'viduq3-mix' } as any).catch(console.error);
+                }}
               >
                 Q3 Mix
               </button>
               <button
-                className={`${styles.headerVideoModelTab} ${projectVideoModel === 'viduq3' ? styles.headerVideoModelTabActive : ''}`}
+                className={`${styles.headerVideoModelTab} ${refVideoModel === 'viduq3' ? styles.headerVideoModelTabActive : ''}`}
+                onClick={async () => {
+                  if (refVideoModel === 'viduq3') return;
+                  setRefVideoModel('viduq3');
+                  if (projectId) await updateProject(projectId, { videoModel: 'viduq3' } as any).catch(console.error);
+                }}
               >
                 Q3
               </button>
