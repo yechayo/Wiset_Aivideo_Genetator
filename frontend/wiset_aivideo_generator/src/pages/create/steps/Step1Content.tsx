@@ -92,10 +92,16 @@ const narrationPerspectiveOptions = [
   { value: 'third_person', label: '第三人称（画外音旁白）' },
 ];
 
-// Vidu 模型选项
+// Vidu 模型选项（首帧视频）
 const viduModelOptions = [
   { value: 'viduq3-pro', label: 'Vidu Q3 Pro（效果好）' },
   { value: 'viduq3-turbo', label: 'Vidu Q3 Turbo（速度快）' },
+];
+
+// Vidu 模型选项（参考图视频，仅 q3 和 q3-mix 支持 reference2video）
+const viduRefModelOptions = [
+  { value: 'viduq3-mix', label: 'Vidu Q3 Mix（推荐）' },
+  { value: 'viduq3', label: 'Vidu Q3' },
 ];
 
 // 视频模式选项
@@ -455,14 +461,16 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
                   onChange={(val) => {
                     const isRef = val === 'reference_images';
                     setVideoRefMode(isRef);
-                    if (isRef && videoModel !== 'viduq3-mix') {
+                    if (isRef) {
                       setVideoModel('viduq3-mix');
+                    } else {
+                      setVideoModel('viduq3-pro');
                     }
                   }}
                 />
                 {videoRefMode && (
                   <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginTop: 4 }}>
-                    已自动切换至 viduq3-mix，不支持错峰模式
+                    推荐使用 viduq3-mix，不支持错峰模式
                   </span>
                 )}
               </div>
@@ -473,7 +481,7 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
               <div className={styles.configSection}>
                 <label className={styles.configLabel}>视频模型</label>
                 <Select
-                  options={viduModelOptions}
+                  options={videoRefMode ? viduRefModelOptions : viduModelOptions}
                   value={videoModel}
                   onChange={setVideoModel}
                 />
