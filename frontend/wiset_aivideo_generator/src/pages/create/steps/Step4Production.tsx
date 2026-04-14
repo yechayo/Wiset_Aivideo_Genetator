@@ -1083,6 +1083,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       });
   }, [projectId, offPeak, refreshProductionStatuses]);
 
+  const isVideoRefMode = project?.projectInfo?.videoRefMode === true;
+  const projectVideoModel = project?.projectInfo?.videoModel || '';
+  const isMixModel = projectVideoModel.includes('mix');
+
   // Generate video per panel (reference image mode - 参考图视频)
   const handleGenerateVideoRef = useCallback(async (episodeId: number, panelId: string, customPrompt?: string) => {
     if (!projectId) return;
@@ -1523,10 +1527,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const allSegments = allEpisodes.flatMap(ep => ep.segments);
   const mergeTotalCount = allSegments.filter(s => (s.ttsStatus === 'completed' || !!s.ttsAudioUrl) && (s.pipelineStep === 'video_completed' || !!s.videoUrl)).length;
   const isComicCommentary = project?.projectInfo?.productionMode === 'comic_commentary';
-  const isVideoRefMode = project?.projectInfo?.videoRefMode === true;
-  const projectVideoModel = project?.projectInfo?.videoModel || '';
-  const isMixModel = projectVideoModel.includes('mix');
-
   // ==================== Render ====================
 
   if (loading) {
