@@ -26,12 +26,30 @@ interface GridEpisodeCardProps {
   onRejectGrid: (episodeId: number, reason: string) => void;
   onRejectToScript: (episodeId: number) => void;
   onOpenLightbox: (url: string) => void;
-  buildGridPromptText?: (visualStyle: string, shots: any[], isComicCommentary?: boolean) => string;
+  buildGridPromptText?: (visualStyle: string, shots: any[], isComicCommentary?: boolean, gridCols?: number, gridRows?: number) => string;
 }
 
-const GRID_COLS = 3;
-const GRID_ROWS = 3;
-const SHOTS_PER_PAGE = GRID_COLS * GRID_ROWS;
+/** 根据分镜数量计算网格布局（与后端一致） */
+function getGridSize(shotCount: number): { cols: number; rows: number } {
+  if (shotCount <= 4) return { cols: 2, rows: 2 };
+  if (shotCount <= 6) return { cols: 3, rows: 2 };
+  return { cols: 3, rows: 3 };
+}
+
+function buildAdaptivePages(totalShots: number): Array<{ fromIdx: number; toIdx: number; cols: number; rows: number }> {
+  const pages: Array<{ fromIdx: number; toIdx: number; cols: number; rows: number }> = [];
+  let offset = 0;
+  let remaining = totalShots;
+  while (remaining > 0) {
+    const { cols, rows } = getGridSize(remaining);
+    const capacity = cols * rows;
+    const take = Math.min(capacity, remaining);
+    pages.push({ fromIdx: offset, toIdx: offset + take, cols, rows });
+    offset += take;
+    remaining -= take;
+  }
+  return pages;
+}
 
 const GridEpisodeCard = React.memo(function GridEpisodeCard({
   episode,
@@ -84,18 +102,31 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
     if (!buildGridPromptText) return '';
     const allShots = getAllShots();
     const visualStyle = getVisualStyle();
-    const fromIdx = pageIndex * SHOTS_PER_PAGE;
-    const toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, allShots.length);
+    const config = (episode as any).gridConfigs?.[pageIndex];
+    const cols = config?.gridCols ?? 3;
+    const rows = config?.gridRows ?? 3;
+    const capacity = cols * rows;
+    let fromIdx = 0;
+    const configs = (episode as any).gridConfigs;
+    if (configs && configs.length > pageIndex) {
+      for (let i = 0; i < pageIndex; i++) {
+        fromIdx += configs[i].shotCount ?? (configs[i].gridCols * configs[i].gridRows);
+      }
+    } else {
+      const adaptivePages = buildAdaptivePages(allShots.length);
+      fromIdx = adaptivePages[pageIndex]?.fromIdx ?? pageIndex * 9;
+    }
+    const toIdx = Math.min(fromIdx + capacity, allShots.length);
     const pageShots = allShots.slice(fromIdx, toIdx);
-    return buildGridPromptText(visualStyle, pageShots, false);
-  }, [buildGridPromptText, getAllShots, getVisualStyle]);
+    return buildGridPromptText(visualStyle, pageShots, false, cols, rows);
+  }, [buildGridPromptText, getAllShots, getVisualStyle, episode]);
 
   // 初始化/重置 editedPrompts（当 episodeId 或 gridStatus 变化时）
   useEffect(() => {
     hasLocalEditRef.current = false;
     const allShots = getAllShots();
     const visualStyle = getVisualStyle();
-    const pageCount = Math.ceil(allShots.length / SHOTS_PER_PAGE) || 1;
+    const pageCount = buildAdaptivePages(allShots.length).length || 1;
 
     if (canEditPrompt && buildGridPromptText && allShots.length > 0) {
       // 如果有保存的多页 prompts，使用它们；否则自动生成
@@ -129,7 +160,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
         setEditedPrompts(episode.gridPrompts);
       } else if (episode.gridPrompt) {
         const allShots = getAllShots();
-        const pageCount = Math.ceil(allShots.length / SHOTS_PER_PAGE) || 1;
+        const pageCount = buildAdaptivePages(allShots.length).length || 1;
         const prompts: string[] = [];
         for (let i = 0; i < pageCount; i++) {
           prompts.push(i === 0 ? episode.gridPrompt : buildPagePrompt(i));
