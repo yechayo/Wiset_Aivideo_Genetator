@@ -93,7 +93,8 @@ public class CharacterExtractService {
                     + "5. role只能是：主角、反派、配角\n"
                     + "6. species只能是以下值之一：HUMAN（人类）、ANTHRO_ANIMAL（拟人化动物，有人形身体但保留动物特征如猫耳狐尾）、CREATURE（奇幻/科幻种族，如精灵、机器人、恶魔）、ANIMAL（真实动物形态，如宠物、坐骑、灵兽，无人类形态）\n"
                     + "7. 判断species的规则：如果角色描述中提到动物特征+人形身体（如猫耳、狐尾、龙鳞），则为ANTHRO_ANIMAL；如果提到非人类种族（精灵、机器人、恶魔、外星人），则为CREATURE；如果是纯动物形态无人类特征（灵兽、宠物、坐骑），则为ANIMAL；其余为HUMAN\n"
-                    + "8. 返回格式示例：[{\"name\":\"张三\",\"species\":\"HUMAN\",\"role\":\"主角\",\"personality\":\"勇敢\",\"appearance\":\"英俊\",\"background\":\"孤儿\",\"voice\":\"沉稳男声\"}]\n\n"
+                    + "8. 返回格式示例：[{\"name\":\"张三\",\"species\":\"HUMAN\",\"role\":\"主角\",\"personality\":\"勇敢坚毅、热血直率\",\"appearance\":\"浓眉大眼，眼神锐利如鹰，鼻梁高挺，嘴唇略薄。一头黑色短发微微向上翘起，额前有几缕碎发。身材高挑健硕，肩宽腰窄，肌肉线条分明却不夸张。常穿深蓝色立领外套，内搭白色T恤，下身黑色工装裤配军靴。左手腕戴一条旧皮绳手链，右耳有一颗小痣。整体气质沉稳而充满力量感\",\"background\":\"孤儿\",\"voice\":\"沉稳男声\"}]\n"
+                    + "9. appearance字段必须详细描写角色外貌，至少100字，需涵盖：面部五官特征、发型与发色、体型与身材、服装穿搭风格、标志性配饰、整体气质等，让角色形象生动有辨识度\n\n"
                     + "请直接返回JSON数组：";
 
             String result = textGenerationService.generate(systemPrompt, userPrompt);
