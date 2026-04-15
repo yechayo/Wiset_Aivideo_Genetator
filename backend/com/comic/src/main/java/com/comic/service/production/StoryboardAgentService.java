@@ -43,15 +43,7 @@ public class StoryboardAgentService {
      */
     public ReasonerDecision parseReasonerDecision(String json) {
         try {
-            // 清理 markdown 代码块标记
-            String cleaned = json.trim();
-            if (cleaned.startsWith("```")) {
-                int firstNewline = cleaned.indexOf('\n');
-                int lastBacktick = cleaned.lastIndexOf("```");
-                if (firstNewline > 0 && lastBacktick > firstNewline) {
-                    cleaned = cleaned.substring(firstNewline + 1, lastBacktick).trim();
-                }
-            }
+            String cleaned = cleanJson(json);
 
             JsonNode node = objectMapper.readTree(cleaned);
             String action = node.has("action") ? node.get("action").asText("generate") : "generate";
@@ -371,15 +363,7 @@ public class StoryboardAgentService {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> parseShotArray(String json) {
         try {
-            String cleaned = json.trim();
-            if (cleaned.startsWith("```")) {
-                int firstNewline = cleaned.indexOf('\n');
-                int lastBacktick = cleaned.lastIndexOf("```");
-                if (firstNewline > 0 && lastBacktick > firstNewline) {
-                    cleaned = cleaned.substring(firstNewline + 1, lastBacktick).trim();
-                }
-            }
-
+            String cleaned = cleanJson(json);
             JsonNode arrayNode = objectMapper.readTree(cleaned);
             if (!arrayNode.isArray()) {
                 // 尝试提取 shots 或 panels 数组
@@ -413,6 +397,41 @@ public class StoryboardAgentService {
     }
 
     // ==================== 数据类 ====================
+
+    // ==================== JSON 清理 ====================
+
+    /**
+     * 清理 AI 输出的 JSON：去 markdown 包裹 + 修复常见格式问题
+     */
+    private String cleanJson(String raw) {
+        String cleaned = raw.trim();
+
+        // 1. 去 markdown 代码块
+        if (cleaned.startsWith("```")) {
+            int firstNewline = cleaned.indexOf('\n');
+            int lastBacktick = cleaned.lastIndexOf("```");
+            if (firstNewline > 0 && lastBacktick > firstNewline) {
+                cleaned = cleaned.substring(firstNewline + 1, lastBacktick).trim();
+            }
+        }
+
+        // 2. 修复未加引号的字符串值（AI 常见错误）
+        // 匹配 "key": 非引号非数字非数组的中文/混合值，到逗号/换行/}为止
+        // 例如 "cameraAngle": 仰视视角 → "cameraAngle": "仰视视角"
+        cleaned = cleaned.replaceAll(
+                ":\\s*([^\"\\[\\]{}\\d,\\n][^,\\n}]*[\\u4e00-\\u9fff][^,\\n}]*)",
+                ": \"$1\"");
+
+        // 3. 修复中文弯引号 → 直引号
+        cleaned = cleaned.replace("\u201c", "\"").replace("\u201d", "\"");
+        cleaned = cleaned.replace("\u2018", "\"").replace("\u2019", "\"");
+
+        // 4. 去尾逗号（trailing comma）：}, ] 前的逗号
+        cleaned = cleaned.replaceAll(",\\s*}", "}");
+        cleaned = cleaned.replaceAll(",\\s*]", "]");
+
+        return cleaned;
+    }
 
     /**
      * Reasoner 决策结果
