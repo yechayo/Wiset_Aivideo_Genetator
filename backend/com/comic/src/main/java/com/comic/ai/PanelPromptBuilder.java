@@ -100,11 +100,15 @@ public class PanelPromptBuilder {
 
         // ===== 角色锚定 =====
         if (charRefs != null && !charRefs.isEmpty()) {
-            sb.append("【角色设定 - 必须严格遵守】\n");
+            sb.append("【角色设定 - 最高优先级，必须严格遵守】\n");
+            sb.append("本图附带角色参考图（reference images），这些参考图是角色外貌的唯一权威标准。\n");
+            sb.append("你必须严格参照参考图来绘制每个角色，角色的五官、发型、发色、瞳色、体型比例、服装、配饰等所有外貌细节必须与参考图完全一致。\n");
+            sb.append("严禁凭想象修改角色的任何外貌特征，即使文字描述与参考图有冲突，也必须以参考图为准。\n");
             sb.append("只允许绘制以下角色，绝对不要出现列表之外的角色、路人或背景人物。\n");
-            sb.append("每个角色在不同格子中必须保持外貌、体型比例、服装、发型完全一致。\n\n");
+            sb.append("每个角色在不同格子中必须保持与参考图完全一致的外貌，不允许出现同一角色在不同格子中长得不一样的情况。\n\n");
 
-            for (Object refObj : charRefs) {
+            for (int refIdx = 0; refIdx < charRefs.size(); refIdx++) {
+                Object refObj = charRefs.get(refIdx);
                 String name = null;
                 String species = null;
                 String appearance = null;
@@ -124,8 +128,9 @@ public class PanelPromptBuilder {
                 if (role != null && !role.isEmpty()) {
                     sb.append("（").append(role).append("）");
                 }
+                sb.append("：必须严格按照对应的参考图绘制");
                 if (species != null && !species.isEmpty()) {
-                    sb.append("：物种=").append(species);
+                    sb.append("，物种=").append(species);
                     // 针对拟人化物种，强调保持拟人形态
                     if (species.contains("拟人") || species.contains("ANTHRO")) {
                         sb.append("，始终为拟人化形态（直立行走、人形身体比例、兽耳兽尾等特征，非四足野兽形态）");
@@ -134,9 +139,9 @@ public class PanelPromptBuilder {
                 if (appearance != null && !appearance.isEmpty()) {
                     sb.append("，外貌特征: ").append(appearance);
                 }
-                sb.append("\n");
+                sb.append("。参考图中展示的五官、发型、发色、服装、体型等细节即为该角色的最终标准，务必完全复刻。\n");
             }
-            sb.append("\n");
+            sb.append("\n【角色一致性约束】每个格子中出现的角色都必须与上述参考图保持完全一致的外貌，包括但不限于：脸型、五官比例、发型与发色、瞳孔颜色、身高体型、服装款式与颜色。这是最重要的要求，违反即为失败。\n\n");
         }
 
         // ===== 分镜内容 =====

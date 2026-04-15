@@ -504,6 +504,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             gridPrompt: ep.episodeInfo?.gridPrompt || '',
             gridPrompts: ep.episodeInfo?.gridPrompts || [],
             gridConfigs: ep.episodeInfo?.gridConfigs,
+            characterReferences: ep.episodeInfo?.characterReferences,
             panelApproved: ep.episodeInfo?.panelApproved ?? false,
             isNewFlow: !!ep.episodeInfo?.gridStatus,
             scriptStatus: ep.episodeInfo?.scriptStatus || 'pending',
@@ -884,6 +885,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                           gridRejectionFeedback: updatedEp.episodeInfo?.gridRejectionFeedback || null,
                           gridPrompt: updatedEp.episodeInfo?.gridPrompt || '',
                           gridPrompts: updatedEp.episodeInfo?.gridPrompts || [],
+                          characterReferences: updatedEp.episodeInfo?.characterReferences,
                           episodeInfo: updatedEp.episodeInfo,
                         }
                       : ep
@@ -1949,6 +1951,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                       return (
                         <GridEpisodeCard
                           key={ep.episodeId}
+                          projectId={projectId}
                           episode={ep}
                           generatingGrid={generatingGrid}
                           approvingEpisodeId={approvingEpisodeId}
@@ -2454,12 +2457,12 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
                     pages.push(buildGridPromptText(visualStyle, pageShots, isComicCommentary, cols, rows));
                   }
                 }
-                return pages.map((prompt, idx) => (
-                  <pre key={idx} className={styles.episodePromptBlock}>
-                    {pageCount > 1 && <div style={{ marginBottom: 8, color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>第 {idx + 1} 页 / 共 {pageCount} 页</div>}
-                    {prompt}
-                  </pre>
-                ));
+                // return pages.map((prompt, idx) => (
+                //   <pre key={idx} className={styles.episodePromptBlock}>
+                //     {pageCount > 1 && <div style={{ marginBottom: 8, color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>第 {idx + 1} 页 / 共 {pageCount} 页</div>}
+                //     {prompt}
+                //   </pre>
+                // ));
               })()}
             </div>
           )}

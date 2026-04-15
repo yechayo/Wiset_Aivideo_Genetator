@@ -1630,6 +1630,67 @@
   color: var(--color-text-muted);
 }
 
+// 角色参考图区域
+.gridCharRefs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.gridCharRefsLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.gridCharRefList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gridCharRefItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-subtle);
+  background: rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: border-color var(--duration-fast), background var(--duration-fast);
+
+  &:hover {
+    border-color: rgba(114, 183, 255, 0.4);
+    background: rgba(114, 183, 255, 0.06);
+  }
+
+  img {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: var(--radius-xs);
+  }
+}
+
+.gridCharRefName {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gridCharRefRole {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
 // 多页编辑区域
 .gridPageSection {
   display: flex;

@@ -314,6 +314,15 @@ export async function getGridInfo(episodeId: string): Promise<ApiResponse<GridIn
   return get<ApiResponse<GridInfoResponse>>(`/api/episodes/${episodeId}/grid-info`);
 }
 
+/** 获取剧集角色参考图（兼容老项目） */
+export async function getCharacterReferences(
+  projectId: string, episodeId: number,
+): Promise<ApiResponse<{ name: string; url: string; role: string }[]>> {
+  return get<ApiResponse<{ name: string; url: string; role: string }[]>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/character-references`,
+  );
+}
+
 /** @deprecated 旧版上传融合图，后端端点已删除 */
 export async function uploadFusionImage(episodeId: string, file: File): Promise<ApiResponse<string>> {
   const formData = new FormData();

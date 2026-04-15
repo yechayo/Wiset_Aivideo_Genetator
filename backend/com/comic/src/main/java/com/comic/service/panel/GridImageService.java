@@ -335,6 +335,16 @@ public class GridImageService {
             episodeInfo.put("gridStatus", "generated");
             episodeInfo.put("gridPageCount", pageCount);
             episodeInfo.put("gridConfigs", gridConfigs);
+            // 保存角色参考图信息（供前端展示）
+            List<Map<String, String>> charRefInfoList = new ArrayList<>();
+            for (CharRef cr : charRefsWithNames) {
+                Map<String, String> crMap = new HashMap<>();
+                crMap.put("name", cr.name);
+                crMap.put("url", cr.url);
+                crMap.put("role", cr.role);
+                charRefInfoList.add(crMap);
+            }
+            episodeInfo.put("characterReferences", charRefInfoList);
             // 保存最后一个 page 的 prompt（包含完整九宫格布局信息）
             episodeInfo.put("gridPrompt", allPagePrompts.isEmpty() ? null : allPagePrompts.get(allPagePrompts.size() - 1));
             episodeInfo.put("gridPrompts", allPagePrompts);

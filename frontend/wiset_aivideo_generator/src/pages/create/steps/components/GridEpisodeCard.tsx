@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { EpisodeState } from '../types';
 import { StoryboardGrid } from './StoryboardGrid';
+import { getCharacterReferences } from '../../../../services/episodeService';
 import styles from '../Step4Production.module.less';
+
+const ROLE_LABEL: Record<string, string> = {
+  主角: '主角',
+  反派: '反派',
+  配角: '配角',
+};
 
 const SpinIcon = () => <span className={styles.btnSpinner} />;
 
@@ -16,6 +23,7 @@ function getGridStatusBadge(status: string) {
 }
 
 interface GridEpisodeCardProps {
+  projectId: string;
   episode: EpisodeState;
   generatingGrid: number | null;
   approvingEpisodeId: number | null;
@@ -51,6 +59,7 @@ function buildAdaptivePages(totalShots: number): Array<{ fromIdx: number; toIdx:
 }
 
 const GridEpisodeCard = React.memo(function GridEpisodeCard({
+  projectId,
   episode,
   generatingGrid,
   approvingEpisodeId,
@@ -203,6 +212,30 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
   // 获取当前页的 prompt（用于显示）
   const currentPrompt = editedPrompts[currentPage - 1] || '';
 
+  // 角色参考图（本地 state，兼容老项目懒加载）
+  const [charRefs, setCharRefs] = useState<{ name: string; url: string; role: string }[]>(
+    episode.characterReferences?.filter(c => c.url) || [],
+  );
+  const charRefsFetchedRef = useRef(false);
+
+  // 老项目没有 characterReferences 时，自动从后端拉取一次
+  useEffect(() => {
+    if (charRefsFetchedRef.current) return;
+    if (!hasScript) return;
+    if (episode.characterReferences && episode.characterReferences.length > 0) return;
+    charRefsFetchedRef.current = true;
+    let cancelled = false;
+    getCharacterReferences(projectId, episode.episodeId)
+      .then(res => {
+        if (!cancelled && res.data?.data) {
+          const list = res.data.data.filter(c => c.url);
+          if (list.length > 0) setCharRefs(list);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectId, episode.episodeId, episode.characterReferences, hasScript]);
+
   return (
     <div className={styles.episodeGridCard}>
       <div className={styles.episodeGridHeader}>
@@ -302,6 +335,20 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
                   </span>
                 )}
               </div>
+              {charRefs.length > 0 && (
+                <div className={styles.gridCharRefs}>
+                  <span className={styles.gridCharRefsLabel}>角色参考图</span>
+                  <div className={styles.gridCharRefList}>
+                    {charRefs.map((cr, idx) => (
+                      <div key={idx} className={styles.gridCharRefItem} onClick={() => onOpenLightbox(cr.url)}>
+                        <img src={cr.url} alt={cr.name} />
+                        <span className={styles.gridCharRefName}>{cr.name}</span>
+                        {cr.role && <span className={styles.gridCharRefRole}>{ROLE_LABEL[cr.role] || cr.role}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <textarea
                 id={`grid-prompt-${episode.episodeId}-${currentPage}`}
                 className={styles.gridPromptTextarea}
@@ -357,6 +404,20 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
                   第{idx + 1}页
                 </button>
               ))}
+            </div>
+          )}
+          {charRefs.length > 0 && (
+            <div className={styles.gridCharRefs}>
+              <span className={styles.gridCharRefsLabel}>角色参考图</span>
+              <div className={styles.gridCharRefList}>
+                {charRefs.map((cr, idx) => (
+                  <div key={idx} className={styles.gridCharRefItem} onClick={() => onOpenLightbox(cr.url)}>
+                    <img src={cr.url} alt={cr.name} />
+                    <span className={styles.gridCharRefName}>{cr.name}</span>
+                    {cr.role && <span className={styles.gridCharRefRole}>{ROLE_LABEL[cr.role] || cr.role}</span>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           <textarea

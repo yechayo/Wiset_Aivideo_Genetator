@@ -74,7 +74,7 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
               <span className={styles.shotNumber}>#{shot.shotNumber}</span>
               <span className={styles.shotDuration}>{shot.duration}s</span>
               <ShotSizeIcon size={shot.shotSize} />
-              <span className={styles.shotScene}>{shot.scene.substring(0, 30)}{shot.scene.length > 30 ? '...' : ''}</span>
+              <span className={styles.shotScene}>{(shot.scene || '').substring(0, 30)}{(shot.scene || '').length > 30 ? '...' : ''}</span>
             </div>
           ))}
         </div>

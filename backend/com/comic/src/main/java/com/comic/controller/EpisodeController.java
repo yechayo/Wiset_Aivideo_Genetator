@@ -280,6 +280,37 @@ public class EpisodeController {
         return Result.ok(result);
     }
 
+    @GetMapping("/{episodeId}/character-references")
+    @Operation(summary = "获取剧集角色参考图（兼容老项目）")
+    public Result<List<Map<String, String>>> getCharacterReferences(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId) {
+        List<GridImageService.CharRef> charRefs = gridImageService.getCharacterReferencesWithNamesForEpisode(episodeId);
+        List<Map<String, String>> list = new ArrayList<>();
+        for (GridImageService.CharRef cr : charRefs) {
+            if (cr.url == null || cr.url.isEmpty()) continue;
+            Map<String, String> m = new HashMap<>();
+            m.put("name", cr.name);
+            m.put("url", cr.url);
+            m.put("role", cr.role);
+            list.add(m);
+        }
+        // 回写到 episodeInfo 以便下次直接读取
+        if (!list.isEmpty()) {
+            Episode episode = episodeRepository.selectById(episodeId);
+            if (episode != null) {
+                Map<String, Object> info = episode.getEpisodeInfo();
+                if (info == null) info = new HashMap<>();
+                if (info.get("characterReferences") == null) {
+                    info.put("characterReferences", list);
+                    episode.setEpisodeInfo(info);
+                    episodeRepository.updateById(episode);
+                }
+            }
+        }
+        return Result.ok(list);
+    }
+
     @Transactional
     @PutMapping("/{episodeId}/grid/approve")
     @Operation(summary = "审核通过整集九宫格，触发分组创建Panel")
