@@ -29,7 +29,7 @@ public class StoryboardAgentService {
     private static final int LAST_SHOTS_COUNT = 3;
 
     public StoryboardAgentService(@Qualifier("reasoner") DeepSeekTextService reasoner,
-                                   DeepSeekTextService executor,
+                                   @Qualifier("deepSeekTextService") DeepSeekTextService executor,
                                    ObjectMapper objectMapper) {
         this.reasoner = reasoner;
         this.executor = executor;
