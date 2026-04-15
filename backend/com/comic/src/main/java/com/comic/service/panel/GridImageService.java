@@ -873,7 +873,7 @@ public class GridImageService {
                 }
             }
 
-            log.info("角色参考图(含名字): episodeId={} 最终数量={}", episodeId, refs.size());
+            log.debug("角色参考图(含名字): episodeId={} 最终数量={}", episodeId, refs.size());
         } catch (Exception e) {
             log.error("获取角色参考图(含名字)失败: episodeId={}", episodeId, e);
         }

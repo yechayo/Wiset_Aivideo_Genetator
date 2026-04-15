@@ -980,7 +980,7 @@ public class PanelProductionService {
             throw new BusinessException("参考图数量不足，无法生成视频");
         }
 
-        log.info("收集参考图: panelId={}, 分镜图={}, 角色图={}, 总计={}",
+        log.debug("收集参考图: panelId={}, 分镜图={}, 角色图={}, 总计={}",
             panel.getId(), refImageUrls.size() - charNames.size(), charNames.size(), refImageUrls.size());
         return new AbstractMap.SimpleEntry<>(refImageUrls, charNames);
     }
