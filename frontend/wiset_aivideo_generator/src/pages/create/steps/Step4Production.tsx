@@ -14,7 +14,6 @@ import {
   getPanels,
   getBatchProductionStatuses,
   approvePanel,
-  rejectPanel,
   approveEpisodeGrid,
   rejectEpisodeGrid,
   regenerateEpisodeGrid,
@@ -954,16 +953,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     })).filter(ch => ch.episodes.length > 0);
   }, []);
 
-  // Get episodes that have passed beyond a given stage (for collapsed footer)
-  const getPassedEpisodes = useCallback((stage: PipelineStage, chapters: ChapterState[]): EpisodeState[] => {
-    const stageOrder: PipelineStage[] = ['script', 'grid', 'video'];
-    const currentIdx = stageOrder.indexOf(stage);
-    return chapters.flatMap(ch => ch.episodes).filter(ep => {
-      const epIdx = stageOrder.indexOf(getPipelineStage(ep));
-      return epIdx > currentIdx;
-    });
-  }, []);
-
   // Per-tab episode counts for progress indicator
   const scriptCount = allEpisodes.filter(ep => getPipelineStage(ep) === 'script').length;
   const gridCount = allEpisodes.filter(ep => getPipelineStage(ep) === 'grid').length;
@@ -1578,7 +1567,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     setExpandedEpisodeId(prev => prev === episodeId ? null : episodeId);
   }, []);
 
-  const refreshEpisode = useCallback(async (episodeId: number) => {
+  const refreshEpisode = useCallback(async (_episodeId: number) => {
     await loadEpisodes();
   }, [loadEpisodes]);
 
@@ -2430,6 +2419,7 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
                 )}
               </div>
               {(() => {
+                if (!buildGridPromptText) return null;
                 // 支持 gridConfigs 分页提示词
                 const configs = (episode as any).gridConfigs;
                 const pageCount = configs?.length || Math.ceil(allShots.length / 9) || 1;
@@ -2463,6 +2453,7 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
                 //     {prompt}
                 //   </pre>
                 // ));
+                return null;
               })()}
             </div>
           )}
