@@ -500,6 +500,14 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             </div>
           )}
 
+          {/* 生成中提示（刷新后依然可见） */}
+          {!!statusInfo?.isGenerating && (
+            <div className={styles.loadingState}>
+              <div className={styles.spinner}></div>
+              <p>AI 正在重新生成大纲，请稍候...</p>
+            </div>
+          )}
+
           {error && (
             <div className={styles.errorState}>
               <p>{error}</p>
@@ -534,7 +542,7 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
                 outline={scriptData.outline}
                 onSaveDirect={handleSaveOutlineDirect}
                 onSaveWithAI={handleSaveOutlineWithAI}
-                saving={isSavingOutline}
+                saving={isSavingOutline || !!statusInfo?.isGenerating}
               />
             </div>
           )}
@@ -544,9 +552,9 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             <button
               className={styles.confirmButton}
               onClick={handleConfirmOutline}
-              disabled={isLoading || !scriptData}
+              disabled={isLoading || !scriptData || !!statusInfo?.isGenerating}
             >
-              确认大纲，进入剧情生成
+              {statusInfo?.isGenerating ? 'AI 生成中...' : '确认大纲，进入剧情生成'}
             </button>
           </div>
         </>
