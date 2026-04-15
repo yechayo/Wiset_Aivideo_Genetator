@@ -66,9 +66,36 @@ public class ProgressService {
         return redis.opsForValue().get(generatingKey(projectId));
     }
 
-    /** 是否正在生成 */
+    /** 是否正在生成（包含批量 batch 锁） */
     public boolean isGenerating(String projectId) {
-        return getGeneratingTask(projectId) != null;
+        return getGeneratingTask(projectId) != null || isBatchLocked(projectId);
+    }
+
+    // ===== Batch 锁（批量生成期间保持整体 isGenerating=true，覆盖章节间的锁空窗） =====
+
+    private String batchLockKey(String projectId) { return "project:" + projectId + ":batch_lock"; }
+
+    /** 尝试获取批量锁（SETNX），防止并发重复触发批量生成 */
+    public boolean tryBatchLock(String projectId) {
+        Boolean ok = redis.opsForValue().setIfAbsent(
+            batchLockKey(projectId), "batch", 60, TimeUnit.MINUTES);
+        boolean success = Boolean.TRUE.equals(ok);
+        if (success) {
+            log.info("获取批量生成锁成功: projectId={}", projectId);
+        } else {
+            log.warn("获取批量生成锁失败（批量任务已在运行）: projectId={}", projectId);
+        }
+        return success;
+    }
+
+    /** 释放批量锁 */
+    public void clearBatchLock(String projectId) {
+        redis.delete(batchLockKey(projectId));
+    }
+
+    /** 是否持有批量锁 */
+    public boolean isBatchLocked(String projectId) {
+        return Boolean.TRUE.equals(redis.hasKey(batchLockKey(projectId)));
     }
 
     // ===== Error =====
@@ -118,5 +145,6 @@ public class ProgressService {
         redis.delete(generatingKey(projectId));
         redis.delete(errorKey(projectId));
         redis.delete(batchKey(projectId));
+        redis.delete(batchLockKey(projectId));
     }
 }

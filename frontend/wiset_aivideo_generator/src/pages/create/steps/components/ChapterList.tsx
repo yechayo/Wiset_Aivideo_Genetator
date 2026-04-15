@@ -46,6 +46,11 @@ const ChapterList = ({
     return episodes.filter((ep) => ep.episodeInfo?.chapterTitle === chapter);
   };
 
+  // 从章节字符串中提取可读标题（去掉 ### 前缀和 markdown 语法）
+  const getDisplayName = (chapter: string) => {
+    return chapter.replace(/^#{1,6}\s*/, '').trim();
+  };
+
   if (chapters.length === 0) {
     return (
       <div className={styles.emptyState}>
@@ -83,7 +88,7 @@ const ChapterList = ({
                   ) : (
                     <ChevronRightIcon className={styles.chevron} />
                   )}
-                  <span className={styles.chapterName}>{chapter}</span>
+                  <span className={styles.chapterName}>{getDisplayName(chapter)}</span>
                 </div>
                 <div className={styles.chapterHeaderRight}>
                   {generated ? (

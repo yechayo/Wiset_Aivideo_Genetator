@@ -538,20 +538,25 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   useEffect(() => { loadEpisodes(); }, [loadEpisodes]);
 
   // 恢复视频生成状态：刷新页面后如果后端还在生成，自动恢复 generatingVideoKeys
+  // 使用合并策略：保留本地已标记的生成中 key，只在后端确认完成/失败时才移除
   useEffect(() => {
     if (chapters.length === 0) return;
-    const keys = new Set<string>();
-    for (const ch of chapters) {
-      for (const ep of ch.episodes) {
-        for (const seg of ep.segments) {
-          if (seg.pipelineStep === 'video_generating') {
+    setGeneratingVideoKeys(prev => {
+      const next = new Set(prev);
+      for (const ch of chapters) {
+        for (const ep of ch.episodes) {
+          for (const seg of ep.segments) {
             const key = `${ep.episodeId}-${seg.panelData?.panelId}`;
-            keys.add(key);
+            if (seg.pipelineStep === 'video_generating') {
+              next.add(key);
+            } else if (seg.pipelineStep === 'video_completed' || seg.pipelineStep === 'video_failed') {
+              next.delete(key);
+            }
           }
         }
       }
-    }
-    setGeneratingVideoKeys(keys);
+      return next;
+    });
   }, [chapters]);
 
   // Auto-stop polling when all episodes have script data
@@ -2204,13 +2209,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                     <div className={styles.modalPromptView}>
                       <div className={styles.modalPromptHeader}>
                         <div className={styles.modalPromptHint}>以下是 AI 根据分镜内容自动生成的提示词，用于视频生成</div>
-                        {!isVideoRefMode && <button
+                        <button
                           className={styles.modalEnhanceBtn}
                           onClick={handleEnhance}
                           disabled={promptEnhancing || promptLoading}
                         >
                           {promptEnhancing ? '优化中...' : 'AI 优化提示词（消耗1积分）'}
-                        </button>}
+                        </button>
                       </div>
                       <pre className={styles.modalPromptPre}>{promptText || '(暂无提示词)'}</pre>
                     </div>

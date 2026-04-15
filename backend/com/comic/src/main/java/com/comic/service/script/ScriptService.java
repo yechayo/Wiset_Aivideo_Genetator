@@ -322,24 +322,22 @@ public class ScriptService {
     }
 
     /**
-     * 批量生成所有剩余章节的剧集
+     * 批量生成所有剩余章节的剧集（异步，立即返回）
+     * 验证通过后在后台线程中按序生成每章，每章沿用 generateScriptEpisodes 的锁+SSE 机制。
      */
-    @Transactional
     public void generateAllEpisodes(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
             throw new BusinessException("项目不存在");
         }
 
-        // 验证 milestone
+        // 验证 milestone（同步，快速失败）
         String status = project.getStatus();
         if (!"outline_confirmed".equals(status) && !"episode_confirmed".equals(status)) {
             throw new BusinessException("当前状态不能生成分集，请先确认大纲");
         }
 
         Integer totalEpisodes = getProjectInfoInt(project, ProjectInfoKeys.TOTAL_EPISODES);
-
-        // 判断是否为单集模式
         boolean isSingleEpisode = totalEpisodes != null && totalEpisodes == 1;
 
         // 获取所有章节
@@ -350,40 +348,50 @@ public class ScriptService {
             chapters = extractChaptersFromOutline(getScriptOutlineText(project));
         }
 
-        // 获取已生成的章节
+        // 找出待生成的章节
         List<Episode> existingEpisodes = episodeRepository.findByProjectId(projectId);
         Set<String> generatedChapters = new HashSet<>();
         for (Episode ep : existingEpisodes) {
             String chapterTitle = getEpisodeInfoStr(ep, EpisodeInfoKeys.CHAPTER_TITLE);
-            if (chapterTitle != null) {
-                generatedChapters.add(chapterTitle);
-            }
+            if (chapterTitle != null) generatedChapters.add(chapterTitle);
         }
 
-        // 找出所有未生成的章节
         List<String> pendingChapters = new ArrayList<>();
         for (String chapter : chapters) {
-            if (!generatedChapters.contains(chapter)) {
-                pendingChapters.add(chapter);
-            }
+            if (!generatedChapters.contains(chapter)) pendingChapters.add(chapter);
         }
 
         if (pendingChapters.isEmpty()) {
             throw new BusinessException("所有章节已生成，无需重复生成");
         }
 
-        // 按顺序生成每一章
-        for (String chapter : pendingChapters) {
-            try {
-                Integer episodeCount = resolveEpisodeCount(project, chapter, null, true);
-                generateScriptEpisodes(projectId, chapter, episodeCount, null);
-            } catch (Exception e) {
-                log.error("批量生成失败，停止在章节: {}", chapter, e);
-                throw new BusinessException("批量生成在章节「" + chapter + "」处失败: " + e.getMessage());
-            }
+        // 获取批量锁（SETNX），防止并发重复触发，同时让刷新后 isGenerating 保持 true
+        if (!progressService.tryBatchLock(projectId)) {
+            throw new BusinessException("正在批量生成剧集，请勿重复提交");
         }
 
-        log.info("批量生成完成: projectId={}, 共生成 {} 章", projectId, pendingChapters.size());
+        // 异步：后台线程按序生成，每章通过 generateScriptEpisodes 独立管理锁和 SSE
+        final List<String> pending = new ArrayList<>(pendingChapters);
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                for (String chapter : pending) {
+                    try {
+                        // 每次重新读取 project，确保获取最新状态
+                        Project freshProject = projectRepository.findByProjectId(projectId);
+                        Integer episodeCount = resolveEpisodeCount(freshProject, chapter, null, true);
+                        generateScriptEpisodes(projectId, chapter, episodeCount, null);
+                    } catch (Exception e) {
+                        // generateScriptEpisodes 已释放锁并推送 SSE 错误，直接停止
+                        log.error("批量生成失败，停止在章节: {}", chapter, e);
+                        return;
+                    }
+                }
+                log.info("批量生成完成: projectId={}, 共生成 {} 章", projectId, pending.size());
+            } finally {
+                // 无论成功或失败，批量锁必须释放
+                progressService.clearBatchLock(projectId);
+            }
+        });
     }
 
     // ================= 确认与修改 =================
@@ -573,6 +581,10 @@ public class ScriptService {
      * 从 AI 返回内容中提取大纲 Markdown 文本。
      * 多集模式下 AI 返回 JSON（含 outline 字段），需要解析提取；
      * 单集模式下 AI 直接返回 Markdown，无需处理。
+     *
+     * AI 常见问题：在 JSON 字符串值内使用中文弯引号（U+201C/U+201D）作为书名号，
+     * 若全局替换为标准 ASCII 引号会破坏 JSON 结构。因此优先用正则直接提取 outline 值，
+     * 弯引号在原始字符串中不是 U+0022，不会干扰正则边界，可安全提取。
      */
     private String extractOutlineContent(String rawContent) {
         if (rawContent == null || rawContent.trim().isEmpty()) {
@@ -590,13 +602,37 @@ public class ScriptService {
             clean = clean.substring(0, clean.length() - 3);
         }
         clean = clean.trim();
-        // 将中文弯引号替换为标准 JSON 直引号，避免 AI 输出导致解析失败
-        clean = clean.replace('\u201C', '"').replace('\u201D', '"');
 
         // 检测是否为 JSON
         if (clean.startsWith("{")) {
+            // 1. 优先：正则提取 outline 值，避免弯引号破坏 Jackson 解析
+            //    匹配 "outline": "..." 直到下一个 JSON 字段开始或对象结束
+            //    弯引号（U+201C/U+201D）不是 U+0022，不会误触终止符
             try {
-                JsonNode root = objectMapper.readTree(clean);
+                java.util.regex.Pattern outlineRegex = java.util.regex.Pattern.compile(
+                        "\"outline\"\\s*:\\s*\"(.*?)\"\\s*,\\s*\"(?:characters|items|episodes)\"",
+                        java.util.regex.Pattern.DOTALL
+                );
+                java.util.regex.Matcher outlineMatcher = outlineRegex.matcher(clean);
+                if (outlineMatcher.find()) {
+                    String outline = outlineMatcher.group(1);
+                    // 处理 JSON 转义序列
+                    outline = outline.replace("\\n", "\n").replace("\\r", "")
+                                     .replace("\\t", "\t").replace("\\\"", "\"")
+                                     .replace("\\\\", "\\");
+                    if (!outline.trim().isEmpty()) {
+                        log.info("通过正则从 JSON 中提取 outline 字段，长度: {}", outline.length());
+                        return outline;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("正则提取 outline 失败: {}", e.getMessage());
+            }
+
+            // 2. 回退：替换弯引号后用 Jackson 解析（适用于 AI 未在值内使用弯引号的情况）
+            String fixed = clean.replace('\u201C', '"').replace('\u201D', '"');
+            try {
+                JsonNode root = objectMapper.readTree(fixed);
                 if (root.has("outline") && !root.get("outline").isNull()) {
                     String outline = root.get("outline").asText();
                     if (outline != null && !outline.trim().isEmpty()) {
@@ -630,6 +666,20 @@ public class ScriptService {
             log.warn("大纲内容为空，无法提取章节");
             return chapters;
         }
+
+        // 若大纲是未解析的原始 JSON（历史数据或解析失败），先尝试提取 outline 字段
+        String normalized = outline.trim();
+        if (normalized.startsWith("{") || normalized.startsWith("```")) {
+            String extracted = extractOutlineContent(normalized);
+            if (!extracted.equals(normalized)) {
+                normalized = extracted;
+            }
+        }
+        // 将 JSON 转义的 \n 还原为真实换行（防止 outline 以 JSON 字符串形式存储时 [^\n]* 匹配整行失败）
+        if (!normalized.contains("\n") && normalized.contains("\\n")) {
+            normalized = normalized.replace("\\n", "\n").replace("\\r", "");
+        }
+        outline = normalized;
 
         String[] patterns = {
             "#{3,4}\\s+第([一二三四五六七八九十百千万0-9]+)章[：:]?\\s*([^\\n]*)",
