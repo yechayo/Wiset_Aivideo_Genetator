@@ -403,29 +403,102 @@ public class PanelService {
                 inputFiles.add(trimmedFile.getAbsolutePath());
             }
 
-            // FFmpeg concat（所有视频已去掉前5帧）
+            // FFmpeg filter_complex 时间线拼接：视频 concat，音频 adelay 对齐
             String outputFile = tempDir.resolve("episode_full.mp4").toAbsolutePath().toString();
+            int n = inputFiles.size();
 
-            // 创建 concat 文件列表
-            String concatFile = tempDir.resolve("concat.txt").toAbsolutePath().toString();
-            StringBuilder sb = new StringBuilder();
-            for (String f : inputFiles) {
-                sb.append("file '").append(f.replace("\\", "/")).append("'\n");
+            // 探测每个片段的视频流时长和音频轨
+            long[] delaysMs = new long[n];
+            boolean[] hasAudio = new boolean[n];
+            long cumulativeMs = 0;
+            for (int i = 0; i < n; i++) {
+                delaysMs[i] = cumulativeMs;
+                long durMs = probeVideoDurationMs(Paths.get(inputFiles.get(i)));
+                cumulativeMs += durMs;
+                hasAudio[i] = probeHasAudioStream(Paths.get(inputFiles.get(i)));
+                log.info("片段 {}: 时长={}ms, 累计偏移={}ms, 有音频={}", i, durMs, delaysMs[i], hasAudio[i]);
             }
-            Files.write(Paths.get(concatFile), sb.toString().getBytes());
 
-            ProcessBuilder pb = new ProcessBuilder(
-                    "ffmpeg", "-y",
-                    "-f", "concat",
-                    "-safe", "0",
-                    "-i", concatFile,
-                    "-c:v", "libx264",
-                    "-preset", "medium",
-                    "-crf", "23",
-                    "-c:a", "aac",
-                    "-b:a", "128k",
-                    outputFile
-            );
+            // 构建 FFmpeg 命令
+            List<String> command = new ArrayList<>();
+            command.add("ffmpeg");
+            command.add("-y");
+
+            // 所有片段作为输入
+            for (String f : inputFiles) {
+                command.add("-i");
+                command.add(f.replace("\\", "/"));
+            }
+
+            // 对无音频轨的片段追加静音源
+            int nullSrcIdx = n;
+            for (int i = 0; i < n; i++) {
+                if (!hasAudio[i]) {
+                    command.add("-f");
+                    command.add("lavfi");
+                    command.add("-i");
+                    command.add("anullsrc=channel_layout=stereo:sample_rate=44100");
+                    nullSrcIdx++;
+                }
+            }
+
+            // 构建 filter_complex
+            StringBuilder filter = new StringBuilder();
+
+            // 视频拼接：[0:v][1:v]...[n-1:v]concat=n=N:v=1:a=0[outv]
+            filter.append("[0:v]");
+            for (int i = 1; i < n; i++) {
+                filter.append("[").append(i).append(":v]");
+            }
+            filter.append("concat=n=").append(n).append(":v=1:a=0[outv]");
+
+            // 音频时间线：每段音频延迟到其视频起始位置
+            int nullInputIdx = n;
+            for (int i = 0; i < n; i++) {
+                filter.append(";");
+                String inputLabel;
+                if (hasAudio[i]) {
+                    inputLabel = "[" + i + ":a]";
+                } else {
+                    inputLabel = "[" + nullInputIdx + ":a]";
+                    nullInputIdx++;
+                }
+                long delay = delaysMs[i];
+                if (delay == 0) {
+                    filter.append(inputLabel).append("aresample=44100,apad[a").append(i).append("]");
+                } else {
+                    filter.append(inputLabel).append("adelay=").append(delay).append("|").append(delay)
+                            .append(",aresample=44100,apad[a").append(i).append("]");
+                }
+            }
+
+            // 混合所有音频轨
+            filter.append(";");
+            filter.append("[a0]");
+            for (int i = 1; i < n; i++) {
+                filter.append("[a").append(i).append("]");
+            }
+            filter.append("amix=inputs=").append(n).append(":duration=longest:dropout_transition=0[outa]");
+
+            command.add("-filter_complex");
+            command.add(filter.toString());
+            command.add("-map");
+            command.add("[outv]");
+            command.add("-map");
+            command.add("[outa]");
+            command.add("-c:v");
+            command.add("libx264");
+            command.add("-preset");
+            command.add("medium");
+            command.add("-crf");
+            command.add("23");
+            command.add("-c:a");
+            command.add("aac");
+            command.add("-b:a");
+            command.add("128k");
+            command.add(outputFile);
+
+            ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
@@ -568,6 +641,88 @@ public class PanelService {
             return Double.parseDouble(parts[0]) / Double.parseDouble(parts[1]);
         }
         return Double.parseDouble(fpsStr);
+    }
+
+    /**
+     * 使用 ffprobe 获取视频流的时长（毫秒）
+     */
+    private long probeVideoDurationMs(Path videoPath) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("ffprobe");
+        command.add("-v");
+        command.add("error");
+        command.add("-select_streams");
+        command.add("v:0");
+        command.add("-show_entries");
+        command.add("stream=duration");
+        command.add("-of");
+        command.add("csv=p=0");
+        command.add(videoPath.toString());
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+        }
+
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            throw new RuntimeException("ffprobe 获取视频时长超时");
+        }
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            throw new RuntimeException("ffprobe 获取视频时长失败: exit " + exitCode);
+        }
+
+        double durationSec = Double.parseDouble(output.toString().trim());
+        return Math.round(durationSec * 1000.0);
+    }
+
+    /**
+     * 使用 ffprobe 检测视频是否包含音频轨
+     */
+    private boolean probeHasAudioStream(Path videoPath) {
+        try {
+            List<String> command = new ArrayList<>();
+            command.add("ffprobe");
+            command.add("-v");
+            command.add("error");
+            command.add("-select_streams");
+            command.add("a");
+            command.add("-show_entries");
+            command.add("stream=codec_type");
+            command.add("-of");
+            command.add("default=noprint_wrappers=1:nokey=1");
+            command.add(videoPath.toString());
+
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int len;
+            while ((len = process.getInputStream().read(buffer)) != -1) {
+                baos.write(buffer, 0, len);
+            }
+            int exitCode = process.waitFor();
+
+            if (exitCode != 0) {
+                log.warn("ffprobe 检测音频轨失败: {}", baos.toString());
+                return false;
+            }
+            return baos.toString().trim().length() > 0;
+        } catch (Exception e) {
+            log.warn("ffprobe 检测音频轨异常: {}", e.getMessage());
+            return false;
+        }
     }
 
     private void updatePanelInfo(Panel panel, String key, Object value) {
