@@ -2307,13 +2307,29 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
     if (pageIndex === 0 && episode.gridPrompt) {
       return episode.gridPrompt;
     }
-    // fallback: 计算
+    // fallback: 动态计算网格尺寸
     if (buildGridPromptText && allShots.length > 0) {
-      const SHOTS_PER_PAGE = 9;
-      const fromIdx = pageIndex * SHOTS_PER_PAGE;
-      const toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, allShots.length);
+      const config = (episode as any).gridConfigs?.[pageIndex];
+      let cols = 3, rows = 3;
+      if (config) {
+        cols = config.gridCols;
+        rows = config.gridRows;
+      } else {
+        if (allShots.length <= 4) { cols = 2; rows = 2; }
+      }
+      const capacity = cols * rows;
+      let fromIdx = 0;
+      const configs = (episode as any).gridConfigs;
+      if (configs && configs.length > pageIndex) {
+        for (let i = 0; i < pageIndex; i++) {
+          fromIdx += configs[i].shotCount ?? (configs[i].gridCols * configs[i].gridRows);
+        }
+      } else {
+        fromIdx = pageIndex * capacity;
+      }
+      const toIdx = Math.min(fromIdx + capacity, allShots.length);
       const pageShots = allShots.slice(fromIdx, toIdx);
-      return buildGridPromptText(visualStyle, pageShots, isComicCommentary);
+      return buildGridPromptText(visualStyle, pageShots, isComicCommentary, cols, rows);
     }
     return '';
   };

@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -418,7 +419,11 @@ public class PanelService {
                     "-f", "concat",
                     "-safe", "0",
                     "-i", concatFile,
-                    "-c", "copy",
+                    "-c:v", "libx264",
+                    "-preset", "medium",
+                    "-crf", "23",
+                    "-c:a", "aac",
+                    "-b:a", "128k",
                     outputFile
             );
             pb.redirectErrorStream(true);
@@ -488,14 +493,26 @@ public class PanelService {
      * 去掉视频前 N 帧
      */
     private void removeFirstFrames(Path inputPath, Path outputPath, int framesToSkip) throws Exception {
+        double fps = probeFrameRate(inputPath);
+        double trimDuration = framesToSkip / fps;
+
+        // 用 -ss 统一跳过音视频，不分开过滤，从根本上保证同步
         List<String> command = new ArrayList<>();
         command.add("ffmpeg");
         command.add("-i");
         command.add(inputPath.toString());
-        command.add("-vf");
-        command.add("select='gt(n," + (framesToSkip - 1) + ")'");
-        command.add("-vsync");
-        command.add("0");
+        command.add("-ss");
+        command.add(String.format("%.4f", trimDuration));
+        command.add("-c:v");
+        command.add("libx264");
+        command.add("-preset");
+        command.add("medium");
+        command.add("-crf");
+        command.add("23");
+        command.add("-c:a");
+        command.add("aac");
+        command.add("-b:a");
+        command.add("128k");
         command.add("-y");
         command.add(outputPath.toString());
 
@@ -513,6 +530,44 @@ public class PanelService {
         if (exitCode != 0) {
             throw new RuntimeException("FFmpeg 切帧失败: " + baos.toString());
         }
+    }
+
+    private double probeFrameRate(Path videoPath) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("ffprobe");
+        command.add("-v");
+        command.add("error");
+        command.add("-select_streams");
+        command.add("v:0");
+        command.add("-show_entries");
+        command.add("stream=r_frame_rate");
+        command.add("-of");
+        command.add("csv=p=0");
+        command.add(videoPath.toString());
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+        }
+
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+        }
+
+        String fpsStr = output.toString().trim();
+        if (fpsStr.contains("/")) {
+            String[] parts = fpsStr.split("/");
+            return Double.parseDouble(parts[0]) / Double.parseDouble(parts[1]);
+        }
+        return Double.parseDouble(fpsStr);
     }
 
     private void updatePanelInfo(Panel panel, String key, Object value) {

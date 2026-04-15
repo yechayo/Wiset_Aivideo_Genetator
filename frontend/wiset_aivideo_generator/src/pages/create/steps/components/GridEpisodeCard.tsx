@@ -111,8 +111,16 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
     const allShots = getAllShots();
     const visualStyle = getVisualStyle();
     const config = (episode as any).gridConfigs?.[pageIndex];
-    const cols = config?.gridCols ?? 3;
-    const rows = config?.gridRows ?? 3;
+    let cols: number, rows: number;
+    if (config) {
+      cols = config.gridCols;
+      rows = config.gridRows;
+    } else {
+      const adaptivePages = buildAdaptivePages(allShots.length);
+      const pageConfig = adaptivePages[pageIndex];
+      cols = pageConfig?.cols ?? 3;
+      rows = pageConfig?.rows ?? 3;
+    }
     const capacity = cols * rows;
     let fromIdx = 0;
     const configs = (episode as any).gridConfigs;
