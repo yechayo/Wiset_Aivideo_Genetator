@@ -477,7 +477,7 @@ public class DeepSeekTextService implements TextGenerationService {
         int currentTime = 0;
         for (Map<String, Object> shot : shots) {
             int duration = ((Number) shot.get("duration")).intValue();
-            duration = Math.max(2, Math.min(4, duration));
+            duration = Math.max(1, Math.min(4, duration));
             shot.put("duration", duration);
             shot.put("startTime", currentTime);
             currentTime += duration;
@@ -629,7 +629,7 @@ public class DeepSeekTextService implements TextGenerationService {
             int currentTime = panelStartTime;
             for (Map<String, Object> shot : panelShotList) {
                 int duration = toSafeInt(shot.get("duration"), 3);
-                duration = Math.max(2, Math.min(4, duration));
+                duration = Math.max(1, Math.min(4, duration));
                 shot.put("duration", duration);
                 shot.put("startTime", currentTime);
                 currentTime += duration;
