@@ -1060,13 +1060,14 @@ public class DeepSeekTextService implements TextGenerationService {
 
         StringBuilder sb = new StringBuilder(header);
         sb.append("关键约束：\n")
-            .append("- 每个分镜时长：2-4秒\n")
+            .append("- 每个分镜时长：1-4秒\n")
             .append("- 所有分镜时长总和必须尽量接近 ").append(totalDuration).append("秒，不超过 ").append(totalDuration).append("秒\n")
+            .append("- 节奏要有快慢变化：一闪而过的画面（闪回、物件特写、反应一瞥）用 1-2 秒，需要观众消化的内容（情感爆发、氛围渲染）用 3-4 秒，相邻镜头避免连续 3 个以上相同时长\n")
             .append("- 分镜数量范围：").append(minShots).append(" ~ ").append(maxShots).append(" 个（推荐：").append(recommendedShots).append("个）\n")
             .append("- 输出纯 JSON 数组，不要包含 markdown 代码块标记\n\n")
             .append("每个分镜包含以下字段：\n")
             .append("- shotNumber: 镜头编号（从1开始）\n")
-            .append("- duration: 时长（秒，2-4）\n")
+            .append("- duration: 时长（秒，1-4）\n")
             .append("- scene: 场景描述（具体的环境细节，包括光线、天气、空间布局）\n")
             .append("- characters: 出场角色数组\n")
             .append(comicCommentary
@@ -1078,7 +1079,7 @@ public class DeepSeekTextService implements TextGenerationService {
             .append("- visualDescription: [辅助字段] 从 sceneDescription 中提取的纯画面部分，生成时可填与 sceneDescription 相同内容\n");
 
         if (comicCommentary) {
-            sb.append("- narration: 旁白口播稿（中文口语，字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**）\n");
+            sb.append("- narration: 旁白口播稿（中文口语，字数硬性要求：duration=1 时必须 2~6 字、duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**）\n");
             sb.append("- dialogue: 角色在画面内开口的台词（**有 narration 的分镜 dialogue 填「无」**；对白分镜 narration 必须填「无」）\n")
                 .append("- speaker: 说话人（dialogue 为「无」时填「无」；有台词时必须是 characters 中的角色之一，禁止填「旁白」）\n");
         } else {
@@ -1161,8 +1162,9 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("【Panel 分组规则 - 必须严格遵守】\n");
         sb.append("本集需分成约 ").append(targetPanelCount).append(" 个 Panel，每个 Panel 是一段连续视频片段。\n");
         sb.append("- 每个 Panel 包含 3-5 个分镜，总时长不超过 10 秒\n");
-        sb.append("- 每个分镜时长：2-4 秒\n");
-        sb.append("- 整集所有分镜时长总和尽量接近 ").append(totalDuration).append("秒，不超过 ").append(totalDuration).append("秒\n\n");
+        sb.append("- 每个分镜时长：1-4 秒\n");
+        sb.append("- 整集所有分镜时长总和尽量接近 ").append(totalDuration).append("秒，不超过 ").append(totalDuration).append("秒\n");
+        sb.append("- 节奏要有快慢变化：一闪而过的画面（闪回、物件特写、反应一瞥）用 1-2 秒，需要观众消化的内容（情感爆发、氛围渲染）用 3-4 秒，相邻镜头避免连续 3 个以上相同时长\n\n");
 
         sb.append("【输出格式 - 嵌套 JSON】\n");
         sb.append("输出以下结构的 JSON 对象（不要 markdown 代码块标记）：\n");
@@ -1190,9 +1192,9 @@ public class DeepSeekTextService implements TextGenerationService {
         sb.append("- cameraMovement: [辅助字段] 从 sceneDescription 中提取的纯运镜部分，生成时可填与 sceneDescription 相同内容\n");
         sb.append("- visualDescription: [辅助字段] 从 sceneDescription 中提取的纯画面部分，生成时可填与 sceneDescription 相同内容\n");
         if ("third_person".equals(narrationPerspective)) {
-            sb.append("- narration: 旁白口播稿（**第三人称叙述**，使用「他/她/它」指代角色，禁止使用「我」；中文口语；字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**；**写作风格要求：每镜旁白是微小说的碎片，必须有具象修饰语和心理外化，禁止光杆名词和抽象情绪标签，末尾留悬念或情绪钩子**）\n");
+            sb.append("- narration: 旁白口播稿（**第三人称叙述**，使用「他/她/它」指代角色，禁止使用「我」；中文口语；字数硬性要求：duration=1 时必须 2~6 字、duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**；**写作风格要求：每镜旁白是微小说的碎片，必须有具象修饰语和心理外化，禁止光杆名词和抽象情绪标签，末尾留悬念或情绪钩子**）\n");
         } else {
-            sb.append("- narration: 旁白口播稿（中文口语；字数硬性要求：duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**；**写作风格要求：每镜旁白是微小说的碎片，必须有具象修饰语和心理外化，禁止光杆名词和抽象情绪标签，末尾留悬念或情绪钩子**）\n");
+            sb.append("- narration: 旁白口播稿（中文口语；字数硬性要求：duration=1 时必须 2~6 字、duration=2 时必须 5~9 字、duration=3 时必须 9~13 字、duration=4 时必须 12~16 字，**超出此范围为失败**；**旁白与对白互斥：有 dialogue 的分镜 narration 填「无」**；**写作风格要求：每镜旁白是微小说的碎片，必须有具象修饰语和心理外化，禁止光杆名词和抽象情绪标签，末尾留悬念或情绪钩子**）\n");
         }
         sb.append("- dialogue: 角色在画面内开口的台词（**有 narration 的分镜 dialogue 填「无」**；对白分镜 narration 必须填「无」）\n");
         sb.append("- speaker: 说话人（dialogue 为「无」时填「无」；有台词时必须是 characters 中的角色之一，禁止填「旁白」）\n");
