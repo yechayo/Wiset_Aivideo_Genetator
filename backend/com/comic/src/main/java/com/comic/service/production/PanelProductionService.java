@@ -64,6 +64,7 @@ public class PanelProductionService {
     private final OssService ossService;
     private final ApplicationContext applicationContext;
     private final DeepSeekTextService deepSeekTextService;
+    private final StoryboardAgentService storyboardAgentService;
     private final ProgressService progressService;
     private final StateChangeEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
@@ -89,6 +90,7 @@ public class PanelProductionService {
                                    OssService ossService,
                                    ApplicationContext applicationContext,
                                    DeepSeekTextService deepSeekTextService,
+                                   StoryboardAgentService storyboardAgentService,
                                    ProgressService progressService,
                                    StateChangeEventPublisher eventPublisher,
                                    PlatformTransactionManager transactionManager) {
@@ -105,6 +107,7 @@ public class PanelProductionService {
         this.ossService = ossService;
         this.applicationContext = applicationContext;
         this.deepSeekTextService = deepSeekTextService;
+        this.storyboardAgentService = storyboardAgentService;
         this.progressService = progressService;
         this.eventPublisher = eventPublisher;
         this.transactionManager = transactionManager;
