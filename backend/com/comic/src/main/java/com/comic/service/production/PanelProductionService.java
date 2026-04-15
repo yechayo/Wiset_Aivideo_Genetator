@@ -1462,6 +1462,59 @@ public class PanelProductionService {
     }
 
     /**
+     * 路由分镜生成：精修模式走原有 DeepSeek 路径，普通模式走 Agent 路径。
+     */
+    List<Map<String, Object>> resolveShots(
+            String content, String characters, int targetDuration, String visualStyle,
+            boolean comicMode, String revisionNote, String narrationPerspective,
+            List<Map<String, Object>> lockedShots, boolean isRefinement,
+            Map<String, Object> projectInfo, String projectId, String title, int episodeNum) {
+
+        String safeRevisionNote = revisionNote != null ? revisionNote : "";
+
+        if (isRefinement && lockedShots != null && !lockedShots.isEmpty()) {
+            // 原有路径：DeepSeek
+            if (comicMode) {
+                List<List<Map<String, Object>>> panelGroups = deepSeekTextService.generatePanelAwareStoryboard(
+                        content, characters, targetDuration, visualStyle, safeRevisionNote, narrationPerspective, lockedShots);
+                List<Map<String, Object>> shots = new ArrayList<>();
+                for (List<Map<String, Object>> panelShots : panelGroups) {
+                    shots.addAll(panelShots);
+                }
+                return shots;
+            } else {
+                return deepSeekTextService.generateStoryboard(
+                        content, characters, targetDuration, visualStyle, false, safeRevisionNote, lockedShots);
+            }
+        } else {
+            // Agent 路径
+            List<Map<String, Object>> shots = storyboardAgentService.generate(
+                    content, characters, targetDuration, visualStyle, comicMode, narrationPerspective);
+
+            if (shots.isEmpty()) {
+                throw new RuntimeException("分镜 Agent 未生成任何分镜: episode=" + episodeNum + " (" + title + ")");
+            }
+
+            if (comicMode) {
+                // 包装成 panelGroups，做旁白精修，再展平
+                List<List<Map<String, Object>>> panelGroups = new ArrayList<>();
+                for (Map<String, Object> shot : shots) {
+                    panelGroups.add(java.util.Collections.singletonList(shot));
+                }
+                if (deepSeekTextService.isNarrationRefinementEnabled()) {
+                    panelGroups = deepSeekTextService.refineNarrationsSequentially(
+                            panelGroups, content, narrationPerspective);
+                }
+                shots = new ArrayList<>();
+                for (List<Map<String, Object>> panelShots : panelGroups) {
+                    shots.addAll(panelShots);
+                }
+            }
+            return shots;
+        }
+    }
+
+    /**
      * 单集分镜生成（供并发调用）
      */
     private void generateStoryboardForEpisode(String projectId, Map<String, Object> projectInfo,
@@ -1478,45 +1531,12 @@ public class PanelProductionService {
         log.info("[Pipeline-Text] 调用DeepSeek生成分镜: projectId={}, episode={}({}), comicMode={}, hasRevision={}",
                 projectId, episodeNum, title, comicMode, revisionNote != null);
 
+        String narrationPerspective = (String) projectInfo.get("narrationPerspective");
         List<Map<String, Object>> shots;
         try {
-            if (comicMode) {
-                String narrationPerspective = (String) projectInfo.get("narrationPerspective");
-                List<List<Map<String, Object>>> panelGroups;
-                if (isRefinement && lockedShots != null && !lockedShots.isEmpty()) {
-                    panelGroups = deepSeekTextService.generatePanelAwareStoryboard(
-                        content, characters, targetDuration, visualStyle, revisionNote, narrationPerspective, lockedShots);
-                } else {
-                    panelGroups = deepSeekTextService.generatePanelAwareStoryboard(
-                        content, characters, targetDuration, visualStyle, revisionNote, narrationPerspective);
-                }
-                log.info("[Pipeline-Text] Stage 1 完成: {} 个 Panel, projectId={}, episode={}", panelGroups.size(), projectId, title);
-
-                // Stage 2: 逐 Panel 串行精修旁白（携带上文上下文）
-                if (deepSeekTextService.isNarrationRefinementEnabled()) {
-                    try {
-                        panelGroups = deepSeekTextService.refineNarrationsSequentially(
-                            panelGroups, content, narrationPerspective);
-                        log.info("[Pipeline-Text] Stage 2 旁白精修完成: projectId={}, episode={}", projectId, title);
-                    } catch (Exception e) {
-                        log.warn("[Pipeline-Text] Stage 2 旁白精修失败，保留 Stage 1 旁白: projectId={}, episode={}, error={}",
-                            projectId, title, e.getMessage());
-                    }
-                }
-
-                shots = new ArrayList<>();
-                for (List<Map<String, Object>> panelShots : panelGroups) {
-                    shots.addAll(panelShots);
-                }
-            } else {
-                if (isRefinement && lockedShots != null && !lockedShots.isEmpty()) {
-                    shots = deepSeekTextService.generateStoryboard(
-                        content, characters, targetDuration, visualStyle, false, revisionNote, lockedShots);
-                } else {
-                    shots = deepSeekTextService.generateStoryboard(
-                        content, characters, targetDuration, visualStyle, false, revisionNote);
-                }
-            }
+            shots = resolveShots(content, characters, targetDuration, visualStyle,
+                    comicMode, revisionNote, narrationPerspective,
+                    lockedShots, isRefinement, projectInfo, projectId, title, episodeNum);
         } catch (Exception e) {
             log.error("[Pipeline-Text] 分镜生成失败: projectId={}, episode={}, error={}", projectId, title, e.getMessage(), e);
             throw new RuntimeException("分镜生成失败(第" + episodeNum + "集 " + title + "): " + e.getMessage(), e);
