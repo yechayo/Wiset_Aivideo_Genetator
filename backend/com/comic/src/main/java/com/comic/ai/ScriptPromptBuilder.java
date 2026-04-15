@@ -40,7 +40,8 @@ public class ScriptPromptBuilder {
                 + "3. 章节标题中必须包含对应集数范围，格式如「### 第一章: 标题（第1-2集）」\n"
                 + "4. episodes 数组长度必须恰好等于总集数 " + totalEpisodes + "（与上方硬约束一致）\n"
                 + "5. 每集 synopsis 100-200 字\n"
-                + "6. characters 和 items 尽可能详细";
+                + "6. 章节剧情线要体现节奏变化：标注每集中哪些部分是高潮（需展开），哪些是过渡（需简洁）\n"
+                + "7. characters 和 items 尽可能详细";
     }
 
     public String buildScriptOutlineUserPrompt(String storyPrompt, String genre, String setting,
@@ -61,6 +62,11 @@ public class ScriptPromptBuilder {
                 + "根据全局大纲和其中一个章节，将其拆分为具体的剧集剧本（按「集」输出）。\n"
                 + "【集数硬约束】用户消息中的「拆分集数」即本章节必须生成的集数：你输出的 JSON 数组长度必须恰好等于该数字，"
                 + "一集对应数组中的一个对象；禁止合并多集、禁止少生成、禁止多生成。\n"
+                + "【叙事节奏原则】\n"
+                + "- 每集内容要有叙事弧线：铺垫→冲突升级→高潮→收束，不能平铺直叙\n"
+                + "- 高潮段落（情感爆发、关键转折）给足篇幅展开，过渡段落（信息交代、场景切换）要简洁明快\n"
+                + "- 对话和动作交替出现，避免连续大段纯叙述或纯对话\n"
+                + "- 每集结尾设置钩子（悬念/反转/情绪留白），驱动观众看下一集\n"
                 + "仅输出 JSON 数组，包含字段：title、content、characters、keyItems、visualStyleNote、continuityNote。";
     }
 
