@@ -590,6 +590,8 @@ public class ScriptService {
             clean = clean.substring(0, clean.length() - 3);
         }
         clean = clean.trim();
+        // 将中文弯引号替换为标准 JSON 直引号，避免 AI 输出导致解析失败
+        clean = clean.replace('\u201C', '"').replace('\u201D', '"');
 
         // 检测是否为 JSON
         if (clean.startsWith("{")) {
