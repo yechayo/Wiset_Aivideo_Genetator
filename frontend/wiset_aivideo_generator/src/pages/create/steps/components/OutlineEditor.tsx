@@ -142,7 +142,21 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false, 
 function renderMarkdown(markdown: string): string {
   if (!markdown) return '';
 
-  let html = markdown;
+  // 兼容旧数据：若传入的是 JSON 字符串，提取 outline 字段
+  let text = markdown.trim();
+  if (text.startsWith('{') || text.startsWith('```json') || text.startsWith('```')) {
+    const clean = text.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
+    try {
+      const parsed = JSON.parse(clean);
+      if (parsed && typeof parsed.outline === 'string' && parsed.outline.trim()) {
+        text = parsed.outline.trim();
+      }
+    } catch {
+      // 非 JSON，原样处理
+    }
+  }
+
+  let html = text;
 
   // 标题
   html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
