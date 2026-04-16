@@ -91,8 +91,7 @@ const EpisodeCard = ({
   const isGridRejected = episode.gridStatus === 'rejected';
   const isGridFailed = episode.gridStatus === 'failed';
 
-  const isScriptGenerating = episode.scriptStatus === 'generating';
-  const isStoryboardGenerating = episode.storyboardStatus === 'generating';
+  const isStoryboardGenerating = episode.storyboardStatus === 'generating' || episode.scriptStatus === 'generating';
 
   /** 渲染骨架屏分镜条目 */
   const renderSkeletonSegments = (count: number = 3) => (
@@ -106,19 +105,11 @@ const EpisodeCard = ({
 
   /** 渲染生成进度提示 */
   const renderGeneratingHint = () => {
-    if (isScriptGenerating) {
-      return (
-        <div className={styles.episodeGenerating}>
-          <span className={styles.miniSpinner} />
-          <span>分集剧本生成中...</span>
-        </div>
-      );
-    }
     if (isStoryboardGenerating) {
       return (
         <div className={styles.episodeGenerating}>
           <span className={styles.miniSpinner} />
-          <span>分镜脚本生成中...</span>
+          <span>分镜生成中...</span>
         </div>
       );
     }
@@ -297,9 +288,7 @@ const EpisodeCard = ({
         <div className={styles.cardContent}>
           {renderGeneratingHint()}
 
-          {isScriptGenerating ? (
-            renderSkeletonSegments(3)
-          ) : isStoryboardGenerating ? (
+          {isStoryboardGenerating ? (
             renderSkeletonSegments(5)
           ) : (
             <>

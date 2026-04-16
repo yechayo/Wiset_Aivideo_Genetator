@@ -83,7 +83,7 @@ public class StoryboardAgentService {
         sb.append("- 优先完整覆盖所有剧情节点\n");
         sb.append("- 保持叙事连贯性，每批之间需要衔接\n\n");
 
-        sb.append("输出纯 JSON（不要 markdown 代码块标记）：\n");
+        sb.append("输出纯 JSON（不要 markdown 代码块标记，不要在值中额外嵌套引号）：\n");
         sb.append("{\n");
         sb.append("  \"action\": \"generate|expand|pad|done\",\n");
         sb.append("  \"nextBeatDescription\": \"下一批覆盖的剧情内容摘要\",\n");
@@ -172,7 +172,7 @@ public class StoryboardAgentService {
         sb.append("- 每个分镜时长：1-4秒\n");
         sb.append("- 节奏要有快慢变化：一闪而过的画面用 1-2 秒，需要消化的内容用 3-4 秒，相邻镜头避免连续 3 个以上相同时长\n\n");
 
-        sb.append("输出纯 JSON 数组，不要包含 markdown 代码块标记。\n\n");
+        sb.append("输出纯 JSON 数组，不要包含 markdown 代码块标记。字符串值中不要嵌套额外的引号。\n\n");
 
         sb.append("每个分镜包含以下字段：\n");
         sb.append("- shotNumber: 镜头编号（从1开始）\n");
@@ -401,7 +401,11 @@ public class StoryboardAgentService {
     // ==================== JSON 清理 ====================
 
     /**
-     * 清理 AI 输出的 JSON：去 markdown 包裹 + 修复常见格式问题
+     * 清理 AI 输出的 JSON：去 markdown 包裹 + 修复 DeepSeek 固定格式问题
+     *
+     * DeepSeek 的核心问题：字符串值被双层引号包裹
+     * 输出: "key": " "实际内容""
+     * 期望: "key": "实际内容"
      */
     private String cleanJson(String raw) {
         String cleaned = raw.trim();
@@ -415,20 +419,27 @@ public class StoryboardAgentService {
             }
         }
 
-        // 2. 修复未加引号的字符串值（AI 常见错误）
-        // 匹配 "key": 非引号非数字非数组的中文/混合值，到逗号/换行/}为止
-        // 例如 "cameraAngle": 仰视视角 → "cameraAngle": "仰视视角"
+        // 2. 核心修复：" "xxx"" → "xxx"
+        // DeepSeek 对几乎所有字符串值都加了这层包裹: ": " "内容""
+        // 匹配: 冒号 + 可选空白 + 引号 + 空白 + 引号 + 非引号内容 + 引号 + 引号
         cleaned = cleaned.replaceAll(
-                ":\\s*([^\"\\[\\]{}\\d,\\n][^,\\n}]*[\\u4e00-\\u9fff][^,\\n}]*)",
+                ":\\s*\"\\s+\"([^\"]*?)\"\"",
                 ": \"$1\"");
 
-        // 3. 修复中文弯引号 → 直引号
-        cleaned = cleaned.replace("\u201c", "\"").replace("\u201d", "\"");
-        cleaned = cleaned.replace("\u2018", "\"").replace("\u2019", "\"");
+        // 3. 修复数组被包成字符串: "key": " ["value"]" → "key": ["value"]
+        cleaned = cleaned.replaceAll(
+                "\"(\\w+)\"\\s*:\\s*\"\\s*(\\[[^\\]]*\\])\\s*\"",
+                "\"$1\": $2");
 
-        // 4. 去尾逗号（trailing comma）：}, ] 前的逗号
+        // 4. 移除中文弯引号（装饰性）
+        cleaned = cleaned.replace("\u201c", "").replace("\u201d", "");
+        cleaned = cleaned.replace("\u2018", "").replace("\u2019", "");
+
+        // 5. 去尾逗号
         cleaned = cleaned.replaceAll(",\\s*}", "}");
         cleaned = cleaned.replaceAll(",\\s*]", "]");
+
+        log.debug("[cleanJson] 清理后前200字符: {}", cleaned.substring(0, Math.min(200, cleaned.length())));
 
         return cleaned;
     }
