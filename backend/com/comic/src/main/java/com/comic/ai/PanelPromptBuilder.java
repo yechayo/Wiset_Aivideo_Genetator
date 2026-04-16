@@ -74,6 +74,80 @@ public class PanelPromptBuilder {
     }
 
     /**
+     * 从分镜列表中提取叙事上下文（1-2句话概括整页剧情 + 统一场景）
+     */
+    private String buildNarrativeContext(List<Map<String, Object>> shots) {
+        if (shots == null || shots.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        // 提取场景关键词（取出现最多的场景）
+        Map<String, Integer> sceneCount = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> shot : shots) {
+            String scene = getShotValue(shot, "scene");
+            if (scene != null && !scene.isEmpty()) {
+                sceneCount.merge(scene, 1, Integer::sum);
+            }
+        }
+        // 故事摘要：取前2个和最后1个分镜的描述拼接
+        sb.append("本页讲述的是：");
+        int summaryCount = Math.min(shots.size(), 3);
+        for (int i = 0; i < summaryCount; i++) {
+            Map<String, Object> shot = shots.get(i);
+            String desc = getShotValue(shot, "sceneDescription", "scene_description");
+            if (desc == null || desc.isEmpty()) {
+                desc = getShotValue(shot, "visualDescription", "visual_description");
+            }
+            if (desc != null && !desc.isEmpty()) {
+                if (desc.length() > 40) desc = desc.substring(0, 40) + "…";
+                sb.append(desc);
+                if (i < summaryCount - 1) sb.append("，");
+            }
+        }
+        if (shots.size() > 3) sb.append("等");
+        sb.append("。\n");
+        // 统一场景
+        if (!sceneCount.isEmpty()) {
+            String mainScene = sceneCount.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey).orElse("");
+            if (!mainScene.isEmpty()) {
+                sb.append("故事发生在：").append(mainScene).append("。\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 根据相邻分镜生成过渡标签
+     */
+    private String buildTransitionTag(Map<String, Object> prevShot, Map<String, Object> currentShot) {
+        if (prevShot == null) return "[新场景开场]";
+        String prevScene = getShotValue(prevShot, "scene");
+        String currScene = getShotValue(currentShot, "scene");
+        if (prevScene != null && currScene != null && !prevScene.equals(currScene)) {
+            return "[场景切换至：" + currScene + "]";
+        }
+        String prevSize = getShotValue(prevShot, "shotSize", "shot_size");
+        String currSize = getShotValue(currentShot, "shotSize", "shot_size");
+        if (prevSize != null && currSize != null && !prevSize.equals(currSize)) {
+            if (currSize.contains("特写") || currSize.contains("近景")) return "[镜头拉近]";
+            if (currSize.contains("远景") || currSize.contains("全景")) return "[镜头拉远]";
+        }
+        return "[与前一场景连续]";
+    }
+
+    /**
+     * 5×5 大宫格专属约束
+     */
+    private String buildLargeGridWarning() {
+        return "【大宫格约束 - 极其重要】\n" +
+            "本图包含25个格子，必须严格遵守以下规则：\n" +
+            "- 每个格子的内容必须严格限制在其边界内，禁止内容溢出到相邻格子\n" +
+            "- 相邻格子之间的分隔线必须清晰可见，不可模糊或缺失\n" +
+            "- 第4列和第5列的格子容易被忽略，请确保每一列每一行都有完整内容\n" +
+            "- 25个格子都必须绘制对应内容，不可省略或合并\n\n";
+    }
+
+    /**
      * 构建九宫格图片生成提示词（含角色描述锚定），支持自适应网格尺寸
      * @param visualStyle 风格
      * @param shots 分镜列表
@@ -85,20 +159,25 @@ public class PanelPromptBuilder {
                                    List<?> charRefs, int gridCols, int gridRows) {
         int totalSlots = gridCols * gridRows;
         StringBuilder sb = new StringBuilder();
+
+        // ===== 第1层：全局风格锁 =====
+        sb.append("【全局风格锁 - 最高优先级】\n");
+        sb.append("整张图必须严格保持统一的视觉风格，色调、光影、线条粗细、");
+        sb.append("色彩饱和度在所有格子中必须完全一致，禁止任何格子偏离此风格。\n\n");
+
+        // ===== 第2层：叙事上下文 =====
+        String narrativeContext = buildNarrativeContext(shots);
+        if (!narrativeContext.isEmpty()) {
+            sb.append("【叙事上下文】\n");
+            sb.append(narrativeContext);
+            sb.append("\n");
+        }
+
+        // ===== 风格前缀 =====
         sb.append(buildSceneStylePrefix(visualStyle));
         sb.append("专业动画关键帧级别，电影级画面构图，精致光影与色彩。\n\n");
 
-        // ===== 布局要求 =====
-        sb.append("【重要：以下所有说明均为中文，请使用中文理解并执行】\n");
-        sb.append("【布局要求 - 必须严格遵守】\n");
-        sb.append("输出一张严格 ").append(gridCols).append("×").append(gridRows).append(" 分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
-        sb.append("图片必须被 ").append(gridCols - 1).append(" 条黑色竖线（约 4px 宽）和 ").append(gridRows - 1).append(" 条黑色横线（约 4px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");
-        sb.append("每个格子是一个完全独立的分镜画面，场景、人物、时间可以不同。\n");
-        sb.append("绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。\n");
-        sb.append("图片中不包含任何文字、数字、标号或水印。\n\n");
-        sb.append("【时间态标识】若分镜属于回忆/闪回（字段标记或描述语义显示为回忆），该格必须使用柔和虚化边框/暗角区分时间线；非回忆格禁止使用该效果。\n\n");
-
-        // ===== 角色锚定 =====
+        // ===== 第3层：角色锚定 =====
         if (charRefs != null && !charRefs.isEmpty()) {
             sb.append("【角色设定 - 最高优先级，必须严格遵守】\n");
             sb.append("本图附带角色参考图（reference images），这些参考图是角色外貌的唯一权威标准。\n");
@@ -113,7 +192,6 @@ public class PanelPromptBuilder {
                 String species = null;
                 String appearance = null;
                 String role = null;
-                // 兼容 CharRef 对象和纯 String
                 if (refObj instanceof com.comic.service.panel.GridImageService.CharRef) {
                     com.comic.service.panel.GridImageService.CharRef cr =
                             (com.comic.service.panel.GridImageService.CharRef) refObj;
@@ -131,7 +209,6 @@ public class PanelPromptBuilder {
                 sb.append("：必须严格按照对应的参考图绘制");
                 if (species != null && !species.isEmpty()) {
                     sb.append("，物种=").append(species);
-                    // 针对拟人化物种，强调保持拟人形态
                     if (species.contains("拟人") || species.contains("ANTHRO")) {
                         sb.append("，始终为拟人化形态（直立行走、人形身体比例、兽耳兽尾等特征，非四足野兽形态）");
                     }
@@ -144,15 +221,27 @@ public class PanelPromptBuilder {
             sb.append("\n【角色一致性约束】每个格子中出现的角色都必须与上述参考图保持完全一致的外貌，包括但不限于：脸型、五官比例、发型与发色、瞳孔颜色、身高体型、服装款式与颜色。这是最重要的要求，违反即为失败。\n\n");
         }
 
-        // ===== 分镜内容 =====
+        // ===== 第4层：逐格指令 =====
+        sb.append("【布局要求 - 必须严格遵守】\n");
+        sb.append("【重要：以下所有说明均为中文，请使用中文理解并执行】\n");
+        sb.append("输出一张严格 ").append(gridCols).append("×").append(gridRows).append(" 分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
+        sb.append("图片必须被 ").append(gridCols - 1).append(" 条黑色竖线（约 8px 宽）和 ").append(gridRows - 1).append(" 条黑色横线（约 8px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");
+        sb.append("每个格子是一个完全独立的分镜画面，场景、人物、时间可以不同。\n");
+        sb.append("绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。\n");
+        sb.append("图片中不包含任何文字、数字、标号或水印。\n\n");
+        sb.append("【时间态标识】若分镜属于回忆/闪回（字段标记或描述语义显示为回忆），该格必须使用柔和虚化边框/暗角区分时间线；非回忆格禁止使用该效果。\n\n");
+
         sb.append("【分镜内容 - 按从左到右、从上到下填入格子，每个格子必须是精致的关键帧画面】\n");
         sb.append("每个分镜必须包含：完整的场景环境细节（光影、色调、空间纵深）、角色的精确外貌与服装、");
         sb.append("细腻的面部表情和肢体语言、精心设计的构图与景深关系。画面要有电影级质感。\n\n");
+
+        Map<String, Object> prevShot = null;
         for (int i = 0; i < shots.size(); i++) {
             Map<String, Object> shot = shots.get(i);
             int row = i / gridCols + 1;
             int col = i % gridCols + 1;
             sb.append("第").append(row).append("行第").append(col).append("列: ");
+
             String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
             if (sceneDescription != null && !sceneDescription.isEmpty()) {
                 sb.append(sceneDescription);
@@ -183,12 +272,19 @@ public class PanelPromptBuilder {
             if (imageHint != null && !imageHint.isEmpty()) {
                 sb.append("，画面补充提示: ").append(imageHint);
             }
+            sb.append(" ").append(buildTransitionTag(prevShot, shot));
             sb.append("\n");
+            prevShot = shot;
         }
 
         int emptySlots = totalSlots - shots.size();
         if (emptySlots > 0) {
             sb.append("剩余 ").append(emptySlots).append(" 个格子留空（纯黑色填充，不绘制任何内容）。\n\n");
+        }
+
+        // ===== 第5层：大宫格约束（5×5 时启用） =====
+        if (gridCols >= 5 && gridRows >= 5) {
+            sb.append(buildLargeGridWarning());
         }
 
         // ===== 负面提示词 =====
@@ -205,7 +301,8 @@ public class PanelPromptBuilder {
      */
     public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots,
                                    List<?> charRefs) {
-        return buildGridPrompt(visualStyle, shots, charRefs, 3, 3);
+        int[] gridSize = com.comic.service.panel.GridImageService.calculateGridSize(shots.size());
+        return buildGridPrompt(visualStyle, shots, charRefs, gridSize[0], gridSize[1]);
     }
 
     /**
