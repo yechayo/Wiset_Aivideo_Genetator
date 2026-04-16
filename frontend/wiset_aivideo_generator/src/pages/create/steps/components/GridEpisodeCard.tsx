@@ -40,7 +40,9 @@ interface GridEpisodeCardProps {
 /** 根据分镜数量计算网格布局（与后端一致） */
 function getGridSize(shotCount: number): { cols: number; rows: number } {
   if (shotCount <= 4) return { cols: 2, rows: 2 };
-  return { cols: 3, rows: 3 };
+  if (shotCount <= 9) return { cols: 3, rows: 3 };
+  if (shotCount <= 16) return { cols: 4, rows: 4 };
+  return { cols: 5, rows: 5 };
 }
 
 function buildAdaptivePages(totalShots: number): Array<{ fromIdx: number; toIdx: number; cols: number; rows: number }> {
