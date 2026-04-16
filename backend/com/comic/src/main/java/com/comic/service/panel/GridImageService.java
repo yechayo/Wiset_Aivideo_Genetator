@@ -39,11 +39,10 @@ import java.util.UUID;
 @Service
 public class GridImageService {
 
-    private static final int GRID_COLS = 3;
-    private static final int GRID_ROWS = 3;
-    private static final int SHOTS_PER_PAGE = GRID_COLS * GRID_ROWS;
-    private static final int GRID_SEPARATOR_PIXELS = 4;
+    private static final int GRID_SEPARATOR_PIXELS = 8;
     private static final Color FUSION_BG_COLOR = new Color(0x1a, 0x1a, 0x1c);
+    private static final int GRID_IMAGE_WIDTH = 3840;
+    private static final int GRID_IMAGE_HEIGHT = 2160;
 
     @Resource private AiServiceConfiguration aiServiceConfig;
     @Resource private PanelPromptBuilder panelPromptBuilder;
@@ -114,9 +113,9 @@ public class GridImageService {
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
                     imageUrl = imageService.generateWithMultipleReferences(
-                        prompt, characterRefUrls, 1920, 1080);
+                        prompt, characterRefUrls, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT);
                 } else {
-                    imageUrl = imageService.generate(prompt, 1920, 1080, visualStyleStr);
+                    imageUrl = imageService.generate(prompt, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT, visualStyleStr);
                 }
                 gridImageUrls.add(imageUrl);
                 shotOffset = toIdx;
@@ -294,9 +293,9 @@ public class GridImageService {
                 String imageUrl;
                 if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
                     imageUrl = imageService.generateWithMultipleReferences(
-                        prompt, characterRefUrls, 1920, 1080);
+                        prompt, characterRefUrls, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT);
                 } else {
-                    imageUrl = imageService.generate(prompt, 1920, 1080, visualStyle);
+                    imageUrl = imageService.generate(prompt, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT, visualStyle);
                 }
                 gridImageUrls.add(imageUrl);
                 shotOffset = toIdx;
@@ -413,18 +412,15 @@ public class GridImageService {
         return subImages;
     }
 
-    /** 分页数（纯函数） */
-    public static int calculatePageCount(int totalShots, int shotsPerPage) {
-        return totalShots <= 0 ? 0 : (int) Math.ceil((double) totalShots / shotsPerPage);
-    }
-
     /**
      * 根据分镜数量计算该页最优网格布局
      * @return int[]{cols, rows}
      */
     public static int[] calculateGridSize(int shotCount) {
-        if (shotCount <= 4) return new int[]{2, 2}; // 四宫格 2×2
-        return new int[]{3, 3}; // 九宫格 3×3
+        if (shotCount <= 4) return new int[]{2, 2};
+        if (shotCount <= 9) return new int[]{3, 3};
+        if (shotCount <= 16) return new int[]{4, 4};
+        return new int[]{5, 5};
     }
 
     /** 根据网格尺寸计算该页最大容量 */
@@ -514,7 +510,8 @@ public class GridImageService {
         final int PAD = 4;
 
         // 计算分镜网格布局
-        int fCols = 3;
+        int[] fusionGrid = calculateGridSize(shots.size());
+        int fCols = fusionGrid[0];
         int fRows = (int) Math.ceil((double) shots.size() / fCols);
         int cellW = (FIXED_WIDTH - PAD * (fCols + 1)) / fCols;
         int cellH = (MAIN_AREA_HEIGHT - PAD * (fRows + 1)) / fRows;
