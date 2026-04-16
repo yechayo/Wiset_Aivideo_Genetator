@@ -34,15 +34,18 @@
 ### 分辨率
 
 - 生成分辨率：**3840×2160**（所有规格统一 4K）
+  > 注：2160 不是 64 的整数倍，Seedream API 可能需要 64 对齐。实现时需检查
+  > `SeedreamImageService.getSizeString()` 是否会对 2160 做调整。
+  > 备选方案：如被拒绝则使用 **3840×2176**（34×64，仍在 maxPixels 范围内）。
 - 分隔线：统一 **8px** 黑线
-- 切分后每格有效像素：
+- 切分后每格有效像素（公式：`(imgDim - (gridDim-1) * 8) / gridDim`，向下取整）：
 
 | 规格 | 每格像素 | 扣除分隔线后 |
 |------|---------|------------|
 | 2×2 | 1920×1080 | 1916×1076 |
-| 3×3 | 1280×720 | 1276×716 |
-| 4×4 | 960×540 | 956×536 |
-| 5×5 | 768×432 | 764×436 |
+| 3×3 | 1280×720 | 1274×714 |
+| 4×4 | 960×540 | 954×534 |
+| 5×5 | 768×432 | 761×425 |
 
 ## 2. Prompt 结构增强
 
@@ -101,12 +104,9 @@
 - 最后5列格子容易被忽略，请确保第4列和第5列都有内容
 ```
 
-### 视觉风格前缀调整
+### 视觉风格前缀
 
-移除分辨率描述（不再写"8K超高清"），统一为：
-```
-{风格前缀}, 4K超高清分辨率, 3840x2160
-```
+保留现有 "8K超高清分辨率" 前缀不变。分辨率通过 `ImageGenerationService` 的参数（3840×2160）传递给图片模型，不在 prompt 中重复指定。
 
 ## 3. 图片切分策略
 
@@ -133,7 +133,9 @@ cellHeight = (imageHeight - (rows - 1) * SEPARATOR) / rows
 ### Fusion 图调整
 
 - 分辨率保持 **1920×1080**（给视频生成用，不需要 4K）
-- 主区域布局动态适配实际 shot 数量（不再强制 3×3）
+- 主区域布局动态适配实际 shot 数量（不再强制 3×3）：
+  - `fCols` 从硬编码 3 改为根据 shot 数量计算（≤4 用 2，≤9 用 3，≤16 用 4，≤25 用 5）
+  - `fRows = ceil(shots.size() / fCols)`
 - 底部角色参考栏保持 180px 不变
 
 ## 4. 代码变更范围
@@ -155,16 +157,32 @@ cellHeight = (imageHeight - (rows - 1) * SEPARATOR) / rows
 - 新增 `buildTransitionTag(prevShot, currentShot)` — 生成过渡标签
 - 新增 `buildLargeGridWarning()` — 5×5 专属约束
 - 默认重载从 `3,3` 改为根据 shots 数量自动计算
+- prompt 中的分隔线描述从 "约 4px 宽" 改为 "约 8px 宽"
+- `buildSceneStylePrefix()` 保持 "8K超高清分辨率" 不变，分辨率通过参数传给图片模型
 
 ### GridEpisodeCard.tsx
 
-- `getGridSize()` 扩展支持 4×4、5×5
-- `buildAdaptivePages()` 适配新分页规则
+- `getGridSize()` 扩展支持 4×4、5×5，逻辑与后端 `calculateGridSize()` 完全一致：
+  ```typescript
+  function getGridSize(shotCount: number): { cols: number; rows: number } {
+    if (shotCount <= 4) return { cols: 2, rows: 2 };
+    if (shotCount <= 9) return { cols: 3, rows: 3 };
+    if (shotCount <= 16) return { cols: 4, rows: 4 };
+    return { cols: 5, rows: 5 };
+  }
+  ```
+- `buildAdaptivePages()` 适配新分页规则（≤25 单页，>25 多页）
 - 未手动编辑时自动生成新格式 prompt
 
 ### ComicCommentaryPanelPromptBuilder.java
 
 - 同步适配新 prompt 结构，逻辑独立
+- prompt 中的分隔线描述从 "约 4px 宽" 改为 "约 8px 宽"
+- 同步添加叙事上下文层和过渡标签
+
+### GridImageService.java — `createFusionImage`
+
+- `fCols` 从硬编码 3 改为根据 shot 数量动态计算（与 `calculateGridSize` 逻辑一致）
 
 ### 不变的部分
 
@@ -172,3 +190,28 @@ cellHeight = (imageHeight - (rows - 1) * SEPARATOR) / rows
 - 无数据库 schema 变更
 - `GridConfig` 结构不变（`gridCols/gridRows` 自然支持 4 和 5）
 - `ImageGenerationService` 调用方式不变
+
+## 5. 风险与缓解
+
+### 5×5 大宫格 fallback
+
+如果 5×5 宫格生成质量不达标（AI 模型无法可靠地画 25 个独立分镜），fallback 策略：
+- 自动拆分为 3×3 + 3×3 + 3×3 = 27 格（两页或三页），而不是一页 5×5
+- 此 fallback 可在实现后根据实际效果决定是否启用
+
+### Prompt token 预算
+
+5×5 宫格的 prompt 较长（25 个 shot 描述 + 4 层约束），实现时需：
+- 估算总 prompt 长度，确认在 Seedream 模型的 token 限制内
+- 如超限，对每个 shot 描述做精简（保留关键动作和场景，去掉冗余修饰）
+- 叙事上下文限制在 2 句话以内
+
+### 图片服务分辨率兼容
+
+分辨率 3840×2160 通过参数传给图片生成服务，需要确认各服务的兼容性：
+
+- **Seedream**：`getSizeString()` 会检查像素范围（3,686,400 ~ 10,404,496），3840×2160=8,294,400 在范围内。
+  但 2160 不是 64 的倍数，API 可能拒绝或静默调整。如出现问题，备选 **3840×2176**（34×64）。
+- **Nanobanana**：通过 `computeAspectRatio()` 计算 16:9 宽高比传入，分辨率由其 API 内部决定。
+  需确认其 API 是否支持 4K 级别输出。
+- 其他潜在图片服务：统一通过 `width/height` 参数传入，各服务自行处理分辨率适配。
