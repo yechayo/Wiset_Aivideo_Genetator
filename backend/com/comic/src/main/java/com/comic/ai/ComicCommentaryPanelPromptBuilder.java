@@ -39,6 +39,71 @@ public class ComicCommentaryPanelPromptBuilder {
     }
 
     /**
+     * 从分镜列表中提取叙事上下文（1-2句话概括整页剧情 + 统一场景）
+     */
+    private String buildNarrativeContext(List<Map<String, Object>> shots) {
+        if (shots == null || shots.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        Map<String, Integer> sceneCount = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> shot : shots) {
+            String scene = getShotValue(shot, "scene");
+            if (scene != null && !scene.isEmpty()) {
+                sceneCount.merge(scene, 1, Integer::sum);
+            }
+        }
+        sb.append("本页讲述的是：");
+        int summaryCount = Math.min(shots.size(), 3);
+        for (int i = 0; i < summaryCount; i++) {
+            Map<String, Object> shot = shots.get(i);
+            String desc = getShotValue(shot, "sceneDescription", "scene_description");
+            if (desc == null || desc.isEmpty()) {
+                desc = getShotValue(shot, "visualDescription", "visual_description");
+            }
+            if (desc != null && !desc.isEmpty()) {
+                if (desc.length() > 40) desc = desc.substring(0, 40) + "…";
+                sb.append(desc);
+                if (i < summaryCount - 1) sb.append("，");
+            }
+        }
+        if (shots.size() > 3) sb.append("等");
+        sb.append("。\n");
+        if (!sceneCount.isEmpty()) {
+            String mainScene = sceneCount.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey).orElse("");
+            if (!mainScene.isEmpty()) {
+                sb.append("故事发生在：").append(mainScene).append("。\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private String buildTransitionTag(Map<String, Object> prevShot, Map<String, Object> currentShot) {
+        if (prevShot == null) return "[新场景开场]";
+        String prevScene = getShotValue(prevShot, "scene");
+        String currScene = getShotValue(currentShot, "scene");
+        if (prevScene != null && currScene != null && !prevScene.equals(currScene)) {
+            return "[场景切换至：" + currScene + "]";
+        }
+        String prevSize = getShotValue(prevShot, "shotSize", "shot_size");
+        String currSize = getShotValue(currentShot, "shotSize", "shot_size");
+        if (prevSize != null && currSize != null && !prevSize.equals(currSize)) {
+            if (currSize.contains("特写") || currSize.contains("近景")) return "[镜头拉近]";
+            if (currSize.contains("远景") || currSize.contains("全景")) return "[镜头拉远]";
+        }
+        return "[与前一场景连续]";
+    }
+
+    private String buildLargeGridWarning() {
+        return "【大宫格约束 - 极其重要】\n" +
+            "本图包含25个格子，必须严格遵守以下规则：\n" +
+            "- 每个格子的内容必须严格限制在其边界内，禁止内容溢出到相邻格子\n" +
+            "- 相邻格子之间的分隔线必须清晰可见，不可模糊或缺失\n" +
+            "- 第4列和第5列的格子容易被忽略，请确保每一列每一行都有完整内容\n" +
+            "- 25个格子都必须绘制对应内容，不可省略或合并\n\n";
+    }
+
+    /**
      * 构建漫剧解说风格分镜图生成提示词，支持自适应网格尺寸
      * @param visualStyle 风格
      * @param shots 分镜列表
@@ -52,11 +117,17 @@ public class ComicCommentaryPanelPromptBuilder {
         StringBuilder sb = new StringBuilder();
         sb.append(panelPromptBuilder.buildSceneStylePrefix(visualStyle));
         sb.append("漫剧解说风格关键帧：每格为独立「漫画分镜式」画面，适合旁白解说与字幕叠加，构图清晰、主体突出。\n\n");
+        String narrativeContext = buildNarrativeContext(shots);
+        if (!narrativeContext.isEmpty()) {
+            sb.append("【叙事上下文】\n");
+            sb.append(narrativeContext);
+            sb.append("\n");
+        }
 
         sb.append("【重要：以下所有说明均为中文，请使用中文理解并执行】\n");
         sb.append("【布局要求 - 必须严格遵守】\n");
         sb.append("输出一张严格 ").append(gridCols).append("×").append(gridRows).append(" 分镜图，图片必须为横屏宽高比 16:9（宽大于高），严禁竖屏或正方形输出。\n");
-        sb.append("图片必须被 ").append(gridCols - 1).append(" 条黑色竖线（约 4px 宽）和 ").append(gridRows - 1).append(" 条黑色横线（约 4px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");
+        sb.append("图片必须被 ").append(gridCols - 1).append(" 条黑色竖线（约 8px 宽）和 ").append(gridRows - 1).append(" 条黑色横线（约 8px 宽）均匀分割为 ").append(gridRows).append(" 行 ").append(gridCols).append(" 列，共 ").append(totalSlots).append(" 个等大的格子。\n");
         sb.append("每个格子是一个完全独立的画面，可表现不同时间或场景；整体像动态漫/条漫分格，便于后期加解说与花字。\n");
         sb.append("绝对禁止：不要生成连续的、无分隔的大图。不要将多个场景混合在同一区域内。不要在格子之间绘制装饰性元素。\n");
         sb.append("图片中不包含任何文字、数字、标号或水印（解说与字幕由后期添加）。\n\n");
@@ -105,6 +176,7 @@ public class ComicCommentaryPanelPromptBuilder {
 
         sb.append("【分镜内容 - 从左到右、从上到下填入格子；每格信息密度适中，利于口播节奏】\n");
         sb.append("每格需交代清楚场景氛围与角色状态，情绪对比可略夸张以增强解说张力。\n\n");
+        Map<String, Object> prevShot = null;
         for (int i = 0; i < shots.size(); i++) {
             Map<String, Object> shot = shots.get(i);
             int row = i / gridCols + 1;
@@ -140,12 +212,18 @@ public class ComicCommentaryPanelPromptBuilder {
             if (imageHint != null && !imageHint.isEmpty()) {
                 sb.append("，画面补充提示: ").append(imageHint);
             }
+            sb.append(" ").append(buildTransitionTag(prevShot, shot));
             sb.append("\n");
+            prevShot = shot;
         }
 
         int emptySlots = totalSlots - shots.size();
         if (emptySlots > 0) {
             sb.append("剩余 ").append(emptySlots).append(" 个格子留空（纯黑色填充，不绘制任何内容）。\n\n");
+        }
+
+        if (gridCols >= 5 && gridRows >= 5) {
+            sb.append(buildLargeGridWarning());
         }
 
         sb.append("负面提示词：文字、水印、标签、签名、人体结构错误、肢体融合、多余手指、多余肢体、");
@@ -159,7 +237,8 @@ public class ComicCommentaryPanelPromptBuilder {
      * 构建漫剧解说风格分镜图生成提示词 - 默认 3×3 九宫格
      */
     public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots, List<?> charRefs) {
-        return buildGridPrompt(visualStyle, shots, charRefs, 3, 3);
+        int[] gridSize = com.comic.service.panel.GridImageService.calculateGridSize(shots.size());
+        return buildGridPrompt(visualStyle, shots, charRefs, gridSize[0], gridSize[1]);
     }
 
     public String buildMultiShotPrompt(String visualStyle, Map<String, Object> panelInfo) {
