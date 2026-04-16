@@ -62,6 +62,15 @@ public class ScriptPromptBuilder {
                 + "根据全局大纲和其中一个章节，将其拆分为具体的剧集剧本（按「集」输出）。\n"
                 + "【集数硬约束】用户消息中的「拆分集数」即本章节必须生成的集数：你输出的 JSON 数组长度必须恰好等于该数字，"
                 + "一集对应数组中的一个对象；禁止合并多集、禁止少生成、禁止多生成。\n"
+                + "【内容量与时长匹配（最高优先级）】\n"
+                + "用户会给出每集目标时长，你必须确保 content 字段的内容量足以支撑该时长：\n"
+                + "- 每秒需要约 5-7 个字的剧本内容（含对话、动作描写、场景描述）\n"
+                + "- 60秒 → content 约 300-420 字，至少 5 个场景/动作节点\n"
+                + "- 120秒 → content 约 600-840 字，至少 8 个场景/动作节点\n"
+                + "- 180秒 → content 约 900-1260 字，至少 12 个场景/动作节点\n"
+                + "- 300秒 → content 约 1500-2100 字，至少 20 个场景/动作节点\n"
+                + "- 不要概括压缩剧情，要展开每个场景的具体对话、角色动作、情绪变化和视觉细节\n"
+                + "- 使用「（场景描述）」「角色（情绪）：台词」「（动作描写）」格式，确保分镜师能逐句拆分\n"
                 + "【叙事节奏原则】\n"
                 + "- 每集内容要有叙事弧线：铺垫→冲突升级→高潮→收束，不能平铺直叙\n"
                 + "- 高潮段落（情感爆发、关键转折）给足篇幅展开，过渡段落（信息交代、场景切换）要简洁明快\n"
@@ -79,7 +88,10 @@ public class ScriptPromptBuilder {
         sb.append("拆分集数（本章节须生成的集数）：").append(splitCount).append(" 集\n");
         sb.append("【硬性要求】JSON 数组必须恰好 ").append(splitCount).append(" 个元素，对应 ").append(splitCount)
                 .append(" 集剧本；少一集或多一集均为错误。\n");
-        sb.append("时长参考：").append(duration).append(" 秒\n\n");
+        int minWords = duration * 5;
+        int maxWords = duration * 7;
+        sb.append("【时长硬性要求】每集 ").append(duration).append(" 秒，content 字段必须 ").append(minWords).append("-").append(maxWords).append(" 字，")
+                .append("包含充分的场景描写、对话和动作细节。不得概括压缩。\n\n");
         if (modificationSuggestion != null && !modificationSuggestion.isEmpty()) {
             sb.append("修改建议：").append(modificationSuggestion).append("\n\n");
         }
