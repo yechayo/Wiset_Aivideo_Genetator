@@ -151,20 +151,22 @@ public class ScriptService {
 
             String systemPrompt;
             String userPrompt;
+            int resolvedEpisodeDuration = episodeDuration != null ? episodeDuration : 60;
             if (comicMode) {
                 systemPrompt = comicCommentaryScriptPromptBuilder.buildScriptOutlineSystemPrompt(
                         resolvedTotalEpisodes,
                         genre,
                         targetAudience,
                         params.chapterCount,
-                        params.episodesPerChapter
+                        params.episodesPerChapter,
+                        resolvedEpisodeDuration
                 );
                 userPrompt = comicCommentaryScriptPromptBuilder.buildScriptOutlineUserPrompt(
                         storyPrompt,
                         genre,
                         worldConfig.getRulesText(),
                         resolvedTotalEpisodes,
-                        episodeDuration != null ? episodeDuration : 60,
+                        resolvedEpisodeDuration,
                         visualStyle != null ? visualStyle : "REAL"
                 );
             } else {
@@ -173,14 +175,15 @@ public class ScriptService {
                         genre,
                         targetAudience,
                         params.chapterCount,
-                        params.episodesPerChapter
+                        params.episodesPerChapter,
+                        resolvedEpisodeDuration
                 );
                 userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
                         storyPrompt,
                         genre,
                         worldConfig.getRulesText(),
                         resolvedTotalEpisodes,
-                        episodeDuration != null ? episodeDuration : 60,
+                        resolvedEpisodeDuration,
                         visualStyle != null ? visualStyle : "REAL"
                 );
             }
@@ -323,8 +326,8 @@ public class ScriptService {
 
     /**
      * 批量生成所有剩余章节的剧集
+     * 注意：不使用 @Transactional，确保每章生成后数据立即可见（SSE 增量刷新）
      */
-    @Transactional
     public void generateAllEpisodes(String projectId) {
         Project project = projectRepository.findByProjectId(projectId);
         if (project == null) {
@@ -373,17 +376,24 @@ public class ScriptService {
         }
 
         // 按顺序生成每一章
+        int totalChapters = pendingChapters.size();
+        int completedChapters = 0;
         for (String chapter : pendingChapters) {
             try {
                 Integer episodeCount = resolveEpisodeCount(project, chapter, null, true);
                 generateScriptEpisodes(projectId, chapter, episodeCount, null);
+                completedChapters++;
+                // 每章完成后推送 SSE 进度，前端可立即看到已生成的剧集
+                eventPublisher.publishEpisodeScriptDone(
+                        projectId, completedChapters, chapter, totalChapters, completedChapters, "batch_episode");
+                log.info("批量生成进度: {}/{}, chapter={}", completedChapters, totalChapters, chapter);
             } catch (Exception e) {
                 log.error("批量生成失败，停止在章节: {}", chapter, e);
                 throw new BusinessException("批量生成在章节「" + chapter + "」处失败: " + e.getMessage());
             }
         }
 
-        log.info("批量生成完成: projectId={}, 共生成 {} 章", projectId, pendingChapters.size());
+        log.info("批量生成完成: projectId={}, 共生成 {} 章", projectId, totalChapters);
     }
 
     // ================= 确认与修改 =================
@@ -590,13 +600,13 @@ public class ScriptService {
             clean = clean.substring(0, clean.length() - 3);
         }
         clean = clean.trim();
-        // 将中文弯引号替换为标准 JSON 直引号，避免 AI 输出导致解析失败
-        clean = clean.replace('\u201C', '"').replace('\u201D', '"');
 
         // 检测是否为 JSON
         if (clean.startsWith("{")) {
+            // 优先尝试标准 JSON 解析（智能引号替换仅用于 Jackson 解析）
+            String cleanForJson = clean.replace('\u201C', '"').replace('\u201D', '"');
             try {
-                JsonNode root = objectMapper.readTree(clean);
+                JsonNode root = objectMapper.readTree(cleanForJson);
                 if (root.has("outline") && !root.get("outline").isNull()) {
                     String outline = root.get("outline").asText();
                     if (outline != null && !outline.trim().isEmpty()) {
@@ -604,19 +614,92 @@ public class ScriptService {
                         return outline;
                     }
                 }
-                log.warn("JSON 中未找到 outline 字段，使用原始内容");
+                log.warn("JSON 中未找到 outline 字段，尝试正则提取");
             } catch (Exception e) {
-                log.warn("解析 JSON 失败，使用原始内容: {}", e.getMessage());
+                log.warn("JSON 解析失败（可能含未转义换行）: {}，尝试正则提取", e.getMessage());
+            }
+            // 回退：从原始文本中提取 outline 字段（不替换智能引号，避免内容中的引号干扰截断）
+            String regexExtracted = extractOutlineValue(clean);
+            if (regexExtracted != null && !regexExtracted.trim().isEmpty()) {
+                log.info("正则提取 outline 字段成功，长度: {}", regexExtracted.length());
+                return regexExtracted;
             }
         }
         return rawContent;
+    }
+
+    /**
+     * 从可能含未转义换行的 JSON 中提取 outline 字段值。
+     * AI 有时在字符串值中直接输出实际换行符（非法 JSON），导致 Jackson 解析失败。
+     * 使用字符串定位而非正则，避免内容中的引号导致截断。
+     */
+    private String extractOutlineValue(String jsonText) {
+        try {
+            // 找到 "outline" 键（支持智能引号和普通引号）
+            String[] keyPatterns = {"\"outline\"", "\u201Coutline\u201D"};
+            int keyPos = -1;
+            for (String key : keyPatterns) {
+                keyPos = jsonText.indexOf(key);
+                if (keyPos >= 0) break;
+            }
+            if (keyPos < 0) return null;
+
+            // 找到冒号后的第一个引号（值开始）
+            int colonPos = jsonText.indexOf(':', keyPos);
+            if (colonPos < 0) return null;
+            int valueStart = -1;
+            for (int i = colonPos + 1; i < jsonText.length(); i++) {
+                char c = jsonText.charAt(i);
+                if (c == '"' || c == '\u201C') {
+                    valueStart = i + 1;
+                    break;
+                }
+                if (!Character.isWhitespace(c)) break; // 非空白非引号，不是字符串值
+            }
+            if (valueStart < 0) return null;
+
+            // 从末尾找最后一个引号（值结束）—— JSON 只有一个 outline 字段，最后出现的 " 就是闭合引号
+            int valueEnd = -1;
+            for (int i = jsonText.length() - 1; i >= valueStart; i--) {
+                char c = jsonText.charAt(i);
+                if (c == '"' || c == '\u201D') {
+                    valueEnd = i;
+                    break;
+                }
+            }
+            if (valueEnd <= valueStart) return null;
+
+            String value = jsonText.substring(valueStart, valueEnd);
+            // 反转义 JSON 转义序列（用占位符避免 \\ 和 \" 互相干扰）
+            value = value.replace("\\\\", "\u0000")
+                    .replace("\\n", "\n")
+                    .replace("\\r", "\r")
+                    .replace("\\t", "\t")
+                    .replace("\\\"", "\"")
+                    .replace("\u0000", "\\");
+            return value;
+        } catch (Exception e) {
+            log.warn("字符串定位提取 outline 失败: {}", e.getMessage());
+        }
+        return null;
     }
 
     private String getScriptOutlineText(Project project) {
         Map<String, Object> scriptMap = getScriptMap(project);
         if (scriptMap != null) {
             Object outline = scriptMap.get(ProjectInfoKeys.SCRIPT_OUTLINE);
-            return outline != null ? outline.toString() : null;
+            if (outline != null) {
+                String text = outline.toString();
+                // 如果数据库存的是原始 JSON（extractOutlineContent 解析失败时的 fallback），
+                // 重新尝试提取 outline 字段
+                String extracted = extractOutlineContent(text);
+                if (extracted != null && !extracted.equals(text)) {
+                    log.info("从数据库中的原始 JSON 重新提取 outline，长度: {}", extracted.length());
+                    return extracted;
+                }
+                // 修复字面 \n（AI 输出未正确转义的情况）
+                return text.replace("\\n", "\n").replace("\\r\\n", "\n");
+            }
         }
         return null;
     }
@@ -631,6 +714,9 @@ public class ScriptService {
             return chapters;
         }
 
+        // 防御：AI 有时输出字面 \n 而非实际换行，导致正则 [^\n]* 无法正确断行
+        String normalized = outline.replace("\\n", "\n").replace("\\r\\n", "\n");
+
         String[] patterns = {
             "#{3,4}\\s+第([一二三四五六七八九十百千万0-9]+)章[：:]?\\s*([^\\n]*)",
             "#{3,4}\\s+([一二三四五六七八九十百千万0-9]+)[、.\\s]+[^\\n]*章[：:]?\\s*([^\\n]*)"
@@ -638,7 +724,7 @@ public class ScriptService {
 
         for (String patternStr : patterns) {
             Pattern pattern = Pattern.compile(patternStr);
-            Matcher matcher = pattern.matcher(outline);
+            Matcher matcher = pattern.matcher(normalized);
 
             while (matcher.find()) {
                 String chapterTitle = matcher.group().trim();
@@ -651,7 +737,7 @@ public class ScriptService {
         if (chapters.isEmpty()) {
             log.warn("标准章节格式未匹配到，尝试宽松匹配");
             Pattern loosePattern = Pattern.compile("^(#{3,4})\\s*(第.+章[^\\n]*)", Pattern.MULTILINE);
-            Matcher looseMatcher = loosePattern.matcher(outline);
+            Matcher looseMatcher = loosePattern.matcher(normalized);
 
             while (looseMatcher.find()) {
                 String chapterTitle = looseMatcher.group(2).trim();
@@ -953,20 +1039,22 @@ public class ScriptService {
 
             String systemPrompt;
             String userPrompt;
+            int resolvedEpisodeDuration = episodeDuration != null ? episodeDuration : 60;
             if (comicMode) {
                 systemPrompt = comicCommentaryScriptPromptBuilder.buildScriptOutlineSystemPrompt(
                         resolvedTotalEpisodes,
                         genre,
                         targetAudience,
                         params.chapterCount,
-                        params.episodesPerChapter
+                        params.episodesPerChapter,
+                        resolvedEpisodeDuration
                 );
                 userPrompt = comicCommentaryScriptPromptBuilder.buildScriptOutlineUserPrompt(
                         storyPrompt,
                         genre,
                         currentOutline,
                         resolvedTotalEpisodes,
-                        episodeDuration != null ? episodeDuration : 60,
+                        resolvedEpisodeDuration,
                         visualStyle != null ? visualStyle : "REAL"
                 );
             } else {
@@ -975,14 +1063,15 @@ public class ScriptService {
                         genre,
                         targetAudience,
                         params.chapterCount,
-                        params.episodesPerChapter
+                        params.episodesPerChapter,
+                        resolvedEpisodeDuration
                 );
                 userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
                         storyPrompt,
                         genre,
                         currentOutline,
                         resolvedTotalEpisodes,
-                        episodeDuration != null ? episodeDuration : 60,
+                        resolvedEpisodeDuration,
                         visualStyle != null ? visualStyle : "REAL"
                 );
             }

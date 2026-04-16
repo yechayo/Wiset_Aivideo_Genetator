@@ -9,40 +9,35 @@ import org.springframework.stereotype.Component;
 public class ComicCommentaryScriptPromptBuilder {
 
     public String buildScriptOutlineSystemPrompt(int totalEpisodes, String genre, String targetAudience,
-                                                 int chapterCount, int episodesPerChapter) {
+                                                 int chapterCount, int episodesPerChapter, int episodeDuration) {
         ScriptPromptBuilder.ScriptParams params = calculateScriptParameters(totalEpisodes);
         if (params.isSingleEpisode) {
-            return buildSingleEpisodeOutlineSystemPrompt(genre, params);
+            return buildSingleEpisodeOutlineSystemPrompt(genre, params, episodeDuration);
         }
 
         return "你是一名擅长「漫剧解说」短视频的编剧与策划。\n"
                 + "作品形式为：画面以漫画/动态漫分镜为主，配合解说旁白与字幕节奏，强调钩子、信息密度与情绪起伏。\n"
                 + "【集数硬约束（最高优先级，必须严格遵守）】\n"
-                + "用户设定的总集数为 " + totalEpisodes + " 集：JSON 中 episodes 数组必须恰好包含 " + totalEpisodes + " 个对象，不得多也不得少。\n"
-                + "episodes 中每个对象的 ep 字段必须从 1 到 " + totalEpisodes + " 连续递增、不重复、不跳号；禁止把多集解说合并成一条，也禁止把一集拆成多条。\n"
-                + "若总集数与章节划分冲突，以总集数为准调整每章承担的集数说明，但 episodes 条数始终等于 " + totalEpisodes + "。\n\n"
+                + "用户设定的总集数为 " + totalEpisodes + " 集。\n\n"
                 + "请根据用户提供的信息生成结构化的剧本大纲。\n"
                 + "题材类型：" + genre + "\n"
                 + "目标受众：" + targetAudience + "\n"
                 + "总集数：" + totalEpisodes + " 集\n"
-                + "章节数：" + chapterCount + "（每个章节包含 " + episodesPerChapter + " 集）\n\n"
+                + "章节数：" + chapterCount + "（每个章节包含 " + episodesPerChapter + " 集）\n"
+                + "每集目标时长：" + episodeDuration + " 秒\n\n"
                 + "输出格式：仅返回 JSON，不要 markdown 代码块标记。\n"
                 + "JSON 结构：\n"
                 + "{\n"
-                + "  \"outline\": \"Markdown 格式的完整大纲文本\",\n"
-                + "  \"characters\": [{\"name\":\"...\",\"role\":\"主角/反派/配角\",\"personality\":\"...\",\"appearance\":\"...\",\"background\":\"...\"}],\n"
-                + "  \"items\": [{\"name\":\"...\",\"description\":\"...\"}],\n"
-                + "  \"episodes\": [{\"ep\":1,\"title\":\"...\",\"synopsis\":\"...\",\"characters\":[\"角色名\"],\"keyItems\":[\"物品名\"]}]\n"
+                + "  \"outline\": \"Markdown 格式的完整大纲文本\"\n"
                 + "}\n\n"
                 + "要求：\n"
                 + "1. outline 需体现解说视角：每章注明本集「开场钩子」「核心冲突」「结尾悬念」，并标注建议旁白语气（冷静/激昂/幽默等）\n"
                 + "2. outline 仍须包含世界观、角色小传、关键物品设定、章节剧情线\n"
                 + "3. outline 中的章节剧情线必须使用「### 第X章」格式，每章描述该章包含 " + episodesPerChapter + " 集的剧情走向\n"
                 + "4. 章节标题中必须包含对应集数范围，格式如「### 第一章: 标题（第1-2集）」\n"
-                + "5. episodes 数组长度必须恰好等于总集数 " + totalEpisodes + "（与上方硬约束一致）\n"
-                + "6. 每集 synopsis 100-200 字，并隐含本集解说重点与情绪节奏\n"
-                + "7. 章节剧情线要体现节奏变化：标注每集中哪些部分是高潮（需展开），哪些是过渡（需简洁）\n"
-                + "8. characters 和 items 尽可能详细，便于后续分镜与口播对齐";
+                + "5. 每集需列出标题并用 100-200 字概括核心冲突和结尾钩子\n"
+                + "6. 每集描述 1-2 个关键场景转折点，确保后续编剧能据此展开完整口播稿\n"
+                + "7. 章节剧情线要体现节奏变化：标注每集中哪些部分是高潮（需展开），哪些是过渡（需简洁）";
     }
 
     public String buildScriptOutlineUserPrompt(String storyPrompt, String genre, String setting,
@@ -51,8 +46,7 @@ public class ComicCommentaryScriptPromptBuilder {
         sb.append("核心创意：").append(storyPrompt).append("\n");
         sb.append("题材类型：").append(genre != null ? genre : "未指定").append("\n");
         sb.append("背景设定：").append(setting != null ? setting : "未指定").append("\n");
-        sb.append("【总集数（不可更改）】").append(totalEpisodes).append(" 集：episodes 必须恰好 ").append(totalEpisodes)
-                .append(" 条，ep 从 1 连续到 ").append(totalEpisodes).append("。\n");
+        sb.append("总集数：").append(totalEpisodes).append(" 集\n");
         sb.append("每集时长：").append(episodeDuration).append(" 秒（解说口播与画面节奏需适配该时长）\n");
         sb.append("视觉风格：").append(visualStyle != null ? visualStyle : "未指定");
         return sb.toString();
@@ -131,12 +125,15 @@ public class ComicCommentaryScriptPromptBuilder {
         return new ScriptPromptBuilder.ScriptParams(chapterCount, episodesPerChapter, minCharacters, maxCharacters, minItems, maxItems, false);
     }
 
-    private String buildSingleEpisodeOutlineSystemPrompt(String genre, ScriptPromptBuilder.ScriptParams params) {
+    private String buildSingleEpisodeOutlineSystemPrompt(String genre, ScriptPromptBuilder.ScriptParams params,
+                                                          int episodeDuration) {
         return "创建完整的单集「漫剧解说」剧本大纲，使用 markdown 格式。\n"
                 + "【集数】本项目固定为 1 集：不得扩展为多集大纲或多条分集。\n"
                 + "题材类型：" + genre + "\n"
+                + "目标时长：" + episodeDuration + " 秒\n"
                 + "角色数量：" + params.minCharacters + "-" + params.maxCharacters + "\n"
                 + "关键物品：" + params.minItems + "-" + params.maxItems + "\n"
-                + "需包含：开场钩子、发展、高潮、结局，并标注解说语气与节奏建议。";
+                + "输出格式：仅返回 JSON { \"outline\": \"Markdown 大纲\" }\n"
+                + "需包含开场钩子、发展、高潮、结局，并标注解说语气与节奏建议。";
     }
 }
