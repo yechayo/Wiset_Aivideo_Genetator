@@ -382,17 +382,24 @@ public class GridImageService {
     }
 
     /**
-     * 切割九宫格（纯函数）
-     * 考虑分隔线像素：将 GRID_SEPARATOR_PIXELS 从格子间扣除
+     * 切割宫格图（纯函数）
+     * 按比例切分：分隔线宽度根据实际图片尺寸按比例缩放，确保任何分辨率下切分比例正确
      */
     public static List<BufferedImage> splitGridImage(BufferedImage img, int cols, int rows) {
-        int sep = GRID_SEPARATOR_PIXELS;
         List<BufferedImage> subImages = new ArrayList<>();
+        int imgW = img.getWidth();
+        int imgH = img.getHeight();
+
+        // 分隔线按实际图片尺寸比例缩放（基准：3840宽度对应8px）
+        double scale = (double) imgW / GRID_IMAGE_WIDTH;
+        int sep = Math.max(1, (int) Math.round(GRID_SEPARATOR_PIXELS * scale));
+
+        log.info("切分宫格: 实际图片 {}x{}, {}x{} 格, 分隔线 {}px", imgW, imgH, cols, rows, sep);
 
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
-                int cellW = (img.getWidth() - (cols - 1) * sep) / cols;
-                int cellH = (img.getHeight() - (rows - 1) * sep) / rows;
+                int cellW = (imgW - (cols - 1) * sep) / cols;
+                int cellH = (imgH - (rows - 1) * sep) / rows;
                 int x = c * (cellW + sep);
                 int y = r * (cellH + sep);
                 int w = cellW;
@@ -400,10 +407,10 @@ public class GridImageService {
 
                 // 最后一列/行取剩余像素，避免累积偏差
                 if (c == cols - 1) {
-                    w = img.getWidth() - x;
+                    w = imgW - x;
                 }
                 if (r == rows - 1) {
-                    h = img.getHeight() - y;
+                    h = imgH - y;
                 }
 
                 subImages.add(img.getSubimage(x, y, w, h));
