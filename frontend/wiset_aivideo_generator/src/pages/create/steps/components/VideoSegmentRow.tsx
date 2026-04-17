@@ -47,9 +47,19 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
   const isDone = !isGenerating && (!!segment.videoUrl || segment.pipelineStep === 'video_completed');
   const isExpanded = expandedPanelKey === panelKey;
 
-  const shotDescriptions = (segment.shots || [])
-    .map((s: any) => s.visualDescription || s.visual_description || s.scene || '')
-    .filter(Boolean);
+  const shotEntries = (segment.shots || [])
+    .map((s: any) => {
+      const desc = s.visualDescription || s.visual_description || s.scene || '';
+      let dialogueText = '';
+      if (typeof s.dialogue === 'string' && s.dialogue && s.dialogue !== '无') {
+        const speaker = s.speaker && s.speaker !== '无' ? `${s.speaker}：` : '';
+        dialogueText = speaker + s.dialogue;
+      } else if (Array.isArray(s.dialogue)) {
+        dialogueText = s.dialogue.map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text).join('\n');
+      }
+      return { desc, dialogue: dialogueText };
+    })
+    .filter(e => e.desc || e.dialogue);
 
   const handleGenerateVideo = useCallback(() => {
     if (panelId) onGenerateVideo(episode.episodeId, panelId);
@@ -207,14 +217,17 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
                 )}
               </div>
             )}
-            {shotDescriptions.length > 0 && (
+            {shotEntries.length > 0 && (
               <div className={styles.panelDetailSection}>
                 <span className={styles.panelDetailLabel}>分镜描述</span>
                 <div className={styles.panelPromptList}>
-                  {shotDescriptions.map((desc: string, sIdx: number) => (
+                  {shotEntries.map((entry, sIdx) => (
                     <div key={sIdx} className={styles.panelPromptItem}>
                       <span className={styles.panelPromptIndex}>{sIdx + 1}</span>
-                      <span className={styles.panelPromptText}>{desc}</span>
+                      <div className={styles.panelPromptContent}>
+                        {entry.desc && <span className={styles.panelPromptText}>{entry.desc}</span>}
+                        {entry.dialogue && <span className={styles.panelPromptDialogue}>{entry.dialogue}</span>}
+                      </div>
                     </div>
                   ))}
                 </div>

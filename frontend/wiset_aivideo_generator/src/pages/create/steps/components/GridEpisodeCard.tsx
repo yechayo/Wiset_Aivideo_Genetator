@@ -109,13 +109,14 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
   const isGeneratingThisEpisode = generatingGrid === episode.episodeId;
   const hasScript = episode.segments.length > 0 || (episode.episodeInfo?.shots?.length ?? 0) > 0;
 
-  // 获取所有 shots 数据
+  // 获取所有 shots 数据（优先 shotSegments / episodeInfo.shots，避免被 panelSegments 污染）
   const getAllShots = useCallback(() => {
-    const shotsData = episode.segments.length > 0
-      ? episode.segments
+    const shotSegs = (episode as any).shotSegments;
+    const shotsData = shotSegs?.length > 0
+      ? shotSegs
       : (episode.episodeInfo?.shots || []);
     return shotsData.map((s: any) => s.shots?.[0] || s).filter(Boolean);
-  }, [episode.segments, episode.episodeInfo?.shots]);
+  }, [(episode as any).shotSegments, episode.episodeInfo?.shots]);
 
   const totalPages = episode.gridImages?.length || buildAdaptivePages(getAllShots().length).length || 1;
 

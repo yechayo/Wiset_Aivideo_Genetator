@@ -72,10 +72,28 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
           <div className={styles.shotListHeader}>当前页镜头 ({shots.length})</div>
           {shots.map((shot, idx) => (
             <div key={idx} className={styles.shotItem}>
-              <span className={styles.shotNumber}>#{shot.shotNumber}</span>
-              <span className={styles.shotDuration}>{shot.duration}s</span>
-              <ShotSizeIcon size={shot.shotSize} />
-              <span className={styles.shotScene}>{(shot.scene || '').substring(0, 30)}{(shot.scene || '').length > 30 ? '...' : ''}</span>
+              <div className={styles.shotItemHeader}>
+                <span className={styles.shotNumber}>#{shot.shotNumber}</span>
+                <span className={styles.shotDuration}>{shot.duration}s</span>
+                <ShotSizeIcon size={shot.shotSize} />
+                <span className={styles.shotScene}>{shot.scene || ''}</span>
+              </div>
+              {(shot.visualDescription || shot.dialogue) && (
+                <div className={styles.shotItemDetail}>
+                  {shot.visualDescription && (
+                    <div className={styles.shotDesc}>{shot.visualDescription}</div>
+                  )}
+                  {shot.dialogue && (
+                    <div className={styles.shotDialogue}>
+                      {typeof shot.dialogue === 'string'
+                        ? shot.dialogue
+                        : (shot.dialogue as any[]).map((d: any, i: number) =>
+                            d.speaker ? `${d.speaker}：${d.text}` : d.text
+                          ).join(' / ')}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
