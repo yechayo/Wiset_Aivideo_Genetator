@@ -143,6 +143,7 @@ public class ScriptService {
             WorldConfigModel worldConfig = worldRuleService.getWorldConfig(projectId);
 
             boolean comicMode = ProjectProductionMode.isComicCommentary(project);
+            String scriptStyle = (String) project.getProjectInfo().getOrDefault(ProjectInfoKeys.SCRIPT_STYLE, "standard");
             int resolvedTotalEpisodes = totalEpisodes != null ? totalEpisodes : 4;
 
             ScriptPromptBuilder.ScriptParams params = comicMode
@@ -176,7 +177,8 @@ public class ScriptService {
                         targetAudience,
                         params.chapterCount,
                         params.episodesPerChapter,
-                        resolvedEpisodeDuration
+                        resolvedEpisodeDuration,
+                        scriptStyle
                 );
                 userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
                         storyPrompt,
@@ -184,7 +186,8 @@ public class ScriptService {
                         worldConfig.getRulesText(),
                         resolvedTotalEpisodes,
                         resolvedEpisodeDuration,
-                        visualStyle != null ? visualStyle : "REAL"
+                        visualStyle != null ? visualStyle : "REAL",
+                        scriptStyle
                 );
             }
 
@@ -276,9 +279,10 @@ public class ScriptService {
             Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
 
             boolean comicMode = ProjectProductionMode.isComicCommentary(project);
+            String scriptStyle = (String) project.getProjectInfo().getOrDefault(ProjectInfoKeys.SCRIPT_STYLE, "standard");
             String systemPrompt = comicMode
                     ? comicCommentaryScriptPromptBuilder.buildScriptEpisodeSystemPrompt()
-                    : scriptPromptBuilder.buildScriptEpisodeSystemPrompt();
+                    : scriptPromptBuilder.buildScriptEpisodeSystemPrompt(scriptStyle);
             String userPrompt = comicMode
                     ? comicCommentaryScriptPromptBuilder.buildScriptEpisodeUserPrompt(
                             outline,
@@ -298,7 +302,8 @@ public class ScriptService {
                             previousSummary,
                             resolvedEpisodeCount,
                             episodeDuration != null ? episodeDuration : 60,
-                            modificationSuggestion
+                            modificationSuggestion,
+                            scriptStyle
                     );
 
             // 调用文本生成服务生成分集
@@ -1031,6 +1036,7 @@ public class ScriptService {
             String visualStyle = getProjectInfoStr(project, ProjectInfoKeys.VISUAL_STYLE);
 
             boolean comicMode = ProjectProductionMode.isComicCommentary(project);
+            String scriptStyle = (String) project.getProjectInfo().getOrDefault(ProjectInfoKeys.SCRIPT_STYLE, "standard");
             int resolvedTotalEpisodes = totalEpisodes != null ? totalEpisodes : 4;
 
             ScriptPromptBuilder.ScriptParams params = comicMode
@@ -1064,7 +1070,8 @@ public class ScriptService {
                         targetAudience,
                         params.chapterCount,
                         params.episodesPerChapter,
-                        resolvedEpisodeDuration
+                        resolvedEpisodeDuration,
+                        scriptStyle
                 );
                 userPrompt = scriptPromptBuilder.buildScriptOutlineUserPrompt(
                         storyPrompt,
@@ -1072,7 +1079,8 @@ public class ScriptService {
                         currentOutline,
                         resolvedTotalEpisodes,
                         resolvedEpisodeDuration,
-                        visualStyle != null ? visualStyle : "REAL"
+                        visualStyle != null ? visualStyle : "REAL",
+                        scriptStyle
                 );
             }
 
