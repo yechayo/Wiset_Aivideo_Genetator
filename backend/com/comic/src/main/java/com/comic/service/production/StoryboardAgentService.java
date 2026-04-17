@@ -1,6 +1,7 @@
 package com.comic.service.production;
 
 import com.comic.ai.text.DeepSeekTextService;
+import com.comic.constant.ProjectInfoKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -68,7 +69,7 @@ public class StoryboardAgentService {
      * 构建 Reasoner 的 system prompt
      */
     String buildReasonerSystemPrompt(boolean comicMode, String scriptStyle) {
-        if ("shuangju".equals(scriptStyle)) {
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             return "你是一个爽剧分镜规划 agent。你的任务是为短视频爽剧分镜生成做决策。\n\n"
                     + "本集为爽剧模式：节奏极快，平均每 3 秒一个爽点，台词短促有力。\n\n"
                     + "你的职责：\n"
@@ -172,7 +173,7 @@ public class StoryboardAgentService {
         }
         sb.append("\n");
 
-        if ("shuangju".equals(scriptStyle)) {
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             List<String> allHooks = extractHookBeats(episodeContent);
             sb.append("## 全部爽点节拍（共").append(allHooks.size()).append("个）\n");
             for (int i = 0; i < allHooks.size(); i++) {
@@ -214,7 +215,7 @@ public class StoryboardAgentService {
      * 构建执行模型（DeepSeek-chat）的 system prompt
      */
     String buildExecutorSystemPrompt(boolean comicMode, String scriptStyle) {
-        if ("shuangju".equals(scriptStyle)) {
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             return "你是一位专做「爽剧」短视频的分镜师。节奏极快，三秒一个爽点，画面冲击力强。\n\n"
                     + "关键约束：\n"
                     + "- 每个分镜时长 1-4 秒，由你根据内容自行判断\n"
@@ -318,7 +319,7 @@ public class StoryboardAgentService {
         sb.append("## 角色\n").append(characters).append("\n");
         sb.append("## 视觉风格\n").append(visualStyle).append("\n");
 
-        if ("shuangju".equals(scriptStyle)) {
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             sb.append("## 爽剧字数密度目标\n");
             sb.append("- sceneDescription 目标总字数：").append(estimatedSeconds * 11).append(" 字左右\n");
             sb.append("- dialogue 目标总字数：").append(estimatedSeconds * 4).append(" 字左右\n");

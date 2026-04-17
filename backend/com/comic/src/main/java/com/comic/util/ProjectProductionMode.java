@@ -11,8 +11,6 @@ import java.util.Map;
  */
 public final class ProjectProductionMode {
 
-    private static final String SCRIPT_STYLE_SHUANGJU = "shuangju";
-
     private ProjectProductionMode() {}
 
     public static boolean isComicCommentary(Project project) {
@@ -56,6 +54,6 @@ public final class ProjectProductionMode {
         if (s.isEmpty()) {
             return false;
         }
-        return SCRIPT_STYLE_SHUANGJU.equals(s);
+        return ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(s);
     }
 }

@@ -1,5 +1,6 @@
 package com.comic.ai;
 
+import com.comic.constant.ProjectInfoKeys;
 import org.springframework.stereotype.Component;
 
 /**
@@ -39,7 +40,7 @@ public class ScriptPromptBuilder {
                 + "5. 每集描述 1-2 个关键场景转折点，确保后续编剧能据此展开完整剧本\n"
                 + "6. 章节剧情线要体现节奏变化：标注每集中哪些部分是高潮（需展开），哪些是过渡（需简洁）";
 
-        if ("shuangju".equals(scriptStyle)) {
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             base += "\n\n【爽剧节奏约束（爽剧模式生效）】\n"
                     + "- 每集必须规划 8-10 个「爽点节拍」（hookBeats），平均每 3 秒一个\n"
                     + "- 爽点类型包括但不限于：身份反转、实力碾压、打脸、情绪爆发、悬念揭晓、视觉冲击、言语怼回、绝地反杀\n"
@@ -67,7 +68,7 @@ public class ScriptPromptBuilder {
         sb.append("每集时长：").append(episodeDuration).append(" 秒\n");
         sb.append("视觉风格：").append(visualStyle != null ? visualStyle : "未指定");
 
-        if ("shuangju".equals(scriptStyle)) {
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             sb.append("\n剧本风格：爽剧（三秒一个爽点，节奏极快，短句驱动）");
         }
 
@@ -80,7 +81,7 @@ public class ScriptPromptBuilder {
                 + "【集数硬约束】用户消息中的「拆分集数」即本章节必须生成的集数：你输出的 JSON 数组长度必须恰好等于该数字，"
                 + "一集对应数组中的一个对象；禁止合并多集、禁止少生成、禁止多生成。\n";
 
-        if ("shuangju".equals(scriptStyle)) {
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             base += "【内容量与时长匹配（爽剧模式 - 最高优先级）】\n"
                     + "- 每秒需要约 12-16 个字的剧本内容（含场景描述、台词、动作描写）\n"
                     + "- 60秒 → content 约 720-960 字，至少 20 个爽点节拍\n"
@@ -136,8 +137,8 @@ public class ScriptPromptBuilder {
         sb.append("拆分集数（本章节须生成的集数）：").append(splitCount).append(" 集\n");
         sb.append("【硬性要求】JSON 数组必须恰好 ").append(splitCount).append(" 个元素，对应 ").append(splitCount)
                 .append(" 集剧本；少一集或多一集均为错误。\n");
-        int charsPerSec = "shuangju".equals(scriptStyle) ? 12 : 5;
-        int charsPerSecMax = "shuangju".equals(scriptStyle) ? 16 : 7;
+        int charsPerSec = ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle) ? 12 : 5;
+        int charsPerSecMax = ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle) ? 16 : 7;
         int minWords = duration * charsPerSec;
         int maxWords = duration * charsPerSecMax;
         sb.append("【时长硬性要求】每集 ").append(duration).append(" 秒，content 字段必须 ").append(minWords).append("-").append(maxWords).append(" 字，")
@@ -214,7 +215,7 @@ public class ScriptPromptBuilder {
                 + "输出格式：仅返回 JSON { \"outline\": \"Markdown 大纲\" }\n"
                 + "大纲需包含开场、发展、高潮和结局。";
 
-        if ("shuangju".equals(scriptStyle)) {
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             base += "\n\n【爽剧节奏约束】\n"
                     + "- 规划 8-10 个「爽点节拍」，平均每 3 秒一个\n"
                     + "- 大纲中明确标注爽点位置：「爽点①：XXX」「爽点②：XXX」...\n"
