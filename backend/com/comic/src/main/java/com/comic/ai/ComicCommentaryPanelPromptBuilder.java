@@ -115,6 +115,9 @@ public class ComicCommentaryPanelPromptBuilder {
                                    List<?> charRefs, int gridCols, int gridRows) {
         int totalSlots = gridCols * gridRows;
         StringBuilder sb = new StringBuilder();
+        sb.append("【全局风格锁 - 最高优先级】\n");
+        sb.append("整张图必须严格保持统一的视觉风格，色调、光影、线条粗细、");
+        sb.append("色彩饱和度在所有格子中必须完全一致，禁止任何格子偏离此风格。\n\n");
         sb.append(panelPromptBuilder.buildSceneStylePrefix(visualStyle));
         sb.append("漫剧解说风格关键帧：每格为独立「漫画分镜式」画面，适合旁白解说与字幕叠加，构图清晰、主体突出。\n\n");
         String narrativeContext = buildNarrativeContext(shots);
@@ -234,7 +237,7 @@ public class ComicCommentaryPanelPromptBuilder {
     }
 
     /**
-     * 构建漫剧解说风格分镜图生成提示词 - 默认 3×3 九宫格
+     * 构建漫剧解说风格分镜图生成提示词 - 自动根据分镜数量计算网格尺寸
      */
     public String buildGridPrompt(String visualStyle, List<Map<String, Object>> shots, List<?> charRefs) {
         int[] gridSize = com.comic.service.panel.GridImageService.calculateGridSize(shots.size());
