@@ -74,39 +74,72 @@ public class ScriptPromptBuilder {
         return sb.toString();
     }
 
-    public String buildScriptEpisodeSystemPrompt() {
-        return "你是一名专业的剧集剧本编剧。\n"
+    public String buildScriptEpisodeSystemPrompt(String scriptStyle) {
+        String base = "你是一名专业的剧集剧本编剧。\n"
                 + "根据全局大纲和其中一个章节，将其拆分为具体的剧集剧本（按「集」输出）。\n"
                 + "【集数硬约束】用户消息中的「拆分集数」即本章节必须生成的集数：你输出的 JSON 数组长度必须恰好等于该数字，"
-                + "一集对应数组中的一个对象；禁止合并多集、禁止少生成、禁止多生成。\n"
-                + "【内容量与时长匹配（最高优先级）】\n"
-                + "用户会给出每集目标时长，你必须确保 content 字段的内容量足以支撑该时长：\n"
-                + "- 每秒需要约 5-7 个字的剧本内容（含对话、动作描写、场景描述）\n"
-                + "- 60秒 → content 约 300-420 字，至少 5 个场景/动作节点\n"
-                + "- 120秒 → content 约 600-840 字，至少 8 个场景/动作节点\n"
-                + "- 180秒 → content 约 900-1260 字，至少 12 个场景/动作节点\n"
-                + "- 300秒 → content 约 1500-2100 字，至少 20 个场景/动作节点\n"
-                + "- 不要概括压缩剧情，要展开每个场景的具体对话、角色动作、情绪变化和视觉细节\n"
-                + "- 使用「（场景描述）」「角色（情绪）：台词」「（动作描写）」格式，确保分镜师能逐句拆分\n"
-                + "【叙事节奏原则】\n"
+                + "一集对应数组中的一个对象；禁止合并多集、禁止少生成、禁止多生成。\n";
+
+        if ("shuangju".equals(scriptStyle)) {
+            base += "【内容量与时长匹配（爽剧模式 - 最高优先级）】\n"
+                    + "- 每秒需要约 12-16 个字的剧本内容（含场景描述、台词、动作描写）\n"
+                    + "- 60秒 → content 约 720-960 字，至少 20 个爽点节拍\n"
+                    + "- 90秒 → content 约 1080-1440 字，至少 30 个爽点节拍\n"
+                    + "- 120秒 → content 约 1440-1920 字，至少 40 个爽点节拍\n"
+                    + "- 180秒 → content 约 2160-2880 字，至少 60 个爽点节拍\n"
+                    + "- 300秒 → content 约 3600-4800 字，至少 100 个爽点节拍\n"
+                    + "- 不要概括压缩剧情，要展开每个场景的具体对话、角色动作、情绪变化和视觉细节\n"
+                    + "- 使用「（场景描述）」「角色（情绪）：台词」「（动作描写）」格式\n"
+                    + "【爽剧短句格式约束】\n"
+                    + "- 全文使用短句，每句不超过 20 个字\n"
+                    + "- 平均每 3 秒（约 36-48 字）必须出现一个明确的情绪或剧情爽点\n"
+                    + "- 爽点用 [爽点:描述] 标记，例如：[爽点:身份反转]、[爽点:实力碾压]\n"
+                    + "- 禁止超过 2 句的平铺叙述，必须快速推进情节\n"
+                    + "- 台词简短有力，每句台词不超过 15 个字\n"
+                    + "- 场景切换频率高，每 2-3 个爽点可切换一次场景\n"
+                    + "- 书写格式：(场景描述) 角色(情绪):台词 [爽点:XX]\n"
+                    + "- 示例片段：\n"
+                    + "  (豪华婚房，灯光昏暗)\n"
+                    + "  陆沉猛然睁眼。 [爽点:重生觉醒]\n"
+                    + "  冷汗浸透枕头。\n"
+                    + "  他侧头，看见身旁沉睡的姜眠。\n"
+                    + "  陆沉(震惊):你...还活着？\n"
+                    + "  他红了眼眶，颤抖着伸手。 [爽点:情绪爆发]\n";
+        } else {
+            base += "【内容量与时长匹配（最高优先级）】\n"
+                    + "用户会给出每集目标时长，你必须确保 content 字段的内容量足以支撑该时长：\n"
+                    + "- 每秒需要约 5-7 个字的剧本内容（含对话、动作描写、场景描述）\n"
+                    + "- 60秒 → content 约 300-420 字，至少 5 个场景/动作节点\n"
+                    + "- 120秒 → content 约 600-840 字，至少 8 个场景/动作节点\n"
+                    + "- 180秒 → content 约 900-1260 字，至少 12 个场景/动作节点\n"
+                    + "- 300秒 → content 约 1500-2100 字，至少 20 个场景/动作节点\n"
+                    + "- 不要概括压缩剧情，要展开每个场景的具体对话、角色动作、情绪变化和视觉细节\n"
+                    + "- 使用「（场景描述）」「角色（情绪）：台词」「（动作描写）」格式，确保分镜师能逐句拆分\n";
+        }
+
+        base += "【叙事节奏原则】\n"
                 + "- 每集内容要有叙事弧线：铺垫→冲突升级→高潮→收束，不能平铺直叙\n"
                 + "- 高潮段落（情感爆发、关键转折）给足篇幅展开，过渡段落（信息交代、场景切换）要简洁明快\n"
                 + "- 对话和动作交替出现，避免连续大段纯叙述或纯对话\n"
                 + "- 每集结尾设置钩子（悬念/反转/情绪留白），驱动观众看下一集\n"
                 + "仅输出 JSON 数组，包含字段：title、content、characters、keyItems、visualStyleNote、continuityNote。";
+
+        return base;
     }
 
     public String buildScriptEpisodeUserPrompt(String outline, String chapter, String globalCharacters,
                                                String globalItems, String previousSummary, int splitCount,
-                                               int duration, String modificationSuggestion) {
+                                               int duration, String modificationSuggestion, String scriptStyle) {
         StringBuilder sb = new StringBuilder();
         sb.append("完整大纲：\n").append(outline).append("\n\n");
         sb.append("目标章节：").append(chapter).append("\n");
         sb.append("拆分集数（本章节须生成的集数）：").append(splitCount).append(" 集\n");
         sb.append("【硬性要求】JSON 数组必须恰好 ").append(splitCount).append(" 个元素，对应 ").append(splitCount)
                 .append(" 集剧本；少一集或多一集均为错误。\n");
-        int minWords = duration * 5;
-        int maxWords = duration * 7;
+        int charsPerSec = "shuangju".equals(scriptStyle) ? 12 : 5;
+        int charsPerSecMax = "shuangju".equals(scriptStyle) ? 16 : 7;
+        int minWords = duration * charsPerSec;
+        int maxWords = duration * charsPerSecMax;
         sb.append("【时长硬性要求】每集 ").append(duration).append(" 秒，content 字段必须 ").append(minWords).append("-").append(maxWords).append(" 字，")
                 .append("包含充分的场景描写、对话和动作细节。不得概括压缩。\n\n");
         if (modificationSuggestion != null && !modificationSuggestion.isEmpty()) {
