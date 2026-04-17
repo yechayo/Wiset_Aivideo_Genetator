@@ -330,15 +330,13 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     setIsBatchGenerating(true);
     try {
       await generateAllEpisodes(pid);
-      // 生成完成后刷新数据
-      await refreshScript();
+      // API 只触发后端任务，不等待完成；loading 由 SSE 刷新 scriptData 后自动消除
     } catch (err) {
       console.error('批量生成失败:', err);
       setError('批量生成失败，请稍后重试或尝试逐章生成。');
-    } finally {
       setIsBatchGenerating(false);
     }
-  }, [scriptData, refreshScript]);
+  }, [scriptData]);
 
   const handleGenerateClick = useCallback((chapter: string) => {
     setSelectedChapter(chapter);
@@ -440,6 +438,13 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   };
 
   const projectInfo = scriptData ? getProjectInfo() : null;
+
+  // 当所有章节都生成完毕（pendingChapters 为空）时，重置批量生成状态
+  useEffect(() => {
+    if (scriptData && scriptData.pendingChapters.length === 0 && isBatchGenerating) {
+      setIsBatchGenerating(false);
+    }
+  }, [scriptData?.pendingChapters?.length, isBatchGenerating]);
 
   // ======== 渲染 ========
   return (
