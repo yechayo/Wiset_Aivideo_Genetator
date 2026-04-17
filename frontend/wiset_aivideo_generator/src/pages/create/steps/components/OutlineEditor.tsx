@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { ChevronDownIcon, ChevronRightIcon } from '../../../../components/icons/Icons';
 import styles from './OutlineEditor.module.less';
 
@@ -123,10 +124,9 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false, 
             />
           ) : (
             <div className={styles.preview}>
-              <div
-                className={styles.markdownContent}
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
-              />
+              <div className={styles.markdownContent}>
+                <ReactMarkdown>{content}</ReactMarkdown>
+              </div>
             </div>
           )}
         </div>
@@ -134,53 +134,5 @@ const OutlineEditor = ({ outline, onSaveDirect, onSaveWithAI, readOnly = false, 
     </div>
   );
 };
-
-/**
- * 简单的 Markdown 渲染器
- * 将 Markdown 转换为 HTML
- */
-function renderMarkdown(markdown: string): string {
-  if (!markdown) return '';
-
-  // 兼容旧数据：若传入的是 JSON 字符串，提取 outline 字段
-  let text = markdown.trim();
-  if (text.startsWith('{') || text.startsWith('```json') || text.startsWith('```')) {
-    const clean = text.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
-    try {
-      const parsed = JSON.parse(clean);
-      if (parsed && typeof parsed.outline === 'string' && parsed.outline.trim()) {
-        text = parsed.outline.trim();
-      }
-    } catch {
-      // 非 JSON，原样处理
-    }
-  }
-
-  let html = text;
-
-  // 标题
-  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-  // 粗体
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-  // 斜体
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  // 分隔线
-  html = html.replace(/^----$/gm, '<hr />');
-
-  // 列表
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-
-  // 换行
-  html = html.replace(/\n/g, '<br />');
-
-  return html;
-}
 
 export default OutlineEditor;

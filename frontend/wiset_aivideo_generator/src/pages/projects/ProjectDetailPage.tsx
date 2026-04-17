@@ -1,11 +1,28 @@
 import { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './ProjectDetailPage.module.less';
 import { ArrowLeftIcon, EditIcon } from '../../components/icons/Icons';
 import { getProject, getProjectStatus } from '../../services/projectService';
 import type { Project, ProjectStatusInfo } from '../../services/types/project.types';
 
+const COLLAPSE_LINES = 2;
+
 const pi = (p?: Project) => p?.projectInfo;
+
+/** 长文本截断展示，点击可展开/收起 */
+function CollapsibleText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <span
+      className={`${styles.storyText} ${expanded ? '' : styles.storyCollapsed}`}
+      onClick={() => setExpanded(v => !v)}
+    >
+      {text}
+    </span>
+  );
+}
 
 // 类型中文映射
 const genreMap: Record<string, string> = {
@@ -27,9 +44,8 @@ function formatDate(dateString?: string): string {
   if (!dateString) return '-';
   const date = new Date(dateString);
   return date.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -42,7 +58,6 @@ function ProjectDetailPage() {
   const [statusInfo, setStatusInfo] = useState<ProjectStatusInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 获取项目详情和状态
   useEffect(() => {
     async function fetchProject() {
       if (!projectId) return;
@@ -91,18 +106,29 @@ function ProjectDetailPage() {
     );
   }
 
+  const statusClass = statusInfo?.isFailed ? styles.statusFailed
+    : statusInfo?.isGenerating ? styles.statusGenerating
+    : statusInfo?.isReview ? styles.statusReview
+    : statusInfo?.statusCode === 'completed' ? styles.statusCompleted
+    : styles.statusDraft;
+
   return (
     <div className={styles.pageContainer}>
       {/* 头部 */}
       <div className={styles.header}>
         <button onClick={() => navigate('/projects')} className={styles.backButton}>
           <ArrowLeftIcon />
-          <span>返回项目列表</span>
+          <span>返回列表</span>
         </button>
+        <div className={styles.headerCenter}>
+          <h1 className={styles.projectTitle}>项目详情</h1>
+          <span className={`${styles.statusBadge} ${statusClass}`}>
+            {statusInfo?.statusDescription || '草稿'}
+          </span>
+          <span className={styles.projectId}>{project.projectId}</span>
+        </div>
         <button
-          onClick={() => {
-            navigate(`/project/${project.projectId}/step`);
-          }}
+          onClick={() => navigate(`/project/${project.projectId}/step`)}
           className={styles.editButton}
         >
           <EditIcon />
@@ -110,131 +136,78 @@ function ProjectDetailPage() {
         </button>
       </div>
 
-      {/* 项目信息卡片 */}
-      <div className={styles.projectCard}>
-        <div className={styles.cardHeader}>
-          <div className={styles.titleSection}>
-            <h1 className={styles.projectTitle}>项目详情</h1>
-            <span
-              className={`${styles.projectStatus} ${
-                statusInfo?.isFailed ? styles.statusFailed
-                  : statusInfo?.isGenerating ? styles.statusGenerating
-                  : statusInfo?.isReview ? styles.statusReview
-                  : statusInfo?.statusCode === 'completed' ? styles.statusCompleted
-                  : styles.statusDraft
-              }`}
-            >
-              {statusInfo?.statusDescription || '草稿'}
-            </span>
-          </div>
-          <div className={styles.projectId}>ID: {project.projectId}</div>
+      {/* 故事大纲 */}
+      {pi(project)?.storyPrompt && (
+        <div className={styles.storySection}>
+          <CollapsibleText text={pi(project)!.storyPrompt!} />
         </div>
+      )}
 
-        {/* 基本信息 */}
-        <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>基本信息</h2>
-          <div className={styles.infoGrid}>
-            <div className={styles.infoItem}>
-              <span className={styles.infoLabel}>故事大纲</span>
-              <span className={styles.infoValue}>{pi(project)?.storyPrompt}</span>
-            </div>
-            <div className={styles.infoItem}>
-              <span className={styles.infoLabel}>类型风格</span>
-              <span className={styles.infoValue}>
-                {genreMap[pi(project)?.genre || ''] || pi(project)?.genre || '未分类'}
-              </span>
-            </div>
-            <div className={styles.infoItem}>
-              <span className={styles.infoLabel}>目标受众</span>
-              <span className={styles.infoValue}>
-                {audienceMap[pi(project)?.targetAudience || ''] || pi(project)?.targetAudience}
-              </span>
-            </div>
-            <div className={styles.infoItem}>
-              <span className={styles.infoLabel}>总集数</span>
-              <span className={styles.infoValue}>{pi(project)?.totalEpisodes || 0} 集</span>
-            </div>
-            <div className={styles.infoItem}>
-              <span className={styles.infoLabel}>单集时长</span>
-              <span className={styles.infoValue}>{pi(project)?.episodeDuration || 0} 秒</span>
-            </div>
-            <div className={styles.infoItem}>
-              <span className={styles.infoLabel}>每章集数</span>
-              <span className={styles.infoValue}>{pi(project)?.episodesPerChapter || 4} 集</span>
-            </div>
-            <div className={styles.infoItem}>
-              <span className={styles.infoLabel}>制作模式</span>
-              <span className={styles.infoValue}>
-                {pi(project)?.productionMode === 'comic_commentary' ? '漫剧解说' : '实时动画'}
-              </span>
-            </div>
-          </div>
+      {/* 信息网格：一行 label: value */}
+      <div className={styles.metaGrid}>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>类型</span>
+          <span className={styles.metaValue}>
+            {genreMap[pi(project)?.genre || ''] || pi(project)?.genre || '未分类'}
+          </span>
         </div>
-
-        {/* 时间信息 */}
-        <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>时间信息</h2>
-          <div className={styles.timeInfo}>
-            <div className={styles.timeItem}>
-              <span className={styles.timeLabel}>创建时间</span>
-              <span className={styles.timeValue}>{formatDate(project.createdAt)}</span>
-            </div>
-            <div className={styles.timeItem}>
-              <span className={styles.timeLabel}>更新时间</span>
-              <span className={styles.timeValue}>{formatDate(project.updatedAt)}</span>
-            </div>
-          </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>受众</span>
+          <span className={styles.metaValue}>
+            {audienceMap[pi(project)?.targetAudience || ''] || pi(project)?.targetAudience}
+          </span>
         </div>
-
-        {/* 剧本大纲 */}
-        {pi(project)?.script?.outline && (
-          <div className={styles.section}>
-            <h2 className={styles.sectionTitle}>剧本大纲</h2>
-            <div className={styles.outlineContent}>
-              <pre>{pi(project)!.script!.outline}</pre>
-            </div>
-          </div>
-        )}
-
-        {/* 当前选中章节 */}
-        {pi(project)?.selectedChapter && (
-          <div className={styles.section}>
-            <h2 className={styles.sectionTitle}>当前章节</h2>
-            <div className={styles.selectedChapter}>
-              {pi(project)!.selectedChapter}
-            </div>
-          </div>
-        )}
-
-        {/* 状态详情 */}
-        {statusInfo && (
-          <div className={styles.section}>
-            <h2 className={styles.sectionTitle}>状态详情</h2>
-            <div className={styles.infoGrid}>
-              <div className={styles.infoItem}>
-                <span className={styles.infoLabel}>状态码</span>
-                <span className={styles.infoValue}>{statusInfo.statusCode}</span>
-              </div>
-              <div className={styles.infoItem}>
-                <span className={styles.infoLabel}>当前步骤</span>
-                <span className={styles.infoValue}>第 {statusInfo.currentStep} 步</span>
-              </div>
-              {statusInfo.completedSteps.length > 0 && (
-                <div className={styles.infoItem}>
-                  <span className={styles.infoLabel}>已完成步骤</span>
-                  <span className={styles.infoValue}>{statusInfo.completedSteps.join(', ')}</span>
-                </div>
-              )}
-              {statusInfo.availableActions.length > 0 && (
-                <div className={styles.infoItem}>
-                  <span className={styles.infoLabel}>可用操作</span>
-                  <span className={styles.infoValue}>{statusInfo.availableActions.join(', ')}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>集数</span>
+          <span className={styles.metaValue}>{pi(project)?.totalEpisodes || 0} 集</span>
+        </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>时长</span>
+          <span className={styles.metaValue}>{pi(project)?.episodeDuration || 0}s / 集</span>
+        </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>章节</span>
+          <span className={styles.metaValue}>{pi(project)?.episodesPerChapter || 4} 集/章</span>
+        </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>模式</span>
+          <span className={styles.metaValue}>
+            {pi(project)?.productionMode === 'comic_commentary' ? '漫剧解说' : '实时动画'}
+          </span>
+        </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>步骤</span>
+          <span className={styles.metaValue}>
+            {statusInfo ? `第 ${statusInfo.currentStep} 步` : '-'}
+          </span>
+        </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>创建</span>
+          <span className={styles.metaValue}>{formatDate(project.createdAt)}</span>
+        </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>更新</span>
+          <span className={styles.metaValue}>{formatDate(project.updatedAt)}</span>
+        </div>
       </div>
+
+      {/* 剧本大纲 */}
+      {pi(project)?.script?.outline && (
+        <div className={styles.outlineSection}>
+          <h3 className={styles.sectionLabel}>剧本大纲</h3>
+          <div className={styles.outlineContent}>
+            <ReactMarkdown>{pi(project)!.script!.outline}</ReactMarkdown>
+          </div>
+        </div>
+      )}
+
+      {/* 当前章节 */}
+      {pi(project)?.selectedChapter && (
+        <div className={styles.chapterSection}>
+          <span className={styles.sectionLabel}>当前章节</span>
+          <span className={styles.chapterValue}>{pi(project)!.selectedChapter}</span>
+        </div>
+      )}
     </div>
   );
 }
