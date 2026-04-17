@@ -28,6 +28,9 @@ public class StoryboardAgentService {
     private static final int MAX_EXECUTOR_RETRIES = 2;
     private static final int LAST_SHOTS_COUNT = 3;
 
+    private static final java.util.regex.Pattern HOOK_PATTERN =
+            java.util.regex.Pattern.compile("[\\[【]\\s*爽点\\s*[:：]\\s*(.+?)\\s*[\\]】]");
+
     public StoryboardAgentService(@Qualifier("reasoner") DeepSeekTextService reasoner,
                                    @Qualifier("deepSeekTextService") DeepSeekTextService executor,
                                    ObjectMapper objectMapper) {
@@ -64,7 +67,36 @@ public class StoryboardAgentService {
     /**
      * 构建 Reasoner 的 system prompt
      */
-    private String buildReasonerSystemPrompt(boolean comicMode) {
+    String buildReasonerSystemPrompt(boolean comicMode, String scriptStyle) {
+        if ("shuangju".equals(scriptStyle)) {
+            return "你是一个爽剧分镜规划 agent。你的任务是为短视频爽剧分镜生成做决策。\n\n"
+                    + "本集为爽剧模式：节奏极快，平均每 3 秒一个爽点，台词短促有力。\n\n"
+                    + "你的职责：\n"
+                    + "1. 从剧本中提取所有 [爽点:XX] 标记作为必须覆盖的 hookBeats\n"
+                    + "2. 分析剩余爽点和已生成进度\n"
+                    + "3. 决定下一批应覆盖哪些爽点（每批 3-5 个爽点）\n"
+                    + "4. 估算该批需要多少秒（基于爽点密度）\n"
+                    + "5. 当所有爽点覆盖完毕后，如果时长不足可选择 expand 或 pad\n\n"
+                    + "约束：\n"
+                    + "- 每个分镜 1-4 秒，AI 自行判断\n"
+                    + "- 平均每 3 秒一个爽点\n"
+                    + "- 优先完整覆盖所有爽点节拍\n"
+                    + "- 保持叙事连贯性，每批之间需要衔接\n\n"
+                    + "输出纯 JSON（不要 markdown 代码块标记，不要在值中额外嵌套引号）：\n"
+                    + "{\n"
+                    + "  \"action\": \"generate|expand|pad|done\",\n"
+                    + "  \"nextBeatDescription\": \"爽点①:描述 → 爽点②:描述 → 爽点③:描述\",\n"
+                    + "  \"estimatedSeconds\": 15,\n"
+                    + "  \"targetBeatIndex\": 2,\n"
+                    + "  \"reasoning\": \"为什么做这个决策\"\n"
+                    + "}\n\n"
+                    + "action 说明：\n"
+                    + "- generate: 还有爽点未覆盖，继续生成\n"
+                    + "- expand: 爽点覆盖完毕但时长不足，回头扩展已有节点\n"
+                    + "- pad: 生成过渡/氛围镜头填充时长\n"
+                    + "- done: 爽点已完整覆盖，结束生成";
+        }
+
         StringBuilder sb = new StringBuilder();
         sb.append("你是一个分镜规划 agent。你的任务是为短视频分镜生成做决策。\n\n");
 
@@ -102,11 +134,23 @@ public class StoryboardAgentService {
     }
 
     /**
+     * 提取剧本中的所有爽点标记
+     */
+    List<String> extractHookBeats(String episodeContent) {
+        List<String> beats = new ArrayList<>();
+        java.util.regex.Matcher m = HOOK_PATTERN.matcher(episodeContent);
+        while (m.find()) {
+            beats.add(m.group(1).trim());
+        }
+        return beats;
+    }
+
+    /**
      * 构建 Reasoner 的 user prompt（包含当前状态）
      */
     public String buildReasonerPrompt(String episodeContent, String characters, String visualStyle,
                                        AgentState state, String roundLabel, boolean comicMode,
-                                       String narrationPerspective) {
+                                       String narrationPerspective, String scriptStyle) {
         int minDuration = state.targetDuration * 2 / 3;
         int maxDuration = state.targetDuration * 4 / 3;
 
@@ -127,6 +171,15 @@ public class StoryboardAgentService {
             }
         }
         sb.append("\n");
+
+        if ("shuangju".equals(scriptStyle)) {
+            List<String> allHooks = extractHookBeats(episodeContent);
+            sb.append("## 全部爽点节拍（共").append(allHooks.size()).append("个）\n");
+            for (int i = 0; i < allHooks.size(); i++) {
+                sb.append(i + 1).append(". ").append(allHooks.get(i)).append("\n");
+            }
+            sb.append("\n");
+        }
 
         if (!state.lastShots.isEmpty()) {
             sb.append("## 上一批末尾分镜（用于衔接）\n");
@@ -160,7 +213,42 @@ public class StoryboardAgentService {
     /**
      * 构建执行模型（DeepSeek-chat）的 system prompt
      */
-    private String buildExecutorSystemPrompt(boolean comicMode) {
+    String buildExecutorSystemPrompt(boolean comicMode, String scriptStyle) {
+        if ("shuangju".equals(scriptStyle)) {
+            return "你是一位专做「爽剧」短视频的分镜师。节奏极快，三秒一个爽点，画面冲击力强。\n\n"
+                    + "关键约束：\n"
+                    + "- 每个分镜时长 1-4 秒，由你根据内容自行判断\n"
+                    + "- 快节奏内容（闪回、反转、打击）用 1-2 秒\n"
+                    + "- 需要情绪释放或重要对白的内容用 3-4 秒\n"
+                    + "- 每个分镜必须有 hookPoint（爽点）\n"
+                    + "- sceneDescription 使用短句，动态描写，30-50 字\n"
+                    + "- dialogue 简短有力，0-15 字，允许为「无」\n"
+                    + "- audioEffects 必填，增强爽感\n\n"
+                    + "输出纯 JSON 数组（不要 markdown 代码块标记）。每个分镜：\n"
+                    + "- shotNumber: 镜头编号（从1开始）\n"
+                    + "- duration: 时长（1-4秒）\n"
+                    + "- scene: 场景概述\n"
+                    + "- characters: 出场角色数组\n"
+                    + "- shotSize: 景别（大远景/远景/全景/中景/中近景/近景/特写/大特写）\n"
+                    + "- cameraAngle: 角度（视平/俯拍/仰拍/斜拍/越肩/鸟瞰）\n"
+                    + "- cameraMovement: 运镜方式\n"
+                    + "- sceneDescription: 画面描述（短句，动态，30-50字）\n"
+                    + "- dialogue: 角色台词或「无」\n"
+                    + "- speaker: 说话人或「无」\n"
+                    + "- dialogueTone: 对白语气\n"
+                    + "- visualEffects: 视觉特效或「无」\n"
+                    + "- audioEffects: 音效（必填）\n"
+                    + "- transitionHint: 镜头衔接提示\n"
+                    + "- hookPoint: 本镜头的爽点（10-25字，必填）\n\n"
+                    + "【AI视频生成原则】\n"
+                    + "1.【单主体原则】每个分镜最多1个角色动作，禁止双人互动。\n"
+                    + "2.【慢动作原则】运镜缓慢，角色动作微小。\n\n"
+                    + "【风格要求】\n"
+                    + "- 场景描述用短句，避免「然后」「接着」等连接词\n"
+                    + "- 强调视觉冲击：表情特写、动作定格、光影变化\n"
+                    + "- 台词像打脸金句：简短、有力、记忆点强";
+        }
+
         StringBuilder sb = new StringBuilder();
         if (comicMode) {
             sb.append("你是一位专做「漫剧解说」短视频的分镜师。叙事由**旁白口播**主导：每一镜都必须写出观众能直接念出来的解说词。\n");
@@ -211,7 +299,7 @@ public class StoryboardAgentService {
      */
     public String buildExecutorPrompt(String nextBeatDescription, String characters, String visualStyle,
                                        int estimatedSeconds, List<Map<String, Object>> lastShots,
-                                       boolean comicMode) {
+                                       boolean comicMode, String scriptStyle) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("## 本批任务\n");
@@ -228,7 +316,14 @@ public class StoryboardAgentService {
         }
 
         sb.append("## 角色\n").append(characters).append("\n");
-        sb.append("## 视觉风格\n").append(visualStyle).append("\n\n");
+        sb.append("## 视觉风格\n").append(visualStyle).append("\n");
+
+        if ("shuangju".equals(scriptStyle)) {
+            sb.append("## 爽剧字数密度目标\n");
+            sb.append("- sceneDescription 目标总字数：").append(estimatedSeconds * 11).append(" 字左右\n");
+            sb.append("- dialogue 目标总字数：").append(estimatedSeconds * 4).append(" 字左右\n");
+            sb.append("- (sceneDescription + dialogue 合计约 ").append(estimatedSeconds * 15).append(" 字)\n\n");
+        }
 
         sb.append("请生成本批分镜 JSON 数组。");
 
@@ -292,18 +387,19 @@ public class StoryboardAgentService {
      */
     public List<Map<String, Object>> generate(String episodeContent, String characters,
                                                int targetDuration, String visualStyle,
-                                               boolean comicMode, String narrationPerspective) {
+                                               boolean comicMode, String narrationPerspective,
+                                               String scriptStyle) {
         AgentState state = new AgentState();
         state.targetDuration = targetDuration;
 
-        String systemPrompt = buildReasonerSystemPrompt(comicMode);
+        String systemPrompt = buildReasonerSystemPrompt(comicMode, scriptStyle);
 
         for (int round = 0; round < MAX_ROUNDS; round++) {
             String roundLabel = "第" + (round + 1) + "轮";
 
             // ① Reasoner 思考
             String userPrompt = buildReasonerPrompt(
-                    episodeContent, characters, visualStyle, state, roundLabel, comicMode, narrationPerspective);
+                    episodeContent, characters, visualStyle, state, roundLabel, comicMode, narrationPerspective, scriptStyle);
 
             String reasonerOutput;
             try {
@@ -324,10 +420,10 @@ public class StoryboardAgentService {
             }
 
             // ② 执行：生成本批分镜
-            String executorSystem = buildExecutorSystemPrompt(comicMode);
+            String executorSystem = buildExecutorSystemPrompt(comicMode, scriptStyle);
             String executorUser = buildExecutorPrompt(
                     decision.nextBeatDescription, characters, visualStyle,
-                    decision.estimatedSeconds, state.lastShots, comicMode);
+                    decision.estimatedSeconds, state.lastShots, comicMode, scriptStyle);
 
             List<Map<String, Object>> batchShots = null;
             for (int retry = 0; retry <= MAX_EXECUTOR_RETRIES; retry++) {
