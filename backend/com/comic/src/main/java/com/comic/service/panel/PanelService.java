@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -402,39 +403,80 @@ public class PanelService {
                 inputFiles.add(trimmedFile.getAbsolutePath());
             }
 
-            // FFmpeg concat（所有视频已去掉前5帧）
-            String outputFile = tempDir.resolve("episode_full.mp4").toAbsolutePath().toString();
+            // FFmpeg 分步拼接：先统一分辨率，再用 concat demuxer 快速拼接
+            String outputFile = tempDir.resolve("episode_" + episodeId + "_full.mp4").toAbsolutePath().toString();
+            int n = inputFiles.size();
 
-            // 创建 concat 文件列表
-            String concatFile = tempDir.resolve("concat.txt").toAbsolutePath().toString();
-            StringBuilder sb = new StringBuilder();
-            for (String f : inputFiles) {
-                sb.append("file '").append(f.replace("\\", "/")).append("'\n");
+            log.info("开始合成 {} 个片段，先统一分辨率...", n);
+
+            // 第一步：逐个 scale 到 1280x720，统一编码格式
+            List<String> normalizedFiles = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                String inputFile = inputFiles.get(i);
+                String normalizedFile = tempDir.resolve(String.format("normalized_%03d.mp4", i)).toAbsolutePath().toString();
+
+                List<String> scaleCmd = new ArrayList<>();
+                scaleCmd.add("ffmpeg");
+                scaleCmd.add("-y");
+                scaleCmd.add("-i");
+                scaleCmd.add(inputFile.replace("\\", "/"));
+                scaleCmd.add("-vf");
+                scaleCmd.add("scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:-1:-1,setsar=1");
+                scaleCmd.add("-c:v");
+                scaleCmd.add("libx264");
+                scaleCmd.add("-preset");
+                scaleCmd.add("ultrafast");
+                scaleCmd.add("-crf");
+                scaleCmd.add("23");
+                scaleCmd.add("-c:a");
+                scaleCmd.add("aac");
+                scaleCmd.add("-b:a");
+                scaleCmd.add("128k");
+                scaleCmd.add("-ar");
+                scaleCmd.add("44100");
+                scaleCmd.add("-ac");
+                scaleCmd.add("2");
+                scaleCmd.add(normalizedFile.replace("\\", "/"));
+
+                log.info("片段 {}: 正在统一分辨率...", i);
+                int scaleExit = runFFmpegWithTimeout(scaleCmd, 120);
+                if (scaleExit != 0) {
+                    throw new RuntimeException("片段 " + i + " 分辨率标准化失败");
+                }
+                normalizedFiles.add(normalizedFile);
             }
-            Files.write(Paths.get(concatFile), sb.toString().getBytes());
 
-            ProcessBuilder pb = new ProcessBuilder(
-                    "ffmpeg", "-y",
-                    "-f", "concat",
-                    "-safe", "0",
-                    "-i", concatFile,
-                    "-c", "copy",
-                    outputFile
-            );
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
+            log.info("所有片段已统一分辨率，开始快速拼接...");
 
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            byte[] buffer = new byte[1024];
-            int len;
-            while ((len = process.getInputStream().read(buffer)) != -1) {
-                baos.write(buffer, 0, len);
+            // 第二步：用 concat demuxer 快速拼接（无需重编码）
+            // 写 concat 文件列表
+            StringBuilder concatList = new StringBuilder();
+            for (String f : normalizedFiles) {
+                concatList.append("file '").append(f.replace("\\", "/")).append("'\n");
             }
-            int exitCode = process.waitFor();
+            File concatListFile = tempDir.resolve("concat_list.txt").toFile();
+            Files.write(concatListFile.toPath(), concatList.toString().getBytes("UTF-8"));
 
-            if (exitCode != 0) {
-                throw new RuntimeException("FFmpeg 拼接失败: " + baos.toString());
+            List<String> concatCmd = new ArrayList<>();
+            concatCmd.add("ffmpeg");
+            concatCmd.add("-y");
+            concatCmd.add("-f");
+            concatCmd.add("concat");
+            concatCmd.add("-safe");
+            concatCmd.add("0");
+            concatCmd.add("-i");
+            concatCmd.add(concatListFile.getAbsolutePath().replace("\\", "/"));
+            concatCmd.add("-c");
+            concatCmd.add("copy");
+            concatCmd.add(outputFile.replace("\\", "/"));
+
+            log.info("FFmpeg 快速拼接已启动...");
+            int concatExit = runFFmpegWithTimeout(concatCmd, 120);
+            if (concatExit != 0) {
+                throw new RuntimeException("FFmpeg 拼接失败");
             }
+
+            log.info("FFmpeg 拼接成功，开始上传到 OSS...");
 
             // 上传到 OSS
             String ossUrl = ossService.uploadFromFile(outputFile, "episodes");
@@ -487,15 +529,55 @@ public class PanelService {
     /**
      * 去掉视频前 N 帧
      */
+    /**
+     * 执行 FFmpeg 命令，带超时保护
+     * @return exit code
+     */
+    private int runFFmpegWithTimeout(List<String> command, int timeoutSeconds) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        // 读取输出避免阻塞
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int len;
+        while ((len = process.getInputStream().read(buffer)) != -1) {
+            baos.write(buffer, 0, len);
+        }
+        boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            throw new RuntimeException("FFmpeg 超时（" + timeoutSeconds + "秒）: " + baos.toString().substring(0, Math.min(500, baos.size())));
+        }
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            log.error("FFmpeg 失败，exitCode={}: {}", exitCode, baos.toString().substring(0, Math.min(1000, baos.size())));
+        }
+        return exitCode;
+    }
+
     private void removeFirstFrames(Path inputPath, Path outputPath, int framesToSkip) throws Exception {
+        double fps = probeFrameRate(inputPath);
+        double trimDuration = framesToSkip / fps;
+
+        // 用 -ss 统一跳过音视频，不分开过滤，从根本上保证同步
         List<String> command = new ArrayList<>();
         command.add("ffmpeg");
         command.add("-i");
         command.add(inputPath.toString());
-        command.add("-vf");
-        command.add("select='gt(n," + (framesToSkip - 1) + ")'");
-        command.add("-vsync");
-        command.add("0");
+        command.add("-ss");
+        command.add(String.format("%.4f", trimDuration));
+        command.add("-c:v");
+        command.add("libx264");
+        command.add("-preset");
+        command.add("medium");
+        command.add("-crf");
+        command.add("23");
+        command.add("-c:a");
+        command.add("aac");
+        command.add("-b:a");
+        command.add("128k");
         command.add("-y");
         command.add(outputPath.toString());
 
@@ -512,6 +594,169 @@ public class PanelService {
         int exitCode = process.waitFor();
         if (exitCode != 0) {
             throw new RuntimeException("FFmpeg 切帧失败: " + baos.toString());
+        }
+    }
+
+    private double probeFrameRate(Path videoPath) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("ffprobe");
+        command.add("-v");
+        command.add("error");
+        command.add("-select_streams");
+        command.add("v:0");
+        command.add("-show_entries");
+        command.add("stream=r_frame_rate");
+        command.add("-of");
+        command.add("csv=p=0");
+        command.add(videoPath.toString());
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+        }
+
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+        }
+
+        String fpsStr = output.toString().trim();
+        if (fpsStr.contains("/")) {
+            String[] parts = fpsStr.split("/");
+            return Double.parseDouble(parts[0]) / Double.parseDouble(parts[1]);
+        }
+        return Double.parseDouble(fpsStr);
+    }
+
+    /**
+     * 使用 ffprobe 获取视频流的时长（毫秒）
+     */
+    private long probeVideoDurationMs(Path videoPath) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("ffprobe");
+        command.add("-v");
+        command.add("error");
+        command.add("-select_streams");
+        command.add("v:0");
+        command.add("-show_entries");
+        command.add("stream=duration");
+        command.add("-of");
+        command.add("csv=p=0");
+        command.add(videoPath.toString());
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+        }
+
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            throw new RuntimeException("ffprobe 获取视频时长超时");
+        }
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            throw new RuntimeException("ffprobe 获取视频时长失败: exit " + exitCode);
+        }
+
+        double durationSec = Double.parseDouble(output.toString().trim());
+        return Math.round(durationSec * 1000.0);
+    }
+
+    /**
+     * 使用 ffprobe 获取视频分辨率 (width x height)
+     * @return int[2] {width, height}
+     */
+    private int[] probeVideoResolution(Path videoPath) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("ffprobe");
+        command.add("-v");
+        command.add("error");
+        command.add("-select_streams");
+        command.add("v:0");
+        command.add("-show_entries");
+        command.add("stream=width,height");
+        command.add("-of");
+        command.add("csv=p=0:s=x");
+        command.add(videoPath.toString());
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+        }
+
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            throw new RuntimeException("ffprobe 获取视频分辨率超时");
+        }
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            throw new RuntimeException("ffprobe 获取视频分辨率失败: exit " + exitCode);
+        }
+
+        String[] parts = output.toString().trim().split("x");
+        return new int[]{Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim())};
+    }
+
+    /**
+     * 使用 ffprobe 检测视频是否包含音频轨
+     */
+    private boolean probeHasAudioStream(Path videoPath) {
+        try {
+            List<String> command = new ArrayList<>();
+            command.add("ffprobe");
+            command.add("-v");
+            command.add("error");
+            command.add("-select_streams");
+            command.add("a");
+            command.add("-show_entries");
+            command.add("stream=codec_type");
+            command.add("-of");
+            command.add("default=noprint_wrappers=1:nokey=1");
+            command.add(videoPath.toString());
+
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int len;
+            while ((len = process.getInputStream().read(buffer)) != -1) {
+                baos.write(buffer, 0, len);
+            }
+            int exitCode = process.waitFor();
+
+            if (exitCode != 0) {
+                log.warn("ffprobe 检测音频轨失败: {}", baos.toString());
+                return false;
+            }
+            return baos.toString().trim().length() > 0;
+        } catch (Exception e) {
+            log.warn("ffprobe 检测音频轨异常: {}", e.getMessage());
+            return false;
         }
     }
 

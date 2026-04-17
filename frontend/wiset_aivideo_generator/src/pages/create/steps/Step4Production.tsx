@@ -815,26 +815,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   useSseProgress(projectId, {
     onEpisodeScriptDone: (data) => {
-      // Stage 1 (script) 完成 → 更新 scriptStatus，重新加载 panels 数据
-      setChapters(prev => prev.map(ch => ({
-        ...ch,
-        episodes: ch.episodes.map(ep =>
-          ep.episodeIndex === data.episodeNum
-            ? { ...ep, scriptStatus: 'done' as const }
-            : ep
-        ),
-      })));
-      // 重新加载 panels 数据
-      const ep = chapters.flatMap(ch => ch.episodes).find(e => e.episodeIndex === data.episodeNum);
-      if (ep) {
-        panelsLoadedRef.current.delete(ep.episodeId);
-        loadPanelsForEpisode(ep.episodeId);
-      }
-      // 刷新全量 episodes 确保拿到最新的 scriptStatus 和 storyboardStatus
-      void loadEpisodes();
+      // Page 2 剧本完成事件，4A 阶段不使用
     },
     onEpisodeStoryboardDone: (data) => {
-      // Stage 2 (storyboard) 完成 → 清除 generatingScript，停轮询
+      // 分镜生成完成 → 清除 generatingScript，停轮询
       setGeneratingScript(null);
       setChapters(prev => prev.map(ch => ({
         ...ch,
@@ -849,7 +833,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         loadPanelsForEpisode(data.episodeId);
         refreshProductionStatuses(data.episodeId);
       }
-      // 刷新全量 episodes 确保拿到最新的数据
       void loadEpisodes();
     },
     onEpisodePanelDone: (data) => {
@@ -2312,13 +2295,29 @@ const DoneEpisodeCard = React.memo(function DoneEpisodeCard({
     if (pageIndex === 0 && episode.gridPrompt) {
       return episode.gridPrompt;
     }
-    // fallback: 计算
+    // fallback: 动态计算网格尺寸
     if (buildGridPromptText && allShots.length > 0) {
-      const SHOTS_PER_PAGE = 9;
-      const fromIdx = pageIndex * SHOTS_PER_PAGE;
-      const toIdx = Math.min(fromIdx + SHOTS_PER_PAGE, allShots.length);
+      const config = (episode as any).gridConfigs?.[pageIndex];
+      let cols = 3, rows = 3;
+      if (config) {
+        cols = config.gridCols;
+        rows = config.gridRows;
+      } else {
+        if (allShots.length <= 4) { cols = 2; rows = 2; }
+      }
+      const capacity = cols * rows;
+      let fromIdx = 0;
+      const configs = (episode as any).gridConfigs;
+      if (configs && configs.length > pageIndex) {
+        for (let i = 0; i < pageIndex; i++) {
+          fromIdx += configs[i].shotCount ?? (configs[i].gridCols * configs[i].gridRows);
+        }
+      } else {
+        fromIdx = pageIndex * capacity;
+      }
+      const toIdx = Math.min(fromIdx + capacity, allShots.length);
       const pageShots = allShots.slice(fromIdx, toIdx);
-      return buildGridPromptText(visualStyle, pageShots, isComicCommentary);
+      return buildGridPromptText(visualStyle, pageShots, isComicCommentary, cols, rows);
     }
     return '';
   };

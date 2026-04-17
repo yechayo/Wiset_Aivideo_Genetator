@@ -26,7 +26,8 @@ class NarrationAllocatorTest {
 
     @Test
     void testAllocate_basic() {
-        String narration = "阳光洒在古老的城墙上。他从未想过会有这一天。";
+        // 需要 3 个 shot 的旁白量（每个 14+ 字），给 4 句话确保够分
+        String narration = "阳光洒在古老的城墙上。他从未想过会有这一天。远处的山峦被薄雾笼罩。一阵风吹过带来了凉意。";
         List<Map<String, Object>> shots = makeShots(1, 3, 2, 3, 3, 3);
 
         allocator.allocate(narration, shots, "third_person");
@@ -114,8 +115,9 @@ class NarrationAllocatorTest {
             String nar = str(shot.get("narration"));
             if (!"无".equals(nar)) {
                 int len = nar.length();
-                assertTrue(len >= 5 && len <= 16,
-                        "Shot " + shot.get("shotNumber") + " narration 长度 " + len + " 超出范围 [5,16]");
+                // duration=3 时实现约束为 [14, 24] (softMax=20 * 1.2)
+                assertTrue(len >= 5 && len <= 24,
+                        "Shot " + shot.get("shotNumber") + " narration 长度 " + len + " 超出范围 [5,24]");
             }
         }
     }

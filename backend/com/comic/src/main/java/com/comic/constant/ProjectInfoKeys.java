@@ -20,6 +20,8 @@ public final class ProjectInfoKeys {
     public static final String VIDEO_MODEL = "videoModel";
     public static final String VIDEO_REF_MODE = "videoRefMode";
     public static final String PRODUCTION_MODE = "productionMode";
+    public static final String SCRIPT_STYLE = "scriptStyle";
+    public static final String SCRIPT_STYLE_SHUANGJU = "shuangju";
     public static final String NARRATION_PERSPECTIVE = "narrationPerspective";
     public static final String NARRATION_VOICE_ID = "narrationVoiceId";
     public static final String PROTAGONIST_VOICE_ID = "protagonistVoiceId";

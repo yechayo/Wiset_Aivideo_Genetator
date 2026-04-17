@@ -517,7 +517,8 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             </div>
           )}
 
-          {scriptData && (
+          {/* 生成中不显示旧大纲，避免混淆 */}
+          {scriptData && !statusInfo?.isGenerating && (
             <div className={styles.scriptContainer}>
               {/* 项目信息 */}
               {projectInfo && (

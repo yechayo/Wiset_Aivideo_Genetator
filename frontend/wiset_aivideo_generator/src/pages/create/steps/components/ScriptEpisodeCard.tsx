@@ -10,6 +10,7 @@ const EDITABLE_FIELDS = [
   'sceneDescription', 'visualDescription', 'narration', 'dialogue', 'speaker',
   'narrationTone', 'dialogueTone', 'shotSize', 'cameraAngle',
   'cameraMovement', 'scene', 'visualEffects', 'audioEffects', 'transitionHint',
+  'hookPoint',
 ] as const;
 
 const FIELD_LABELS: Record<string, string> = {
@@ -27,6 +28,7 @@ const FIELD_LABELS: Record<string, string> = {
   visualEffects: '视觉特效',
   audioEffects: '音效',
   transitionHint: '过渡提示',
+  hookPoint: '爽点',
 };
 
 const MULTI_LINE_FIELDS = new Set(['sceneDescription', 'visualDescription', 'narration', 'dialogue', 'scene']);
@@ -134,11 +136,8 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
             {hasShots ? `${episode.segments.length} 个分镜` : '暂无分镜数据'}
           </span>
           <div className={styles.scriptStageList}>
-            <span className={`${styles.scriptStageItem} ${episode.scriptStatus === 'done' ? styles.scriptStageItemDone : episode.scriptStatus === 'generating' ? styles.scriptStageItemActive : styles.scriptStageItemPending}`}>
-              {episode.scriptStatus === 'generating' ? '⏳ Stage 1: 剧本生成中...' : episode.scriptStatus === 'done' ? '✓ Stage 1: 剧本完成' : '○ Stage 1: 待生成'}
-            </span>
             <span className={`${styles.scriptStageItem} ${episode.storyboardStatus === 'done' ? styles.scriptStageItemDone : episode.storyboardStatus === 'generating' ? styles.scriptStageItemActive : styles.scriptStageItemPending}`}>
-              {episode.storyboardStatus === 'generating' ? '⏳ Stage 2: 旁白精修中...' : episode.storyboardStatus === 'done' ? '✓ Stage 2: 旁白精修完成' : '○ Stage 2: 待精修'}
+              {episode.storyboardStatus === 'generating' ? '⏳ 分镜生成中...' : episode.storyboardStatus === 'done' ? '✓ 分镜完成' : '○ 待生成分镜'}
             </span>
           </div>
         </div>

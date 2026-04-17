@@ -304,25 +304,83 @@ public class VideoCompositionService {
     }
 
     /**
-     * 去掉视频的前N帧
+     * 去掉视频的前N帧（音视频统一裁剪，保证同步）
      *
      * @param inputPath  输入视频路径
      * @param outputPath 输出视频路径
      * @param framesToSkip 要跳过的帧数
      */
     private void removeFirstFrames(Path inputPath, Path outputPath, int framesToSkip) throws Exception {
+        double fps = probeFrameRate(inputPath);
+        double trimDuration = framesToSkip / fps;
+
+        // 用 -ss 统一跳过音视频，不分开过滤，从根本上保证同步
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
         command.add("-i");
         command.add(inputPath.toString());
-        command.add("-vf");
-        command.add("select='gt(n," + (framesToSkip - 1) + ")'");
-        command.add("-vsync");
-        command.add("0");
+        command.add("-ss");
+        command.add(String.format("%.4f", trimDuration));
+        command.add("-c:v");
+        command.add("libx264");
+        command.add("-preset");
+        command.add("medium");
+        command.add("-crf");
+        command.add("23");
+        command.add("-c:a");
+        command.add("aac");
+        command.add("-b:a");
+        command.add("128k");
         command.add("-y");
         command.add(outputPath.toString());
 
         executeFFmpeg(command);
+    }
+
+    /**
+     * 探测视频帧率（fps）
+     */
+    private double probeFrameRate(Path videoPath) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath.replace("ffmpeg", "ffprobe"));
+        command.add("-v");
+        command.add("error");
+        command.add("-select_streams");
+        command.add("v:0");
+        command.add("-show_entries");
+        command.add("stream=r_frame_rate");
+        command.add("-of");
+        command.add("csv=p=0");
+        command.add(videoPath.toString());
+
+        log.debug("探测帧率: {}", String.join(" ", command));
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+        }
+
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+        }
+
+        String fpsStr = output.toString().trim();
+        // ffprobe 输出格式: "24000/1001" 或 "24" 或 "30"
+        if (fpsStr.contains("/")) {
+            String[] parts = fpsStr.split("/");
+            double num = Double.parseDouble(parts[0]);
+            double den = Double.parseDouble(parts[1]);
+            return num / den;
+        }
+        return Double.parseDouble(fpsStr);
     }
 
     /**

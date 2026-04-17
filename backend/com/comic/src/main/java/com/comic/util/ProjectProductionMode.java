@@ -34,4 +34,26 @@ public final class ProjectProductionMode {
         }
         return ProductionMode.COMIC_COMMENTARY.getCode().equals(s);
     }
+
+    public static boolean isShuangju(Project project) {
+        if (project == null) {
+            return false;
+        }
+        return isShuangju(project.getProjectInfo());
+    }
+
+    public static boolean isShuangju(Map<String, Object> projectInfo) {
+        if (projectInfo == null) {
+            return false;
+        }
+        Object raw = projectInfo.get(ProjectInfoKeys.SCRIPT_STYLE);
+        if (raw == null) {
+            return false;
+        }
+        String s = raw.toString().trim();
+        if (s.isEmpty()) {
+            return false;
+        }
+        return ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(s);
+    }
 }

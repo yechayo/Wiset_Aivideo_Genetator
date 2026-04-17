@@ -8,10 +8,14 @@ import com.comic.ai.text.TextGenerationService;
 import com.comic.ai.video.GrokVideoService;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.ai.video.ViduVideoService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.env.Environment;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -52,6 +56,33 @@ public class AiServiceConfiguration {
     public TextGenerationService textGenerationService(DeepSeekTextService deepSeekTextService) {
         log.info("文本生成服务: DeepSeek");
         return deepSeekTextService;
+    }
+
+    /**
+     * DeepSeek Reasoner Bean — 用于分镜 Agent 的规划决策（deepseek-reasoner 模型）
+     */
+    @Bean("reasoner")
+    public DeepSeekTextService deepseekReasonerTextService(OkHttpClient httpClient,
+                                                            ObjectMapper objectMapper,
+                                                            Environment env) {
+        DeepSeekTextService reasoner = new DeepSeekTextService(httpClient, objectMapper);
+        try {
+            setField(reasoner, "apiKey", env.getProperty("comic.deepseek-reasoner.api-key", ""));
+            setField(reasoner, "baseUrl", env.getProperty("comic.deepseek-reasoner.base-url", "https://api.deepseek.com"));
+            setField(reasoner, "model", env.getProperty("comic.deepseek-reasoner.model", "deepseek-reasoner"));
+            setField(reasoner, "maxTokens", Integer.parseInt(env.getProperty("comic.deepseek-reasoner.max-tokens", "4096")));
+            setField(reasoner, "narrationRefinementEnabled", false);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to configure DeepSeek Reasoner", e);
+        }
+        log.info("DeepSeek Reasoner 配置完成: model={}", env.getProperty("comic.deepseek-reasoner.model", "deepseek-reasoner"));
+        return reasoner;
+    }
+
+    private void setField(Object target, String fieldName, Object value) throws Exception {
+        java.lang.reflect.Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     // ========== 默认 Bean（向后兼容，不确定 provider 时使用） ==========

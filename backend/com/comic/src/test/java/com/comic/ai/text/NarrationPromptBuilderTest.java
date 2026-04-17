@@ -46,9 +46,9 @@ class NarrationPromptBuilderTest {
     @Test
     void testWordCountEstimate() {
         // 60s / 3 = 20 shots, 20 - 6 dialogue = 14 narration shots
-        // 14 * 11 * 1.15 = 177
+        // 14 * 17 * 1.15 = 273.7 → 273
         String prompt = builder.buildNarrationUserPrompt("test", "", 60, 6);
-        assertTrue(prompt.contains("177") || prompt.contains("178"),
+        assertTrue(prompt.contains("273"),
                 "字数估算未出现在 prompt 中，实际: " + prompt);
     }
 }

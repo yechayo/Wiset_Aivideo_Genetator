@@ -40,7 +40,9 @@ interface GridEpisodeCardProps {
 /** 根据分镜数量计算网格布局（与后端一致） */
 function getGridSize(shotCount: number): { cols: number; rows: number } {
   if (shotCount <= 4) return { cols: 2, rows: 2 };
-  return { cols: 3, rows: 3 };
+  if (shotCount <= 9) return { cols: 3, rows: 3 };
+  if (shotCount <= 16) return { cols: 4, rows: 4 };
+  return { cols: 5, rows: 5 };
 }
 
 function buildAdaptivePages(totalShots: number): Array<{ fromIdx: number; toIdx: number; cols: number; rows: number }> {
@@ -111,8 +113,16 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
     const allShots = getAllShots();
     const visualStyle = getVisualStyle();
     const config = (episode as any).gridConfigs?.[pageIndex];
-    const cols = config?.gridCols ?? 3;
-    const rows = config?.gridRows ?? 3;
+    let cols: number, rows: number;
+    if (config) {
+      cols = config.gridCols;
+      rows = config.gridRows;
+    } else {
+      const adaptivePages = buildAdaptivePages(allShots.length);
+      const pageConfig = adaptivePages[pageIndex];
+      cols = pageConfig?.cols ?? 3;
+      rows = pageConfig?.rows ?? 3;
+    }
     const capacity = cols * rows;
     let fromIdx = 0;
     const configs = (episode as any).gridConfigs;
@@ -191,7 +201,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
 
   const handleRejectClick = useCallback(() => {
     const reason = prompt('请给出你的优化建议:');
-    if (reason) onRejectGrid(episode.episodeId, reason);
+    if (reason !== null) onRejectGrid(episode.episodeId, reason || '无');
   }, [episode.episodeId, onRejectGrid]);
 
   const handleGenerateClick = useCallback(() => {

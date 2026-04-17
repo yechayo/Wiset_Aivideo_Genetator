@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Profile;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 import java.util.*;
@@ -17,11 +16,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * 旁白生成流程端到端测试
  * 使用 @TestConfiguration 隔离旁白相关 bean，不依赖 OSS 等基础设施
  */
-@SpringJUnitConfig
+@SpringJUnitConfig(NarrationE2eTest.NarrationTestConfig.class)
 class NarrationE2eTest {
 
     @TestConfiguration
-    @Profile("test")
     static class NarrationTestConfig {
         @Bean
         public NarrationAllocator narrationAllocator() {
@@ -72,7 +70,8 @@ class NarrationE2eTest {
             String nar = str(shot.get("narration"));
             if (!"无".equals(nar)) {
                 int len = nar.length();
-                assertTrue(len >= 5 && len <= 20,
+                // duration=3 时实现约束为 [14, 24] (softMax=20 * 1.2)
+                assertTrue(len >= 5 && len <= 24,
                         "Shot " + shot.get("shotNumber") + " narration 长度 " + len + " 超出范围");
             }
         }

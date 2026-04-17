@@ -171,6 +171,7 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
   const [narrationVoiceId, setNarrationVoiceId] = useState(() => info?.narrationVoiceId || '');
   const [protagonistVoiceId, setProtagonistVoiceId] = useState(() => info?.protagonistVoiceId || '');
   const [videoRefMode, setVideoRefMode] = useState<boolean>(() => info?.videoRefMode === true);
+  const [scriptStyle, setScriptStyle] = useState<'standard' | 'shuangju'>(() => (info?.scriptStyle as 'standard' | 'shuangju') || 'standard');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ========== 音色试听 ==========
@@ -234,6 +235,7 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
       videoModel,
       videoRefMode: videoRefMode || undefined,
       productionMode,
+      scriptStyle: scriptStyle !== 'standard' ? scriptStyle : undefined,
       narrationPerspective: narrationPerspective || undefined,
       narrationVoiceId: narrationPerspective === 'third_person' ? narrationVoiceId || undefined : undefined,
       protagonistVoiceId: narrationPerspective === 'first_person' ? protagonistVoiceId || undefined : undefined,
@@ -322,6 +324,29 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
                 onChange={(v) => setProductionMode(v as ProductionMode)}
               />
             </div>
+
+            {/* 爽剧模式 - 仅实时动画模式显示 */}
+            {productionMode === 'realtime_animation' && (
+              <div className={styles.configSection}>
+                <label className={styles.configLabel}>爽剧模式</label>
+                <div className={styles.durationGroup}>
+                  <button
+                    type="button"
+                    className={`${styles.durationButton} ${scriptStyle === 'standard' ? styles.active : ''}`}
+                    onClick={() => setScriptStyle('standard')}
+                  >
+                    标准
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.durationButton} ${scriptStyle === 'shuangju' ? styles.active : ''}`}
+                    onClick={() => setScriptStyle('shuangju')}
+                  >
+                    爽剧
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* 旁白配置 - 仅漫剧解说模式显示 */}
             {productionMode === 'comic_commentary' && (

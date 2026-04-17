@@ -123,15 +123,15 @@ public class NarrationAllocator {
         }
 
         if (startIdx < sentences.size()) {
-            String last = sentences.get(sentences.size() - 1);
-            int len = last.length();
+            String remaining = sentences.get(startIdx);
+            int len = remaining.length();
             if (len > 0 && len <= softMax * 1.5) {
-                log.warn("Shot {} 找不到合适句子组合，降级使用最后一句 ({}字)", shotNum, len);
-                return last;
+                log.warn("Shot {} 找不到合适句子组合，降级使用当前句 ({}字)", shotNum, len);
+                return remaining;
             }
             if (len > softMax * 1.5) {
-                String truncated = truncateToLength(last, softMax);
-                log.warn("Shot {} 最后一句截断为 {} 字", shotNum, truncated.length());
+                String truncated = truncateToLength(remaining, softMax);
+                log.warn("Shot {} 当前句截断为 {} 字", shotNum, truncated.length());
                 return truncated;
             }
         }
