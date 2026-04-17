@@ -10,13 +10,14 @@ import org.springframework.stereotype.Component;
 public class ScriptPromptBuilder {
 
     public String buildScriptOutlineSystemPrompt(int totalEpisodes, String genre, String targetAudience,
-                                                  int chapterCount, int episodesPerChapter, int episodeDuration) {
+                                                  int chapterCount, int episodesPerChapter, int episodeDuration,
+                                                  String scriptStyle) {
         ScriptParams params = calculateScriptParameters(totalEpisodes);
         if (params.isSingleEpisode) {
-            return buildSingleEpisodePrompt(genre, params, episodeDuration);
+            return buildSingleEpisodePrompt(genre, params, episodeDuration, scriptStyle);
         }
 
-        return "你是一名专业的漫画剧本编剧。\n"
+        String base = "你是一名专业的漫画剧本编剧。\n"
                 + "【集数硬约束（最高优先级，必须严格遵守）】\n"
                 + "用户设定的总集数为 " + totalEpisodes + " 集。\n\n"
                 + "请根据用户提供的信息生成结构化的剧本大纲。\n"
@@ -37,10 +38,27 @@ public class ScriptPromptBuilder {
                 + "4. 每集需列出标题并用 100-200 字概括核心冲突和结尾钩子\n"
                 + "5. 每集描述 1-2 个关键场景转折点，确保后续编剧能据此展开完整剧本\n"
                 + "6. 章节剧情线要体现节奏变化：标注每集中哪些部分是高潮（需展开），哪些是过渡（需简洁）";
+
+        if ("shuangju".equals(scriptStyle)) {
+            base += "\n\n【爽剧节奏约束（爽剧模式生效）】\n"
+                    + "- 每集必须规划 8-10 个「爽点节拍」（hookBeats），平均每 3 秒一个\n"
+                    + "- 爽点类型包括但不限于：身份反转、实力碾压、打脸、情绪爆发、悬念揭晓、视觉冲击、言语怼回、绝地反杀\n"
+                    + "- 大纲中每集描述必须明确标注爽点位置和类型，格式：\n"
+                    + "  「爽点①：XXX（类型）」「爽点②：XXX（类型）」...\n"
+                    + "- 节奏要求：\n"
+                    + "  - 开头 3 秒必须有强力钩子（hook）：悬念、冲击画面、或反转\n"
+                    + "  - 中间部分密集爽点，不允许超过 6 秒无爽点的平铺段落\n"
+                    + "  - 结尾必须是强悬念或情绪高潮，驱动观众看下一集\n"
+                    + "- 每集概括字数增加到 200-300 字，以容纳爽点节拍标注\n"
+                    + "- 整体叙事节奏：快速推进，禁止冗长铺垫";
+        }
+
+        return base;
     }
 
     public String buildScriptOutlineUserPrompt(String storyPrompt, String genre, String setting,
-                                               int totalEpisodes, int episodeDuration, String visualStyle) {
+                                               int totalEpisodes, int episodeDuration, String visualStyle,
+                                               String scriptStyle) {
         StringBuilder sb = new StringBuilder();
         sb.append("核心创意：").append(storyPrompt).append("\n");
         sb.append("题材类型：").append(genre != null ? genre : "未指定").append("\n");
@@ -48,6 +66,11 @@ public class ScriptPromptBuilder {
         sb.append("总集数：").append(totalEpisodes).append(" 集\n");
         sb.append("每集时长：").append(episodeDuration).append(" 秒\n");
         sb.append("视觉风格：").append(visualStyle != null ? visualStyle : "未指定");
+
+        if ("shuangju".equals(scriptStyle)) {
+            sb.append("\n剧本风格：爽剧（三秒一个爽点，节奏极快，短句驱动）");
+        }
+
         return sb.toString();
     }
 
@@ -148,8 +171,8 @@ public class ScriptPromptBuilder {
         }
     }
 
-    private String buildSingleEpisodePrompt(String genre, ScriptParams params, int episodeDuration) {
-        return "创建完整的单集剧本大纲，使用 markdown 格式。\n"
+    private String buildSingleEpisodePrompt(String genre, ScriptParams params, int episodeDuration, String scriptStyle) {
+        String base = "创建完整的单集剧本大纲，使用 markdown 格式。\n"
                 + "【集数】本项目固定为 1 集：不得扩展为多集大纲或多条分集。\n"
                 + "题材类型：" + genre + "\n"
                 + "目标时长：" + episodeDuration + " 秒\n"
@@ -157,5 +180,15 @@ public class ScriptPromptBuilder {
                 + "关键物品：" + params.minItems + "-" + params.maxItems + "\n"
                 + "输出格式：仅返回 JSON { \"outline\": \"Markdown 大纲\" }\n"
                 + "大纲需包含开场、发展、高潮和结局。";
+
+        if ("shuangju".equals(scriptStyle)) {
+            base += "\n\n【爽剧节奏约束】\n"
+                    + "- 规划 8-10 个「爽点节拍」，平均每 3 秒一个\n"
+                    + "- 大纲中明确标注爽点位置：「爽点①：XXX」「爽点②：XXX」...\n"
+                    + "- 开头 3 秒必须有强力钩子，结尾必须是强悬念\n"
+                    + "- 节奏极快，禁止冗长铺垫";
+        }
+
+        return base;
     }
 }
