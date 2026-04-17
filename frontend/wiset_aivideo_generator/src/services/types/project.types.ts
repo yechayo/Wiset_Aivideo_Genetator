@@ -25,6 +25,9 @@ export interface Script {
 /** 制作模式：实时动画（默认）| 漫剧解说 */
 export type ProductionMode = 'realtime_animation' | 'comic_commentary';
 
+/** 剧本风格：标准（默认）| 爽剧 */
+export type ScriptStyle = 'standard' | 'shuangju';
+
 /**
  * 创建项目请求参数
  */
@@ -39,6 +42,7 @@ export interface CreateProjectRequest {
   videoProvider?: string;
   videoModel?: string;
   productionMode?: ProductionMode;
+  scriptStyle?: ScriptStyle;
   narrationPerspective?: 'first_person' | 'third_person';
   narrationVoiceId?: string;
   protagonistVoiceId?: string;
@@ -174,6 +178,7 @@ export interface ProjectInfoData {
   videoProvider?: string;
   videoModel?: string;
   productionMode?: ProductionMode;
+  scriptStyle?: ScriptStyle;
   narrationPerspective?: string;
   narrationVoiceId?: string;
   protagonistVoiceId?: string;
