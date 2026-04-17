@@ -33,7 +33,19 @@ public class NanobananaImageService implements ImageGenerationService {
     // 超时时间（毫秒）
     private static final long TIMEOUT_MS = 86_400_000; // 24小时
 
-    // 支持的宽高比
+    // 支持的尺寸
+    private static final Set<String> SUPPORTED_SIZES = new HashSet<>(java.util.Arrays.asList(
+            "1K", "2K", "4K"
+    ));
+
+    /**
+     * 根据 width 推算尺寸档位
+     */
+    private String computeSize(int width) {
+        if (width >= 3000) return "4K";
+        if (width >= 1500) return "2K";
+        return "1K";
+    }
     private static final Set<String> SUPPORTED_ASPECT_RATIOS = new HashSet<>(java.util.Arrays.asList(
             "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9"
     ));
@@ -70,9 +82,10 @@ public class NanobananaImageService implements ImageGenerationService {
     private String doGenerate(String prompt, int width, int height, List<String> urls) {
         try {
             String aspectRatio = computeAspectRatio(width, height);
+            String size = computeSize(width);
 
             // 1. 提交异步任务
-            String taskId = submitTask(prompt, aspectRatio, urls);
+            String taskId = submitTask(prompt, size, aspectRatio, urls);
             log.info("Nanobanana2 任务已提交, taskId={}", taskId);
 
             // 2. 轮询任务状态
@@ -95,10 +108,10 @@ public class NanobananaImageService implements ImageGenerationService {
     /**
      * 提交异步图片生成任务
      */
-    private String submitTask(String prompt, String aspectRatio, List<String> urls) throws IOException {
+    private String submitTask(String prompt, String size, String aspectRatio, List<String> urls) throws IOException {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("prompt", prompt);
-        requestBody.put("size", "2K");
+        requestBody.put("size", size);
         requestBody.put("aspectRatio", aspectRatio);
         if (urls != null && !urls.isEmpty()) {
             requestBody.put("urls", urls);
