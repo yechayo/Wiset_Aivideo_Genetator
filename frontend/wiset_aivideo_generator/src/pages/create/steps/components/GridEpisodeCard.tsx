@@ -201,7 +201,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
 
   const handleRejectClick = useCallback(() => {
     const reason = prompt('请给出你的优化建议:');
-    if (reason) onRejectGrid(episode.episodeId, reason);
+    if (reason !== null) onRejectGrid(episode.episodeId, reason || '无');
   }, [episode.episodeId, onRejectGrid]);
 
   const handleGenerateClick = useCallback(() => {
