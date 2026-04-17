@@ -17,6 +17,7 @@ import {
   approveEpisodeGrid,
   rejectEpisodeGrid,
   regenerateEpisodeGrid,
+  regenerateEpisodeGridPage,
   generateVideo,
   generateVideoRef,
   generateEpisodeScripts,
@@ -62,7 +63,7 @@ const SpinIcon = () => <span className={styles.btnSpinner} />;
 
 const STEPS = [
   { key: 'script' as SubPhase, number: 'a', label: '脚本生成' },
-  { key: 'grid' as SubPhase, number: 'b', label: '九宫格图片' },
+  { key: 'grid' as SubPhase, number: 'b', label: '宫格图片' },
   { key: 'video' as SubPhase, number: 'c', label: '视频生成' },
 ];
 
@@ -270,6 +271,20 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   });
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [generatingGrid, setGeneratingGrid] = useState<number | null>(null);
+  /** 逐页生成中的 { "episodeId-pageIndex": true } */
+  const [generatingPageKeys, setGeneratingPageKeys] = useState<Set<string>>(new Set());
+  // 按 episodeId 索引的逐页生成 Set，避免渲染时 IIFE 创建新引用破坏 memo
+  const generatingPagesByEpisode = useMemo(() => {
+    const map = new Map<number, Set<number>>();
+    generatingPageKeys.forEach(k => {
+      const dashIdx = k.indexOf('-');
+      const eid = Number(k.substring(0, dashIdx));
+      const pidx = Number(k.substring(dashIdx + 1));
+      if (!map.has(eid)) map.set(eid, new Set());
+      map.get(eid)!.add(pidx);
+    });
+    return map;
+  }, [generatingPageKeys]);
   const [generatingVideoKeys, setGeneratingVideoKeys] = useState<Set<string>>(new Set()); // "episodeId-panelId"
   const [approvingEpisodeId, setApprovingEpisodeId] = useState<number | null>(null);
   const [rejectingEpisodeId, setRejectingEpisodeId] = useState<number | null>(null);
@@ -1013,6 +1028,51 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     };
     void pollGrid();
   }, [projectId, generatingGrid, loadEpisodes]);
+
+  // Per-page grid generation
+  const pagePollCancelledRef = useRef<Set<string>>(new Set());
+  const handleGenerateGridPage = useCallback(async (episodeId: number, pageIndex: number, prompt?: string) => {
+    if (!projectId) return;
+    const key = `${episodeId}-${pageIndex}`;
+    // 取消同一页之前的轮询
+    pagePollCancelledRef.current.add(key);
+    const myGenVersion = `${key}-${Date.now()}`;
+    pagePollCancelledRef.current.delete(myGenVersion);
+
+    setGeneratingPageKeys(prev => new Set(prev).add(key));
+    let genVersion: string | undefined;
+    try {
+      const res = await regenerateEpisodeGridPage(projectId, episodeId, pageIndex, prompt);
+      genVersion = res.data?.data?.genVersion;
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || '生成宫格图失败');
+      setGeneratingPageKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
+      return;
+    }
+    // Poll until page is done (with cancellation and genVersion check)
+    const pollPage = async () => {
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        if (pagePollCancelledRef.current.has(myGenVersion)) return; // cancelled
+        const res = await getEpisodes(projectId);
+        if (pagePollCancelledRef.current.has(myGenVersion)) return;
+        const ep = (res.data?.items || []).find((e: any) => e.id === episodeId);
+        if (!ep) continue;
+        // 如果后端返回了 genVersion，检查版本是否匹配
+        const pageVersion = ep.episodeInfo?.['gridGenPageVersion_' + pageIndex];
+        if (genVersion && pageVersion !== genVersion) continue; // 图片尚未更新
+        const gridImages = ep.episodeInfo?.gridImages;
+        if (gridImages && gridImages[pageIndex]) {
+          setGeneratingPageKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
+          loadEpisodes();
+          return;
+        }
+      }
+      setGeneratingPageKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
+      loadEpisodes();
+    };
+    void pollPage();
+  }, [projectId, loadEpisodes]);
 
   // Approve/reject grid per episode
   const handleApproveGrid = useCallback(async (episodeId: number) => {
@@ -1906,42 +1966,24 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                   </div>
                   {chapterOpen && (
                   <div className={styles.episodeList}>
-                    {chapter.episodes.map(ep => {
-                      const isDone = doneEps.has(ep.episodeId);
-                      if (isDone) {
-                        return (
-                          <DoneEpisodeCard
-                            key={ep.episodeId}
-                            episode={ep}
-                            project={project}
-                            expandedPassedEpisodeId={expandedPassedEpisodeId}
-                            onToggleExpanded={setExpandedPassedEpisodeId}
-                            buildGridPromptText={buildGridPromptText}
-                            buildMultiShotPromptText={buildMultiShotPromptText}
-                            nextStageLabel="→ 视频"
-                            showGridPrompt={true}
-                            showGridImages={true}
-                            onOpenLightbox={setLightboxUrl}
-                          />
-                        );
-                      }
-                      return (
-                        <GridEpisodeCard
-                          key={ep.episodeId}
-                          projectId={projectId}
-                          episode={ep}
-                          generatingGrid={generatingGrid}
-                          approvingEpisodeId={approvingEpisodeId}
-                          rejectingEpisodeId={rejectingEpisodeId}
-                          onGenerateGrid={handleGenerateGrid}
-                          onApproveGrid={handleApproveGrid}
-                          onRejectGrid={handleRejectGrid}
-                          onRejectToScript={handleRejectToScript}
-                          onOpenLightbox={setLightboxUrl}
-                          buildGridPromptText={buildGridPromptText}
-                        />
-                      );
-                    })}
+                    {chapter.episodes.map(ep => (
+                      <GridEpisodeCard
+                        key={ep.episodeId}
+                        projectId={projectId}
+                        episode={ep}
+                        generatingGrid={generatingGrid}
+                        generatingPages={generatingPagesByEpisode.get(ep.episodeId) || new Set()}
+                        approvingEpisodeId={approvingEpisodeId}
+                        rejectingEpisodeId={rejectingEpisodeId}
+                        onGenerateGrid={handleGenerateGrid}
+                        onGenerateGridPage={handleGenerateGridPage}
+                        onApproveGrid={handleApproveGrid}
+                        onRejectGrid={handleRejectGrid}
+                        onRejectToScript={handleRejectToScript}
+                        onOpenLightbox={setLightboxUrl}
+                        buildGridPromptText={buildGridPromptText}
+                      />
+                    ))}
                   </div>
                   )}
                 </div>

@@ -515,6 +515,34 @@ public class EpisodeController {
         return Result.ok();
     }
 
+    @PostMapping("/{episodeId}/grid/regenerate/page/{pageIndex}")
+    @Operation(summary = "逐页生成/重新生成九宫格")
+    public Result<Map<String, Object>> regenerateEpisodeGridPage(
+            @PathVariable String projectId,
+            @PathVariable Long episodeId,
+            @PathVariable int pageIndex,
+            @RequestBody(required = false) Map<String, String> body) {
+        Episode episode = episodeRepository.selectById(episodeId);
+        if (episode == null) throw new BusinessException("剧集不存在");
+
+        Map<String, Object> info = episode.getEpisodeInfo();
+        // 设置 gridStatus 为 generating，并记录生成版本（用于前端区分新旧图片）
+        String genVersion = String.valueOf(System.currentTimeMillis());
+        info.put("gridStatus", "generating");
+        info.put("gridGenPageVersion_" + pageIndex, genVersion);
+        episode.setEpisodeInfo(info);
+        episodeRepository.updateById(episode);
+
+        String customPrompt = body != null ? body.get("prompt") : null;
+        String imageProvider = panelProductionService.getImageProvider(projectId);
+
+        gridImageService.generateGridPage(episodeId, pageIndex, imageProvider, customPrompt);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("genVersion", genVersion);
+        return Result.ok(result);
+    }
+
     private void checkAndAdvanceAllGridsApproved(String projectId) {
         // 新设计中面板审核通过后不再需要推进状态机（面板生产是用户手动触发的）
     }

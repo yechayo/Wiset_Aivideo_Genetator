@@ -116,6 +116,21 @@ export async function regenerateEpisodeGrid(
   );
 }
 
+/** 逐页生成/重新生成九宫格 */
+export async function regenerateEpisodeGridPage(
+  projectId: string,
+  episodeId: number,
+  pageIndex: number,
+  prompt?: string,
+): Promise<ApiResponse<void>> {
+  const body: Record<string, any> = {};
+  if (prompt !== undefined) body.prompt = prompt;
+  return post<ApiResponse<void>>(
+    `/api/projects/${projectId}/episodes/${episodeId}/grid/regenerate/page/${pageIndex}`,
+    Object.keys(body).length > 0 ? body : undefined,
+  );
+}
+
 /**
  * 审核通过分镜文本
  */

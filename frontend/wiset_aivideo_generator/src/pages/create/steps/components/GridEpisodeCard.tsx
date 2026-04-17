@@ -17,7 +17,7 @@ function getGridStatusBadge(status: string) {
     case 'approved': return { text: '已通过', className: styles.statusApproved };
     case 'generated': return { text: '待审核', className: styles.statusGenerated };
     case 'rejected': return { text: '已退回', className: styles.statusRejected };
-    case 'generating': return { text: '排队中', className: styles.statusGenerating, pulse: true };
+    case 'generating': return { text: '生成中', className: styles.statusGenerating, pulse: true };
     default: return { text: '待生成', className: styles.statusPending };
   }
 }
@@ -26,10 +26,14 @@ interface GridEpisodeCardProps {
   projectId: string;
   episode: EpisodeState;
   generatingGrid: number | null;
+  /** 逐页生成中的页码集合 */
+  generatingPages?: Set<number>;
   approvingEpisodeId: number | null;
   rejectingEpisodeId: number | null;
   /** 支持多页 prompts: 如果有值则传多页,否则传单页 fullPrompt */
   onGenerateGrid: (episodeId: number, fullPrompt?: string, gridPrompts?: string[]) => void;
+  /** 逐页生成回调 */
+  onGenerateGridPage?: (episodeId: number, pageIndex: number, prompt?: string) => void;
   onApproveGrid: (episodeId: number) => void;
   onRejectGrid: (episodeId: number, reason: string) => void;
   onRejectToScript: (episodeId: number) => void;
@@ -60,37 +64,50 @@ function buildAdaptivePages(totalShots: number): Array<{ fromIdx: number; toIdx:
   return pages;
 }
 
+/** 获取某页的 shots */
+function getPageShots(allShots: any[], pageIndex: number, gridConfigs?: any[]): any[] {
+  if (!allShots.length) return [];
+
+  if (gridConfigs && gridConfigs.length > pageIndex) {
+    let fromIdx = 0;
+    for (let i = 0; i < pageIndex; i++) {
+      fromIdx += gridConfigs[i].shotCount ?? (gridConfigs[i].gridCols * gridConfigs[i].gridRows);
+    }
+    const config = gridConfigs[pageIndex];
+    const capacity = config.shotCount ?? (config.gridCols * config.gridRows);
+    return allShots.slice(fromIdx, fromIdx + capacity);
+  }
+
+  const pages = buildAdaptivePages(allShots.length);
+  const page = pages[pageIndex];
+  if (!page) return [];
+  return allShots.slice(page.fromIdx, page.toIdx);
+}
+
 const GridEpisodeCard = React.memo(function GridEpisodeCard({
   projectId,
   episode,
   generatingGrid,
+  generatingPages,
   approvingEpisodeId,
   rejectingEpisodeId,
   onGenerateGrid,
+  onGenerateGridPage,
   onApproveGrid,
   onRejectGrid,
   onRejectToScript,
   onOpenLightbox,
   buildGridPromptText,
 }: GridEpisodeCardProps) {
+  const isApproved = episode.gridStatus === 'approved';
   const badge = getGridStatusBadge(episode.gridStatus || 'pending');
-  // 每页独立的编辑状态
   const [editedPrompts, setEditedPrompts] = useState<string[]>([]);
-  // 当前查看的页码
   const [currentPage, setCurrentPage] = useState(1);
-  // 追踪用户是否手动编辑过 prompt，避免 SSE/polling 更新时覆盖用户编辑
   const hasLocalEditRef = useRef(false);
 
-  // 是否可以编辑 prompt（approved 和 generating 状态不可编辑）
   const canEditPrompt = episode.gridStatus !== 'approved' && episode.gridStatus !== 'generating';
-  // 当前 episode 是否正在生成中
   const isGeneratingThisEpisode = generatingGrid === episode.episodeId;
-
-  // 是否有脚本数据
   const hasScript = episode.segments.length > 0 || (episode.episodeInfo?.shots?.length ?? 0) > 0;
-
-  // 计算总页数
-  const totalPages = episode.gridImages?.length || 1;
 
   // 获取所有 shots 数据
   const getAllShots = useCallback(() => {
@@ -100,7 +117,14 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
     return shotsData.map((s: any) => s.shots?.[0] || s).filter(Boolean);
   }, [episode.segments, episode.episodeInfo?.shots]);
 
-  // 获取视觉风格
+  const totalPages = episode.gridImages?.length || buildAdaptivePages(getAllShots().length).length || 1;
+
+  // 当前页的 shots
+  const currentPageShots = React.useMemo(() => {
+    const allShots = getAllShots();
+    return getPageShots(allShots, currentPage - 1, (episode as any).gridConfigs);
+  }, [getAllShots, currentPage, (episode as any).gridConfigs]);
+
   const getVisualStyle = useCallback(() => {
     return episode.segments[0]?.panelData?.visualStyle
       || (episode.episodeInfo?.visualStyle as string)
@@ -123,42 +147,26 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
       cols = pageConfig?.cols ?? 3;
       rows = pageConfig?.rows ?? 3;
     }
-    const capacity = cols * rows;
-    let fromIdx = 0;
-    const configs = (episode as any).gridConfigs;
-    if (configs && configs.length > pageIndex) {
-      for (let i = 0; i < pageIndex; i++) {
-        fromIdx += configs[i].shotCount ?? (configs[i].gridCols * configs[i].gridRows);
-      }
-    } else {
-      const adaptivePages = buildAdaptivePages(allShots.length);
-      fromIdx = adaptivePages[pageIndex]?.fromIdx ?? pageIndex * 9;
-    }
-    const toIdx = Math.min(fromIdx + capacity, allShots.length);
-    const pageShots = allShots.slice(fromIdx, toIdx);
+    const pageShots = getPageShots(allShots, pageIndex, (episode as any).gridConfigs);
     return buildGridPromptText(visualStyle, pageShots, false, cols, rows);
   }, [buildGridPromptText, getAllShots, getVisualStyle, episode]);
 
-  // 初始化/重置 editedPrompts（当 episodeId 或 gridStatus 变化时）
+  // 初始化/重置 editedPrompts
   useEffect(() => {
     hasLocalEditRef.current = false;
     const allShots = getAllShots();
-    const visualStyle = getVisualStyle();
     const pageCount = buildAdaptivePages(allShots.length).length || 1;
 
     if (canEditPrompt && buildGridPromptText && allShots.length > 0) {
-      // 如果有保存的多页 prompts，使用它们；否则自动生成
       if (episode.gridPrompts && episode.gridPrompts.length > 0) {
         setEditedPrompts(episode.gridPrompts);
       } else if (episode.gridPrompt) {
-        // 兼容旧的单 prompt：只设置第一页
         const prompts: string[] = [];
         for (let i = 0; i < pageCount; i++) {
           prompts.push(i === 0 ? episode.gridPrompt : buildPagePrompt(i));
         }
         setEditedPrompts(prompts);
       } else {
-        // 没有任何保存的 prompt，全部自动生成
         const prompts: string[] = [];
         for (let i = 0; i < pageCount; i++) {
           prompts.push(buildPagePrompt(i));
@@ -166,14 +174,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
         setEditedPrompts(prompts);
       }
     } else {
-      setEditedPrompts([]);
-    }
-  }, [episode.episodeId, episode.gridStatus, episode.gridPrompts, episode.gridPrompt]);
-
-  // gridPrompt / gridPrompts 从后端加载后同步（仅在用户未手动编辑时）
-  useEffect(() => {
-    if (hasLocalEditRef.current) return;
-    if (canEditPrompt) {
+      // 已通过时也初始化 prompts 用于只读展示
       if (episode.gridPrompts && episode.gridPrompts.length > 0) {
         setEditedPrompts(episode.gridPrompts);
       } else if (episode.gridPrompt) {
@@ -181,15 +182,29 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
         const pageCount = buildAdaptivePages(allShots.length).length || 1;
         const prompts: string[] = [];
         for (let i = 0; i < pageCount; i++) {
-          prompts.push(i === 0 ? episode.gridPrompt : buildPagePrompt(i));
+          prompts.push(i === 0 ? episode.gridPrompt! : buildPagePrompt(i));
         }
         setEditedPrompts(prompts);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [episode.gridPrompt, episode.gridPrompts, canEditPrompt, getAllShots, buildPagePrompt]);
+  }, [episode.episodeId, episode.gridStatus, episode.gridPrompts, episode.gridPrompt]);
 
-  // 更新某一页的 prompt
+  // gridPrompt / gridPrompts 从后端加载后同步
+  useEffect(() => {
+    if (hasLocalEditRef.current) return;
+    if (episode.gridPrompts && episode.gridPrompts.length > 0) {
+      setEditedPrompts(episode.gridPrompts);
+    } else if (episode.gridPrompt) {
+      const allShots = getAllShots();
+      const pageCount = buildAdaptivePages(allShots.length).length || 1;
+      const prompts: string[] = [];
+      for (let i = 0; i < pageCount; i++) {
+        prompts.push(i === 0 ? episode.gridPrompt : buildPagePrompt(i));
+      }
+      setEditedPrompts(prompts);
+    }
+  }, [episode.gridPrompt, episode.gridPrompts, getAllShots, buildPagePrompt]);
+
   const updatePrompt = useCallback((pageIndex: number, value: string) => {
     setEditedPrompts(prev => {
       const next = [...prev];
@@ -204,31 +219,34 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
     if (reason !== null) onRejectGrid(episode.episodeId, reason || '无');
   }, [episode.episodeId, onRejectGrid]);
 
-  const handleGenerateClick = useCallback(() => {
-    // 只有用户手动编辑过 prompt 时才传前端 prompts，否则让后端重新动态生成
+  const handleGenerateAllClick = useCallback(() => {
     if (hasLocalEditRef.current && editedPrompts.length > 0) {
       onGenerateGrid(episode.episodeId, editedPrompts[0], editedPrompts);
     } else {
       onGenerateGrid(episode.episodeId);
     }
-  }, [episode.episodeId, onGenerateGrid, editedPrompts, canEditPrompt]);
+  }, [episode.episodeId, onGenerateGrid, editedPrompts]);
+
+  const handleGeneratePageClick = useCallback((pageIndex: number) => {
+    const prompt = hasLocalEditRef.current ? editedPrompts[pageIndex] : undefined;
+    onGenerateGridPage?.(episode.episodeId, pageIndex, prompt);
+  }, [episode.episodeId, onGenerateGridPage, editedPrompts]);
 
   const handleRejectToScriptClick = useCallback(() => {
-    if (confirm('确定要退回脚本阶段吗？九宫格数据将被清除。')) {
+    if (confirm('确定要退回脚本阶段吗？宫格数据将被清除。')) {
       onRejectToScript(episode.episodeId);
     }
   }, [episode.episodeId, onRejectToScript]);
 
-  // 获取当前页的 prompt（用于显示）
   const currentPrompt = editedPrompts[currentPage - 1] || '';
+  const hasImageForCurrentPage = !!(episode.gridImages?.[currentPage - 1]);
 
-  // 角色参考图（本地 state，兼容老项目懒加载）
+  // 角色参考图
   const [charRefs, setCharRefs] = useState<{ name: string; url: string; role: string }[]>(
     episode.characterReferences?.filter(c => c.url) || [],
   );
   const charRefsFetchedRef = useRef(false);
 
-  // 老项目没有 characterReferences 时，自动从后端拉取一次
   useEffect(() => {
     if (charRefsFetchedRef.current) return;
     if (!hasScript) return;
@@ -246,12 +264,21 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
     return () => { cancelled = true; };
   }, [projectId, episode.episodeId, episode.characterReferences, hasScript]);
 
+  // 判断是否所有页都生成了图片
+  const allPagesGenerated = React.useMemo(() => {
+    const allShots = getAllShots();
+    const pages = buildAdaptivePages(allShots.length);
+    if (pages.length === 0) return false;
+    return pages.every((_, idx) => !!episode.gridImages?.[idx]);
+  }, [getAllShots, episode.gridImages]);
+
   return (
-    <div className={styles.episodeGridCard}>
+    <div className={`${styles.episodeGridCard} ${isApproved ? styles.episodeCardDone : ''}`}>
       <div className={styles.episodeGridHeader}>
         <div>
           <h3 className={styles.episodeGridTitle}>
             第{episode.episodeIndex}集 {episode.title}
+            {isApproved && <span className={styles.episodeCardDoneLabel}>✓ 已通过</span>}
           </h3>
           <span className={`${styles.statusBadge} ${badge.className}`}>
             <span className={`${styles.statusDot} ${badge.pulse ? styles.statusDotPulse : ''}`} />
@@ -264,27 +291,20 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
           )}
         </div>
         <div className={styles.episodeGridActions}>
-          {episode.gridStatus !== 'approved' && episode.gridStatus !== 'generated' && (
+          {/* 未生成时：全部生成 */}
+          {!isApproved && !allPagesGenerated && !isGeneratingThisEpisode && (
             <button
               className={styles.btnPrimary}
-              onClick={handleGenerateClick}
-              disabled={generatingGrid === episode.episodeId || !hasScript}
+              onClick={handleGenerateAllClick}
+              disabled={!hasScript}
               title={!hasScript ? '请先在 4A 生成剧本' : ''}
             >
-              {generatingGrid === episode.episodeId ? <><SpinIcon /> 排队中...</> : '生成九宫格'}
+              全部生成
             </button>
           )}
-          {(episode.gridStatus === 'generated' || episode.gridStatus === 'rejected') && (
+          {/* 已生成（全部页都有图）且未通过：通过/退回 */}
+          {(episode.gridStatus === 'generated' || allPagesGenerated) && !isApproved && (
             <>
-              {episode.gridStatus === 'generated' && (
-                <button
-                  className={styles.btnPrimary}
-                  onClick={handleGenerateClick}
-                  disabled={isGeneratingThisEpisode}
-                >
-                  {generatingGrid === episode.episodeId ? <><SpinIcon /> 排队中...</> : '重新生成'}
-                </button>
-              )}
               <button
                 className={styles.btnSuccess}
                 onClick={() => onApproveGrid(episode.episodeId)}
@@ -299,16 +319,27 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
               >
                 {rejectingEpisodeId === episode.episodeId ? <><SpinIcon /> 退回中...</> : '退回'}
               </button>
-              {episode.gridStatus === 'rejected' && (
-                <button
-                  className={styles.btnGhost}
-                  onClick={handleRejectToScriptClick}
-                  disabled={rejectingEpisodeId === episode.episodeId}
-                >
-                  退回脚本
-                </button>
-              )}
             </>
+          )}
+          {/* 已退回：退回脚本 */}
+          {episode.gridStatus === 'rejected' && (
+            <button
+              className={styles.btnGhost}
+              onClick={handleRejectToScriptClick}
+              disabled={rejectingEpisodeId === episode.episodeId}
+            >
+              退回脚本
+            </button>
+          )}
+          {/* 已通过：可退回重新编辑 */}
+          {isApproved && (
+            <button
+              className={styles.btnDanger}
+              onClick={handleRejectClick}
+              disabled={rejectingEpisodeId === episode.episodeId}
+            >
+              {rejectingEpisodeId === episode.episodeId ? <><SpinIcon /> 退回中...</> : '退回'}
+            </button>
           )}
         </div>
       </div>
@@ -319,31 +350,70 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
         </div>
       )}
 
-      {/* 多页图片展示 + 每页独立 Prompt 编辑器 */}
+      {/* 分页 tab + 右侧逐页生成按钮 */}
+      {hasScript && totalPages > 1 && (
+        <div className={styles.gridPageBar}>
+          <div className={styles.gridPageTabs}>
+            {Array.from({ length: totalPages }, (_, idx) => {
+              const hasImage = !!episode.gridImages?.[idx];
+              return (
+                <button
+                  key={idx}
+                  className={`${styles.gridPageTab} ${currentPage === idx + 1 ? styles.gridPageTabActive : ''} ${hasImage ? styles.gridPageTabDone : ''}`}
+                  onClick={() => setCurrentPage(idx + 1)}
+                >
+                  第{idx + 1}页
+                  {hasImage && <span className={styles.gridPageTabDot} />}
+                </button>
+              );
+            })}
+          </div>
+          {/* 右侧：当前页生成/重新生成 */}
+          {!isApproved && onGenerateGridPage && (
+            <button
+              className={styles.gridPageGenBtn}
+              onClick={() => handleGeneratePageClick(currentPage - 1)}
+              disabled={generatingPages?.has(currentPage - 1) || isGeneratingThisEpisode}
+            >
+              {generatingPages?.has(currentPage - 1) ? <><SpinIcon /> 生成中...</> : (episode.gridImages?.[currentPage - 1] ? '重新生成此页' : '生成此页')}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 单页：右侧生成按钮 */}
+      {hasScript && totalPages <= 1 && !isApproved && onGenerateGridPage && (
+        <div className={styles.gridPageBar}>
+          <div />
+          <button
+            className={styles.gridPageGenBtn}
+            onClick={() => handleGeneratePageClick(0)}
+            disabled={isGeneratingThisEpisode || generatingPages?.has(0)}
+          >
+            {(isGeneratingThisEpisode || generatingPages?.has(0)) ? <><SpinIcon /> 生成中...</> : (hasImageForCurrentPage ? '重新生成' : '生成宫格图')}
+          </button>
+        </div>
+      )}
+
+      {/* 宫格图片展示 */}
       {hasScript && episode.gridImages && episode.gridImages.length > 0 && !isGeneratingThisEpisode && (
         <div className={styles.gridPageSection}>
-          {/* 图片分页展示（复用 StoryboardGrid 组件） */}
           <StoryboardGrid
             gridImages={episode.gridImages}
-            shots={getAllShots()}
+            shots={currentPageShots}
             gridStatus={episode.gridStatus || 'pending'}
             currentPage={currentPage}
             onPageChange={setCurrentPage}
-            totalPages={totalPages}
+            totalPages={episode.gridImages.length}
           />
 
-          {/* 可编辑状态时显示当前页的 Prompt 编辑器 */}
+          {/* Prompt 显示/编辑 */}
           {canEditPrompt && editedPrompts.length > 0 && (
             <div className={styles.gridPromptEditor}>
               <div className={styles.gridPromptEditorHeader}>
                 <label className={styles.gridPromptLabel} htmlFor={`grid-prompt-${episode.episodeId}-${currentPage}`}>
-                  第 {currentPage} 页图片生成 Prompt（可直接编辑）
+                  第 {currentPage} 页图片生成 Prompt
                 </label>
-                {totalPages > 1 && (
-                  <span className={styles.gridPromptPageHint}>
-                    共 {totalPages} 页，当前第 {currentPage} 页
-                  </span>
-                )}
               </div>
               {charRefs.length > 0 && (
                 <div className={styles.gridCharRefs}>
@@ -368,16 +438,13 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
                 disabled={isGeneratingThisEpisode}
               />
               <div className={styles.gridPromptTip}>
-                直接编辑提示词内容，修改后将使用编辑后的版本重新生成九宫格图片。
-                {totalPages > 1 && (
-                  <> 提示：可切换页面分别编辑每一页的提示词。</>
-                )}
+                直接编辑提示词内容，修改后点击该页的生成按钮使用编辑后的版本。
               </div>
             </div>
           )}
 
-          {/* 已通过时显示当前页的 Prompt（只读） */}
-          {!canEditPrompt && episode.gridStatus === 'approved' && (
+          {/* 已通过时只读 prompt */}
+          {isApproved && editedPrompts.length > 0 && (
             <div className={styles.gridPromptEditor}>
               <label className={styles.gridPromptLabel}>
                 第 {currentPage} 页图片生成 Prompt
@@ -390,32 +457,14 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
         </div>
       )}
 
-      {/* 还没有生成图片但有脚本数据时：显示提示词编辑器 */}
+      {/* 没有图片但有脚本：显示 prompt 编辑器 */}
       {hasScript && (!episode.gridImages || episode.gridImages.length === 0) && !isGeneratingThisEpisode && (
         <div className={styles.gridPromptEditor}>
           <div className={styles.gridPromptEditorHeader}>
             <label className={styles.gridPromptLabel}>
               图片生成 Prompt（可直接编辑）
             </label>
-            {editedPrompts.length > 1 && (
-              <span className={styles.gridPromptPageHint}>
-                共 {editedPrompts.length} 页，当前第 {currentPage} 页
-              </span>
-            )}
           </div>
-          {editedPrompts.length > 1 && (
-            <div className={styles.gridPageTabs}>
-              {editedPrompts.map((_, idx) => (
-                <button
-                  key={idx}
-                  className={`${styles.gridPageTab} ${currentPage === idx + 1 ? styles.gridPageTabActive : ''}`}
-                  onClick={() => setCurrentPage(idx + 1)}
-                >
-                  第{idx + 1}页
-                </button>
-              ))}
-            </div>
-          )}
           {charRefs.length > 0 && (
             <div className={styles.gridCharRefs}>
               <span className={styles.gridCharRefsLabel}>角色参考图</span>
@@ -439,14 +488,14 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
             disabled={generatingGrid === episode.episodeId}
           />
           <div className={styles.gridPromptTip}>
-            直接编辑提示词内容，修改后将使用编辑后的版本重新生成九宫格图片。
+            直接编辑提示词内容，修改后点击生成按钮使用编辑后的版本。
           </div>
         </div>
       )}
 
-      {hasScript && (!episode.gridImages || episode.gridImages.length === 0) && (
+      {hasScript && (!episode.gridImages || episode.gridImages.length === 0) && !isGeneratingThisEpisode && (
         <div className={styles.gridEmptyState}>
-          暂无九宫格图片
+          暂无宫格图片
         </div>
       )}
     </div>

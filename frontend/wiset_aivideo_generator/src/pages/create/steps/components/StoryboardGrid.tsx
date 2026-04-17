@@ -4,6 +4,7 @@ import type { StoryboardShot } from '../../../../services/types/episode.types';
 
 export interface StoryboardGridProps {
   gridImages: string[];
+  /** 当前页的分镜（不是全部） */
   shots: StoryboardShot[];
   gridStatus: string;
   currentPage: number;
@@ -40,7 +41,7 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
         {isGenerating && (
           <div className={styles.overlay}>
             <div className={styles.spinner} />
-            <span>九宫格生成中...</span>
+            <span>宫格图生成中...</span>
           </div>
         )}
 
@@ -52,23 +53,23 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
 
         {isEmpty && !isGenerating && !isFailed && (
           <div className={styles.overlay}>
-            <span>暂无九宫格图片</span>
+            <span>暂无宫格图片</span>
           </div>
         )}
 
         {!isEmpty && !isGenerating && (
           <img
             src={gridImages[currentPage - 1] || gridImages[0]}
-            alt={`九宫格第 ${currentPage} 页`}
+            alt={`宫格第 ${currentPage} 页`}
             className={styles.gridImage}
           />
         )}
       </div>
 
-      {/* Shot info list */}
+      {/* Shot info list (current page only) */}
       {shots.length > 0 && (
         <div className={styles.shotList}>
-          <div className={styles.shotListHeader}>镜头列表 ({shots.length})</div>
+          <div className={styles.shotListHeader}>当前页镜头 ({shots.length})</div>
           {shots.map((shot, idx) => (
             <div key={idx} className={styles.shotItem}>
               <span className={styles.shotNumber}>#{shot.shotNumber}</span>
