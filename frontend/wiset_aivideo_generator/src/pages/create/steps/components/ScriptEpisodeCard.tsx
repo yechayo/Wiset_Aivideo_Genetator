@@ -10,6 +10,7 @@ const EDITABLE_FIELDS = [
   'sceneDescription', 'visualDescription', 'narration', 'dialogue', 'speaker',
   'narrationTone', 'dialogueTone', 'shotSize', 'cameraAngle',
   'cameraMovement', 'scene', 'visualEffects', 'audioEffects', 'transitionHint',
+  'hookPoint',
 ] as const;
 
 const FIELD_LABELS: Record<string, string> = {
@@ -27,6 +28,7 @@ const FIELD_LABELS: Record<string, string> = {
   visualEffects: '视觉特效',
   audioEffects: '音效',
   transitionHint: '过渡提示',
+  hookPoint: '爽点',
 };
 
 const MULTI_LINE_FIELDS = new Set(['sceneDescription', 'visualDescription', 'narration', 'dialogue', 'scene']);
