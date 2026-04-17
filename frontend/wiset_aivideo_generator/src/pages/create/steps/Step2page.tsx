@@ -451,12 +451,12 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
             ? '剧本大纲'
             : '剧情生成'}
         </h1>
-        <p className={styles.subtitle}>
-          {phase === 'outline_generating' && 'AI 正在根据你的创意生成剧本大纲...'}
-          {phase === 'outline_review' && '审阅 AI 生成的大纲，确认无误后进入剧情生成'}
-          {phase === 'episode_generating' && 'AI 正在根据大纲生成各章节剧情...'}
-          {phase === 'episode_review' && '审阅生成的剧情内容，确认后进入角色设定'}
-        </p>
+        <span className={styles.subtitle}>
+          {phase === 'outline_generating' && 'AI 正在生成大纲...'}
+          {phase === 'outline_review' && '审阅大纲，确认后进入剧情生成'}
+          {phase === 'episode_generating' && 'AI 正在生成剧情...'}
+          {phase === 'episode_review' && '审阅剧情，确认后进入下一步'}
+        </span>
       </div>
 
       {/* Phase 1: 大纲生成中 */}
