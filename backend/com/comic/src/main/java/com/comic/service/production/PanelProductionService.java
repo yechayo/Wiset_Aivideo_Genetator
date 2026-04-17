@@ -1455,8 +1455,9 @@ public class PanelProductionService {
             }
         } else {
             // Agent 路径
+            String scriptStyle = (String) projectInfo.getOrDefault(ProjectInfoKeys.SCRIPT_STYLE, "standard");
             List<Map<String, Object>> shots = storyboardAgentService.generate(
-                    content, characters, targetDuration, visualStyle, comicMode, narrationPerspective);
+                    content, characters, targetDuration, visualStyle, comicMode, narrationPerspective, scriptStyle);
 
             if (shots.isEmpty()) {
                 throw new RuntimeException("分镜 Agent 未生成任何分镜: episode=" + episodeNum + " (" + title + ")");
@@ -1799,7 +1800,7 @@ public class PanelProductionService {
         "sceneDescription", "visualDescription", "narration", "dialogue", "speaker",
         "narrationTone", "dialogueTone", "shotSize", "cameraAngle",
         "cameraMovement", "scene", "visualEffects", "audioEffects", "transitionHint",
-        "locked"
+        "locked", "hookPoint"
     ));
 
     public void updateShot(String projectId, Long episodeId, int shotIndex, Map<String, Object> updates) {

@@ -105,7 +105,7 @@ class StoryboardAgentServiceTest {
 
         String prompt = agent.buildReasonerPrompt(
                 "主角踏入神秘森林", "角色A,角色B", "ANIME",
-                state, "第3轮", false, null);
+                state, "第3轮", false, null, "standard");
 
         assertTrue(prompt.contains("180"), "prompt 应包含目标时长 180 秒");
         assertTrue(prompt.contains("120"), "prompt 应包含下限 120 秒（2分钟）");
@@ -122,7 +122,7 @@ class StoryboardAgentServiceTest {
 
         String prompt = agent.buildReasonerPrompt(
                 "主角踏入神秘森林", "角色A,角色B", "ANIME",
-                state, "第3轮", false, null);
+                state, "第3轮", false, null, "standard");
 
         assertTrue(prompt.contains("95"), "prompt 应包含已生成时长");
         assertTrue(prompt.contains("开场铺垫"), "prompt 应包含已覆盖的剧情节点");
@@ -143,7 +143,7 @@ class StoryboardAgentServiceTest {
 
         String prompt = agent.buildReasonerPrompt(
                 "后续剧情", "角色A", "ANIME",
-                state, "第2轮", false, null);
+                state, "第2轮", false, null, "standard");
 
         assertTrue(prompt.contains("主角凝视远方"), "prompt 应包含上一批末尾分镜用于衔接");
     }
@@ -155,7 +155,7 @@ class StoryboardAgentServiceTest {
 
         String prompt = agent.buildReasonerPrompt(
                 "剧情内容", "角色A", "ANIME",
-                state, "第1轮", true, null);
+                state, "第1轮", true, null, "standard");
 
         assertTrue(prompt.contains("解说") || prompt.contains("旁白"),
                 "漫剧解说模式下 prompt 应包含解说/旁白相关提示");
@@ -168,7 +168,7 @@ class StoryboardAgentServiceTest {
         String prompt = agent.buildExecutorPrompt(
                 "主角与反派在悬崖对峙，气氛紧张",
                 "角色A(主角),角色B(反派)",
-                "ANIME", 45, new ArrayList<>(), false);
+                "ANIME", 45, new ArrayList<>(), false, "standard");
 
         assertTrue(prompt.contains("主角与反派在悬崖对峙"), "执行 prompt 应包含当前剧情段落");
         assertTrue(prompt.contains("45"), "执行 prompt 应包含本批目标时长");
@@ -184,7 +184,7 @@ class StoryboardAgentServiceTest {
         lastShots.add(shot);
 
         String prompt = agent.buildExecutorPrompt(
-                "对峙开始", "角色A", "ANIME", 40, lastShots, false);
+                "对峙开始", "角色A", "ANIME", 40, lastShots, false, "standard");
 
         assertTrue(prompt.contains("主角缓缓拔出佩剑"),
                 "执行 prompt 应包含上一批末尾分镜用于衔接");
@@ -196,7 +196,7 @@ class StoryboardAgentServiceTest {
         String currentBeat = "主角踏上旅途";
 
         String prompt = agent.buildExecutorPrompt(
-                currentBeat, "角色A", "ANIME", 40, new ArrayList<>(), false);
+                currentBeat, "角色A", "ANIME", 40, new ArrayList<>(), false, "standard");
 
         // prompt 只应包含当前 beat，不应包含整集剧本
         assertTrue(prompt.contains("主角踏上旅途"), "应包含当前剧情段落");
@@ -264,7 +264,7 @@ class StoryboardAgentServiceTest {
         List<Map<String, Object>> result = agent.generate(
                 "主角踏入神秘森林，遇到导师，开始修炼之旅",
                 "角色A(主角),角色B(导师)",
-                180, "ANIME", false, null);
+                180, "ANIME", false, null, "standard");
 
         assertFalse(result.isEmpty(), "应生成分镜列表");
         verify(mockReasoner, atLeast(2)).generate(anyString(), anyString());
@@ -281,7 +281,7 @@ class StoryboardAgentServiceTest {
                 .thenReturn(buildShotJson(new int[]{3, 3, 3}));
 
         List<Map<String, Object>> result = agent.generate(
-                "剧情内容", "角色A", 180, "ANIME", false, null);
+                "剧情内容", "角色A", 180, "ANIME", false, null, "standard");
 
         assertFalse(result.isEmpty(), "即使触发 maxRounds 也应返回已有分镜");
         // 验证没有超过 maxRounds 轮
@@ -299,7 +299,7 @@ class StoryboardAgentServiceTest {
                 .thenReturn(buildShotJson(new int[]{3, 4, 3}));
 
         List<Map<String, Object>> result = agent.generate(
-                "剧情内容", "角色A", 60, "ANIME", false, null);
+                "剧情内容", "角色A", 60, "ANIME", false, null, "standard");
 
         assertFalse(result.isEmpty(), "重试后应成功生成分镜");
         verify(mockExecutor, atLeast(2)).generate(anyString(), anyString());
@@ -316,7 +316,7 @@ class StoryboardAgentServiceTest {
                 .thenReturn(buildComicShotJson());
 
         List<Map<String, Object>> result = agent.generate(
-                "剧情内容", "角色A(旁白者)", 60, "ANIME", true, null);
+                "剧情内容", "角色A(旁白者)", 60, "ANIME", true, null, "standard");
 
         assertFalse(result.isEmpty(), "漫剧解说模式应正常生成分镜");
         // 验证 Reasoner prompt 包含解说模式提示
@@ -336,7 +336,7 @@ class StoryboardAgentServiceTest {
                 .thenReturn(buildShotJson(new int[]{3, 4, 3}))
                 .thenReturn(buildShotJson(new int[]{4, 3, 4}));
 
-        agent.generate("剧情内容", "角色A", 180, "ANIME", false, null);
+        agent.generate("剧情内容", "角色A", 180, "ANIME", false, null, "standard");
 
         // 验证第二执行调用时 lastShots 被传入（通过验证 Reasoner 第二次调用的 user prompt 包含上一批末尾分镜）
         // 这里我们只验证执行模型被调用了正确次数

@@ -148,7 +148,7 @@ class PanelProductionServiceAgentTest {
 
         when(storyboardAgentService.generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(false), anyString()))
+                eq(false), anyString(), anyString()))
                 .thenReturn(agentShots);
 
         // When
@@ -161,7 +161,7 @@ class PanelProductionServiceAgentTest {
         // Then: agent was called, deepSeekTextService generateStoryboard was NOT
         verify(storyboardAgentService).generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(false), anyString());
+                eq(false), anyString(), anyString());
         verify(deepSeekTextService, never()).generateStoryboard(
                 anyString(), anyString(), anyInt(), anyString(),
                 anyBoolean(), anyString(), anyList());
@@ -177,7 +177,7 @@ class PanelProductionServiceAgentTest {
 
         when(storyboardAgentService.generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(true), eq(NARRATION_PERSPECTIVE)))
+                eq(true), eq(NARRATION_PERSPECTIVE), anyString()))
                 .thenReturn(agentShots);
         // narration refinement disabled for simplicity in this test
         when(deepSeekTextService.isNarrationRefinementEnabled()).thenReturn(false);
@@ -192,7 +192,7 @@ class PanelProductionServiceAgentTest {
         // Then: agent was called, deepSeekTextService generateStoryboard was NOT
         verify(storyboardAgentService).generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(true), eq(NARRATION_PERSPECTIVE));
+                eq(true), eq(NARRATION_PERSPECTIVE), anyString());
         verify(deepSeekTextService, never()).generatePanelAwareStoryboard(
                 anyString(), anyString(), anyInt(), anyString(),
                 anyString(), anyString(), anyList());
@@ -206,7 +206,7 @@ class PanelProductionServiceAgentTest {
         // Given: agent returns empty list
         when(storyboardAgentService.generate(
                 anyString(), anyString(), anyInt(), anyString(),
-                anyBoolean(), anyString()))
+                anyBoolean(), anyString(), anyString()))
                 .thenReturn(Collections.emptyList());
 
         // When + Then
@@ -233,7 +233,7 @@ class PanelProductionServiceAgentTest {
 
         when(storyboardAgentService.generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(true), eq(NARRATION_PERSPECTIVE)))
+                eq(true), eq(NARRATION_PERSPECTIVE), anyString()))
                 .thenReturn(agentShots);
         when(deepSeekTextService.isNarrationRefinementEnabled()).thenReturn(true);
         when(deepSeekTextService.refineNarrationsSequentially(
