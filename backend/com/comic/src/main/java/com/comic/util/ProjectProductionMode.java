@@ -11,6 +11,8 @@ import java.util.Map;
  */
 public final class ProjectProductionMode {
 
+    private static final String SCRIPT_STYLE_SHUANGJU = "shuangju";
+
     private ProjectProductionMode() {}
 
     public static boolean isComicCommentary(Project project) {
@@ -33,5 +35,27 @@ public final class ProjectProductionMode {
             return false;
         }
         return ProductionMode.COMIC_COMMENTARY.getCode().equals(s);
+    }
+
+    public static boolean isShuangju(Project project) {
+        if (project == null) {
+            return false;
+        }
+        return isShuangju(project.getProjectInfo());
+    }
+
+    public static boolean isShuangju(Map<String, Object> projectInfo) {
+        if (projectInfo == null) {
+            return false;
+        }
+        Object raw = projectInfo.get(ProjectInfoKeys.SCRIPT_STYLE);
+        if (raw == null) {
+            return false;
+        }
+        String s = raw.toString().trim();
+        if (s.isEmpty()) {
+            return false;
+        }
+        return SCRIPT_STYLE_SHUANGJU.equals(s);
     }
 }
