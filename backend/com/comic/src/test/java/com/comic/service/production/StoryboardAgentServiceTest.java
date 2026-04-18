@@ -80,6 +80,68 @@ class StoryboardAgentServiceTest {
                 "兜底骨架时长应接近目标时长 30s，实际: " + total);
     }
 
+    // ==================== 时长节奏分配 ====================
+
+    @Test
+    void allocateDuration_openingPhase_shouldMostlyReturn2s() {
+        // 开场钩子: phaseLocalIndex % 5 == 4 给 1s, 其余 2s
+        assertEquals(2, agent.allocateDuration(0, 5, "开场钩子", 0));
+        assertEquals(2, agent.allocateDuration(1, 5, "开场钩子", 2));
+        assertEquals(2, agent.allocateDuration(2, 5, "开场钩子", 4));
+        assertEquals(2, agent.allocateDuration(3, 5, "开场钩子", 6));
+        assertEquals(1, agent.allocateDuration(4, 5, "开场钩子", 8)); // 第5个镜头(index=4)给1s
+    }
+
+    @Test
+    void allocateDuration_setupPhase_shouldAlternate2and3() {
+        // 铺垫发展: 偶数 index 给 2s, 奇数给 3s
+        assertEquals(2, agent.allocateDuration(0, 4, "铺垫发展", 0));
+        assertEquals(3, agent.allocateDuration(1, 4, "铺垫发展", 2));
+        assertEquals(2, agent.allocateDuration(2, 4, "铺垫发展", 5));
+        assertEquals(3, agent.allocateDuration(3, 4, "铺垫发展", 7));
+    }
+
+    @Test
+    void allocateDuration_conflictPhase_shouldBeFast() {
+        // 冲突升级: index % 5 < 2 给 1s, 其余 2s
+        assertEquals(1, agent.allocateDuration(0, 5, "冲突升级", 0));
+        assertEquals(1, agent.allocateDuration(1, 5, "冲突升级", 1));
+        assertEquals(2, agent.allocateDuration(2, 5, "冲突升级", 3));
+        assertEquals(2, agent.allocateDuration(3, 5, "冲突升级", 5));
+        assertEquals(2, agent.allocateDuration(4, 5, "冲突升级", 7));
+    }
+
+    @Test
+    void allocateDuration_climaxPhase_shouldInsertSlowMo() {
+        // 高潮爆发: index % 5 == 4 给 4s(升格), 其余交替 1s/2s
+        assertEquals(2, agent.allocateDuration(0, 5, "高潮爆发", 0));
+        assertEquals(1, agent.allocateDuration(1, 5, "高潮爆发", 2));
+        assertEquals(2, agent.allocateDuration(2, 5, "高潮爆发", 3));
+        assertEquals(1, agent.allocateDuration(3, 5, "高潮爆发", 5));
+        assertEquals(4, agent.allocateDuration(4, 5, "高潮爆发", 6)); // 升格
+    }
+
+    @Test
+    void allocateDuration_resolvePhase_shouldBeLong() {
+        // 收束悬念: 全部 3s, 最后一个给 5s
+        assertEquals(3, agent.allocateDuration(0, 3, "收束悬念", 0));
+        assertEquals(3, agent.allocateDuration(1, 3, "收束悬念", 3));
+        assertEquals(5, agent.allocateDuration(2, 3, "收束悬念", 6)); // 最后一个
+    }
+
+    @Test
+    void allocateDuration_unknownPhase_shouldReturn3() {
+        // 兜底: 未知 phase 返回 3
+        assertEquals(3, agent.allocateDuration(0, 3, "未知阶段", 0));
+        assertEquals(3, agent.allocateDuration(2, 3, "随便什么", 6));
+    }
+
+    @Test
+    void allocateDuration_emptyOrNullPhase_shouldReturn3() {
+        assertEquals(3, agent.allocateDuration(0, 3, "", 0));
+        assertEquals(3, agent.allocateDuration(0, 3, null, 0));
+    }
+
     // ==================== Hook 提取 ====================
 
     @Test

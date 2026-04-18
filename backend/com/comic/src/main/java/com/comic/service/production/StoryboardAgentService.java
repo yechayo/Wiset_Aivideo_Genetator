@@ -279,6 +279,40 @@ public class StoryboardAgentService {
         return skeletons;
     }
 
+    // ==================== 时长节奏分配 ====================
+
+    /**
+     * 根据叙事阶段分配镜头时长（确定性，不使用随机数）
+     */
+    int allocateDuration(int phaseLocalIndex, int phaseLocalCount, String phaseName, int allocatedSeconds) {
+        if (phaseName == null || phaseName.isEmpty()) return 3;
+
+        // 收束悬念: 全部 3s, 最后一个给 5s
+        if (phaseName.contains("收束") || phaseName.contains("悬念")) {
+            return (phaseLocalIndex == phaseLocalCount - 1) ? 5 : 3;
+        }
+        // 开场钩子: 80% 用 2s, 20% 用 1s
+        if (phaseName.contains("开场") || phaseName.contains("钩子")) {
+            return (phaseLocalIndex % 5 == 4) ? 1 : 2;
+        }
+        // 铺垫发展: 交替 2s 和 3s
+        if (phaseName.contains("铺垫") || phaseName.contains("发展")) {
+            return (phaseLocalIndex % 2 == 0) ? 2 : 3;
+        }
+        // 冲突升级: 60% 用 2s, 40% 用 1s
+        if (phaseName.contains("冲突") || phaseName.contains("升级")) {
+            return (phaseLocalIndex % 5 < 2) ? 1 : 2;
+        }
+        // 高潮爆发: 每5个插一个4s升格, 其余交替1s/2s
+        if (phaseName.contains("高潮") || phaseName.contains("爆发")) {
+            if (phaseLocalIndex % 5 == 4) return 4;
+            return (phaseLocalIndex % 2 == 0) ? 2 : 1;
+        }
+
+        // 兜底: 均匀 3s
+        return 3;
+    }
+
     private String matchNarrativePhase(int accumulatedSeconds, NarrativePlan plan) {
         if (plan == null || plan.phases == null || plan.phases.isEmpty()) return "";
         int boundary = 0;
