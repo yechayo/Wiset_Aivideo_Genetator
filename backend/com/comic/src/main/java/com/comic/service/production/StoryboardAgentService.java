@@ -413,7 +413,7 @@ public class StoryboardAgentService {
             }
 
             for (Map<String, Object> shot : refined) {
-                int d = Math.max(1, Math.min(4, ((Number) shot.getOrDefault("duration", 3)).intValue()));
+                int d = Math.max(1, Math.min(5, ((Number) shot.getOrDefault("duration", 3)).intValue()));
                 shot.put("duration", d);
             }
 
@@ -473,6 +473,28 @@ public class StoryboardAgentService {
         sb.append("3. 连续 3 个镜头不能都有 dialogue\n");
         sb.append("4. 当 dialogue 为空时，speaker 填 \"无\"，dialogueTone 填 \"无\"，sceneDescription 应更详细\n\n");
 
+        sb.append("【快切防翻车指南 - 硬性约束】\n");
+        sb.append("一、动作设计：做减法\n");
+        sb.append("1. 一个镜头只做一个单一变化（位置、姿势、表情，三选一）\n");
+        sb.append("2. 禁止复合动作（如\"拔刀+冲刺+劈砍\"），必须拆成多个镜头\n");
+        sb.append("3. 切\"结果\"不切\"过程\"：写\"男主背对镜头，刀已入鞘\"而非\"男主转身收刀\"\n\n");
+        sb.append("二、镜头语言：贴脸\n");
+        sb.append("1. 快切镜头（1-2s）必须用特写或极特写，禁止全景\n");
+        sb.append("2. 用\"局部的动\"代替\"全局的动\"：脚踩碎地砖、刀刃划过鼻尖、手腕翻转\n");
+        sb.append("3. 动作结果用静止镜头表现：\"两人背对背站立，地面裂痕\"\n\n");
+        sb.append("三、运镜约束\n");
+        sb.append("1. 1-2s 镜头只允许：固定镜头、极特写、主观视角(POV)\n");
+        sb.append("2. 3-5s 镜头允许：缓慢推镜头、微平移\n");
+        sb.append("3. 禁止复杂运镜（推+环绕+拉远）\n\n");
+        sb.append("四、提示词写法\n");
+        sb.append("1. 锁死起始状态：\"原本侧面朝左，猛然转头看向右\"\n");
+        sb.append("2. 定格保底：\"挥拳瞬间画面定格，只有背景雨滴飞溅\"\n");
+        sb.append("3. 分离前景背景：\"背景完全静止，只有前景角色在动\"\n");
+        sb.append("4. 用\"升格拍摄（高帧率）\"代替\"慢动作\"\n\n");
+        sb.append("五、转场\n");
+        sb.append("1. transitionHint 必须写\"硬切\"\n");
+        sb.append("2. 禁止渐变、模糊、溶解过渡\n\n");
+
         if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             sb.append("【爽剧模式】\n");
             sb.append("- hookPoint 字段必须填写，标注本镜头的爽点类型\n");
@@ -495,7 +517,7 @@ public class StoryboardAgentService {
             sb.append("\n");
         }
 
-        sb.append("输出纯 JSON 数组，不要 markdown 代码块。保持骨架的 shotNumber 和 duration 不变。");
+        sb.append("输出纯 JSON 数组，不要 markdown 代码块。保持骨架的 shotNumber 不变，duration 可在骨架基础上 ±1s 微调（范围 1-5s）。");
         return sb.toString();
     }
 
@@ -575,7 +597,7 @@ public class StoryboardAgentService {
             }
         }
 
-        sb.append("\n请输出精修后的完整 shot JSON 数组。保持 shotNumber 和 duration 不变。");
+        sb.append("\n请输出精修后的完整 shot JSON 数组。保持 shotNumber 不变，duration 可在骨架基础上 ±1s 微调（范围 1-5s）。");
         return sb.toString();
     }
 
