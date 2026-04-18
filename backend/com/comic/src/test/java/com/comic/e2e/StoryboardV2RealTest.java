@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Field;
@@ -48,9 +49,6 @@ class StoryboardV2RealTest {
 
     @BeforeAll
     static void setUp() throws Exception {
-        out = new PrintWriter(new OutputStreamWriter(
-                new java.io.FileOutputStream("storyboard-爽剧-" + TARGET_DURATION + "s.txt"), "UTF-8"));
-
         String apiKey = readApiKey();
         log.info("API Key: {}...{}", apiKey.substring(0, 4), apiKey.substring(apiKey.length() - 4));
 
@@ -79,6 +77,8 @@ class StoryboardV2RealTest {
     @Test
     @DisplayName("爽剧模式 180s - 完整输出 + 视频提示词")
     void testShuangju() throws Exception {
+        out = new PrintWriter(new OutputStreamWriter(
+                new FileOutputStream("storyboard-爽剧-" + TARGET_DURATION + "s.txt"), "UTF-8"));
         out.println("====================================");
         out.println("  V2 爽剧模式 " + TARGET_DURATION + "s 完整测试");
         out.println("====================================\n");
@@ -186,6 +186,146 @@ class StoryboardV2RealTest {
         out.flush();
         out.close();
         System.out.println("结果已写入 storyboard-爽剧-" + TARGET_DURATION + "s.txt");
+    }
+
+    @Test
+    @DisplayName("普通模式 180s - 完整输出")
+    void testStandard() throws Exception {
+        PrintWriter stdOut = new PrintWriter(new OutputStreamWriter(
+                new FileOutputStream("storyboard-普通-" + TARGET_DURATION + "s.txt"), "UTF-8"));
+        try {
+            stdOut.println("====================================");
+            stdOut.println("  V2 普通模式 " + TARGET_DURATION + "s 完整测试");
+            stdOut.println("====================================\n");
+
+            stdOut.println("生成中...\n");
+            stdOut.flush();
+
+            List<Map<String, Object>> shots = service.generate(
+                    SAMPLE_SCRIPT, "林晓星,陈墨", TARGET_DURATION, "cinematic",
+                    false, null, "standard");
+
+            printShots(stdOut, shots, "普通");
+
+            // 视频提示词
+            printVideoPrompts(stdOut, shots);
+        } finally {
+            stdOut.flush();
+            stdOut.close();
+        }
+        System.out.println("结果已写入 storyboard-普通-" + TARGET_DURATION + "s.txt");
+    }
+
+    @Test
+    @DisplayName("解说模式 180s - 完整输出")
+    void testComicCommentary() throws Exception {
+        PrintWriter comOut = new PrintWriter(new OutputStreamWriter(
+                new FileOutputStream("storyboard-解说-" + TARGET_DURATION + "s.txt"), "UTF-8"));
+        try {
+            comOut.println("====================================");
+            comOut.println("  V2 解说模式 " + TARGET_DURATION + "s 完整测试");
+            comOut.println("====================================\n");
+
+            comOut.println("生成中...\n");
+            comOut.flush();
+
+            List<Map<String, Object>> shots = service.generate(
+                    SAMPLE_SCRIPT, "林晓星,陈墨", TARGET_DURATION, "cinematic",
+                    true, "third_person", "standard");
+
+            printShots(comOut, shots, "解说");
+
+            // 视频提示词
+            printVideoPrompts(comOut, shots);
+        } finally {
+            comOut.flush();
+            comOut.close();
+        }
+        System.out.println("结果已写入 storyboard-解说-" + TARGET_DURATION + "s.txt");
+    }
+
+    // ==================== 通用输出方法 ====================
+
+    private void printShots(PrintWriter pw, List<Map<String, Object>> shots, String mode) {
+        pw.println("\n#######################");
+        pw.println("# 完整分镜 (" + shots.size() + " 镜)");
+        pw.println("#######################\n");
+
+        int totalDuration = 0;
+        int dialogueCount = 0;
+
+        for (Map<String, Object> shot : shots) {
+            int num = toInt(shot.get("globalShotNumber"), toInt(shot.get("shotNumber"), 0));
+            int dur = toInt(shot.get("duration"), 0);
+            String desc = str(shot.get("sceneDescription"));
+            String dialogue = str(shot.get("dialogue"));
+            String speaker = str(shot.get("speaker"));
+            String tone = str(shot.get("dialogueTone"));
+            String narration = str(shot.get("narration"));
+            String hook = str(shot.get("hookPoint"));
+            String scene = str(shot.get("scene"));
+            String shotSize = str(shot.get("shotSize"));
+            String cameraAngle = str(shot.get("cameraAngle"));
+            String cameraMovement = str(shot.get("cameraMovement"));
+            String visualFx = str(shot.get("visualEffects"));
+            String audioFx = str(shot.get("audioEffects"));
+            String transition = str(shot.get("transitionHint"));
+            Object chars = shot.get("characters");
+
+            totalDuration += dur;
+            boolean hasDialogue = dialogue != null && !dialogue.isEmpty() && !"无".equals(dialogue);
+            if (hasDialogue) dialogueCount++;
+
+            pw.println("===== Shot #" + num + " [" + dur + "s] =====");
+            pw.println("  场景: " + scene);
+            pw.println("  景别: " + shotSize + " | 角度: " + cameraAngle + " | 运镜: " + cameraMovement);
+            pw.println("  场景描述: " + desc);
+            pw.println("  角色: " + chars);
+            if (hasDialogue) {
+                pw.println("  对白(" + speaker + ", " + tone + "): " + dialogue);
+            }
+            if (narration != null && !narration.isEmpty() && !"无".equals(narration)) {
+                pw.println("  旁白: " + narration);
+            }
+            if (hook != null && !hook.isEmpty() && !"无".equals(hook)) {
+                pw.println("  爽点: " + hook);
+            }
+            if (visualFx != null && !visualFx.isEmpty() && !"无".equals(visualFx)) {
+                pw.println("  视觉特效: " + visualFx);
+            }
+            if (audioFx != null && !audioFx.isEmpty() && !"无".equals(audioFx)) {
+                pw.println("  音效: " + audioFx);
+            }
+            if (transition != null && !transition.isEmpty()) {
+                pw.println("  衔接: " + transition);
+            }
+            pw.println();
+        }
+
+        double ratio = shots.size() > 0 ? (double) dialogueCount / shots.size() : 0;
+        pw.println(String.format("---- 统计: %d 镜, %ds, 对话密度 %.0f%% ----",
+                shots.size(), totalDuration, ratio * 100));
+    }
+
+    private void printVideoPrompts(PrintWriter pw, List<Map<String, Object>> shots) {
+        pw.println("\n\n##############################################");
+        pw.println("# 4c 视频提示词（按 panel 分组，每 panel " + SHOTS_PER_PANEL + " 镜）");
+        pw.println("##############################################\n");
+
+        List<List<Map<String, Object>>> panels = splitIntoPanels(shots, SHOTS_PER_PANEL);
+
+        for (int p = 0; p < panels.size(); p++) {
+            List<Map<String, Object>> panelShots = panels.get(p);
+            Map<String, Object> prevLastShot = (p > 0) ? getLastShot(panels.get(p - 1)) : null;
+
+            String videoPrompt = buildVideoPrompt("cinematic", panelShots, prevLastShot, p);
+
+            pw.println("========================================================");
+            pw.println("  Panel " + (p + 1) + "/" + panels.size() + " (" + panelShots.size() + " 镜)");
+            pw.println("========================================================\n");
+            pw.println(videoPrompt);
+            pw.println("\n");
+        }
     }
 
     // ==================== 模拟 4c 视频提示词组装 ====================
