@@ -37,6 +37,7 @@ public class StoryboardAgentService {
     private static final int MAX_ROUNDS = 15;
     private static final int MAX_EXECUTOR_RETRIES = 2;
     private static final int LAST_SHOTS_COUNT = 3;
+    private static final int REFINE_SEGMENT_SIZE = 15;
 
     private static final Pattern HOOK_PATTERN =
             Pattern.compile("[\\[【]\\s*爽点\\s*[:：]\\s*(.+?)\\s*[\\]】]");
@@ -327,6 +328,253 @@ public class StoryboardAgentService {
             result[i] = content.substring(start, end);
         }
         return result;
+    }
+
+    // ==================== Phase 4: 接续式分段精修 ====================
+
+    /**
+     * Phase 4: 分段精修骨架，填充完整字段。
+     * 每段带前段最后 3 个精修 shot 作为接续上下文。
+     */
+    List<Map<String, Object>> refineSkeletons(List<Map<String, Object>> skeletons,
+                                                StoryStructure structure, NarrativePlan plan,
+                                                String characters, String visualStyle,
+                                                boolean comicMode, String narrationPerspective,
+                                                String scriptStyle) {
+        List<Map<String, Object>> allRefined = new ArrayList<>();
+        List<Map<String, Object>> lastRefined = new ArrayList<>();
+
+        String refineSystem = buildRefineSystemPrompt(comicMode, scriptStyle, narrationPerspective);
+
+        for (int segStart = 0; segStart < skeletons.size(); segStart += REFINE_SEGMENT_SIZE) {
+            int segEnd = Math.min(segStart + REFINE_SEGMENT_SIZE, skeletons.size());
+            List<Map<String, Object>> segment = new ArrayList<>(skeletons.subList(segStart, segEnd));
+
+            String refineUser = buildRefineUserPrompt(segment, structure, plan, lastRefined,
+                    characters, visualStyle, comicMode, narrationPerspective, scriptStyle, segStart);
+
+            List<Map<String, Object>> refined = refineSegment(refineSystem, refineUser, comicMode, scriptStyle);
+            if (refined == null || refined.isEmpty()) {
+                log.warn("[StoryboardAgent] Phase4 段 {}-{} 精修失败，使用骨架兜底", segStart, segEnd);
+                refined = skeletonToFallbackShots(segment);
+            }
+
+            for (Map<String, Object> shot : refined) {
+                int d = Math.max(1, Math.min(4, ((Number) shot.getOrDefault("duration", 3)).intValue()));
+                shot.put("duration", d);
+            }
+
+            allRefined.addAll(refined);
+            lastRefined = new ArrayList<>(refined.subList(
+                    Math.max(0, refined.size() - LAST_SHOTS_COUNT), refined.size()));
+
+            int currentPhaseIdx = estimateCurrentPhaseIndex(segStart + refined.size(), skeletons, plan);
+            String quality = checkBatchQuality(refined, plan, currentPhaseIdx, comicMode);
+            log.info("[StoryboardAgent] Phase4 段 {}-{}: {}镜 {}", segStart, segEnd, refined.size(), quality);
+        }
+
+        return allRefined;
+    }
+
+    private String buildRefineSystemPrompt(boolean comicMode, String scriptStyle, String narrationPerspective) {
+        StringBuilder sb = new StringBuilder();
+
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
+            sb.append("你是一位爽剧分镜精修师。你的任务是将 shot 骨架精修为完整的分镜。\n");
+            sb.append("节奏极快，三秒一个爽点。\n\n");
+        } else if (comicMode) {
+            sb.append("你是一位漫剧解说分镜精修师。你的任务是将 shot 骨架精修为完整的分镜。\n\n");
+        } else {
+            sb.append("你是一位专业分镜精修师。你的任务是将 shot 骨架精修为完整的分镜。\n\n");
+        }
+
+        sb.append("你会收到一组 shot 骨架（JSON 数组），每个骨架有：\n");
+        sb.append("- shotNumber, duration, beatId, sceneHint, mood, characters(带name/state/position), narrativePhase\n\n");
+        sb.append("你需要输出相同数量的完整 shot JSON 数组，每个 shot 包含：\n");
+        sb.append("shotNumber, duration(保持不变), scene, characters(必须使用骨架中的角色全名),\n");
+        sb.append("shotSize, cameraAngle, cameraMovement, sceneDescription,\n");
+        sb.append("dialogue, speaker, dialogueTone, visualEffects, audioEffects, transitionHint\n");
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
+            sb.append(", hookPoint\n");
+        }
+        if (comicMode) {
+            sb.append(", narration\n");
+        }
+        sb.append("\n");
+
+        sb.append("【角色一致性 - 硬性约束】\n");
+        sb.append("1. 每个 shot 的 characters 必须使用骨架中的角色名，禁止换名或用泛称（如\"主角\"\"反派\"\"路人\"）\n");
+        sb.append("2. 只有骨架中列出的角色才能出现，不能凭空增减角色\n");
+        sb.append("3. 角色状态必须连贯：如果上一个 shot 角色在\"奔跑\"，本 shot 不能突然\"坐着喝茶\"\n");
+        sb.append("4. 角色位置变化必须合理：如果上一个 shot 在\"工厂大厅\"，本 shot 不能突然在\"地下实验室\"（除非有 transition 过渡）\n");
+        sb.append("5. 骨架中的 characters 数组列出了本 beat 中在场的角色，这是唯一合法角色来源\n\n");
+
+        sb.append("【场景一致性】\n");
+        sb.append("1. 相邻 shot 的场景不能凭空跳转，必须通过 transition 过渡\n");
+        sb.append("2. sceneDescription 必须与骨架中的 mood 和 position 匹配\n");
+        sb.append("3. 角色动作必须符合当前场景逻辑\n\n");
+
+        sb.append("【对话约束 - 硬性要求】\n");
+        sb.append("1. 不是每个镜头都需要 dialogue，约 40-60% 有 dialogue 即可\n");
+        sb.append("2. dialogue 字数必须匹配 duration：1s≤5字, 2s≤8字, 3s≤15字, 4s≤20字\n");
+        sb.append("3. 连续 3 个镜头不能都有 dialogue\n");
+        sb.append("4. 当 dialogue 为空时，speaker 填 \"无\"，dialogueTone 填 \"无\"，sceneDescription 应更详细\n\n");
+
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
+            sb.append("【爽剧模式】\n");
+            sb.append("- hookPoint 字段必须填写，标注本镜头的爽点类型\n");
+            sb.append("- 节奏极快，多用 1-2 秒快切镜头\n\n");
+        }
+        if (comicMode) {
+            sb.append("【解说模式】\n");
+            sb.append("- 每个镜头必须有 narration 字段（旁白口播稿）\n");
+            sb.append("- narration 字数受 duration 约束：3s≤15字, 4s≤20字\n");
+            sb.append("- narration 和 dialogue 不能同时存在\n");
+            sb.append("- 当有 dialogue 时，narration 填 \"无\"\n");
+            sb.append("- narration 优先级高于 dialogue：关键剧情节点用 narration 推进\n");
+            if (narrationPerspective != null) {
+                if ("third_person".equals(narrationPerspective)) {
+                    sb.append("- 旁白必须使用第三人称叙述\n");
+                } else if ("first_person".equals(narrationPerspective)) {
+                    sb.append("- 旁白必须使用第一人称「我」叙述\n");
+                }
+            }
+            sb.append("\n");
+        }
+
+        sb.append("输出纯 JSON 数组，不要 markdown 代码块。保持骨架的 shotNumber 和 duration 不变。");
+        return sb.toString();
+    }
+
+    private String buildRefineUserPrompt(List<Map<String, Object>> segment,
+                                          StoryStructure structure, NarrativePlan plan,
+                                          List<Map<String, Object>> lastRefined,
+                                          String characters, String visualStyle,
+                                          boolean comicMode, String narrationPerspective,
+                                          String scriptStyle, int globalOffset) {
+        StringBuilder sb = new StringBuilder();
+
+        if (structure != null && structure.storyArc != null && !structure.storyArc.isEmpty()) {
+            sb.append("## 全局故事弧线\n").append(structure.storyArc).append("\n\n");
+        }
+
+        if (plan != null && plan.phases != null && !plan.phases.isEmpty()) {
+            sb.append("## 叙事规划\n");
+            for (int i = 0; i < plan.phases.size(); i++) {
+                NarrativePhase phase = plan.phases.get(i);
+                sb.append(i + 1).append(". ").append(phase.name)
+                  .append(" (").append(phase.allocatedSeconds).append("秒, 密度:").append(phase.dialogueDensity)
+                  .append(", 情绪:").append(phase.emotionalArc).append(")\n");
+            }
+            sb.append("\n");
+        }
+
+        if (structure != null && structure.transitions != null && !structure.transitions.isEmpty()) {
+            int firstBeatId = segment.isEmpty() ? 0 : (int) segment.get(0).getOrDefault("beatId", 0);
+            int lastBeatId = segment.isEmpty() ? 0 : (int) segment.get(segment.size() - 1).getOrDefault("beatId", 0);
+            List<String> relevantTransitions = new ArrayList<>();
+            for (Map<String, String> t : structure.transitions) {
+                int from = parseIntSafe(t.getOrDefault("from", "0"), 0);
+                int to = parseIntSafe(t.getOrDefault("to", "0"), 0);
+                if (from >= firstBeatId && to <= lastBeatId + 1) {
+                    relevantTransitions.add(t.get("bridge"));
+                }
+            }
+            if (!relevantTransitions.isEmpty()) {
+                sb.append("## 场景过渡\n");
+                for (String bridge : relevantTransitions) {
+                    sb.append("- ").append(bridge).append("\n");
+                }
+                sb.append("\n");
+            }
+        }
+
+        if (!lastRefined.isEmpty()) {
+            sb.append("## 前段接续（最后").append(lastRefined.size()).append("个精修shot，严格参照保持连贯）\n");
+            try {
+                sb.append(objectMapper.writeValueAsString(lastRefined)).append("\n\n");
+            } catch (Exception e) {
+                for (Map<String, Object> shot : lastRefined) {
+                    sb.append("- 第").append(shot.get("shotNumber")).append("镜[")
+                      .append(shot.get("duration")).append("秒] ")
+                      .append(shot.getOrDefault("sceneDescription", shot.getOrDefault("scene", ""))).append("\n");
+                }
+                sb.append("\n");
+            }
+        }
+
+        sb.append("## 当前段 shot 骨架（请精修为完整 shot）\n");
+        try {
+            sb.append(objectMapper.writeValueAsString(segment)).append("\n\n");
+        } catch (Exception e) {
+            sb.append("[骨架序列化失败]\n\n");
+        }
+
+        sb.append("## 角色列表\n").append(characters).append("\n");
+        sb.append("（characters 字段必须使用骨架中给出的角色全名，禁止泛称）\n\n");
+        sb.append("风格：").append(visualStyle).append("\n");
+
+        if (comicMode && narrationPerspective != null) {
+            if ("third_person".equals(narrationPerspective)) {
+                sb.append("\n旁白人称：第三人称\n");
+            } else if ("first_person".equals(narrationPerspective)) {
+                sb.append("\n旁白人称：第一人称「我」\n");
+            }
+        }
+
+        sb.append("\n请输出精修后的完整 shot JSON 数组。保持 shotNumber 和 duration 不变。");
+        return sb.toString();
+    }
+
+    private List<Map<String, Object>> refineSegment(String systemPrompt, String userPrompt,
+                                                      boolean comicMode, String scriptStyle) {
+        for (int retry = 0; retry <= MAX_EXECUTOR_RETRIES; retry++) {
+            try {
+                String output = executor.generate(systemPrompt, userPrompt);
+                List<Map<String, Object>> shots = parseShotArray(output);
+                if (shots != null && !shots.isEmpty()) {
+                    return shots;
+                }
+            } catch (Exception e) {
+                log.warn("[StoryboardAgent] Phase4 精修重试 {}/{}: {}", retry + 1, MAX_EXECUTOR_RETRIES, e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private List<Map<String, Object>> skeletonToFallbackShots(List<Map<String, Object>> skeletons) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> sk : skeletons) {
+            Map<String, Object> shot = new HashMap<>(sk);
+            shot.putIfAbsent("scene", sk.getOrDefault("sceneHint", ""));
+            shot.putIfAbsent("sceneDescription", sk.getOrDefault("sceneHint", ""));
+            shot.putIfAbsent("shotSize", "MEDIUM");
+            shot.putIfAbsent("cameraAngle", "eye_level");
+            shot.putIfAbsent("cameraMovement", "static");
+            shot.putIfAbsent("dialogue", "");
+            shot.putIfAbsent("speaker", "无");
+            shot.putIfAbsent("dialogueTone", "无");
+            shot.putIfAbsent("visualEffects", "无");
+            shot.putIfAbsent("audioEffects", "无");
+            shot.putIfAbsent("transitionHint", "过渡到下一镜");
+            result.add(shot);
+        }
+        return result;
+    }
+
+    private int estimateCurrentPhaseIndex(int globalShotIndex, List<Map<String, Object>> skeletons,
+                                           NarrativePlan plan) {
+        if (plan == null || plan.phases == null || skeletons.isEmpty()) return 0;
+        int accDuration = 0;
+        for (int i = 0; i < Math.min(globalShotIndex, skeletons.size()); i++) {
+            accDuration += ((Number) skeletons.get(i).getOrDefault("duration", 3)).intValue();
+        }
+        int boundary = 0;
+        for (int i = 0; i < plan.phases.size(); i++) {
+            boundary += plan.phases.get(i).allocatedSeconds;
+            if (accDuration < boundary) return i;
+        }
+        return plan.phases.size() - 1;
     }
 
     // ==================== 叙事规划 ====================
