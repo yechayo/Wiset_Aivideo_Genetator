@@ -249,11 +249,93 @@ class StoryboardAgentServiceTest {
         assertEquals(5, state.allShots.get(4).get("globalShotNumber"));
     }
 
-    // ==================== Agent 循环 ====================
+    // ==================== ReAct 循环（爽剧模式） ====================
+
+    @Test
+    void generateReAct_shouldFollowThoughtActionObservationLoop() {
+        // Round 0: 叙事规划调用 (会 fallback 到兜底方案)
+        // Round 1: model thinks, calls generate_shots
+        when(mockReasoner.generate(anyString(), anyString()))
+                .thenReturn("not a valid plan json") // 叙事规划调用，会 fallback
+                .thenReturn("Thought: 目标120秒，先从开场爽点开始，分配30秒\n"
+                        + "Action: generate_shots(爽点1:开场 → 爽点2:冲突, 30)")
+                // Round 2: model sees observation, calls generate_shots again
+                .thenReturn("Thought: 已生成30秒，还需要90秒。继续高潮段落。\n"
+                        + "Action: generate_shots(爽点3:高潮 → 爽点4:结尾, 30)")
+                // Round 3: model sees 60秒, needs more
+                .thenReturn("Thought: 60秒够了，达到下限80秒(2/3)。\n"
+                        + "Action: finish()");
+
+        when(mockExecutor.generate(anyString(), anyString()))
+                .thenReturn(buildShotJson(new int[]{4, 4, 4, 4, 4, 4, 4, 4, 4, 4})) // 40s
+                .thenReturn(buildShotJson(new int[]{4, 4, 4, 4, 4, 4, 4, 4, 4, 4})); // 40s
+
+        List<Map<String, Object>> result = agent.generate(
+                "剧本 [爽点:开场] [爽点:冲突] [爽点:高潮] [爽点:结尾]",
+                "角色A", 120, "ANIME", false, null, "shuangju");
+
+        assertFalse(result.isEmpty(), "ReAct 模式应生成分镜");
+        // 1 叙事规划 + 2 rounds ReAct + 1 finish = 4 次 reasoner 调用
+        verify(mockReasoner, times(4)).generate(anyString(), anyString());
+        verify(mockExecutor, times(2)).generate(anyString(), anyString());
+    }
+
+    @Test
+    void generateReAct_shouldRejectFinishWhenDurationTooShort() {
+        when(mockReasoner.generate(anyString(), anyString()))
+                // Round 0: finish rejected (0s < 40s)
+                .thenReturn("Thought: 生成了15秒，时间不够，但我想结束\n"
+                        + "Action: finish()")
+                // Round 1: model generates
+                .thenReturn("Thought: 被拒绝了，需要继续。再生成25秒。\n"
+                        + "Action: generate_shots(更多爽点, 25)")
+                // Round 2: model generates more
+                .thenReturn("Thought: 再生成20秒。\n"
+                        + "Action: generate_shots(更多爽点, 20)")
+                // Round 3: 48s >= 40s (2/3 of 60), finish accepted
+                .thenReturn("Thought: 48秒达到下限，结束。\n"
+                        + "Action: finish()");
+
+        when(mockExecutor.generate(anyString(), anyString()))
+                .thenReturn(buildShotJson(new int[]{4, 4, 4, 4, 4, 4, 4})) // 28s
+                .thenReturn(buildShotJson(new int[]{4, 4, 4, 4, 4}));     // 20s
+
+        List<Map<String, Object>> result = agent.generate(
+                "剧本 [爽点:1] [爽点:2]", "角色A", 60, "ANIME", false, null, "shuangju");
+
+        assertFalse(result.isEmpty());
+        verify(mockExecutor, times(2)).generate(anyString(), anyString());
+    }
+
+    @Test
+    void parseReactOutput_shouldExtractThoughtAndAction() {
+        StoryboardAgentService.ReactOutput output = agent.parseReactOutput(
+                "Thought: 我需要先生成开场部分，大约15秒\n"
+                        + "Action: generate_shots(爽点1:开场 → 爽点2:冲突, 15)");
+
+        assertEquals("我需要先生成开场部分，大约15秒", output.thought);
+        assertEquals("generate_shots", output.action);
+        assertEquals("爽点1:开场 → 爽点2:冲突, 15", output.actionArgs);
+    }
+
+    @Test
+    void parseReactOutput_shouldHandleFinishAction() {
+        StoryboardAgentService.ReactOutput output = agent.parseReactOutput(
+                "Thought: 时长已达标\nAction: finish()");
+        assertEquals("finish", output.action);
+    }
+
+    @Test
+    void parseReactOutput_shouldFallbackOnBadFormat() {
+        StoryboardAgentService.ReactOutput output = agent.parseReactOutput("这是自由文本没有Action");
+        assertEquals("continue", output.action);
+    }
+
+    // ==================== Agent 循环（标准模式） ====================
 
     @Test
     void generate_shouldCompleteAfterAllBeatsCovered() {
-        // Round 1: Reasoner says generate
+        // Round 1: Reasoner says generate, produces 51s of content
         when(mockReasoner.generate(anyString(), anyString()))
                 .thenReturn("{\"action\":\"generate\",\"nextBeatDescription\":\"开场铺垫\",\"estimatedSeconds\":45,\"reasoning\":\"需要建立世界观\"}")
                 .thenReturn("{\"action\":\"done\",\"reasoning\":\"剧情已覆盖完毕，总时长约170秒\"}");
@@ -261,10 +343,11 @@ class StoryboardAgentServiceTest {
         when(mockExecutor.generate(anyString(), anyString()))
                 .thenReturn(buildShotJson(new int[]{3, 4, 3, 4, 3, 3, 4, 3, 4, 3, 3, 4, 3, 3})); // 51 seconds
 
+        // targetDuration=60, min=40s. 51s > 40s, so done is accepted
         List<Map<String, Object>> result = agent.generate(
                 "主角踏入神秘森林，遇到导师，开始修炼之旅",
                 "角色A(主角),角色B(导师)",
-                180, "ANIME", false, null, "standard");
+                60, "ANIME", false, null, "standard");
 
         assertFalse(result.isEmpty(), "应生成分镜列表");
         verify(mockReasoner, atLeast(2)).generate(anyString(), anyString());
@@ -274,7 +357,9 @@ class StoryboardAgentServiceTest {
     @Test
     void generate_shouldStopOnMaxRounds() {
         // Reasoner 始终说 generate（模拟死循环场景）
+        // 注意：第一次调用被叙事规划消费，后续 15 轮使用同一返回值
         when(mockReasoner.generate(anyString(), anyString()))
+                .thenReturn("not a valid plan json") // 叙事规划调用，会 fallback
                 .thenReturn("{\"action\":\"generate\",\"nextBeatDescription\":\"持续生成\",\"estimatedSeconds\":10,\"reasoning\":\"测试\"}");
 
         when(mockExecutor.generate(anyString(), anyString()))
@@ -284,8 +369,8 @@ class StoryboardAgentServiceTest {
                 "剧情内容", "角色A", 180, "ANIME", false, null, "standard");
 
         assertFalse(result.isEmpty(), "即使触发 maxRounds 也应返回已有分镜");
-        // 验证没有超过 maxRounds 轮
-        verify(mockReasoner, atMost(15)).generate(anyString(), anyString());
+        // 1 叙事规划 + 最多 15 轮迭代 = 最多 16 次
+        verify(mockReasoner, atMost(16)).generate(anyString(), anyString());
     }
 
     @Test
@@ -328,19 +413,76 @@ class StoryboardAgentServiceTest {
     @Test
     void generate_shouldPassContinuityBetweenRounds() {
         when(mockReasoner.generate(anyString(), anyString()))
-                .thenReturn("{\"action\":\"generate\",\"nextBeatDescription\":\"冲突升级\",\"estimatedSeconds\":30,\"reasoning\":\"推进剧情\"}")
-                .thenReturn("{\"action\":\"generate\",\"nextBeatDescription\":\"高潮\",\"estimatedSeconds\":35,\"reasoning\":\"进入高潮\"}")
+                .thenReturn("{\"action\":\"generate\",\"nextBeatDescription\":\"冲突升级\",\"estimatedSeconds\":10,\"reasoning\":\"推进剧情\"}")
+                .thenReturn("{\"action\":\"generate\",\"nextBeatDescription\":\"高潮\",\"estimatedSeconds\":10,\"reasoning\":\"进入高潮\"}")
                 .thenReturn("{\"action\":\"done\",\"reasoning\":\"完成\"}");
 
         when(mockExecutor.generate(anyString(), anyString()))
                 .thenReturn(buildShotJson(new int[]{3, 4, 3}))
                 .thenReturn(buildShotJson(new int[]{4, 3, 4}));
 
-        agent.generate("剧情内容", "角色A", 180, "ANIME", false, null, "standard");
+        // targetDuration=30, min=20s. Two rounds produce 10+11=21s > 20s, so done is accepted
+        agent.generate("剧情内容", "角色A", 30, "ANIME", false, null, "standard");
 
         // 验证第二执行调用时 lastShots 被传入（通过验证 Reasoner 第二次调用的 user prompt 包含上一批末尾分镜）
         // 这里我们只验证执行模型被调用了正确次数
         verify(mockExecutor, times(2)).generate(anyString(), anyString());
+    }
+
+    @Test
+    void extractHookBeats_shouldExtractAllMarkers() {
+        String content = "林晓星打磨道具 [爽点:专注细节] 枪身蓝光 [爽点:意外觉醒] 命中！[爽点:实力碾压]";
+        List<String> hooks = agent.extractHookBeats(content);
+
+        assertEquals(3, hooks.size());
+        assertEquals("专注细节", hooks.get(0));
+        assertEquals("意外觉醒", hooks.get(1));
+        assertEquals("实力碾压", hooks.get(2));
+    }
+
+    @Test
+    void extractHookBeats_shouldReturnEmptyOnNoMarkers() {
+        List<String> hooks = agent.extractHookBeats("普通剧本内容，没有爽点标记");
+        assertTrue(hooks.isEmpty());
+    }
+
+    @Test
+    void buildReactSystemPrompt_shouldContainTools() {
+        String prompt = agent.buildReactSystemPrompt();
+        assertTrue(prompt.contains("generate_shots"));
+        assertTrue(prompt.contains("finish"));
+        assertTrue(prompt.contains("Thought"));
+        assertTrue(prompt.contains("Action"));
+        assertTrue(prompt.contains("Observation"));
+    }
+
+    @Test
+    void parsePlan_shouldParseValidJson() {
+        String planJson = "{\"totalSeconds\":120,\"segments\":["
+                + "{\"id\":1,\"beatDescription\":\"开场\",\"allocatedSeconds\":40,\"narrativeRole\":\"铺垫\"},"
+                + "{\"id\":2,\"beatDescription\":\"高潮\",\"allocatedSeconds\":80,\"narrativeRole\":\"爆发\"}"
+                + "]}";
+
+        List<StoryboardAgentService.PlanSegment> segments = agent.parsePlan(planJson);
+
+        assertNotNull(segments);
+        assertEquals(2, segments.size());
+        assertEquals(40, segments.get(0).allocatedSeconds);
+        assertEquals(80, segments.get(1).allocatedSeconds);
+        assertEquals("开场", segments.get(0).beatDescription);
+    }
+
+    @Test
+    void parsePlan_shouldReturnNullOnInvalidJson() {
+        assertNull(agent.parsePlan("bad json"));
+        assertNull(agent.parsePlan("{\"no\":\"segments\"}"));
+    }
+
+    @Test
+    void buildPlanUserPrompt_shouldContainTargetDuration() {
+        String prompt = agent.buildPlanUserPrompt("[爽点:开场][爽点:高潮]", 120, "角色A");
+        assertTrue(prompt.contains("120"));
+        assertTrue(prompt.contains("爽点"));
     }
 
     // ==================== 辅助方法 ====================
@@ -412,5 +554,37 @@ class StoryboardAgentServiceTest {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    // ==================== Phase 1: 结构分析 ====================
+
+    @Test
+    void parseStoryStructure_shouldParseValidJson() {
+        String json = "{\"storyArc\":\"发现秘密→追杀→反杀\","
+                + "\"beats\":["
+                + "{\"id\":1,\"beat\":\"进入工厂\",\"duration\":12,\"mood\":\"紧张\","
+                + " \"characters\":[{\"name\":\"林晓星\",\"state\":\"警惕\",\"position\":\"工厂\"}]},"
+                + "{\"id\":2,\"beat\":\"发现实验室\",\"duration\":10,\"mood\":\"震惊\","
+                + " \"characters\":[{\"name\":\"林晓星\",\"state\":\"震惊\",\"position\":\"实验室\"},"
+                + " {\"name\":\"陈墨\",\"state\":\"神秘\",\"position\":\"实验室\"}]}"
+                + "],"
+                + "\"transitions\":[{\"from\":\"1\",\"to\":\"2\",\"bridge\":\"推开铁门\"}]}";
+
+        StoryboardAgentService.StoryStructure structure = agent.parseStoryStructure(json);
+
+        assertNotNull(structure);
+        assertEquals("发现秘密→追杀→反杀", structure.storyArc);
+        assertEquals(2, structure.beats.size());
+        assertEquals(1, structure.beats.get(0).id);
+        assertEquals("林晓星", structure.beats.get(0).characters.get(0).name);
+        assertEquals(2, structure.beats.get(1).characters.size());
+        assertEquals(1, structure.transitions.size());
+        assertEquals("推开铁门", structure.transitions.get(0).get("bridge"));
+    }
+
+    @Test
+    void parseStoryStructure_shouldReturnNullOnInvalidJson() {
+        assertNull(agent.parseStoryStructure("not json"));
+        assertNull(agent.parseStoryStructure("{\"storyArc\":\"xxx\"}"));
     }
 }
