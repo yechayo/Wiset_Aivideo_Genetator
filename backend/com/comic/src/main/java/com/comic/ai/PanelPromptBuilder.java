@@ -33,6 +33,25 @@ public class PanelPromptBuilder {
         "dialogue", "narration"
     };
 
+    /**
+     * 占位场景池 — 当分镜数 < 网格容量时，为多余格子填充无关紧要的过渡场景
+     * 避免AI画黑格失败的问题，占位场景格式与正常分镜一致
+     */
+    private static final List<String> FILLER_SCENES = Arrays.asList(
+        "远景 — 夕阳余晖洒在城市天际线上，暖色调，无角色",
+        "中景 — 天空中云彩缓慢飘动，光线柔和，无角色",
+        "特写 — 树叶在微风中轻轻摇曳，自然光影，无角色",
+        "远景 — 宁静的湖面倒映着远山，柔和的色调，无角色",
+        "中景 — 空旷的街道延伸到远方，傍晚的氛围，无角色",
+        "特写 — 光线穿过窗帘的缝隙，尘埃在光束中漂浮，无角色",
+        "远景 — 飞鸟划过天空的剪影，辽阔的视野，无角色",
+        "中景 — 雨后地面倒映着霓虹灯光，柔和模糊，无角色"
+    );
+
+    private String pickFillerScene(int index) {
+        return FILLER_SCENES.get(index % FILLER_SCENES.size());
+    }
+
     // ================= 生产阶段：九宫格 / 视频 =================
 
     /**
@@ -284,11 +303,11 @@ public class PanelPromptBuilder {
 
         int emptySlots = totalSlots - shots.size();
         if (emptySlots > 0) {
-            sb.append("\n【以下格子必须留空 - 纯黑色填充，不绘制任何内容】\n");
+            sb.append("\n");
             for (int i = shots.size(); i < totalSlots; i++) {
                 int row = i / gridCols + 1;
                 int col = i % gridCols + 1;
-                sb.append("第").append(row).append("行第").append(col).append("列: 纯黑色填充，不绘制任何内容。\n");
+                sb.append("第").append(row).append("行第").append(col).append("列: ").append(pickFillerScene(i - shots.size())).append("。\n");
             }
             sb.append("\n");
         }
