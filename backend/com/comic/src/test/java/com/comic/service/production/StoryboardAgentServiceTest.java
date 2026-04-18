@@ -69,6 +69,16 @@ class StoryboardAgentServiceTest {
         List<Map<String, Object>> skeletons = agent.buildShotSkeletons(structure, plan);
         assertFalse(skeletons.isEmpty());
         assertTrue(skeletons.size() >= 2);
+
+        // 验证时长总和接近 beat.duration
+        int total = skeletons.stream().mapToInt(s -> (int) s.get("duration")).sum();
+        assertTrue(total >= 9 && total <= 11, "时长总和应接近 beat.duration 10s，实际: " + total);
+
+        // 验证每个 shot 时长在 1-5s 范围内
+        for (Map<String, Object> s : skeletons) {
+            int d = (int) s.get("duration");
+            assertTrue(d >= 1 && d <= 5, "duration 应在 1-5s 范围内，实际: " + d);
+        }
     }
 
     @Test

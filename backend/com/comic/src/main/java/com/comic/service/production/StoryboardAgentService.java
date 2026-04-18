@@ -188,23 +188,47 @@ public class StoryboardAgentService {
         int shotNumber = 1;
         int accumulatedSeconds = 0;
 
+        // 预计算每个 beat 的 shot 数
+        int[] beatShotCounts = new int[structure.beats.size()];
+        for (int i = 0; i < structure.beats.size(); i++) {
+            beatShotCounts[i] = Math.max(1, (int) Math.round((double) structure.beats.get(i).duration / 3.0));
+        }
+
+        // 追踪每个叙事阶段内的局部索引
+        Map<String, Integer> phaseLocalCounter = new HashMap<>();
+
         for (int beatIdx = 0; beatIdx < structure.beats.size(); beatIdx++) {
             StoryBeat beat = structure.beats.get(beatIdx);
-            int shotCount = Math.max(1, (int) Math.round((double) beat.duration / 3.5));
-            int avgDuration = Math.max(1, Math.min(4, beat.duration / shotCount));
+            int shotCount = beatShotCounts[beatIdx];
 
+            int beatAllocated = 0;
             for (int i = 0; i < shotCount; i++) {
                 Map<String, Object> skeleton = new HashMap<>();
                 skeleton.put("shotNumber", shotNumber++);
-                int duration = (i == shotCount - 1)
-                        ? Math.max(1, Math.min(4, beat.duration - avgDuration * (shotCount - 1)))
-                        : avgDuration;
+
+                String phaseName = matchNarrativePhase(accumulatedSeconds, plan);
+                skeleton.put("narrativePhase", phaseName);
+
+                int phaseLocalIndex = phaseLocalCounter.getOrDefault(phaseName, 0);
+
+                int duration;
+                if (i == shotCount - 1) {
+                    // 最后一个 shot: 补齐剩余时长
+                    duration = Math.max(1, Math.min(5, beat.duration - beatAllocated));
+                } else {
+                    // 按叙事阶段节奏分配
+                    int plannedDuration = allocateDuration(phaseLocalIndex, shotCount, phaseName, accumulatedSeconds);
+                    // 确保不超过 beat 剩余时长（至少留 1s 给后续 shot）
+                    int remaining = beat.duration - beatAllocated;
+                    int minRemaining = (shotCount - i - 1);
+                    duration = Math.max(1, Math.min(5, Math.min(plannedDuration, remaining - minRemaining)));
+                }
+
                 skeleton.put("duration", duration);
                 skeleton.put("beatId", beat.id);
                 skeleton.put("beatIndex", beatIdx);
                 skeleton.put("sceneHint", beat.beat);
                 skeleton.put("mood", beat.mood);
-                skeleton.put("narrativePhase", matchNarrativePhase(accumulatedSeconds, plan));
 
                 List<Map<String, String>> charList = new ArrayList<>();
                 if (beat.characters != null) {
@@ -220,6 +244,8 @@ public class StoryboardAgentService {
 
                 skeletons.add(skeleton);
                 accumulatedSeconds += duration;
+                beatAllocated += duration;
+                phaseLocalCounter.put(phaseName, phaseLocalIndex + 1);
             }
         }
 
