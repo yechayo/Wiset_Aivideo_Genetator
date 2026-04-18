@@ -15,8 +15,9 @@
 - `buildShotSkeletons()` — 引入节奏变化的时长分配
 - `buildFallbackSkeletons()` — 同上
 - `buildRefineSystemPrompt()` — 加入防翻车指南 prompt
+- `buildRefineUserPrompt()` — 末尾从 "保持 duration 不变" 改为允许 ±1s 微调
 
-**不改的文件：** PanelPromptBuilder.java, StoryboardAgentServiceTest.java（现有测试不受影响）
+**需要更新预期值的测试：** `StoryboardAgentServiceTest.java`（`buildShotSkeletons` 相关测试的 duration 预期值会变）
 
 ## 设计
 
@@ -32,15 +33,37 @@
 | 高潮爆发 | 1-2s + 偶尔 3-4s 升格 | 每第 4-5 个镜头插一个 3s 升格特写，其余 1-2s |
 | 收束悬念 | 3-4s 长镜头 | 以 3s 为主，最后一个镜头可用 4s |
 
-**实现方式：** 新增 `allocateDuration(int shotIndex, int shotCount, String phaseName)` 方法。骨架生成循环中，原来用 `avgDuration` 统一分配，改为调用此方法按 phase 分配。
+**实现方式：** 新增 `allocateDuration(int phaseLocalIndex, int phaseLocalCount, String phaseName, int allocatedSeconds)` 方法。
 
-**兜底：** phaseName 匹配不到任何已知阶段时，退回原来的均匀分配（`beat.duration / shotCount`）。
+- `phaseLocalIndex`：当前 shot 在**同一叙事阶段内**的索引（非全局索引）
+- `phaseLocalCount`：当前叙事阶段内的总 shot 数
+- `phaseName`：叙事阶段名称
+- `allocatedSeconds`：已分配的总秒数（用于兜底）
 
-**时长总和校验：** 最后一个镜头的 duration 自动调整为剩余时长（`beat.duration - 已分配总和`），clamp 到 1-4s 范围。
+骨架生成循环中，原来用 `avgDuration` 统一分配，改为调用此方法按 phase 分配。调用方需跟踪"当前 phase 内已分配的镜头数"。
+
+**phase 名称匹配规则（contains 子串匹配）：**
+```
+开场钩子 → contains("开场") || contains("钩子")
+铺垫发展 → contains("铺垫") || contains("发展")
+冲突升级 → contains("冲突") || contains("升级")
+高潮爆发 → contains("高潮") || contains("爆发")
+收束悬念 → contains("收束") || contains("悬念")
+```
+兜底：phaseName 匹配不到任何关键词时，退回原来的均匀分配（`beat.duration / shotCount`）。
+
+**确定性分配（不使用随机数）：** 基于 `phaseLocalIndex` 的取模分配：
+- 开场钩子：`phaseLocalIndex % 5 == 0` 给 1s，其余 2s
+- 铺垫发展：`phaseLocalIndex % 2 == 0` 给 2s，奇数给 3s
+- 冲突升级：`phaseLocalIndex % 5 < 2` 给 1s，其余 2s
+- 高潮爆发：`phaseLocalIndex % 5 == 4` 给 3s（升格），其余交替 1s/2s
+- 收束悬念：全部 3s，最后一个镜头给 4s
+
+**时长总和校验：** 每个 beat 的最后一个 shot，duration 自动调整为 `beat.duration - 已分配总和`，clamp 到 1-4s 范围。如果调整后仍与 `beat.duration` 有差距，则按比例缩放该 beat 内所有 shot 的 duration。
 
 ### Part 2：精修 System Prompt 防翻车指南
 
-在 `buildRefineSystemPrompt()` 的"对话约束"之后、"爽剧/解说模式"之前，插入通用的防翻车指南块：
+在 `buildRefineSystemPrompt()` 的"对话约束"块（第 397 行 `sb.append("\n")`）之后、爽剧/解说模式判断（第 399 行）之前，插入**所有模式通用**的防翻车指南块：
 
 ```
 【快切防翻车指南 - 硬性约束】
@@ -71,19 +94,21 @@
 2. 禁止渐变、模糊、溶解过渡
 ```
 
-**另外改动：** prompt 末尾从 "保持 duration 不变" 改为 "duration 可在骨架基础上 ±1s 微调（范围 1-4s）"。
+**另外改动：**
+1. `buildRefineSystemPrompt()` 第 421 行：`"保持骨架的 shotNumber 和 duration 不变"` → `"保持骨架的 shotNumber 不变，duration 可在骨架基础上 ±1s 微调（范围 1-4s）"`
+2. `buildRefineUserPrompt()` 第 501 行：`"保持 shotNumber 和 duration 不变"` → `"保持 shotNumber 不变，duration 可在骨架基础上 ±1s 微调（范围 1-4s）"`
 
 ## 不做的事
 
 - 不改 NarrativePhase 数据类
 - 不改 Phase 1 分析 prompt
 - 不改 PanelPromptBuilder（视频提示词组装）
-- 不改 `buildRefineUserPrompt()`（精修 user prompt 结构不变）
+- 不改 `buildRefineUserPrompt()` 的结构（仅改末尾一句话）
 - 爽剧/解说模式各自的特殊约束（hookPoint、narration）保持不变
 
 ## 验证
 
-1. 运行 `StoryboardAgentServiceTest` — 现有 9 个单元测试不受影响
+1. 运行 `StoryboardAgentServiceTest` — 更新 `buildShotSkeletons` 相关测试的 duration 预期值
 2. 运行 `StoryboardV2RealTest`（180s 爽剧模式）— 检查：
    - 镜头时长是否有变化（不再全是 3s）
    - sceneDescription 是否遵循单一变化原则
