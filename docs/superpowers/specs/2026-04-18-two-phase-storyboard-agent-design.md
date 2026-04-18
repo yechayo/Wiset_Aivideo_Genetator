@@ -29,9 +29,10 @@
 
 ```
 剧本 → Phase1: LLM结构分析（1次调用）→ 带角色状态的叙事节点列表
-     → Phase2: 代码拆shot骨架（无LLM）→ 全部shot骨架（含角色/场景信息）
      → Phase3: 全局导演规划（1次调用，复用现有NarrativePlan）
+     → Phase2: 代码拆shot骨架（无LLM）→ 全部shot骨架（含角色/场景信息+阶段归属）
      → Phase4: 接续式分段精修（3-5次调用）→ 带完整字段的shot数组
+注意：Phase3 在 Phase2 之前执行，因为骨架生成需要 NarrativePlan 的阶段归属信息
 ```
 
 ## Phase 1：LLM 结构分析
@@ -311,6 +312,46 @@ public List<Map<String, Object>> generate(String episodeContent, String characte
 5. **对话长度**：3s 镜头 ≤15 字，4s 镜头 ≤20 字
 6. **三种模式**：爽剧/普通/解说都能正常工作
 7. **测试更新**：删除旧方法对应的测试用例，为新方法补充测试（`analyzeStoryStructure`、`buildShotSkeletons`、`refineSegment`、`generateV2`）
+
+## 快速验证方法
+
+新增一个可直接运行的集成测试类 `StoryboardV2IntegrationTest.java`，不需要创建项目，直接用样例剧本调用 `generate()` 并输出结果，用于快速验证新架构效果。
+
+```java
+@SpringBootTest
+class StoryboardV2IntegrationTest {
+
+    @Autowired StoryboardAgentService service;
+
+    @Test
+    void testShuangjuMode() {
+        String script = "样例爽剧剧本内容...";
+        List<Map<String, Object>> shots = service.generate(
+            script, "林晓星,陈墨", 120, "cinematic",
+            false, null, "shuangju"
+        );
+        // 打印完整分镜供人工审查
+        shots.forEach(s -> log.info("Shot {}: {} [{}s] dialogue={}",
+            s.get("shotNumber"), s.get("sceneDescription"),
+            s.get("duration"), s.get("dialogue")));
+        // 基础断言
+        assertThat(shots).isNotEmpty();
+        assertThat(shots.stream().mapToInt(s -> (int)s.get("duration")).sum())
+            .isBetween(80, 160);
+    }
+
+    @Test
+    void testStandardMode() { /* 同上，scriptStyle=null */ }
+
+    @Test
+    void testComicCommentaryMode() { /* comicMode=true */ }
+}
+```
+
+**用途**：
+- 改完代码直接跑测试，不用走前端 4a→4b 流程
+- 日志输出完整分镜内容，可直接阅读判断剧情连贯性
+- 可随时更换样例剧本测试不同场景
 
 ## 向后兼容
 
