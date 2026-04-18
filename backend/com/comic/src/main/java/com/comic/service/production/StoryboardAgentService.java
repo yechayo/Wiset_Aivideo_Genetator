@@ -16,15 +16,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 分镜 Agent 服务
+ * 分镜 Agent 服务 — V2 两阶段架构
  *
- * 爽剧模式：ReAct (Reasoning + Acting) 循环
- *   - 单个 chat 模型负责推理和行动选择
- *   - generate_shots 作为 tool，调用同一个 chat 模型生成分镜
- *   - 每轮：Thought → Action → Observation → 下一轮 Thought
- *   - 模型看到完整历史，能根据 Observation 调整策略
+ * Phase 1: LLM 结构分析（StoryStructure）
+ * Phase 2: 代码拆 shot 骨架（纯代码，不调 LLM）
+ * Phase 3: 全局导演规划（NarrativePlan）
+ * Phase 4: 接续式分段精修（每段带前段上下文）
  *
- * 标准模式：保留原有的迭代 Reasoner 循环
+ * 注意：Phase3 在 Phase2 之前执行，因为骨架生成需要 NarrativePlan 的阶段归属信息
  */
 @Service
 @Slf4j
@@ -34,17 +33,12 @@ public class StoryboardAgentService {
     private final DeepSeekTextService executor;
     private final ObjectMapper objectMapper;
 
-    private static final int MAX_ROUNDS = 15;
     private static final int MAX_EXECUTOR_RETRIES = 2;
     private static final int LAST_SHOTS_COUNT = 3;
     private static final int REFINE_SEGMENT_SIZE = 15;
 
     private static final Pattern HOOK_PATTERN =
             Pattern.compile("[\\[【]\\s*爽点\\s*[:：]\\s*(.+?)\\s*[\\]】]");
-    private static final Pattern ACTION_PATTERN =
-            Pattern.compile("Action:\\s*(\\w+)\\(([^)]*)\\)");
-    private static final Pattern THOUGHT_PATTERN =
-            Pattern.compile("Thought:\\s*(.+)");
 
     public StoryboardAgentService(@Qualifier("reasoner") DeepSeekTextService reasoner,
                                    @Qualifier("deepSeekTextService") DeepSeekTextService executor,
@@ -743,633 +737,6 @@ public class StoryboardAgentService {
         return new NarrativePlan(phases, "兜底叙事规划（AI规划失败时使用）");
     }
 
-    // ==================== ReAct System Prompt（爽剧模式） ====================
-
-    /**
-     * 爽剧 ReAct 模式的 system prompt
-     * 定义可用的 tools 和输出格式
-     */
-    String buildReactSystemPrompt() {
-        return "你是一个爽剧分镜叙事导演，使用 ReAct 模式工作。你不仅分配时长，更要像导演一样思考叙事节奏。\n\n"
-                + "## 可用工具\n\n"
-                + "**generate_shots(beatDescription, estimatedSeconds)**\n"
-                + "- 调用分镜生成器，为指定爽点段落生成分镜\n"
-                + "- beatDescription: 要覆盖的爽点描述，必须包含叙事阶段、对话密度、叙事目标\n"
-                + "- estimatedSeconds: 本段目标秒数\n"
-                + "- 返回: 生成的分镜列表及其总时长 + 质量报告\n\n"
-                + "**finish()**\n"
-                + "- 结束生成，返回所有已生成的分镜\n\n"
-                + "## 输出格式（严格遵守）\n\n"
-                + "每轮你必须输出两行：\n"
-                + "Thought: 你的导演推理过程（分析叙事阶段、节奏、对话密度）\n"
-                + "Action: tool名称(参数)\n\n"
-                + "你会在下一步收到 Observation（工具执行结果），根据 Observation 继续推理。\n\n"
-                + "## 叙事导演职责（最高优先级）\n\n"
-                + "你不只是在\"分配时长\"，你是一位叙事导演。在每轮 Thought 中，你必须思考：\n\n"
-                + "1. **叙事阶段**：当前处于哪个叙事阶段？\n"
-                + "   - 开场钩子（前10%时长）：强力视觉冲击，dialogue sparse(≤30%)\n"
-                + "   - 铺垫发展（20-30%）：建立情境，dialogue moderate(≤50%)\n"
-                + "   - 冲突升级（25-35%）：矛盾激化，dialogue dense(≤70%)\n"
-                + "   - 高潮爆发（15-25%）：视觉爆发，dialogue dense(≤70%)\n"
-                + "   - 收束悬念（10-15%）：回归画面，dialogue sparse(≤30%)\n\n"
-                + "2. **对话密度控制**：本段应该有多少镜头有 dialogue？\n"
-                + "   - sparse: ≤30% 有 dialogue（开场/收束，视觉优先）\n"
-                + "   - moderate: ≤50% 有 dialogue（铺垫，对话和画面交替）\n"
-                + "   - dense: ≤70% 有 dialogue（冲突/高潮，但必须保留反应镜头）\n"
-                + "   - **整体上限：不超过 60% 的镜头有 dialogue**\n\n"
-                + "3. **对话长度约束**：每个镜头的 dialogue 必须匹配 duration\n"
-                + "   - 1秒镜头：≤5字\n"
-                + "   - 2秒镜头：≤8字\n"
-                + "   - 3秒镜头：≤15字\n"
-                + "   - 4秒镜头：≤20字\n\n"
-                + "4. **画面呼吸**：不是每个镜头都需要 dialogue\n"
-                + "   - 动作场面：至少 50% 纯画面镜头\n"
-                + "   - 反应镜头：纯画面展示角色情绪反应\n"
-                + "   - 环境镜头：展示场景氛围，无 dialogue\n"
-                + "   - 过渡镜头：场景切换时的视觉过渡\n\n"
-                + "5. **节奏变化**：不要连续相同时长的镜头\n"
-                + "   - 快切段（冲突/动作）：多用 1-2 秒镜头\n"
-                + "   - 情绪段（铺垫/高潮）：用 3-4 秒镜头\n"
-                + "   - 相邻 3 个镜头不能全部相同时长\n\n"
-                + "## generate_shots 参数格式\n\n"
-                + "beatDescription 应包含完整导演指令：\n"
-                + "[阶段名] 爽点描述 [对话密度:sparse/moderate/dense,≤XX%有对话] [叙事目标:xxx] [至少N个纯画面镜头]\n\n"
-                + "示例：\n"
-                + "Thought: 目标120秒，已生成0秒。根据叙事规划，先进入开场钩子阶段（爽点1-3），需要强力视觉冲击。对话密度 sparse（≤30%），让画面说话。分配15秒。\n"
-                + "Action: generate_shots([开场钩子] 爽点1:悲壮画面 → 爽点2:背叛反转 → 爽点3:重生睁眼 [对话密度:sparse,≤30%有对话] [叙事目标:视觉冲击→悬念建立] [至少3个纯画面镜头], 15)\n\n"
-                + "## 约束\n\n"
-                + "- 目标时长的 2/3 是下限，4/3 是上限\n"
-                + "- 每次调用 generate_shots 分配 10-25 秒\n"
-                + "- 观察到累计时长 >= 目标 × 4/3 时，必须调用 finish()\n"
-                + "- 观察到累计时长 >= 目标 × 2/3 时，可以调用 finish()\n"
-                + "- 不要一次分配太多秒数，分多次调用更可控\n"
-                + "- 保持叙事连贯性，每次生成要和上批衔接\n"
-                + "- 严格参考叙事规划中的阶段分配和对话密度要求";
-    }
-
-    /**
-     * 构建 ReAct 的初始 user prompt（含叙事规划）
-     */
-    String buildReactUserPrompt(String episodeContent, String characters, String visualStyle,
-                                  int targetDuration, NarrativePlan plan) {
-        List<String> hooks = extractHookBeats(episodeContent);
-        int minDuration = targetDuration * 2 / 3;
-        int maxDuration = targetDuration * 4 / 3;
-        int maxBeats = maxDuration / 3;
-
-        StringBuilder sb = new StringBuilder();
-
-        // 叙事规划摘要
-        if (plan != null && plan.phases != null && !plan.phases.isEmpty()) {
-            sb.append("## 叙事规划（必须严格参考）\n\n");
-            sb.append("整体故事弧线：").append(plan.storyArcSummary).append("\n\n");
-            sb.append("叙事阶段分配：\n");
-            for (int i = 0; i < plan.phases.size(); i++) {
-                NarrativePhase phase = plan.phases.get(i);
-                sb.append(i + 1).append(". **").append(phase.name).append("**（爽点")
-                  .append(phase.startBeat).append("-").append(phase.endBeat)
-                  .append("，").append(phase.allocatedSeconds).append("秒）")
-                  .append(" 对话密度:").append(phase.dialogueDensity)
-                  .append(" 情绪:").append(phase.emotionalArc).append("\n");
-            }
-            sb.append("\n");
-        }
-
-        sb.append("## 任务\n");
-        sb.append("- 目标总时长：").append(targetDuration).append(" 秒（可接受范围 ").append(minDuration).append("~").append(maxDuration).append(" 秒）\n");
-        sb.append("- 剧本共 ").append(hooks.size()).append(" 个爽点，目标覆盖 ").append(maxBeats).append(" 个\n");
-        sb.append("- 每次调用 generate_shots 分配 10-25 秒\n\n");
-
-        sb.append("## 剧本中的爽点\n");
-        for (int i = 0; i < hooks.size(); i++) {
-            sb.append(i + 1).append(". ").append(hooks.get(i)).append("\n");
-        }
-        sb.append("\n");
-
-        sb.append("## 剧本内容\n").append(episodeContent).append("\n\n");
-        sb.append("## 角色名单（characters 字段必须使用以下全名，禁止使用「主角」「反派」等泛称）\n");
-        sb.append(characters).append("\n\n");
-        sb.append("## 视觉风格\n").append(visualStyle).append("\n\n");
-        sb.append("请按照叙事规划的阶段分配开始工作。");
-
-        return sb.toString();
-    }
-
-    // ==================== ReAct Loop（爽剧模式核心） ====================
-
-    /**
-     * 解析模型输出中的 Thought 和 Action
-     */
-    ReactOutput parseReactOutput(String modelOutput) {
-        String thought = "";
-        String action = "";
-        String actionArgs = "";
-
-        Matcher thoughtM = THOUGHT_PATTERN.matcher(modelOutput);
-        if (thoughtM.find()) {
-            thought = thoughtM.group(1).trim();
-        }
-
-        Matcher actionM = ACTION_PATTERN.matcher(modelOutput);
-        if (actionM.find()) {
-            action = actionM.group(1).trim();
-            actionArgs = actionM.group(2).trim();
-        }
-
-        // 如果没有匹配到格式，兜底为 continue（让模型继续思考）
-        if (action.isEmpty()) {
-            action = "continue";
-        }
-
-        return new ReactOutput(thought, action, actionArgs);
-    }
-
-    /**
-     * 爽剧模式：ReAct 循环（含叙事规划）
-     */
-    private List<Map<String, Object>> generateReAct(String episodeContent, String characters,
-                                                     int targetDuration, String visualStyle,
-                                                     String scriptStyle) {
-        log.info("[StoryboardAgent] ReAct 模式启动: target={}s", targetDuration);
-
-        AgentState state = new AgentState();
-        state.targetDuration = targetDuration;
-
-        // === 叙事规划 ===
-        List<String> hooks = extractHookBeats(episodeContent);
-        NarrativePlan plan = buildNarrativePlan(episodeContent, hooks, targetDuration, characters, scriptStyle, false);
-        state.narrativePlan = plan;
-
-        String systemPrompt = buildReactSystemPrompt();
-        String executorSystem = buildExecutorSystemPrompt(false, scriptStyle);
-
-        // 对话历史：累积所有 Thought/Action/Observation
-        StringBuilder conversation = new StringBuilder();
-
-        for (int round = 0; round < MAX_ROUNDS; round++) {
-            String roundLabel = "轮次" + (round + 1);
-
-            // 硬性上限守卫
-            int maxDuration = targetDuration * 4 / 3;
-            if (state.accumulatedDuration >= maxDuration) {
-                log.info("[StoryboardAgent] 时长达上限（{}s >= {}s），强制结束",
-                        state.accumulatedDuration, maxDuration);
-                break;
-            }
-
-            // ---- Step 1: 模型推理 (Thought + Action) ----
-            String userMsg;
-            if (round == 0) {
-                userMsg = buildReactUserPrompt(episodeContent, characters, visualStyle, targetDuration, plan);
-            } else {
-                // 后续轮次：包含叙事阶段信息
-                String phaseInfo = getCurrentPhaseInfo(state, plan);
-                userMsg = "## 当前进度\n"
-                        + "- 已生成时长：" + state.accumulatedDuration + " 秒\n"
-                        + "- 已覆盖段落：" + state.coveredBeats.size() + " 个\n"
-                        + "- 目标：" + targetDuration + " 秒（范围 " + (targetDuration * 2 / 3) + "~" + maxDuration + " 秒）\n"
-                        + phaseInfo + "\n"
-                        + "## 之前的历史\n" + conversation + "\n\n"
-                        + "请继续工作。";
-            }
-
-            String modelOutput;
-            try {
-                modelOutput = reasoner.generate(systemPrompt, userMsg);
-            } catch (Exception e) {
-                log.error("[StoryboardAgent] {} 模型调用失败: {}", roundLabel, e.getMessage());
-                break;
-            }
-
-            ReactOutput react = parseReactOutput(modelOutput);
-            log.info("[StoryboardAgent] {} Thought: {}", roundLabel, react.thought);
-            log.info("[StoryboardAgent] {} Action: {}({})", roundLabel, react.action, react.actionArgs);
-
-            // ---- Step 2: 执行 Action ----
-            if ("finish".equals(react.action)) {
-                int minDuration = targetDuration * 2 / 3;
-                if (state.accumulatedDuration < minDuration && round < MAX_ROUNDS - 1) {
-                    log.info("[StoryboardAgent] {} finish 被拒绝：时长不足（{}s < {}s）", roundLabel,
-                            state.accumulatedDuration, minDuration);
-                    conversation.append("Thought: ").append(react.thought).append("\n")
-                            .append("Action: finish()\n")
-                            .append("Observation: 拒绝执行 finish，时长不足。当前 ").append(state.accumulatedDuration)
-                            .append(" 秒 < 最低 ").append(minDuration).append(" 秒。请继续 generate_shots。\n\n");
-                    continue;
-                }
-                log.info("[StoryboardAgent] {} 结束生成", roundLabel);
-                break;
-            }
-
-            if ("generate_shots".equals(react.action)) {
-                // 解析参数
-                String[] args = react.actionArgs.split(",\\s*", 2);
-                String beatDescription = args.length > 0 ? args[0].trim() : "";
-                int estimatedSeconds = args.length > 1 ? parseIntSafe(args[1].trim(), 15) : 15;
-
-                // 调用 Executor 生成分镜（传入叙事规划）
-                List<Map<String, Object>> batchShots = callExecutor(
-                        executorSystem, beatDescription, characters, visualStyle,
-                        estimatedSeconds, state.lastShots, scriptStyle,
-                        plan, state.currentPhaseIndex);
-
-                if (batchShots == null || batchShots.isEmpty()) {
-                    conversation.append("Thought: ").append(react.thought).append("\n")
-                            .append("Action: generate_shots(").append(react.actionArgs).append(")\n")
-                            .append("Observation: 分镜生成失败，请调整参数重试。\n\n");
-                    continue;
-                }
-
-                accumulateShots(state, batchShots, beatDescription);
-                updateCurrentPhase(state, plan);
-                int batchSeconds = batchShots.stream()
-                        .mapToInt(s -> ((Number) s.get("duration")).intValue()).sum();
-
-                // 质量检查
-                String qualityReport = checkBatchQuality(batchShots, plan, state.currentPhaseIndex, false);
-
-                String observation = "Observation: 成功生成 " + batchShots.size() + " 个分镜，"
-                        + "本段 " + batchSeconds + " 秒，累计 " + state.accumulatedDuration + " 秒，"
-                        + "已覆盖 " + state.coveredBeats.size() + " 个段落。\n"
-                        + qualityReport;
-
-                log.info("[StoryboardAgent] {} {}", roundLabel, observation);
-
-                conversation.append("Thought: ").append(react.thought).append("\n")
-                        .append("Action: generate_shots(").append(react.actionArgs).append(")\n")
-                        .append(observation).append("\n\n");
-            } else {
-                // continue 或未知 action，让模型重试
-                conversation.append("(模型输出未包含有效 Action，请重新输出 Thought + Action)\n\n");
-            }
-        }
-
-        log.info("[StoryboardAgent] ReAct 完成: 总分镜={}, 总时长={}秒, 轮次={}",
-                state.allShots.size(), state.accumulatedDuration, state.coveredBeats.size());
-
-        return state.allShots;
-    }
-
-    /**
-     * 调用 Executor 生成分镜（含重试，带叙事规划）
-     */
-    private List<Map<String, Object>> callExecutor(String executorSystem, String beatDescription,
-                                                    String characters, String visualStyle,
-                                                    int estimatedSeconds,
-                                                    List<Map<String, Object>> lastShots,
-                                                    String scriptStyle,
-                                                    NarrativePlan plan, int currentPhaseIndex) {
-        String executorUser = buildExecutorPrompt(
-                beatDescription, characters, visualStyle,
-                estimatedSeconds, lastShots, false, scriptStyle,
-                plan, currentPhaseIndex);
-
-        for (int retry = 0; retry <= MAX_EXECUTOR_RETRIES; retry++) {
-            try {
-                String executorOutput = executor.generate(executorSystem, executorUser);
-                List<Map<String, Object>> shots = parseShotArray(executorOutput);
-                if (shots != null && !shots.isEmpty()) return shots;
-            } catch (Exception e) {
-                log.warn("[StoryboardAgent] Executor 失败, 重试 {}/{}: {}",
-                        retry + 1, MAX_EXECUTOR_RETRIES, e.getMessage());
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 调用 Executor 生成分镜（含重试，无叙事规划，向后兼容）
-     */
-    private List<Map<String, Object>> callExecutor(String executorSystem, String beatDescription,
-                                                    String characters, String visualStyle,
-                                                    int estimatedSeconds,
-                                                    List<Map<String, Object>> lastShots,
-                                                    String scriptStyle) {
-        return callExecutor(executorSystem, beatDescription, characters, visualStyle,
-                estimatedSeconds, lastShots, scriptStyle, null, -1);
-    }
-
-    // ==================== Plan 模式（兜底，不再主用） ====================
-
-    String buildPlanSystemPrompt() {
-        return "你是一个爽剧分镜规划 agent。根据剧本和目标时长，输出完整时间分配计划。\n\n"
-                + "输出纯 JSON：{\"totalSeconds\":120,\"segments\":[{\"id\":1,\"beatDescription\":\"...\",\"allocatedSeconds\":30,\"narrativeRole\":\"...\"}]}\n\n"
-                + "规则：\n"
-                + "- 所有段落的 allocatedSeconds 之和 = 目标时长±10%\n"
-                + "- 4-8 个段落，每段 10-25 秒\n"
-                + "- 每段包含连续的爽点，保持叙事连贯性";
-    }
-
-    String buildPlanUserPrompt(String episodeContent, int targetDuration, String characters) {
-        List<String> hooks = extractHookBeats(episodeContent);
-        StringBuilder sb = new StringBuilder();
-        sb.append("目标时长：").append(targetDuration).append(" 秒\n");
-        sb.append("爽点（共").append(hooks.size()).append("个）：\n");
-        for (int i = 0; i < hooks.size(); i++) sb.append(i + 1).append(". ").append(hooks.get(i)).append("\n");
-        sb.append("\n剧本：").append(episodeContent).append("\n角色：").append(characters).append("\n\n请输出计划 JSON。");
-        return sb.toString();
-    }
-
-    List<PlanSegment> parsePlan(String json) {
-        try {
-            String cleaned = cleanJson(json);
-            JsonNode root = objectMapper.readTree(cleaned);
-            JsonNode segs = root.has("segments") ? root.get("segments") : null;
-            if (segs == null || !segs.isArray() || segs.isEmpty()) return null;
-
-            List<PlanSegment> result = new ArrayList<>();
-            for (JsonNode seg : segs) {
-                result.add(new PlanSegment(
-                        seg.has("id") ? seg.get("id").asInt(result.size() + 1) : result.size() + 1,
-                        seg.has("beatDescription") ? seg.get("beatDescription").asText("") : "",
-                        seg.has("allocatedSeconds") ? seg.get("allocatedSeconds").asInt(15) : 15,
-                        seg.has("narrativeRole") ? seg.get("narrativeRole").asText("") : ""
-                ));
-            }
-            return result;
-        } catch (Exception e) {
-            log.error("[StoryboardAgent] Plan 解析失败: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    private List<PlanSegment> buildFallbackPlan(String episodeContent, int targetDuration) {
-        List<String> hooks = extractHookBeats(episodeContent);
-        int segCount = Math.max(4, Math.min(8, hooks.size() / 5));
-        int secPerSeg = targetDuration / segCount;
-        int beatsPerSeg = hooks.size() / segCount;
-        List<PlanSegment> segs = new ArrayList<>();
-        for (int i = 0; i < segCount; i++) {
-            int start = i * beatsPerSeg;
-            int end = (i == segCount - 1) ? hooks.size() : (i + 1) * beatsPerSeg;
-            StringBuilder desc = new StringBuilder();
-            for (int j = start; j < end; j++) {
-                if (j > start) desc.append(" → ");
-                desc.append("爽点").append(j + 1).append(":").append(hooks.get(j));
-            }
-            segs.add(new PlanSegment(i + 1, desc.toString(), secPerSeg, ""));
-        }
-        return segs;
-    }
-
-    // ==================== Prompt（标准模式） ====================
-
-    String buildReasonerSystemPrompt(boolean comicMode, String scriptStyle) {
-        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
-            return buildReactSystemPrompt();
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("你是一个分镜叙事导演 agent。你不只是规划剧情覆盖，更要像导演一样思考叙事节奏。\n\n");
-        if (comicMode) sb.append("本集为漫剧解说模式：叙事由旁白口播主导，每个分镜必须有 narration 或 dialogue。\n\n");
-        sb.append("## 叙事导演职责\n\n");
-        sb.append("1. **叙事阶段分析**：分析剧情结构，识别当前叙事阶段\n");
-        sb.append("   - 开场建立：引入情境/人物，dialogue moderate(≤50%)\n");
-        sb.append("   - 发展铺陈：推进关系/揭示信息，dialogue moderate(≤50%)\n");
-        sb.append("   - 冲突升级：矛盾激化，节奏加快，dialogue dense(≤70%)\n");
-        sb.append("   - 高潮爆发：核心对决/揭露，视觉和情绪并重，dialogue dense(≤70%)\n");
-        sb.append("   - 收束结尾：情绪沉淀/悬念，dialogue sparse(≤30%)\n\n");
-        sb.append("2. **对话密度控制**：在 nextBeatDescription 中标注对话密度要求\n");
-        sb.append("   - sparse: ≤30% 有 dialogue\n");
-        sb.append("   - moderate: ≤50% 有 dialogue\n");
-        sb.append("   - dense: ≤70% 有 dialogue\n");
-        sb.append("   - 每个镜头 dialogue 字数约束：1s≤5字, 2s≤8字, 3s≤15字, 4s≤20字\n\n");
-        sb.append("3. **节奏变化**：铺垫段稍慢（3-4秒镜头），冲突段加快（1-2秒镜头），高潮段爆发\n\n");
-        sb.append("4. **画面呼吸**：不是每个镜头都需要 dialogue，保留反应镜头、环境镜头\n\n");
-        if (comicMode) {
-            sb.append("## 解说模式特殊职责\n");
-            sb.append("- 每个分镜都需要 narration（旁白口播稿），narration 是叙事主体\n");
-            sb.append("- dialogue 是点缀，仅在关键角色互动时使用\n");
-            sb.append("- narration 长度同样受 duration 约束\n\n");
-        }
-        sb.append("## 原有职责\n\n");
-        sb.append("1. 分析剩余剧情内容和已生成进度\n");
-        sb.append("2. 决定下一批应覆盖哪个剧情段落\n");
-        sb.append("3. 估算该段落需要多少秒\n");
-        sb.append("4. 当所有剧情覆盖完毕后，如果时长不足可以选择 expand（扩展已有节点）或 pad（填充氛围镜头）\n\n");
-        sb.append("约束：\n");
-        sb.append("- 每个分镜 1-4 秒\n");
-        sb.append("- 优先完整覆盖所有剧情节点\n");
-        sb.append("- 保持叙事连贯性，每批之间需要衔接\n\n");
-        sb.append("输出纯 JSON（不要 markdown 代码块标记，不要在值中额外嵌套引号）：\n");
-        sb.append("{\n");
-        sb.append("  \"action\": \"generate|expand|pad|done\",\n");
-        sb.append("  \"nextBeatDescription\": \"下一批覆盖的剧情内容摘要（含叙事阶段和对话密度标注）\",\n");
-        sb.append("  \"estimatedSeconds\": 40,\n");
-        sb.append("  \"targetBeatIndex\": 2,\n");
-        sb.append("  \"reasoning\": \"叙事阶段分析和导演决策理由\"\n");
-        sb.append("}\n\n");
-        sb.append("action 说明：\n");
-        sb.append("- generate: 还有剧情未覆盖，继续生成\n");
-        sb.append("- expand: 剧情覆盖完毕但时长不足，回头扩展已有节点（需指定 targetBeatIndex）\n");
-        sb.append("- pad: 生成过渡/氛围镜头填充时长\n");
-        sb.append("- done: 剧情已完整覆盖，结束生成\n");
-        return sb.toString();
-    }
-
-    public String buildReasonerPrompt(String episodeContent, String characters, String visualStyle,
-                                       AgentState state, String roundLabel, boolean comicMode,
-                                       String narrationPerspective, String scriptStyle) {
-        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
-            return buildReactUserPrompt(episodeContent, characters, visualStyle, state.targetDuration, state.narrativePlan);
-        }
-
-        return buildReasonerPrompt(episodeContent, characters, visualStyle, state, roundLabel,
-                comicMode, narrationPerspective, scriptStyle, state.narrativePlan);
-    }
-
-    /** 带 NarrativePlan 参数的版本 */
-    public String buildReasonerPrompt(String episodeContent, String characters, String visualStyle,
-                                       AgentState state, String roundLabel, boolean comicMode,
-                                       String narrationPerspective, String scriptStyle,
-                                       NarrativePlan plan) {
-        int minDuration = state.targetDuration * 2 / 3;
-        int maxDuration = state.targetDuration * 4 / 3;
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("## 当前状态\n");
-        sb.append("- 目标总时长：").append(state.targetDuration).append(" 秒（范围 ").append(minDuration).append("~").append(maxDuration).append(" 秒）\n");
-        sb.append("- 已生成时长：").append(state.accumulatedDuration).append(" 秒\n");
-        sb.append("- 轮次：").append(roundLabel).append("（最多 ").append(MAX_ROUNDS).append(" 轮）\n\n");
-
-        // 叙事规划信息
-        if (plan != null && plan.phases != null && !plan.phases.isEmpty()) {
-            sb.append("## 叙事规划\n\n");
-            sb.append("整体弧线：").append(plan.storyArcSummary).append("\n");
-            sb.append("当前阶段：").append(getCurrentPhaseInfo(state, plan)).append("\n\n");
-        }
-
-        sb.append("## 剧本内容\n").append(episodeContent).append("\n\n");
-
-        sb.append("## 已覆盖剧情节点\n");
-        if (state.coveredBeats.isEmpty()) {
-            sb.append("（无，刚开始）\n");
-        } else {
-            for (int i = 0; i < state.coveredBeats.size(); i++) {
-                sb.append(i + 1).append(". ").append(state.coveredBeats.get(i)).append("\n");
-            }
-        }
-        sb.append("\n");
-
-        if (!state.lastShots.isEmpty()) {
-            sb.append("## 上一批末尾分镜（用于衔接）\n");
-            for (Map<String, Object> shot : state.lastShots) {
-                sb.append("- 第").append(shot.get("shotNumber")).append("镜 [").append(shot.get("duration")).append("秒] ")
-                  .append(shot.getOrDefault("scene", shot.getOrDefault("sceneDescription", ""))).append("\n");
-            }
-            sb.append("\n");
-        }
-
-        sb.append("## 角色\n").append(characters).append("（characters 字段必须使用上述全名）\n");
-
-        if (comicMode) {
-            sb.append("## 模式\n本集为漫剧解说模式，分镜需包含 narration/旁白口播稿。\n");
-        }
-
-        if (comicMode && narrationPerspective != null) {
-            if ("third_person".equals(narrationPerspective)) {
-                sb.append("## 人称要求\n旁白必须使用第三人称叙述。\n");
-            } else if ("first_person".equals(narrationPerspective)) {
-                sb.append("## 人称要求\n旁白必须使用第一人称「我」叙述。\n");
-            }
-        }
-
-        sb.append("\n请输出你的决策 JSON。");
-        return sb.toString();
-    }
-
-    // ==================== Executor Prompt ====================
-
-    String buildExecutorSystemPrompt(boolean comicMode, String scriptStyle) {
-        StringBuilder base = new StringBuilder();
-        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
-            base.append("你是一位爽剧分镜师。节奏极快，三秒一个爽点。\n\n");
-        } else {
-            base.append(comicMode ? "你是一位漫剧解说分镜师。\n\n" : "你是一位专业分镜师。\n\n");
-        }
-
-        base.append("输出纯 JSON 数组。每个分镜：\n");
-        base.append("shotNumber, duration(1-4秒), scene, characters, shotSize, cameraAngle, cameraMovement,\n");
-        base.append("sceneDescription, dialogue, speaker, dialogueTone, visualEffects, audioEffects, transitionHint");
-        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
-            base.append(", hookPoint");
-        }
-        if (comicMode) {
-            base.append(", narration");
-        }
-        base.append("\n\n");
-
-        base.append("【characters 字段 - 极其重要】\n");
-        base.append("characters 字段必须使用用户消息中给出的角色全名，禁止使用「主角」「反派」「配角」「路人」等泛称。\n");
-        base.append("例如用户消息中角色为「林晓星」，则 characters 必须写 [\"林晓星\"]，不能写 [\"主角\"]。\n");
-        base.append("如果某个分镜中没有已命名的角色，写空数组 []。\n\n");
-
-        // ========== 通用对话约束 ==========
-        base.append("【对话约束 - 硬性要求，违反即为失败】\n\n");
-        base.append("1. 不是每个镜头都需要 dialogue\n");
-        base.append("   - dialogue 填 \"\" 或 \"无\" 的镜头是完全正常的，甚至是必要的\n");
-        base.append("   - 纯画面镜头类型：反应镜头（角色表情变化）、环境镜头（场景氛围）、动作镜头（视觉冲击）、过渡镜头（场景切换）\n");
-        base.append("   - 目标：约 40-60% 的镜头有 dialogue，其余为纯画面叙事\n\n");
-        base.append("2. dialogue 字数必须匹配 duration（正常语速约 4-5 字/秒）\n");
-        base.append("   - duration=1秒：dialogue ≤ 5 字\n");
-        base.append("   - duration=2秒：dialogue ≤ 8 字\n");
-        base.append("   - duration=3秒：dialogue ≤ 15 字\n");
-        base.append("   - duration=4秒：dialogue ≤ 20 字\n");
-        base.append("   - 超出此范围的 dialogue 视为生成失败\n\n");
-        base.append("3. 对话分布原则\n");
-        base.append("   - 连续 3 个镜头不能都有 dialogue（至少穿插 1 个纯画面镜头）\n");
-        base.append("   - 动作/打斗场面：dialogue 应少，用画面讲故事\n");
-        base.append("   - 情感高潮：可以有一句有力的 dialogue，但周围应有反应镜头\n\n");
-        base.append("4. 当 dialogue 为空时\n");
-        base.append("   - speaker 填 \"无\"\n");
-        base.append("   - dialogueTone 填 \"无\"\n");
-        base.append("   - sceneDescription 应更详细，用画面替代文字叙事\n\n");
-
-        // ========== 爽剧模式追加 ==========
-        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
-            base.append("【爽剧模式】\n");
-            base.append("- hookPoint 字段必须填写，标注本镜头的爽点类型（如\"实力碾压\"\"身份反转\"\"视觉冲击\"等）\n");
-            base.append("- 内心独白也算 dialogue，但字数同样受 duration 约束\n\n");
-        }
-
-        // ========== 解说模式追加 ==========
-        if (comicMode) {
-            base.append("【解说模式特殊约束】\n");
-            base.append("- 每个镜头必须有 narration 字段（旁白口播稿）\n");
-            base.append("- narration 字数同样受 duration 约束：3秒≤15字，4秒≤20字\n");
-            base.append("- narration 和 dialogue 不能同时存在（旁白时角色不说话，角色说话时无旁白）\n");
-            base.append("- 当有 dialogue 时，narration 填 \"无\"\n");
-            base.append("- narration 优先级高于 dialogue：关键剧情节点用 narration 推进，角色对话是点缀\n\n");
-        }
-
-        base.append("AI视频原则：单主体、慢动作。");
-        return base.toString();
-    }
-
-    public String buildExecutorPrompt(String nextBeatDescription, String characters, String visualStyle,
-                                       int estimatedSeconds, List<Map<String, Object>> lastShots,
-                                       boolean comicMode, String scriptStyle,
-                                       NarrativePlan plan, int currentPhaseIndex) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("覆盖段落：").append(nextBeatDescription).append("\n");
-        sb.append("目标时长：").append(estimatedSeconds).append(" 秒\n\n");
-        if (!lastShots.isEmpty()) {
-            sb.append("上批末尾分镜（用于衔接）：\n");
-            for (Map<String, Object> s : lastShots) {
-                sb.append("- 第").append(s.get("shotNumber")).append("镜[").append(s.get("duration")).append("秒] ")
-                  .append(s.getOrDefault("scene", s.getOrDefault("sceneDescription", ""))).append("\n");
-            }
-            sb.append("\n");
-        }
-
-        // 叙事上下文
-        if (plan != null && plan.phases != null && currentPhaseIndex >= 0 && currentPhaseIndex < plan.phases.size()) {
-            NarrativePhase phase = plan.phases.get(currentPhaseIndex);
-            sb.append("## 叙事上下文\n\n");
-            sb.append("当前叙事阶段：").append(phase.name).append("\n");
-            sb.append("阶段情绪走向：").append(phase.emotionalArc).append("\n");
-            sb.append("对话密度要求：").append(phase.dialogueDensity).append("（")
-              .append(getDialogueDensityPercent(phase.dialogueDensity)).append("的镜头可以有 dialogue）\n");
-            sb.append("对话长度上限：").append(phase.maxDialogueChars).append("\n");
-            sb.append("节拍指导：").append(phase.pacingNote).append("\n\n");
-
-            // 前序阶段摘要
-            if (currentPhaseIndex > 0) {
-                sb.append("前序阶段：");
-                for (int i = 0; i < currentPhaseIndex; i++) {
-                    if (i > 0) sb.append(" → ");
-                    sb.append(plan.phases.get(i).name).append("(").append(plan.phases.get(i).emotionalArc).append(")");
-                }
-                sb.append("\n");
-            }
-            // 后续阶段预告
-            if (currentPhaseIndex < plan.phases.size() - 1) {
-                sb.append("后续阶段：");
-                for (int i = currentPhaseIndex + 1; i < plan.phases.size(); i++) {
-                    if (i > currentPhaseIndex + 1) sb.append(" → ");
-                    sb.append(plan.phases.get(i).name).append("(").append(plan.phases.get(i).emotionalArc).append(")");
-                }
-                sb.append("\n\n");
-            } else {
-                sb.append("\n");
-            }
-        }
-
-        sb.append("角色（characters 字段必须使用以下全名，禁止写「主角」「反派」等泛称）：\n");
-        sb.append(characters).append("\n\n");
-        sb.append("风格：").append(visualStyle).append("\n");
-        sb.append("请严格按照对话密度和长度约束生成分镜 JSON 数组。");
-        return sb.toString();
-    }
-
-    /** 保留向后兼容的无 plan 参数版本 */
-    public String buildExecutorPrompt(String nextBeatDescription, String characters, String visualStyle,
-                                       int estimatedSeconds, List<Map<String, Object>> lastShots,
-                                       boolean comicMode, String scriptStyle) {
-        return buildExecutorPrompt(nextBeatDescription, characters, visualStyle,
-                estimatedSeconds, lastShots, comicMode, scriptStyle, null, -1);
-    }
-
     private String getDialogueDensityPercent(String density) {
         if (density == null) return "≤50%";
         switch (density) {
@@ -1378,56 +745,6 @@ public class StoryboardAgentService {
             case "dense": return "≤70%";
             default: return "≤50%";
         }
-    }
-
-    // ==================== 状态管理 ====================
-
-    public void accumulateShots(AgentState state, List<Map<String, Object>> shots, String beatDescription) {
-        if (shots == null || shots.isEmpty()) return;
-        for (Map<String, Object> shot : shots) {
-            int d = Math.max(1, Math.min(4, ((Number) shot.get("duration")).intValue()));
-            shot.put("duration", d);
-        }
-        int t = state.accumulatedDuration;
-        for (int i = 0; i < shots.size(); i++) {
-            Map<String, Object> shot = shots.get(i);
-            shot.put("globalShotNumber", state.allShots.size() + i + 1);
-            shot.put("startTime", t);
-            t += ((Number) shot.get("duration")).intValue();
-            shot.put("endTime", t);
-        }
-        state.allShots.addAll(shots);
-        state.accumulatedDuration = t;
-        if (beatDescription != null && !beatDescription.isEmpty()) state.coveredBeats.add(beatDescription);
-        state.lastShots.clear();
-        int start = Math.max(0, shots.size() - LAST_SHOTS_COUNT);
-        for (int i = start; i < shots.size(); i++) state.lastShots.add(shots.get(i));
-    }
-
-    /**
-     * 更新当前叙事阶段索引：根据累计时长判断是否应进入下一阶段
-     */
-    private void updateCurrentPhase(AgentState state, NarrativePlan plan) {
-        if (plan == null || plan.phases == null || plan.phases.isEmpty()) return;
-        int accumulated = 0;
-        for (int i = 0; i < plan.phases.size(); i++) {
-            accumulated += plan.phases.get(i).allocatedSeconds;
-            if (state.accumulatedDuration < accumulated) {
-                state.currentPhaseIndex = i;
-                return;
-            }
-        }
-        state.currentPhaseIndex = plan.phases.size() - 1;
-    }
-
-    /**
-     * 获取当前叙事阶段信息字符串
-     */
-    private String getCurrentPhaseInfo(AgentState state, NarrativePlan plan) {
-        if (plan == null || plan.phases == null || plan.phases.isEmpty()) return "";
-        int idx = Math.min(state.currentPhaseIndex, plan.phases.size() - 1);
-        NarrativePhase phase = plan.phases.get(idx);
-        return phase.name + "（对话密度:" + phase.dialogueDensity + "，情绪:" + phase.emotionalArc + "）";
     }
 
     // ==================== 质量检查 ====================
@@ -1532,72 +849,60 @@ public class StoryboardAgentService {
                                                int targetDuration, String visualStyle,
                                                boolean comicMode, String narrationPerspective,
                                                String scriptStyle) {
-        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
-            return generateReAct(episodeContent, characters, targetDuration, visualStyle, scriptStyle);
-        }
-        return generateIterative(episodeContent, characters, targetDuration, visualStyle, comicMode, narrationPerspective, scriptStyle);
+        return generateV2(episodeContent, characters, targetDuration, visualStyle,
+                comicMode, narrationPerspective, scriptStyle);
     }
 
-    // ==================== 标准模式迭代 ====================
+    /**
+     * 两阶段架构：Phase1 结构分析 → Phase3 规划 → Phase2 骨架(需要phase信息) → Phase4 精修
+     * 注意：Phase3 在 Phase2 之前执行，因为骨架生成需要 NarrativePlan 的阶段归属信息
+     */
+    private List<Map<String, Object>> generateV2(String episodeContent, String characters,
+                                                   int targetDuration, String visualStyle,
+                                                   boolean comicMode, String narrationPerspective,
+                                                   String scriptStyle) {
+        log.info("[StoryboardAgent] V2 启动: target={}s, mode={}", targetDuration,
+                ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle) ? "爽剧" : (comicMode ? "解说" : "标准"));
 
-    private List<Map<String, Object>> generateIterative(String episodeContent, String characters,
-                                                         int targetDuration, String visualStyle,
-                                                         boolean comicMode, String narrationPerspective,
-                                                         String scriptStyle) {
-        AgentState state = new AgentState();
-        state.targetDuration = targetDuration;
+        // === Phase 1: LLM 结构分析 ===
+        StoryStructure structure = analyzeStoryStructure(episodeContent, characters, targetDuration);
 
-        // === 叙事规划 ===
+        // === Phase 3: 全局导演规划 ===
+        // Phase3 在 Phase2 之前执行，因为骨架生成需要知道每个 shot 属于哪个叙事阶段
         List<String> hooks = extractHookBeats(episodeContent);
+        String existingArc = (structure != null && structure.storyArc != null) ? structure.storyArc : "";
         NarrativePlan plan = buildNarrativePlan(episodeContent, hooks, targetDuration, characters, scriptStyle, comicMode);
-        state.narrativePlan = plan;
-
-        String systemPrompt = buildReasonerSystemPrompt(comicMode, scriptStyle);
-
-        for (int round = 0; round < MAX_ROUNDS; round++) {
-            String roundLabel = "第" + (round + 1) + "轮";
-
-            // 硬性上限守卫（与 ReAct 模式一致）
-            int maxDuration = targetDuration * 4 / 3;
-            if (state.accumulatedDuration >= maxDuration) {
-                log.info("[StoryboardAgent] {} 时长达上限（{}s >= {}s），强制结束", roundLabel, state.accumulatedDuration, maxDuration);
-                break;
-            }
-
-            String userPrompt = buildReasonerPrompt(episodeContent, characters, visualStyle, state, roundLabel, comicMode, narrationPerspective, scriptStyle, plan);
-            String reasonerOutput;
-            try { reasonerOutput = reasoner.generate(systemPrompt, userPrompt); }
-            catch (Exception e) { log.warn("[StoryboardAgent] Reasoner 失败: {}", e.getMessage()); break; }
-
-            ReasonerDecision decision = parseReasonerDecision(reasonerOutput);
-            log.info("[StoryboardAgent] {} action={}, beat='{}', est={}s", roundLabel, decision.action, decision.nextBeatDescription, decision.estimatedSeconds);
-
-            if ("done".equals(decision.action)) {
-                if (state.accumulatedDuration < targetDuration * 2 / 3 && round < MAX_ROUNDS - 1) {
-                    log.info("[StoryboardAgent] {} done 但时长不足，继续", roundLabel);
-                    decision = new ReasonerDecision("generate", "继续", 20, "强制继续", 0);
-                } else { break; }
-            }
-
-            String executorSystem = buildExecutorSystemPrompt(comicMode, scriptStyle);
-            String executorUser = buildExecutorPrompt(decision.nextBeatDescription, characters, visualStyle, decision.estimatedSeconds, state.lastShots, comicMode, scriptStyle, plan, state.currentPhaseIndex);
-            List<Map<String, Object>> batchShots = null;
-            for (int retry = 0; retry <= MAX_EXECUTOR_RETRIES; retry++) {
-                try {
-                    batchShots = parseShotArray(executor.generate(executorSystem, executorUser));
-                    if (batchShots != null && !batchShots.isEmpty()) break;
-                } catch (Exception e) { log.warn("[StoryboardAgent] Executor 重试 {}/{}: {}", retry + 1, MAX_EXECUTOR_RETRIES, e.getMessage()); }
-            }
-            if (batchShots == null || batchShots.isEmpty()) continue;
-            accumulateShots(state, batchShots, decision.nextBeatDescription);
-            updateCurrentPhase(state, plan);
-
-            // 质量检查
-            String qualityReport = checkBatchQuality(batchShots, plan, state.currentPhaseIndex, comicMode);
-            log.info("[StoryboardAgent] {} 完成: {}镜, 累计{}s {}", roundLabel, batchShots.size(), state.accumulatedDuration, qualityReport);
+        if (!existingArc.isEmpty()) {
+            plan.storyArcSummary = existingArc;
         }
-        log.info("[StoryboardAgent] 标准模式完成: {}镜, {}s", state.allShots.size(), state.accumulatedDuration);
-        return state.allShots;
+
+        // === Phase 2: 代码拆 shot 骨架 ===
+        List<Map<String, Object>> skeletons;
+        if (structure != null && structure.beats != null && !structure.beats.isEmpty()) {
+            skeletons = buildShotSkeletons(structure, plan);
+        } else {
+            skeletons = buildFallbackSkeletons(targetDuration, episodeContent, characters, plan);
+        }
+
+        log.info("[StoryboardAgent] Phase2 完成: {} 个shot骨架", skeletons.size());
+
+        // === Phase 4: 接续式分段精修 ===
+        List<Map<String, Object>> refinedShots = refineSkeletons(skeletons, structure, plan,
+                characters, visualStyle, comicMode, narrationPerspective, scriptStyle);
+
+        // 赋予全局编号和时间戳
+        int t = 0;
+        for (int i = 0; i < refinedShots.size(); i++) {
+            Map<String, Object> shot = refinedShots.get(i);
+            shot.put("globalShotNumber", i + 1);
+            shot.put("startTime", t);
+            int d = ((Number) shot.getOrDefault("duration", 3)).intValue();
+            t += d;
+            shot.put("endTime", t);
+        }
+
+        log.info("[StoryboardAgent] V2 完成: {}镜, {}s", refinedShots.size(), t);
+        return refinedShots;
     }
 
     // ==================== JSON 工具 ====================
