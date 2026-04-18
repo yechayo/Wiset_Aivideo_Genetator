@@ -255,35 +255,51 @@ public class StoryboardAgentService {
     }
 
     /**
-     * 兜底骨架：Phase1 失败时均匀拆分
+     * 兜底骨架：Phase1 失败时均匀拆分，使用 allocateDuration 按叙事阶段节奏分配时长
      */
     List<Map<String, Object>> buildFallbackSkeletons(int targetDuration, String episodeContent,
                                                        String characters, NarrativePlan plan) {
-        int shotCount = Math.max(3, (int) Math.round((double) targetDuration / 3.5));
-        int avgDuration = Math.max(1, Math.min(4, targetDuration / shotCount));
-        int lastDuration = targetDuration - avgDuration * (shotCount - 1);
-        if (lastDuration > 4 || lastDuration < 1) {
-            shotCount = targetDuration / 3;
-            avgDuration = 3;
-            lastDuration = targetDuration - avgDuration * (shotCount - 1);
-        }
-
+        int shotCount = Math.max(3, (int) Math.round((double) targetDuration / 3.0));
         String[] parts = splitContentEvenly(episodeContent, shotCount);
 
         List<Map<String, Object>> skeletons = new ArrayList<>();
         int accumulatedSeconds = 0;
+        String lastPhase = "";
+        int phaseLocalIndex = 0;
+
         for (int i = 0; i < shotCount; i++) {
             Map<String, Object> skeleton = new HashMap<>();
             skeleton.put("shotNumber", i + 1);
-            int duration = (i == shotCount - 1)
-                    ? Math.max(1, Math.min(4, lastDuration))
-                    : avgDuration;
+
+            String phaseName = matchNarrativePhase(accumulatedSeconds, plan);
+
+            // 追踪 phase 内局部索引
+            if (!phaseName.equals(lastPhase)) {
+                phaseLocalIndex = 0;
+                lastPhase = phaseName;
+            }
+
+            int duration;
+            int remaining = targetDuration - accumulatedSeconds;
+            int shotsLeft = shotCount - i;
+            if (shotsLeft == 1) {
+                // 最后一个 shot: 补齐剩余时长
+                duration = Math.max(1, Math.min(5, remaining));
+            } else {
+                int plannedDuration = allocateDuration(phaseLocalIndex, shotCount, phaseName, accumulatedSeconds);
+                int avgNeeded = remaining / shotsLeft;
+                // 当平均需要时长 > 5 时，用平均值代替 plannedDuration 以避免最后 shot 无法补齐
+                int baseDuration = Math.max(plannedDuration, Math.min(5, avgNeeded));
+                int minRemaining = shotsLeft - 1;
+                duration = Math.max(1, Math.min(5, Math.min(baseDuration, remaining - minRemaining)));
+            }
+
             skeleton.put("duration", duration);
             skeleton.put("beatId", 1);
             skeleton.put("beatIndex", 0);
             skeleton.put("sceneHint", parts[i]);
             skeleton.put("mood", "");
-            skeleton.put("narrativePhase", matchNarrativePhase(accumulatedSeconds, plan));
+            skeleton.put("narrativePhase", phaseName);
 
             List<Map<String, String>> charList = new ArrayList<>();
             if (characters != null && !characters.isEmpty()) {
@@ -299,6 +315,7 @@ public class StoryboardAgentService {
 
             skeletons.add(skeleton);
             accumulatedSeconds += duration;
+            phaseLocalIndex++;
         }
 
         log.info("[StoryboardAgent] Phase2 兜底骨架: {} 个shot", shotCount);

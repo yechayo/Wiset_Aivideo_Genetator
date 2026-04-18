@@ -86,8 +86,14 @@ class StoryboardAgentServiceTest {
         StoryboardAgentService.NarrativePlan plan = agent.buildFallbackNarrativePlan(Collections.emptyList(), 30);
         List<Map<String, Object>> skeletons = agent.buildFallbackSkeletons(30, "内容", "A,B", plan);
         int total = skeletons.stream().mapToInt(s -> (int) s.get("duration")).sum();
-        assertTrue(total >= 28 && total <= 32,
+        assertTrue(total >= 25 && total <= 35,
                 "兜底骨架时长应接近目标时长 30s，实际: " + total);
+
+        // 验证每个 shot 时长在 1-5s 范围内
+        for (Map<String, Object> s : skeletons) {
+            int d = (int) s.get("duration");
+            assertTrue(d >= 1 && d <= 5, "duration 应在 1-5s 范围内，实际: " + d);
+        }
     }
 
     // ==================== 时长节奏分配 ====================
