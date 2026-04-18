@@ -30,8 +30,8 @@
 | 开场钩子 | 2s 为主 | 80% 用 2s，20% 用 1s |
 | 铺垫发展 | 2-3s 混合 | 交替 2s 和 3s |
 | 冲突升级 | 1-2s 快切 | 60% 用 2s，40% 用 1s |
-| 高潮爆发 | 1-2s + 偶尔 3-4s 升格 | 每第 4-5 个镜头插一个 3s 升格特写，其余 1-2s |
-| 收束悬念 | 3-4s 长镜头 | 以 3s 为主，最后一个镜头可用 4s |
+| 高潮爆发 | 1-2s + 偶尔 3-5s 升格 | 每第 4-5 个镜头插一个 4s 升格特写，其余 1-2s |
+| 收束悬念 | 3-5s 长镜头 | 以 3s 为主，最后一个镜头可用 4-5s |
 
 **实现方式：** 新增 `allocateDuration(int phaseLocalIndex, int phaseLocalCount, String phaseName, int allocatedSeconds)` 方法。
 
@@ -52,14 +52,16 @@
 ```
 兜底：phaseName 匹配不到任何关键词时，退回原来的均匀分配（`beat.duration / shotCount`）。
 
+**Fallback 路径（`buildFallbackSkeletons`）：** 同样使用 `allocateDuration`，`phaseLocalIndex` 通过累加同一 `matchNarrativePhase` 返回值范围内的 shot 数计算。因为 fallback 没有 beat 边界（只有一个平铺的 shot 数组），所以用全局 shot 索引，但在 phase 切换时重置 `phaseLocalIndex`。
+
 **确定性分配（不使用随机数）：** 基于 `phaseLocalIndex` 的取模分配：
 - 开场钩子：`phaseLocalIndex % 5 == 0` 给 1s，其余 2s
 - 铺垫发展：`phaseLocalIndex % 2 == 0` 给 2s，奇数给 3s
 - 冲突升级：`phaseLocalIndex % 5 < 2` 给 1s，其余 2s
-- 高潮爆发：`phaseLocalIndex % 5 == 4` 给 3s（升格），其余交替 1s/2s
-- 收束悬念：全部 3s，最后一个镜头给 4s
+- 高潮爆发：`phaseLocalIndex % 5 == 4` 给 4s（升格），其余交替 1s/2s
+- 收束悬念：全部 3s，最后一个镜头给 5s
 
-**时长总和校验：** 每个 beat 的最后一个 shot，duration 自动调整为 `beat.duration - 已分配总和`，clamp 到 1-4s 范围。如果调整后仍与 `beat.duration` 有差距，则按比例缩放该 beat 内所有 shot 的 duration。
+**时长总和校验：** 每个 beat 的最后一个 shot，duration 自动调整为 `beat.duration - 已分配总和`，clamp 到 1-5s 范围。如果调整后仍与 `beat.duration` 有差距，则按比例缩放该 beat 内所有 shot 的 duration。
 
 ### Part 2：精修 System Prompt 防翻车指南
 
@@ -80,7 +82,7 @@
 
 三、运镜约束
 1. 1-2s 镜头只允许：固定镜头、极特写、主观视角(POV)
-2. 3-4s 镜头允许：缓慢推镜头、微平移
+2. 3-5s 镜头允许：缓慢推镜头、微平移
 3. 禁止复杂运镜（推+环绕+拉远）
 
 四、提示词写法
@@ -95,8 +97,8 @@
 ```
 
 **另外改动：**
-1. `buildRefineSystemPrompt()` 第 421 行：`"保持骨架的 shotNumber 和 duration 不变"` → `"保持骨架的 shotNumber 不变，duration 可在骨架基础上 ±1s 微调（范围 1-4s）"`
-2. `buildRefineUserPrompt()` 第 501 行：`"保持 shotNumber 和 duration 不变"` → `"保持 shotNumber 不变，duration 可在骨架基础上 ±1s 微调（范围 1-4s）"`
+1. `buildRefineSystemPrompt()` 第 421 行：`"保持骨架的 shotNumber 和 duration 不变"` → `"保持骨架的 shotNumber 不变，duration 可在骨架基础上 ±1s 微调（范围 1-5s）"`
+2. `buildRefineUserPrompt()` 第 501 行：`"保持 shotNumber 和 duration 不变"` → `"保持 shotNumber 不变，duration 可在骨架基础上 ±1s 微调（范围 1-5s）"`
 
 ## 不做的事
 
