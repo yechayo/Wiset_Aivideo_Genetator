@@ -22,4 +22,6 @@ public class ProjectCreateRequest {
     private String narrationPerspective;
     private String narrationVoiceId;
     private String protagonistVoiceId;
+    /** standard | shuangju */
+    private String scriptStyle;
 }

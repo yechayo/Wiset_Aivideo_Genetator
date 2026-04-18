@@ -125,7 +125,8 @@ public class ProjectService {
                                 String imageProvider, String videoProvider,
                                 String videoModel, String productionMode,
                                 String narrationPerspective, String narrationVoiceId,
-                                String protagonistVoiceId, Boolean videoRefMode) {
+                                String protagonistVoiceId, Boolean videoRefMode,
+                                String scriptStyle) {
         Project project = new Project();
         project.setProjectId(generateProjectId());
         project.setUserId(userId);
@@ -144,6 +145,7 @@ public class ProjectService {
         info.put(ProjectInfoKeys.VIDEO_MODEL, videoModel != null ? videoModel : "viduq3-pro");
         if (Boolean.TRUE.equals(videoRefMode)) info.put(ProjectInfoKeys.VIDEO_REF_MODE, true);
         info.put(ProjectInfoKeys.PRODUCTION_MODE, normalizeProductionModeForCreate(productionMode));
+        if (scriptStyle != null) info.put(ProjectInfoKeys.SCRIPT_STYLE, scriptStyle);
         if (narrationPerspective != null) info.put(ProjectInfoKeys.NARRATION_PERSPECTIVE, narrationPerspective);
         if (narrationVoiceId != null) info.put(ProjectInfoKeys.NARRATION_VOICE_ID, narrationVoiceId);
         if (protagonistVoiceId != null) info.put(ProjectInfoKeys.PROTAGONIST_VOICE_ID, protagonistVoiceId);
@@ -187,6 +189,7 @@ public class ProjectService {
         if (request.getNarrationPerspective() != null) info.put(ProjectInfoKeys.NARRATION_PERSPECTIVE, request.getNarrationPerspective());
         if (request.getNarrationVoiceId() != null) info.put(ProjectInfoKeys.NARRATION_VOICE_ID, request.getNarrationVoiceId());
         if (request.getProtagonistVoiceId() != null) info.put(ProjectInfoKeys.PROTAGONIST_VOICE_ID, request.getProtagonistVoiceId());
+        if (request.getScriptStyle() != null) info.put(ProjectInfoKeys.SCRIPT_STYLE, request.getScriptStyle());
         project.setProjectInfo(info);
         projectRepository.updateById(project);
     }

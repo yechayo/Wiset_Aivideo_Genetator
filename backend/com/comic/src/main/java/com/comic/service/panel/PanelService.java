@@ -135,6 +135,16 @@ public class PanelService {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("Panel 不存在");
 
+        // 防止重复提交：已在生成中则跳过
+        String currentTtsStatus = panel.getPanelInfo() != null ? (String) panel.getPanelInfo().get("ttsStatus") : null;
+        if ("generating".equals(currentTtsStatus)) {
+            log.info("TTS 已在生成中，跳过: panelId={}", panelId);
+            Map<String, Object> skipResult = new HashMap<>();
+            skipResult.put("skipped", true);
+            skipResult.put("ttsStatus", currentTtsStatus);
+            return skipResult;
+        }
+
         // 获取项目信息以确定音色
         Episode episode = episodeRepository.selectById(panel.getEpisodeId());
         Project project = projectRepository.findByProjectId(episode.getProjectId());
@@ -281,6 +291,16 @@ public class PanelService {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("Panel 不存在");
         Map<String, Object> panelInfo = panel.getPanelInfo();
+
+        // 防止重复提交：已在合并中则跳过
+        String currentMergeStatus = panelInfo != null ? (String) panelInfo.get("mergeStatus") : null;
+        if ("generating".equals(currentMergeStatus)) {
+            log.info("音视频合并已在进行中，跳过: panelId={}", panelId);
+            Map<String, Object> skipResult = new HashMap<>();
+            skipResult.put("skipped", true);
+            skipResult.put("mergeStatus", currentMergeStatus);
+            return skipResult;
+        }
 
         String videoUrl = (String) panelInfo.get("videoUrl");
         String ttsAudioUrl = (String) panelInfo.get("ttsAudioUrl");

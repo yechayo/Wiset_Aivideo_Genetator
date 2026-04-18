@@ -84,13 +84,24 @@ public class ScriptPromptBuilder {
         if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             base += "【内容量与时长匹配（爽剧模式 - 最高优先级）】\n"
                     + "- 每秒需要约 12-16 个字的剧本内容（含场景描述、台词、动作描写）\n"
-                    + "- 60秒 → content 约 720-960 字，至少 20 个爽点节拍\n"
-                    + "- 90秒 → content 约 1080-1440 字，至少 30 个爽点节拍\n"
-                    + "- 120秒 → content 约 1440-1920 字，至少 40 个爽点节拍\n"
-                    + "- 180秒 → content 约 2160-2880 字，至少 60 个爽点节拍\n"
-                    + "- 300秒 → content 约 3600-4800 字，至少 100 个爽点节拍\n"
-                    + "- 不要概括压缩剧情，要展开每个场景的具体对话、角色动作、情绪变化和视觉细节\n"
-                    + "- 使用「（场景描述）」「角色（情绪）：台词」「（动作描写）」格式\n"
+                    + "- 爽点节拍数量是硬性要求，必须达标：\n"
+                    + "  60秒 → content 约 720-960 字，必须包含至少 20 个 [爽点:XX] 标记\n"
+                    + "  90秒 → content 约 1080-1440 字，必须包含至少 30 个 [爽点:XX] 标记\n"
+                    + "  120秒 → content 约 1440-1920 字，必须包含至少 40 个 [爽点:XX] 标记\n"
+                    + "  180秒 → content 约 2160-2880 字，必须包含至少 60 个 [爽点:XX] 标记\n"
+                    + "  300秒 → content 约 3600-4800 字，必须包含至少 100 个 [爽点:XX] 标记\n"
+                    + "- 爽点标记格式严格为 [爽点:描述]，不得省略方括号，不得用其他格式代替\n"
+                    + "- 如果字数或爽点数量不足，你的输出将被退回重做\n"
+                    + "【大纲与剧本的关系（关键）】\n"
+                    + "- 大纲中每集只有约 8-10 个高level爽点节拍，这只是骨架\n"
+                    + "- 你必须将每个大纲爽点展开为 4-5 个具体子爽点，包含具体的对话、动作、表情描写\n"
+                    + "- 例如大纲写「爽点①：木枪射出橡胶弹」，你必须展开为：\n"
+                    + "  (场景描写) 林晓星举起木枪。 [爽点:蓄势待发]\n"
+                    + "  她手指扣动扳机。 [爽点:意外触发]\n"
+                    + "  枪身蓝光闪烁！ [爽点:视觉冲击]\n"
+                    + "  橡胶弹射出！精准命中王导屁股！ [爽点:实力碾压]\n"
+                    + "  王导惨叫跳起！ [爽点:搞笑反差]\n"
+                    + "- 禁止照搬大纲爽点数量，120秒剧本必须产出 40 个以上 [爽点:XX] 标记\n"
                     + "【爽剧短句格式约束】\n"
                     + "- 全文使用短句，每句不超过 20 个字\n"
                     + "- 平均每 3 秒（约 36-48 字）必须出现一个明确的情绪或剧情爽点\n"
@@ -98,14 +109,7 @@ public class ScriptPromptBuilder {
                     + "- 禁止超过 2 句的平铺叙述，必须快速推进情节\n"
                     + "- 台词简短有力，每句台词不超过 15 个字\n"
                     + "- 场景切换频率高，每 2-3 个爽点可切换一次场景\n"
-                    + "- 书写格式：(场景描述) 角色(情绪):台词 [爽点:XX]\n"
-                    + "- 示例片段：\n"
-                    + "  (豪华婚房，灯光昏暗)\n"
-                    + "  陆沉猛然睁眼。 [爽点:重生觉醒]\n"
-                    + "  冷汗浸透枕头。\n"
-                    + "  他侧头，看见身旁沉睡的姜眠。\n"
-                    + "  陆沉(震惊):你...还活着？\n"
-                    + "  他红了眼眶，颤抖着伸手。 [爽点:情绪爆发]\n";
+                    + "- 书写格式：(场景描述) 角色(情绪):台词 [爽点:XX]\n";
         } else {
             base += "【内容量与时长匹配（最高优先级）】\n"
                     + "用户会给出每集目标时长，你必须确保 content 字段的内容量足以支撑该时长：\n"
@@ -142,7 +146,13 @@ public class ScriptPromptBuilder {
         int minWords = duration * charsPerSec;
         int maxWords = duration * charsPerSecMax;
         sb.append("【时长硬性要求】每集 ").append(duration).append(" 秒，content 字段必须 ").append(minWords).append("-").append(maxWords).append(" 字，")
-                .append("包含充分的场景描写、对话和动作细节。不得概括压缩。\n\n");
+                .append("包含充分的场景描写、对话和动作细节。不得概括压缩。\n");
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
+            int minBeats = duration / 3;
+            sb.append("【爽点数量硬性要求】content 中必须包含至少 ").append(minBeats).append(" 个 [爽点:XX] 标记，")
+                    .append("平均每 3 秒一个。不足此数量的输出将被退回。\n");
+        }
+        sb.append("\n");
         if (modificationSuggestion != null && !modificationSuggestion.isEmpty()) {
             sb.append("修改建议：").append(modificationSuggestion).append("\n\n");
         }

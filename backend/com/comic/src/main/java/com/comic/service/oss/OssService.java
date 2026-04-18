@@ -335,6 +335,59 @@ public class OssService {
         }
     }
 
+    /**
+     * 垂直拼接两张图片（统一宽度后上下堆叠）
+     *
+     * @param url1 上方图片 URL
+     * @param url2 下方图片 URL
+     * @return 拼接后图片的 OSS URL
+     */
+    public String combineImagesVertical(String url1, String url2) {
+        try {
+            log.info("开始垂直拼接图片: top={}, bottom={}", url1, url2);
+            BufferedImage img1 = downloadImage(url1);
+            BufferedImage img2 = downloadImage(url2);
+
+            // 统一宽度为两者最大值，限制不超过 1024
+            int targetWidth = Math.min(Math.max(img1.getWidth(), img2.getWidth()), 1024);
+            BufferedImage scaled1 = scaleToWidth(img1, targetWidth);
+            BufferedImage scaled2 = scaleToWidth(img2, targetWidth);
+
+            int totalHeight = scaled1.getHeight() + scaled2.getHeight();
+            BufferedImage combined = new BufferedImage(targetWidth, totalHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics g = combined.getGraphics();
+            g.setColor(java.awt.Color.WHITE);
+            g.fillRect(0, 0, targetWidth, totalHeight);
+            g.drawImage(scaled1, 0, 0, null);
+            g.drawImage(scaled2, 0, scaled1.getHeight(), null);
+            g.dispose();
+
+            // JPEG 压缩
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            javax.imageio.ImageWriteParam param = ImageIO.getImageWritersByFormatName("jpeg").next().getDefaultWriteParam();
+            param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+            param.setCompressionQuality(0.85f);
+            javax.imageio.ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
+            try (javax.imageio.stream.ImageOutputStream ios = ImageIO.createImageOutputStream(baos)) {
+                writer.setOutput(ios);
+                writer.write(null, new javax.imageio.IIOImage(combined, null, null), param);
+            }
+            writer.dispose();
+            byte[] bytes = baos.toByteArray();
+            log.info("垂直拼接 JPEG 压缩后大小: {} KiB ({}x{})", bytes.length / 1024, targetWidth, totalHeight);
+
+            String fileName = UUID.randomUUID().toString().replace("-", "") + ".jpg";
+            String objectKey = ossProperties.getDir() + "combined/" + fileName;
+            ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+            String ossUrl = uploadFromInputStream(bais, objectKey, "image/jpeg", bytes.length);
+            log.info("垂直拼接完成，已上传 OSS: {} ({}x{})", ossUrl, targetWidth, totalHeight);
+            return ossUrl;
+        } catch (Exception e) {
+            log.error("垂直拼接图片失败: url1={}, url2={}", url1, url2, e);
+            throw new RuntimeException("垂直拼接图片失败: " + e.getMessage(), e);
+        }
+    }
+
     private BufferedImage downloadImage(String url) throws Exception {
         Request request = new Request.Builder().url(url).build();
         try (Response response = httpClient.newCall(request).execute()) {
@@ -350,6 +403,19 @@ public class OssService {
         if (src.getHeight() == targetHeight) return src;
         double scale = (double) targetHeight / src.getHeight();
         int targetWidth = (int) Math.round(src.getWidth() * scale);
+        BufferedImage scaled = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+        Graphics g = scaled.getGraphics();
+        g.setColor(java.awt.Color.WHITE);
+        g.fillRect(0, 0, targetWidth, targetHeight);
+        g.drawImage(src.getScaledInstance(targetWidth, targetHeight, java.awt.Image.SCALE_SMOOTH), 0, 0, null);
+        g.dispose();
+        return scaled;
+    }
+
+    private BufferedImage scaleToWidth(BufferedImage src, int targetWidth) {
+        if (src.getWidth() == targetWidth) return src;
+        double scale = (double) targetWidth / src.getWidth();
+        int targetHeight = (int) Math.round(src.getHeight() * scale);
         BufferedImage scaled = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
         Graphics g = scaled.getGraphics();
         g.setColor(java.awt.Color.WHITE);

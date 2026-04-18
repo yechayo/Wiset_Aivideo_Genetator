@@ -83,7 +83,8 @@ public class ProjectController {
             dto.getNarrationPerspective(),
             dto.getNarrationVoiceId(),
             dto.getProtagonistVoiceId(),
-            dto.getVideoRefMode()
+            dto.getVideoRefMode(),
+            dto.getScriptStyle()
         );
 
         Map<String, String> result = new HashMap<>();

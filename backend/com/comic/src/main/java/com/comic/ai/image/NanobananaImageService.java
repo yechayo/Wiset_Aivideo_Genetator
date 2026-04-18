@@ -213,8 +213,7 @@ public class NanobananaImageService implements ImageGenerationService {
                     case 0:
                     case 3:
                     default:
-                        // 排队中(0) / 生成中(3)，继续轮询
-                        log.info("Nanobanana2 任务状态: status={}, taskId={}", status, taskId);
+                        // 排队中(0) / 生成中(3)，继续轮log.info("Nanobanana2 任务状态: status={}, taskId={}", status, taskId);
                         sleep(POLL_INTERVAL_MS);
                         break;
                 }
