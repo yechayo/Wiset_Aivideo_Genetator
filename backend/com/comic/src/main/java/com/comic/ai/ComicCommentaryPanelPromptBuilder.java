@@ -222,7 +222,13 @@ public class ComicCommentaryPanelPromptBuilder {
 
         int emptySlots = totalSlots - shots.size();
         if (emptySlots > 0) {
-            sb.append("剩余 ").append(emptySlots).append(" 个格子留空（纯黑色填充，不绘制任何内容）。\n\n");
+            sb.append("\n【以下格子必须留空 - 纯黑色填充，不绘制任何内容】\n");
+            for (int i = shots.size(); i < totalSlots; i++) {
+                int row = i / gridCols + 1;
+                int col = i % gridCols + 1;
+                sb.append("第").append(row).append("行第").append(col).append("列: 纯黑色填充，不绘制任何内容。\n");
+            }
+            sb.append("\n");
         }
 
         if (gridCols >= 5 && gridRows >= 5) {

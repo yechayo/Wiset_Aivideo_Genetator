@@ -36,6 +36,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.AbstractMap;
 import java.util.List;
@@ -50,6 +51,11 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class PanelProductionService {
+
+    /** 内存锁：正在生成视频的 panelId 集合，防止重复提交 */
+    private static final java.util.Set<Long> generatingVideoLocks = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** 内存锁：正在生成参考图视频的 panelId 集合，防止重复提交 */
+    private static final java.util.Set<Long> generatingVideoRefLocks = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private final PanelRepository panelRepository;
     private final EpisodeRepository episodeRepository;
@@ -503,6 +509,11 @@ public class PanelProductionService {
 
     @Async
     public void doGenerateVideoByPanelId(Long panelId, boolean offPeak, String overrideVideoModel) {
+        // 内存锁防重复
+        if (!generatingVideoLocks.add(panelId)) {
+            log.info("视频已在生成中，跳过: panelId={}", panelId);
+            return;
+        }
         try {
             Panel panel = panelRepository.selectById(panelId);
             if (panel == null) throw new BusinessException("分镜不存在");
@@ -557,11 +568,18 @@ public class PanelProductionService {
             updatePanelState(panelId, "videoStatus", "failed", e.getMessage());
             publishPanelFailure(panelId, e.getMessage());
             throw new BusinessException("视频生成失败: " + e.getMessage());
+        } finally {
+            generatingVideoLocks.remove(panelId);
         }
     }
 
     @Async
     public void doGenerateVideoRefByPanelId(Long panelId, boolean offPeak, String overrideVideoModel) {
+        // 内存锁防重复
+        if (!generatingVideoRefLocks.add(panelId)) {
+            log.info("参考图视频已在生成中，跳过: panelId={}", panelId);
+            return;
+        }
         try {
             Panel panel = panelRepository.selectById(panelId);
             if (panel == null) throw new BusinessException("分镜不存在");
@@ -634,6 +652,8 @@ public class PanelProductionService {
             updatePanelState(panelId, "videoStatus", "failed", e.getMessage());
             publishPanelFailure(panelId, e.getMessage());
             throw new BusinessException("参考图视频生成失败: " + e.getMessage());
+        } finally {
+            generatingVideoRefLocks.remove(panelId);
         }
     }
 
@@ -828,6 +848,14 @@ public class PanelProductionService {
             for (Panel panel : panels) {
                 Map<String, Object> info = panel.getPanelInfo();
                 if (info != null && "failed".equals(getStr(info, "videoStatus"))) {
+                    // 二次确认：防止并发时单个重试已将其改为 generating
+                    Panel freshPanel = panelRepository.selectById(panel.getId());
+                    String freshStatus = freshPanel != null && freshPanel.getPanelInfo() != null
+                            ? getStr(freshPanel.getPanelInfo(), "videoStatus") : null;
+                    if (!"failed".equals(freshStatus)) {
+                        log.info("状态已变更，跳过重试: panelId={}, status={}", panel.getId(), freshStatus);
+                        continue;
+                    }
                     info.put("videoStatus", "pending");
                     info.put("errorMessage", null);
                     panel.setPanelInfo(info);
@@ -903,7 +931,7 @@ public class PanelProductionService {
     }
 
     /**
-     * 收集参考图及角色名：分镜图优先（最多3张）+ 角色图补足至7张
+     * 收集参考图及角色名：分镜图全部使用 + 角色图补足（仅当前 panel 出场的角色）
      * 分镜图从 panelInfo.shots 对应的 episodeInfo.splitShots 中提取（仅当前 panel 的镜头）
      * 返回 AbstractMap.SimpleEntry: key=参考图URL列表, value=角色名列表
      */
@@ -943,21 +971,22 @@ public class PanelProductionService {
                 }
             }
 
-            int shotCount = Math.min(3, panelShots.size());
+            // 分镜图全部使用（不再限制为3张）
+            int shotCount = panelShots.size();
             for (int i = 0; i < shotCount && (startIndex + i) < allSplitShots.size(); i++) {
                 String url = (String) allSplitShots.get(startIndex + i).get("splitImageUrl");
                 if (url != null && !url.isEmpty()) refImageUrls.add(url);
             }
         } else if (allSplitShots != null) {
-            // fallback: 取前3张
-            int shotCount = Math.min(3, allSplitShots.size());
-            for (int i = 0; i < shotCount; i++) {
+            // fallback: 使用 panel 对应数量的分镜图
+            int shotCount = panelShots != null ? panelShots.size() : allSplitShots.size();
+            for (int i = 0; i < shotCount && i < allSplitShots.size(); i++) {
                 String url = (String) allSplitShots.get(i).get("splitImageUrl");
                 if (url != null && !url.isEmpty()) refImageUrls.add(url);
             }
         }
 
-        // 2. 角色图补足至7张（含角色名）
+        // 2. 角色图补足（仅当前 panel 出场的角色，角色图权重低于分镜图）
         // FIX: Only add character images for characters that appear in this panel's shots
         java.util.Set<String> panelCharacterNames = new java.util.HashSet<>();
         if (panelShots != null) {
@@ -969,6 +998,7 @@ public class PanelProductionService {
         }
         List<GridImageService.CharRef> charRefs = gridImageService.getCharacterReferencesWithNamesForEpisode(episodeId);
         for (GridImageService.CharRef cr : charRefs) {
+            // 总数上限仍为7张（模型输入限制）
             if (refImageUrls.size() >= 7) break;
             if (cr.url != null && !cr.url.isEmpty() && !refImageUrls.contains(cr.url)) {
                 // Only add character images for characters that appear in this panel's shots
@@ -1004,12 +1034,12 @@ public class PanelProductionService {
     private String buildRefImagePromptAnnotation(String prompt, Panel panel, List<String> images, List<String> characterNames) {
         if (images == null || images.isEmpty()) return prompt;
 
-        // 计算分镜图数量：从 panel.shots 取分镜数量，最多3张
+        // 计算分镜图数量：从 panel.shots 取分镜数量（全部使用）
         Map<String, Object> info = panel.getPanelInfo();
         int splitCount = 0;
         if (info != null) {
             List<Map<String, Object>> panelShots = (List<Map<String, Object>>) info.get("shots");
-            if (panelShots != null) splitCount = Math.min(3, panelShots.size());
+            if (panelShots != null) splitCount = panelShots.size();
         }
         if (splitCount <= 0) splitCount = images.size(); // fallback
 
@@ -1022,12 +1052,12 @@ public class PanelProductionService {
         // 末尾追加完整参考图清单
         StringBuilder imgList = new StringBuilder();
         imgList.append("\n\n========== 参考图清单 ==========");
-        imgList.append("\n【分镜图】（用于每个镜头的环境和构图）:");
+        imgList.append("\n【分镜图】（最高优先级：严格参照每张分镜图的构图、场景、动作和布局）:");
         for (int i = 0; i < storyboardCount && i < images.size(); i++) {
             imgList.append("\n- 图片").append(i + 1).append("（分镜图").append(i + 1).append("）");
         }
         if (charNameList != null && !charNameList.isEmpty()) {
-            imgList.append("\n\n【角色图】（全局适用，每个镜头的人物都可参考）:");
+            imgList.append("\n\n【角色图】（辅助参考：仅用于角色外貌特征，不影响场景和构图）:");
             for (int i = 0; i < charNameList.size(); i++) {
                 int imgIdx = storyboardCount + i;
                 if (imgIdx < images.size()) {
@@ -1055,16 +1085,16 @@ public class PanelProductionService {
                 shotIdx = 0;
             }
             StringBuilder refLine = new StringBuilder();
-            // 本镜头的分镜图
+            // 本镜头的分镜图（最高优先级）
             if (shotIdx < storyboardCount && shotIdx < images.size()) {
-                refLine.append("\n参考图：图片").append(shotIdx + 1).append("（分镜图").append(shotIdx + 1).append("）");
+                refLine.append("\n参考图：图片").append(shotIdx + 1).append("（分镜图").append(shotIdx + 1).append("，严格参照构图和场景）");
             }
-            // 全局角色图（所有镜头共享）
+            // 角色图（辅助参考，仅用于外貌特征）
             if (characterNames != null && !characterNames.isEmpty()) {
                 for (int ci = 0; ci < characterNames.size(); ci++) {
                     int imgIdx = storyboardCount + ci;
                     if (imgIdx < images.size()) {
-                        refLine.append(" · 图片").append(imgIdx + 1).append("（角色图-").append(characterNames.get(ci)).append("）");
+                        refLine.append(" · 图片").append(imgIdx + 1).append("（角色外貌参考-").append(characterNames.get(ci)).append("）");
                     }
                 }
             }
@@ -1494,6 +1524,10 @@ public class PanelProductionService {
         String title = (String) script.get("title");
         String content = (String) script.get("content");
         String characters = (String) script.getOrDefault("characters", "");
+        // 如果 episode 的 characters 为空，从数据库加载角色设定
+        if (characters == null || characters.trim().isEmpty()) {
+            characters = buildCharacterDescriptionText(projectId);
+        }
         String revisionNote = rejectionReasons.get(episodeNum);
 
         log.info("[Pipeline-Text] 调用DeepSeek生成分镜: projectId={}, episode={}({}), comicMode={}, hasRevision={}",
@@ -1542,9 +1576,19 @@ public class PanelProductionService {
             finalShots = shots;
         }
 
-        // 注入角色ID
-        Map<String, String> nameToId = buildCharacterIdMap(projectId);
-        injectCharacterIds(finalShots, nameToId);
+        // 注入角色ID（失败不阻塞，保留分镜数据）
+        try {
+            Map<String, String> nameToId = buildCharacterIdMap(projectId);
+            injectCharacterIds(finalShots, nameToId);
+        } catch (Exception e) {
+            log.warn("[Pipeline-Text] 角色ID注入失败（不阻塞）: {}", e.getMessage());
+            // 为每个 shot 设置空的 characterRefs，保证下游不 NPE
+            for (Map<String, Object> shot : finalShots) {
+                if (!shot.containsKey("characterRefs")) {
+                    shot.put("characterRefs", new ArrayList<Map<String, String>>());
+                }
+            }
+        }
 
         // 在独立事务中创建 episode 并设置状态为 text_ready
         TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
@@ -1741,12 +1785,83 @@ public class PanelProductionService {
     }
 
     /**
+     * 从数据库角色表构建角色描述文本，供分镜 Agent 使用。
+     * 当 episode 的 characters 字段为空时调用此方法。
+     */
+    private String buildCharacterDescriptionText(String projectId) {
+        List<Character> characters = characterRepository.findByProjectId(projectId);
+        if (characters.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Character c : characters) {
+            Map<String, Object> info = c.getCharacterInfo();
+            if (info == null) continue;
+            String name = (String) info.get("name");
+            if (name == null || name.trim().isEmpty()) continue;
+            String role = (String) info.getOrDefault("role", "");
+            String background = (String) info.getOrDefault("background", "");
+            String personality = (String) info.getOrDefault("personality", "");
+            String appearance = (String) info.getOrDefault("appearance", "");
+            // 截取外貌描述的前 100 字避免 prompt 过长
+            if (appearance != null && appearance.length() > 100) {
+                appearance = appearance.substring(0, 100) + "...";
+            }
+            sb.append("- ").append(name);
+            if (role != null && !role.isEmpty()) {
+                sb.append("（").append(role).append("）");
+            }
+            if (background != null && !background.isEmpty()) {
+                sb.append("：").append(background);
+            }
+            if (personality != null && !personality.isEmpty()) {
+                sb.append("。性格：").append(personality);
+            }
+            if (appearance != null && !appearance.isEmpty()) {
+                sb.append("。外貌：").append(appearance);
+            }
+            sb.append("\n");
+        }
+        String result = sb.toString();
+        log.info("构建角色描述文本: projectId={}, characters={}", projectId, characters.size());
+        return result;
+    }
+
+    /**
+     * 宽松转换 characters 字段为 List<String>
+     * LLM 可能输出: ["角色A","角色B"]、"角色A"、"角色A,角色B"、null
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> toCharNameList(Object characters) {
+        if (characters == null) return null;
+        if (characters instanceof List) {
+            List<String> result = new ArrayList<>();
+            for (Object item : (List<?>) characters) {
+                if (item != null) result.add(item.toString().trim());
+            }
+            return result.isEmpty() ? null : result;
+        }
+        String s = characters.toString().trim();
+        if (s.isEmpty() || "无".equals(s) || "null".equalsIgnoreCase(s)) return null;
+        // 逗号/顿号分隔的字符串: "角色A,角色B" 或 "角色A、角色B"
+        if (s.contains(",") || s.contains("，") || s.contains("、")) {
+            String[] parts = s.split("[,，、]");
+            List<String> result = new ArrayList<>();
+            for (String p : parts) {
+                String trimmed = p.trim();
+                if (!trimmed.isEmpty()) result.add(trimmed);
+            }
+            return result.isEmpty() ? null : result;
+        }
+        return Collections.singletonList(s);
+    }
+
+    /**
      * 为分镜中的角色注入 charId
      */
     private void injectCharacterIds(List<Map<String, Object>> shots, Map<String, String> nameToId) {
         for (Map<String, Object> shot : shots) {
-            @SuppressWarnings("unchecked")
-            List<String> charNames = (List<String>) shot.get("characters");
+            List<String> charNames = toCharNameList(shot.get("characters"));
             if (charNames == null || charNames.isEmpty()) continue;
 
             List<Map<String, String>> charRefs = new ArrayList<>();
@@ -1757,9 +1872,8 @@ public class PanelProductionService {
                 ref.put("name", charName);
                 if (charId != null) {
                     ref.put("charId", charId);
-                    log.debug("角色注入成功: name={}, charId={}", charName, charId);
                 } else {
-                    log.warn("角色未找到匹配: name={}", charName);
+                    log.debug("角色未找到匹配: name={}", charName);
                 }
                 charRefs.add(ref);
             }
@@ -1768,22 +1882,51 @@ public class PanelProductionService {
     }
 
     /**
-     * 多级模糊匹配角色名到 charId
+     * 宽松匹配角色名到 charId（多级 fallback）
+     * 1. 精确匹配
+     * 2. 去括号后缀: "主角（青年）" → "主角"
+     * 3. 去空格
+     * 4. 包含匹配: LLM名包含DB名 或 DB名包含LLM名（至少2字）
+     * 5. 关键词匹配: 提取 LLM 名的前2字作为关键词匹配
      */
     private String resolveCharId(String name, Map<String, String> nameToId) {
+        if (name == null || name.isEmpty()) return null;
+
+        // 1. 精确匹配
         String charId = nameToId.get(name);
         if (charId != null) return charId;
 
+        // 2. 去括号后缀: "主角（青年）" → "主角"
         String stripped = name.replaceAll("[（\\(][^）\\)]*[）\\)]$", "").trim();
         if (!stripped.isEmpty() && !stripped.equals(name)) {
             charId = nameToId.get(stripped);
             if (charId != null) return charId;
         }
 
+        // 3. 去空格
         String noSpace = name.replaceAll("\\s+", "");
         if (!noSpace.equals(name)) {
             charId = nameToId.get(noSpace);
             if (charId != null) return charId;
+        }
+
+        // 4. 包含匹配（双向，至少2字重叠）
+        for (Map.Entry<String, String> entry : nameToId.entrySet()) {
+            String dbKey = entry.getKey();
+            if (dbKey.length() < 2) continue;
+            if ((name.contains(dbKey) || dbKey.contains(name)) && name.length() >= 2) {
+                return entry.getValue();
+            }
+        }
+
+        // 5. 关键词匹配：LLM 名前2字匹配 DB 名
+        if (name.length() >= 2) {
+            String keyword = name.substring(0, 2);
+            for (Map.Entry<String, String> entry : nameToId.entrySet()) {
+                if (entry.getKey().contains(keyword)) {
+                    return entry.getValue();
+                }
+            }
         }
 
         return null;

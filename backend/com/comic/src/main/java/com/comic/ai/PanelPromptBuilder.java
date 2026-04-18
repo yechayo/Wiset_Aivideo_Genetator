@@ -3,6 +3,7 @@ package com.comic.ai;
 import com.comic.util.NumberFormatter;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -160,6 +161,10 @@ public class PanelPromptBuilder {
         int totalSlots = gridCols * gridRows;
         StringBuilder sb = new StringBuilder();
 
+        // ===== 提取当前页参演角色 =====
+        Set<String> participatingNames = extractParticipatingCharacterNames(shots);
+        List<?> filteredCharRefs = filterCharRefsByParticipation(charRefs, participatingNames);
+
         // ===== 第1层：全局风格锁 =====
         sb.append("【全局风格锁 - 最高优先级】\n");
         sb.append("整张图必须严格保持统一的视觉风格，色调、光影、线条粗细、");
@@ -177,8 +182,8 @@ public class PanelPromptBuilder {
         sb.append(buildSceneStylePrefix(visualStyle));
         sb.append("专业动画关键帧级别，电影级画面构图，精致光影与色彩。\n\n");
 
-        // ===== 第3层：角色锚定 =====
-        if (charRefs != null && !charRefs.isEmpty()) {
+        // ===== 第3层：角色锚定（仅参演角色） =====
+        if (filteredCharRefs != null && !filteredCharRefs.isEmpty()) {
             sb.append("【角色设定 - 最高优先级，必须严格遵守】\n");
             sb.append("本图附带角色参考图（reference images），这些参考图是角色外貌的唯一权威标准。\n");
             sb.append("你必须严格参照参考图来绘制每个角色，角色的五官、发型、发色、瞳色、体型比例、服装、配饰等所有外貌细节必须与参考图完全一致。\n");
@@ -186,8 +191,8 @@ public class PanelPromptBuilder {
             sb.append("只允许绘制以下角色，绝对不要出现列表之外的角色、路人或背景人物。\n");
             sb.append("每个角色在不同格子中必须保持与参考图完全一致的外貌，不允许出现同一角色在不同格子中长得不一样的情况。\n\n");
 
-            for (int refIdx = 0; refIdx < charRefs.size(); refIdx++) {
-                Object refObj = charRefs.get(refIdx);
+            for (int refIdx = 0; refIdx < filteredCharRefs.size(); refIdx++) {
+                Object refObj = filteredCharRefs.get(refIdx);
                 String name = null;
                 String species = null;
                 String appearance = null;
@@ -279,7 +284,13 @@ public class PanelPromptBuilder {
 
         int emptySlots = totalSlots - shots.size();
         if (emptySlots > 0) {
-            sb.append("剩余 ").append(emptySlots).append(" 个格子留空（纯黑色填充，不绘制任何内容）。\n\n");
+            sb.append("\n【以下格子必须留空 - 纯黑色填充，不绘制任何内容】\n");
+            for (int i = shots.size(); i < totalSlots; i++) {
+                int row = i / gridCols + 1;
+                int col = i % gridCols + 1;
+                sb.append("第").append(row).append("行第").append(col).append("列: 纯黑色填充，不绘制任何内容。\n");
+            }
+            sb.append("\n");
         }
 
         // ===== 第5层：大宫格约束（5×5 时启用） =====
@@ -356,10 +367,13 @@ public class PanelPromptBuilder {
             sb.append("请确保本段视频的开头在画面内容、角色位置、情绪氛围上与上述结束状态保持连贯。\n\n");
         }
 
-        // 角色设定段
-        if (characterInfos != null && !characterInfos.isEmpty()) {
+        // 角色设定段（仅参演角色）
+        List<Map<String, Object>> panelShots = (List<Map<String, Object>>) panelInfo.get("shots");
+        Set<String> participatingNames = extractParticipatingCharacterNames(panelShots);
+        List<Map<String, String>> filteredCharInfos = filterCharacterInfosByParticipation(characterInfos, participatingNames);
+        if (filteredCharInfos != null && !filteredCharInfos.isEmpty()) {
             sb.append("## 角色设定\n");
-            for (Map<String, String> ci : characterInfos) {
+            for (Map<String, String> ci : filteredCharInfos) {
                 sb.append("- 【").append(ci.getOrDefault("name", ""));
                 String voice = ci.get("voice");
                 if (voice != null && !voice.isEmpty()) {
@@ -376,14 +390,13 @@ public class PanelPromptBuilder {
             sb.append("\n");
         }
 
-        List<Map<String, Object>> shots = (List<Map<String, Object>>) panelInfo.get("shots");
-        int n = shots != null ? shots.size() : 0;
+        int n = panelShots != null ? panelShots.size() : 0;
         sb.append("多镜头连续拍摄指令，以下 ").append(n).append(" 个镜头必须在同一视频中连续呈现：\n\n");
                 sb.append("若某个镜头属于回忆/闪回，必须仅在该镜头画面边缘加入柔和虚化边框/暗角作为时间态标识；现实时间镜头保持清晰边缘。\n\n");
 
-        if (shots != null) {
-            for (int i = 0; i < shots.size(); i++) {
-                Map<String, Object> shot = shots.get(i);
+        if (panelShots != null) {
+            for (int i = 0; i < panelShots.size(); i++) {
+                Map<String, Object> shot = panelShots.get(i);
                 sb.append("【镜头").append(i + 1).append("】\n");
                 sb.append("duration: ").append(shot.get("duration")).append("s\n");
                                 String shotSize = getShotValue(shot, "shotSize", "shot_size");
@@ -432,7 +445,7 @@ public class PanelPromptBuilder {
                 // 镜头衔接提示（非最后一个镜头时输出）
                 String transition = (String) shot.get("transitionHint");
                 if (transition != null && !"无".equals(transition) && !transition.isEmpty()
-                        && !transition.contains("最后一个镜头") && i < shots.size() - 1) {
+                        && !transition.contains("最后一个镜头") && i < panelShots.size() - 1) {
                     sb.append("衔接: ").append(transition).append("\n");
                 }
                 sb.append("\n");
@@ -535,6 +548,64 @@ public class PanelPromptBuilder {
             }
         }
         return null;
+    }
+
+    /**
+     * 从分镜列表中提取所有参演角色名（去重）
+     */
+    @SuppressWarnings("unchecked")
+    private Set<String> extractParticipatingCharacterNames(List<Map<String, Object>> shots) {
+        Set<String> names = new HashSet<>();
+        if (shots == null) return names;
+        for (Map<String, Object> shot : shots) {
+            Object chars = shot.get("characters");
+            if (chars instanceof List) {
+                for (Object c : (List<?>) chars) {
+                    if (c != null) {
+                        String name = c.toString().trim();
+                        if (!name.isEmpty()) names.add(name);
+                    }
+                }
+            }
+        }
+        return names;
+    }
+
+    /**
+     * 过滤 charRefs，只保留参演角色（按 name 匹配）
+     * 如果参演角色集合为空（shots 未标注 characters），则返回全部 charRefs（兜底）
+     */
+    private List<?> filterCharRefsByParticipation(List<?> charRefs, Set<String> participatingNames) {
+        if (charRefs == null || charRefs.isEmpty()) return charRefs;
+        if (participatingNames.isEmpty()) return charRefs; // 兜底：无角色标注则不过滤
+        List<Object> filtered = new ArrayList<>();
+        for (Object ref : charRefs) {
+            String name = null;
+            if (ref instanceof com.comic.service.panel.GridImageService.CharRef) {
+                name = ((com.comic.service.panel.GridImageService.CharRef) ref).name;
+            }
+            if (name != null && participatingNames.contains(name)) {
+                filtered.add(ref);
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * 过滤 characterInfos，只保留参演角色
+     */
+    private List<Map<String, String>> filterCharacterInfosByParticipation(
+            List<Map<String, String>> characterInfos, Set<String> participatingNames) {
+        if (characterInfos == null || characterInfos.isEmpty()) return characterInfos;
+        if (participatingNames.isEmpty()) return characterInfos;
+        List<Map<String, String>> filtered = new ArrayList<>();
+        for (Map<String, String> ci : characterInfos) {
+            String name = ci.get("name");
+            if (name != null && participatingNames.contains(name)) {
+                filtered.add(ci);
+            }
+        }
+        return filtered;
     }
 
     private String normalize(Object value) {

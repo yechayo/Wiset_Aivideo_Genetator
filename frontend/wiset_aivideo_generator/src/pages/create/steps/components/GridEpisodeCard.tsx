@@ -108,6 +108,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
   const canEditPrompt = episode.gridStatus !== 'approved' && episode.gridStatus !== 'generating';
   const isGeneratingThisEpisode = generatingGrid === episode.episodeId;
   const hasScript = episode.segments.length > 0 || (episode.episodeInfo?.shots?.length ?? 0) > 0;
+  const [bodyCollapsed, setBodyCollapsed] = useState(false);
 
   // 获取所有 shots 数据（优先 shotSegments / episodeInfo.shots，避免被 panelSegments 污染）
   const getAllShots = useCallback(() => {
@@ -275,8 +276,8 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
 
   return (
     <div className={`${styles.episodeGridCard} ${isApproved ? styles.episodeCardDone : ''}`}>
-      <div className={styles.episodeGridHeader}>
-        <div>
+      <div className={styles.episodeGridHeader} style={{ cursor: 'pointer' }} onClick={() => setBodyCollapsed(v => !v)}>
+        <div style={{ flex: 1 }}>
           <h3 className={styles.episodeGridTitle}>
             第{episode.episodeIndex}集 {episode.title}
             {isApproved && <span className={styles.episodeCardDoneLabel}>✓ 已通过</span>}
@@ -291,7 +292,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
             </div>
           )}
         </div>
-        <div className={styles.episodeGridActions}>
+        <div className={styles.episodeGridActions} onClick={e => e.stopPropagation()}>
           {/* 未生成时：全部生成 */}
           {!isApproved && !allPagesGenerated && !isGeneratingThisEpisode && (
             <button
@@ -343,16 +344,19 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
             </button>
           )}
         </div>
+        <span style={{ marginLeft: 8, color: 'var(--color-text-muted)', fontSize: 12, flexShrink: 0 }}>
+          {bodyCollapsed ? '▸' : '▾'}
+        </span>
       </div>
 
-      {!hasScript && (
+      {!bodyCollapsed && !hasScript && (
         <div className={styles.gridEmptyState}>
           暂无脚本，请先在 4A 生成剧本
         </div>
       )}
 
       {/* 分页 tab + 右侧逐页生成按钮 */}
-      {hasScript && totalPages > 1 && (
+      {!bodyCollapsed && hasScript && totalPages > 1 && (
         <div className={styles.gridPageBar}>
           <div className={styles.gridPageTabs}>
             {Array.from({ length: totalPages }, (_, idx) => {
@@ -383,7 +387,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
       )}
 
       {/* 单页：右侧生成按钮 */}
-      {hasScript && totalPages <= 1 && !isApproved && onGenerateGridPage && (
+      {!bodyCollapsed && hasScript && totalPages <= 1 && !isApproved && onGenerateGridPage && (
         <div className={styles.gridPageBar}>
           <div />
           <button
@@ -397,7 +401,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
       )}
 
       {/* 宫格图片展示 */}
-      {hasScript && episode.gridImages && episode.gridImages.length > 0 && !isGeneratingThisEpisode && (
+      {!bodyCollapsed && hasScript && episode.gridImages && episode.gridImages.length > 0 && !isGeneratingThisEpisode && (
         <div className={styles.gridPageSection}>
           <StoryboardGrid
             gridImages={episode.gridImages}
@@ -459,7 +463,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
       )}
 
       {/* 没有图片但有脚本：显示 prompt 编辑器 */}
-      {hasScript && (!episode.gridImages || episode.gridImages.length === 0) && !isGeneratingThisEpisode && (
+      {!bodyCollapsed && hasScript && (!episode.gridImages || episode.gridImages.length === 0) && !isGeneratingThisEpisode && (
         <div className={styles.gridPromptEditor}>
           <div className={styles.gridPromptEditorHeader}>
             <label className={styles.gridPromptLabel}>
@@ -494,7 +498,7 @@ const GridEpisodeCard = React.memo(function GridEpisodeCard({
         </div>
       )}
 
-      {hasScript && (!episode.gridImages || episode.gridImages.length === 0) && !isGeneratingThisEpisode && (
+      {!bodyCollapsed && hasScript && (!episode.gridImages || episode.gridImages.length === 0) && !isGeneratingThisEpisode && (
         <div className={styles.gridEmptyState}>
           暂无宫格图片
         </div>

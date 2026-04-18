@@ -257,6 +257,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [expandedEpisodeId, setExpandedEpisodeId] = useState<number | null>(null);
   const [expandedPanelKey, setExpandedPanelKey] = useState<string | null>(null); // "episodeId-panelId"
   const [collapsedChapters, setCollapsedChapters] = useState<Set<number>>(new Set());
+  const [collapsedVideoEpisodes, setCollapsedVideoEpisodes] = useState<Set<number>>(new Set());
   // 提示词模态框
   const [promptModalPanelKey, setPromptModalPanelKey] = useState<string | null>(null);
   const [promptModalTab, setPromptModalTab] = useState<'view' | 'edit'>('view');
@@ -388,6 +389,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   // Guard: prevent concurrent refreshProductionStatuses calls for same episode
   const refreshInFlightRef = useRef<Set<number>>(new Set());
   const panelsLoadedRef = useRef<Set<number>>(new Set());
+  // 跟踪 generatingScript 最新值，供 loadEpisodes 闭包内使用（避免加到依赖数组）
+  const generatingScriptRef = useRef(generatingScript);
+  generatingScriptRef.current = generatingScript;
   const generateVideoAbortRef = useRef<AbortController | null>(null);
   // 滚动位置恢复：防止 chapters 更新时列表跳回顶部
   const tabContentScrollRef = useRef<number>(0);
@@ -531,6 +535,18 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       }
       setChapters(builtChapters);
       hasInitialLoadRef.current = true;
+
+      // 如果 generatingScript 指向的 episode 已经生成完毕，自动清除（防止 SSE 丢失导致卡住）
+      const currentGenScript = generatingScriptRef.current;
+      if (currentGenScript != null) {
+        const targetEp = builtChapters
+          .flatMap(ch => ch.episodes)
+          .find(ep => ep.episodeId === currentGenScript);
+        if (targetEp && targetEp.storyboardStatus === 'done') {
+          setGeneratingScript(null);
+          stopScriptPolling();
+        }
+      }
 
       // Load panels for all episodes
       panelsLoadedRef.current.clear();
@@ -1249,7 +1265,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     if (!episode) return;
     for (const seg of episode.segments) {
       const panelId = seg.panelData?.panelId;
-      if (panelId && !seg.videoUrl) {
+      const key = `${episodeId}-${panelId}`;
+      if (panelId && !seg.videoUrl && !generatingVideoKeys.has(key)) {
         if (isVideoRefMode) {
           await handleGenerateVideoRef(episodeId, panelId);
         } else {
@@ -1257,7 +1274,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         }
       }
     }
-  }, [chapters, handleGenerateVideo, handleGenerateVideoRef, isVideoRefMode]);
+  }, [chapters, handleGenerateVideo, handleGenerateVideoRef, isVideoRefMode, generatingVideoKeys]);
 
   // 批量润色提示词
   const handleBatchEnhance = useCallback(async (episodeId: number) => {
@@ -1269,7 +1286,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     let failed = 0;
     for (const seg of episode.segments) {
       const panelId = seg.panelData?.panelId;
-      if (!panelId || seg.videoUrl) continue;
+      if (!panelId || seg.videoUrl || generatingVideoKeys.has(`${episodeId}-${panelId}`)) continue;
       try {
         await enhanceVideoPromptApi(projectId, episodeId, Number(panelId));
         success++;
@@ -1314,7 +1331,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     for (const ep of chapter.episodes) {
       for (const seg of ep.segments) {
         const panelId = seg.panelData?.panelId;
-        if (!panelId || seg.videoUrl) continue;
+        if (!panelId || seg.videoUrl || generatingVideoKeys.has(`${ep.episodeId}-${panelId}`)) continue;
         try {
           await enhanceVideoPromptApi(projectId, ep.episodeId, Number(panelId));
           totalSuccess++;
@@ -2067,9 +2084,14 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                       const epTtsTotalCount = ep.segments.length;
                       const epMergeCompletedCount = ep.segments.filter(s => s.mergeStatus === 'completed').length;
                       const epMergeTotalCount = ep.segments.filter(s => (s.ttsStatus === 'completed' || !!s.ttsAudioUrl) && (s.pipelineStep === 'video_completed' || !!s.videoUrl)).length;
+                      const epCollapsed = collapsedVideoEpisodes.has(ep.episodeId);
                       return (
                         <div key={ep.episodeId} className={styles.episodeVideoCard}>
-                          <div className={styles.episodeVideoHeader}>
+                          <div className={styles.episodeVideoHeader} style={{ cursor: 'pointer' }} onClick={() => setCollapsedVideoEpisodes(prev => {
+                            const next = new Set(prev);
+                            next.has(ep.episodeId) ? next.delete(ep.episodeId) : next.add(ep.episodeId);
+                            return next;
+                          })}>
                             <div>
                               <h3 className={styles.episodeVideoTitle}>
                                 第{ep.episodeIndex}集 {ep.title}
@@ -2078,7 +2100,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                 {doneCount} / {ep.segments.length} 分镜已完成
                               </span>
                             </div>
-                            <div className={styles.episodeVideoHeaderActions}>
+                            <div className={styles.episodeVideoHeaderActions} onClick={e => e.stopPropagation()}>
                               <button
                                 className={allDone ? styles.btnGhost : styles.btnSuccess}
                                 onClick={() => handleBatchGenerateVideo(ep.episodeId)}
@@ -2114,10 +2136,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                 </button>
                               )}
                             </div>
+                            <span style={{ marginLeft: 8, color: 'var(--color-text-muted)', fontSize: 12, flexShrink: 0 }}>
+                              {epCollapsed ? '▸' : '▾'}
+                            </span>
                           </div>
 
                           {/* Panel video rows */}
-                          <div className={styles.panelVideoList}>
+                          {!epCollapsed && <div className={styles.panelVideoList}>
                             {ep.segments.map((seg, idx) => (
                               <VideoSegmentRow
                                 key={idx}
@@ -2136,7 +2161,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                                 onOpenLightbox={setLightboxUrl}
                               />
                             ))}
-                          </div>
+                          </div>}
                         </div>
                       )
                     })}

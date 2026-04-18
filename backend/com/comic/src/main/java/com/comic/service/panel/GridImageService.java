@@ -34,11 +34,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 public class GridImageService {
+
+    /** 内存锁：正在生成整集九宫格的 episodeId 集合，防止重复提交 */
+    private static final java.util.Set<Long> generatingEpisodeLocks = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** 内存锁：正在生成单 Panel 九宫格的 panelId 集合，防止重复提交 */
+    private static final java.util.Set<Long> generatingPanelGridLocks = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private static final int GRID_SEPARATOR_PIXELS = 8;
     private static final Color FUSION_BG_COLOR = new Color(0x1a, 0x1a, 0x1c);
@@ -67,6 +76,12 @@ public class GridImageService {
         if (panel == null) throw new BusinessException("Panel 不存在: " + panelId);
 
         Map<String, Object> panelInfo = panel.getPanelInfo();
+        // 内存锁防重复
+        if (!generatingPanelGridLocks.add(panelId)) {
+            log.info("九宫格已在生成中，跳过: panelId={}", panelId);
+            return;
+        }
+
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> shots = (List<Map<String, Object>>) panelInfo.get("shots");
         String visualStyleStr = (String) panelInfo.getOrDefault("visualStyle", "ANIME");
@@ -155,6 +170,8 @@ public class GridImageService {
             panelInfo.put("gridStatus", "failed");
             panelInfo.put("errorMessage", e.getMessage());
             updatePanelInfo(panel, panelInfo);
+        } finally {
+            generatingPanelGridLocks.remove(panelId);
         }
     }
 
@@ -393,6 +410,11 @@ public class GridImageService {
                                            String imageProvider, String customHint, List<String> gridPrompts) {
         // 获取 projectId（在 try 外声明，catch 中也需要用）
         String gridProjectId = null;
+        // 内存锁防重复：add 返回 false 表示已在生成中
+        if (!generatingEpisodeLocks.add(episodeId)) {
+            log.info("九宫格已在生成中，跳过: episodeId={}", episodeId);
+            return;
+        }
         try {
             Episode episode = episodeRepository.selectById(episodeId);
             if (episode == null) throw new BusinessException("Episode 不存在: " + episodeId);
@@ -407,7 +429,6 @@ public class GridImageService {
             ImageGenerationService imageService = aiServiceConfig.getImageService(imageProvider != null ? imageProvider : "seedream");
 
             Map<String, Object> episodeInfo = episode.getEpisodeInfo();
-            String initialGridStatus = (String) episodeInfo.getOrDefault("gridStatus", "generating");
             List<String> characterRefUrls = getCharacterReferenceUrls(episodeId);
             List<CharRef> charRefsWithNames = getCharacterReferencesWithNames(episodeId);
 
@@ -438,7 +459,8 @@ public class GridImageService {
             String promptOverride = episodeInfo.containsKey("gridPromptOverride")
                 ? (String) episodeInfo.get("gridPromptOverride") : null;
 
-            // 逐页生成九宫格
+            // 预先构建所有页的 prompt 和分镜数据
+            List<String> pagePrompts = new ArrayList<>();
             int shotOffset = 0;
             for (int page = 0; page < pageCount; page++) {
                 int[] gridSize = pageGridSizes.get(page);
@@ -450,26 +472,55 @@ public class GridImageService {
 
                 String prompt;
                 if (gridPrompts != null && page < gridPrompts.size() && gridPrompts.get(page) != null && !gridPrompts.get(page).isEmpty()) {
-                    // 用户多页独立编辑的 prompts：每页使用对应的 prompt
                     prompt = gridPrompts.get(page);
                 } else if (promptOverride != null && page == 0) {
-                    // 兼容旧逻辑：用户直接编辑的 prompt 仅应用于第一页
                     prompt = promptOverride;
                 } else {
                     prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames, gridCols, gridRows);
                     prompt = appendUserHintToPrompt(prompt, customHint);
                 }
-                allPagePrompts.add(prompt);
-                String imageUrl;
-                if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
-                    imageUrl = imageService.generateWithMultipleReferences(
-                        prompt, characterRefUrls, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT);
-                } else {
-                    imageUrl = imageService.generate(prompt, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT, visualStyle);
-                }
-                gridImageUrls.add(imageUrl);
+                pagePrompts.add(prompt);
                 shotOffset = toIdx;
             }
+
+            // 并行生成所有页的九宫格图片
+            ExecutorService pageExecutor = Executors.newFixedThreadPool(
+                Math.min(pageCount, 2));  // 最多2个并发，匹配 Seedream Semaphore(2)
+            try {
+                String[] imageUrlResults = new String[pageCount];
+                CountDownLatch latch = new CountDownLatch(pageCount);
+                for (int page = 0; page < pageCount; page++) {
+                    final int pageIdx = page;
+                    final String prompt = pagePrompts.get(pageIdx);
+                    pageExecutor.submit(() -> {
+                        try {
+                            String imageUrl;
+                            if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
+                                imageUrl = imageService.generateWithMultipleReferences(
+                                    prompt, characterRefUrls, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT);
+                            } else {
+                                imageUrl = imageService.generate(prompt, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT, visualStyle);
+                            }
+                            imageUrlResults[pageIdx] = imageUrl;
+                        } catch (Exception e) {
+                            log.error("Episode {} 第 {} 页九宫格生成失败", episodeId, pageIdx, e);
+                            imageUrlResults[pageIdx] = null;
+                        } finally {
+                            latch.countDown();
+                        }
+                    });
+                }
+                latch.await(10, TimeUnit.MINUTES);
+                for (int page = 0; page < pageCount; page++) {
+                    if (imageUrlResults[page] == null) {
+                        throw new RuntimeException("第 " + (page + 1) + " 页九宫格生成失败");
+                    }
+                    gridImageUrls.add(imageUrlResults[page]);
+                }
+            } finally {
+                pageExecutor.shutdownNow();
+            }
+            allPagePrompts.addAll(pagePrompts);
 
             // 切割九宫格 → 构建 splitShots
             List<Map<String, Object>> splitShots = new ArrayList<>();
@@ -488,12 +539,13 @@ public class GridImageService {
                 shotOffset += shotsPerPage(gridSize[0], gridSize[1]);
             }
 
-            // 写入前检查：如果 gridStatus 已被重置为 "generating"（说明有更新的重新生成请求），放弃写入
+            // 写入前检查：如果 gridStatus 已被改为非 "generating" 的其他终态（说明被新的重新生成请求覆盖），放弃写入
             Episode freshEpisode = episodeRepository.selectById(episodeId);
             if (freshEpisode != null) {
                 String freshStatus = (String) freshEpisode.getEpisodeInfo().getOrDefault("gridStatus", "");
-                if (!initialGridStatus.equals(freshStatus)) {
-                    log.warn("Episode {} 九宫格状态已被更新，放弃写入旧结果", episodeId);
+                // 只有当状态被改为其他终态时才放弃（如用户再次点击生成，状态仍为 generating，不应放弃）
+                if (!"generating".equals(freshStatus) && !"generated".equals(freshStatus)) {
+                    log.warn("Episode {} 九宫格状态已变为 {}，放弃写入旧结果", episodeId, freshStatus);
                     return;
                 }
             }
@@ -548,6 +600,8 @@ public class GridImageService {
             } catch (Exception ex) {
                 log.error("更新失败状态异常: episodeId={}", episodeId, ex);
             }
+        } finally {
+            generatingEpisodeLocks.remove(episodeId);
         }
     }
 
@@ -1056,16 +1110,40 @@ public class GridImageService {
 
     /**
      * 获取角色的参考图 URL（三视图或表情图）
+     * 主角/反派同时有三视图和表情图时，自动上下拼接并缓存
      */
     private String getCharacterImageUrl(Character ch) {
         Map<String, Object> info = ch.getCharacterInfo();
         if (info == null) return null;
 
-        String url = (String) info.get(CharacterInfoKeys.THREE_VIEW_GRID_URL);
-        if (url == null || url.isEmpty()) {
-            url = (String) info.get(CharacterInfoKeys.EXPRESSION_GRID_URL);
+        String threeViewUrl = (String) info.get(CharacterInfoKeys.THREE_VIEW_GRID_URL);
+        String expressionUrl = (String) info.get(CharacterInfoKeys.EXPRESSION_GRID_URL);
+        String role = (String) info.get(CharacterInfoKeys.ROLE);
+
+        // 主角/反派同时有三视图和表情图时，上下拼接
+        if (("主角".equals(role) || "反派".equals(role))
+                && threeViewUrl != null && !threeViewUrl.isEmpty()
+                && expressionUrl != null && !expressionUrl.isEmpty()) {
+            String compositeUrl = (String) info.get(CharacterInfoKeys.COMPOSITE_REFERENCE_URL);
+            if (compositeUrl != null && !compositeUrl.isEmpty()) {
+                return compositeUrl;
+            }
+            try {
+                compositeUrl = ossService.combineImagesVertical(threeViewUrl, expressionUrl);
+                info.put(CharacterInfoKeys.COMPOSITE_REFERENCE_URL, compositeUrl);
+                characterRepository.updateById(ch);
+                log.info("角色参考图拼接完成: charId={}, url={}", ch.getId(), compositeUrl);
+                return compositeUrl;
+            } catch (Exception e) {
+                log.warn("角色参考图拼接失败，降级使用三视图: charId={}, error={}", ch.getId(), e.getMessage());
+            }
         }
-        return url;
+
+        // 只有一张图或非主角/反派：保持原逻辑
+        if (threeViewUrl != null && !threeViewUrl.isEmpty()) {
+            return threeViewUrl;
+        }
+        return expressionUrl;
     }
 
     /**
