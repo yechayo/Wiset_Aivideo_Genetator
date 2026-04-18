@@ -200,6 +200,135 @@ public class StoryboardAgentService {
         }
     }
 
+    // ==================== Phase 2: 代码拆 shot 骨架 ====================
+
+    /**
+     * Phase 2: 纯代码，把 StoryStructure 的 beats 拆成 shot 骨架。
+     * 不调用 LLM。
+     */
+    List<Map<String, Object>> buildShotSkeletons(StoryStructure structure, NarrativePlan plan) {
+        List<Map<String, Object>> skeletons = new ArrayList<>();
+        int shotNumber = 1;
+        int accumulatedSeconds = 0;
+
+        for (int beatIdx = 0; beatIdx < structure.beats.size(); beatIdx++) {
+            StoryBeat beat = structure.beats.get(beatIdx);
+            int shotCount = Math.max(1, (int) Math.round((double) beat.duration / 3.5));
+            int avgDuration = Math.max(1, Math.min(4, beat.duration / shotCount));
+
+            for (int i = 0; i < shotCount; i++) {
+                Map<String, Object> skeleton = new HashMap<>();
+                skeleton.put("shotNumber", shotNumber++);
+                int duration = (i == shotCount - 1)
+                        ? Math.max(1, Math.min(4, beat.duration - avgDuration * (shotCount - 1)))
+                        : avgDuration;
+                skeleton.put("duration", duration);
+                skeleton.put("beatId", beat.id);
+                skeleton.put("beatIndex", beatIdx);
+                skeleton.put("sceneHint", beat.beat);
+                skeleton.put("mood", beat.mood);
+                skeleton.put("narrativePhase", matchNarrativePhase(accumulatedSeconds, plan));
+
+                List<Map<String, String>> charList = new ArrayList<>();
+                if (beat.characters != null) {
+                    for (CharacterInScene c : beat.characters) {
+                        Map<String, String> charMap = new HashMap<>();
+                        charMap.put("name", c.name);
+                        charMap.put("state", c.state);
+                        charMap.put("position", c.position);
+                        charList.add(charMap);
+                    }
+                }
+                skeleton.put("characters", charList);
+
+                skeletons.add(skeleton);
+                accumulatedSeconds += duration;
+            }
+        }
+
+        log.info("[StoryboardAgent] Phase2 骨架生成: {} 个shot, 预估{}秒",
+                skeletons.size(), accumulatedSeconds);
+        return skeletons;
+    }
+
+    /**
+     * 兜底骨架：Phase1 失败时均匀拆分
+     */
+    List<Map<String, Object>> buildFallbackSkeletons(int targetDuration, String episodeContent,
+                                                       String characters, NarrativePlan plan) {
+        int shotCount = Math.max(3, (int) Math.round((double) targetDuration / 3.5));
+        int avgDuration = Math.max(1, Math.min(4, targetDuration / shotCount));
+        int lastDuration = targetDuration - avgDuration * (shotCount - 1);
+        if (lastDuration > 4 || lastDuration < 1) {
+            shotCount = targetDuration / 3;
+            avgDuration = 3;
+            lastDuration = targetDuration - avgDuration * (shotCount - 1);
+        }
+
+        String[] parts = splitContentEvenly(episodeContent, shotCount);
+
+        List<Map<String, Object>> skeletons = new ArrayList<>();
+        int accumulatedSeconds = 0;
+        for (int i = 0; i < shotCount; i++) {
+            Map<String, Object> skeleton = new HashMap<>();
+            skeleton.put("shotNumber", i + 1);
+            int duration = (i == shotCount - 1)
+                    ? Math.max(1, Math.min(4, lastDuration))
+                    : avgDuration;
+            skeleton.put("duration", duration);
+            skeleton.put("beatId", 1);
+            skeleton.put("beatIndex", 0);
+            skeleton.put("sceneHint", parts[i]);
+            skeleton.put("mood", "");
+            skeleton.put("narrativePhase", matchNarrativePhase(accumulatedSeconds, plan));
+
+            List<Map<String, String>> charList = new ArrayList<>();
+            if (characters != null && !characters.isEmpty()) {
+                for (String name : characters.split("[,，]")) {
+                    Map<String, String> charMap = new HashMap<>();
+                    charMap.put("name", name.trim());
+                    charMap.put("state", "");
+                    charMap.put("position", "");
+                    charList.add(charMap);
+                }
+            }
+            skeleton.put("characters", charList);
+
+            skeletons.add(skeleton);
+            accumulatedSeconds += duration;
+        }
+
+        log.info("[StoryboardAgent] Phase2 兜底骨架: {} 个shot", shotCount);
+        return skeletons;
+    }
+
+    private String matchNarrativePhase(int accumulatedSeconds, NarrativePlan plan) {
+        if (plan == null || plan.phases == null || plan.phases.isEmpty()) return "";
+        int boundary = 0;
+        for (NarrativePhase phase : plan.phases) {
+            boundary += phase.allocatedSeconds;
+            if (accumulatedSeconds < boundary) return phase.name;
+        }
+        return plan.phases.get(plan.phases.size() - 1).name;
+    }
+
+    private String[] splitContentEvenly(String content, int parts) {
+        if (content == null || content.isEmpty()) {
+            String[] result = new String[parts];
+            java.util.Arrays.fill(result, "");
+            return result;
+        }
+        String[] result = new String[parts];
+        int chunkSize = Math.max(1, content.length() / parts);
+        for (int i = 0; i < parts; i++) {
+            int start = Math.min(i * chunkSize, content.length());
+            int end = Math.min((i + 1) * chunkSize, content.length());
+            if (i == parts - 1) end = content.length();
+            result[i] = content.substring(start, end);
+        }
+        return result;
+    }
+
     // ==================== 叙事规划 ====================
 
     /**

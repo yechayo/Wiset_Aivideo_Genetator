@@ -7,6 +7,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -586,5 +588,38 @@ class StoryboardAgentServiceTest {
     void parseStoryStructure_shouldReturnNullOnInvalidJson() {
         assertNull(agent.parseStoryStructure("not json"));
         assertNull(agent.parseStoryStructure("{\"storyArc\":\"xxx\"}"));
+    }
+
+    // ==================== Phase 2: 骨架生成 ====================
+
+    @Test
+    void buildShotSkeletons_shouldSplitBeatsIntoShots() {
+        StoryboardAgentService.StoryStructure structure = new StoryboardAgentService.StoryStructure();
+        structure.beats.add(new StoryboardAgentService.StoryBeat(1, "进入工厂", 10, "紧张",
+                Arrays.asList(new StoryboardAgentService.CharacterInScene("林晓星", "警惕", "工厂"))));
+        structure.beats.add(new StoryboardAgentService.StoryBeat(2, "发现实验室", 8, "震惊",
+                Arrays.asList(new StoryboardAgentService.CharacterInScene("林晓星", "震惊", "实验室"),
+                        new StoryboardAgentService.CharacterInScene("陈墨", "神秘", "实验室"))));
+
+        StoryboardAgentService.NarrativePlan plan = agent.buildFallbackNarrativePlan(Collections.<String>emptyList(), 18);
+
+        List<Map<String, Object>> skeletons = agent.buildShotSkeletons(structure, plan);
+
+        assertFalse(skeletons.isEmpty());
+        assertTrue(skeletons.size() >= 4, "应生成至少 4 个骨架 shot");
+        // Check character info is inherited
+        Map<String, Object> firstShot = skeletons.get(0);
+        List<Map<String, String>> chars = (List<Map<String, String>>) firstShot.get("characters");
+        assertEquals("林晓星", chars.get(0).get("name"));
+        assertEquals("警惕", chars.get(0).get("state"));
+    }
+
+    @Test
+    void buildFallbackSkeletons_shouldMatchTargetDuration() {
+        StoryboardAgentService.NarrativePlan plan = agent.buildFallbackNarrativePlan(Collections.<String>emptyList(), 30);
+        List<Map<String, Object>> skeletons = agent.buildFallbackSkeletons(30, "内容", "A,B", plan);
+        int total = skeletons.stream().mapToInt(s -> (int) s.get("duration")).sum();
+        assertTrue(total >= 28 && total <= 32,
+                "兜底骨架时长应接近目标时长 30s，实际: " + total);
     }
 }
