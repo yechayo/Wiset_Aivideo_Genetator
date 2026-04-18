@@ -159,12 +159,4 @@ class StoryboardAgentServiceTest {
         String report = agent.checkBatchQuality(shots, null, -1, false);
         assertTrue(report.contains("超长") || report.contains("超过"));
     }
-
-    // ==================== 旧方法保留测试 ====================
-
-    @Test
-    void parseReasonerDecision_shouldFallbackOnBadInput() {
-        StoryboardAgentService.ReasonerDecision d = agent.parseReasonerDecision("bad");
-        assertEquals("generate", d.action);
-    }
 }

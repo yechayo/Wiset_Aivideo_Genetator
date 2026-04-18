@@ -48,24 +48,6 @@ public class StoryboardAgentService {
         this.objectMapper = objectMapper;
     }
 
-    // ==================== Reasoner 决策解析（标准模式用） ====================
-
-    public ReasonerDecision parseReasonerDecision(String json) {
-        try {
-            String cleaned = cleanJson(json);
-            JsonNode node = objectMapper.readTree(cleaned);
-            String action = node.has("action") ? node.get("action").asText("generate") : "generate";
-            String nextBeatDescription = node.has("nextBeatDescription") ? node.get("nextBeatDescription").asText("") : "";
-            int estimatedSeconds = node.has("estimatedSeconds") ? node.get("estimatedSeconds").asInt(30) : 30;
-            String reasoning = node.has("reasoning") ? node.get("reasoning").asText("") : "";
-            int targetBeatIndex = node.has("targetBeatIndex") ? node.get("targetBeatIndex").asInt(-1) : -1;
-            return new ReasonerDecision(action, nextBeatDescription, estimatedSeconds, reasoning, targetBeatIndex);
-        } catch (Exception e) {
-            log.warn("[StoryboardAgent] 解析 Reasoner 决策失败，兜底为 generate: {}", e.getMessage());
-            return new ReasonerDecision("generate", "", 30, "解析失败兜底", -1);
-        }
-    }
-
     // ==================== Hook 提取 ====================
 
     List<String> extractHookBeats(String episodeContent) {
@@ -737,16 +719,6 @@ public class StoryboardAgentService {
         return new NarrativePlan(phases, "兜底叙事规划（AI规划失败时使用）");
     }
 
-    private String getDialogueDensityPercent(String density) {
-        if (density == null) return "≤50%";
-        switch (density) {
-            case "sparse": return "≤30%";
-            case "moderate": return "≤50%";
-            case "dense": return "≤70%";
-            default: return "≤50%";
-        }
-    }
-
     // ==================== 质量检查 ====================
 
     /**
@@ -1035,42 +1007,6 @@ public class StoryboardAgentService {
 
     private int parseIntSafe(String s, int def) {
         try { return Integer.parseInt(s); } catch (NumberFormatException e) { return def; }
-    }
-
-    // ==================== 数据类 ====================
-
-    public static class ReasonerDecision {
-        public final String action, nextBeatDescription, reasoning;
-        public final int estimatedSeconds, targetBeatIndex;
-        public ReasonerDecision(String action, String nextBeatDescription, int estimatedSeconds, String reasoning, int targetBeatIndex) {
-            this.action = action; this.nextBeatDescription = nextBeatDescription; this.estimatedSeconds = estimatedSeconds; this.reasoning = reasoning; this.targetBeatIndex = targetBeatIndex;
-        }
-    }
-
-    public static class AgentState {
-        public int targetDuration, accumulatedDuration;
-        public final List<String> coveredBeats = new ArrayList<>();
-        public final List<Map<String, Object>> allShots = new ArrayList<>();
-        public final List<Map<String, Object>> lastShots = new ArrayList<>();
-        /** 叙事规划：阶段追踪 */
-        public int currentPhaseIndex = 0;
-        public NarrativePlan narrativePlan = null;
-    }
-
-    public static class PlanSegment {
-        public final int id;
-        public final String beatDescription, narrativeRole;
-        public final int allocatedSeconds;
-        public PlanSegment(int id, String beatDescription, int allocatedSeconds, String narrativeRole) {
-            this.id = id; this.beatDescription = beatDescription; this.allocatedSeconds = allocatedSeconds; this.narrativeRole = narrativeRole;
-        }
-    }
-
-    public static class ReactOutput {
-        public final String thought, action, actionArgs;
-        public ReactOutput(String thought, String action, String actionArgs) {
-            this.thought = thought; this.action = action; this.actionArgs = actionArgs;
-        }
     }
 
     // ==================== 叙事规划数据类 ====================
