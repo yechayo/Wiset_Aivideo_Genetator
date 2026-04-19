@@ -190,6 +190,9 @@ public class ProjectService {
         if (request.getNarrationVoiceId() != null) info.put(ProjectInfoKeys.NARRATION_VOICE_ID, request.getNarrationVoiceId());
         if (request.getProtagonistVoiceId() != null) info.put(ProjectInfoKeys.PROTAGONIST_VOICE_ID, request.getProtagonistVoiceId());
         if (request.getScriptStyle() != null) info.put(ProjectInfoKeys.SCRIPT_STYLE, request.getScriptStyle());
+        if (request.getKlingMultiPrompt() != null) {
+            info.put(ProjectInfoKeys.KLING_MULTI_PROMPT, request.getKlingMultiPrompt());
+        }
         project.setProjectInfo(info);
         projectRepository.updateById(project);
     }

@@ -447,7 +447,16 @@ public class PanelProductionService {
         String projectId = getProjectIdByPanelIdForProvider(panelId);
         String videoProvider = getVideoProvider(projectId != null ? projectId : "");
         if ("kling".equals(videoProvider) && Boolean.TRUE.equals(info.get("videoRefMode"))) {
-            return buildOmniPromptMap(panel, info);
+            // 检查 multiPrompt 开关
+            boolean multiPrompt = isKlingMultiPrompt(projectId);
+            if (multiPrompt) {
+                return buildOmniPromptMap(panel, info);
+            }
+            // 关闭 multiPrompt: 返回单 prompt（与 Vidu 一样）
+            Map<String, Object> singleResult = new HashMap<>();
+            String basePrompt = resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
+            singleResult.put("prompt", basePrompt);
+            return singleResult;
         }
 
         // 非 Kling：原有逻辑
@@ -492,6 +501,41 @@ public class PanelProductionService {
             savedPrompts = (List<Map<String, Object>>) raw;
         }
 
+        // 自动构建时需要的公共参数
+        String styleShort = null;
+        List<Map<String, String>> characterInfos = null;
+        List<String> charImageUrls = null;
+        List<String> charNames = null;
+        int totalImages = 0;
+
+        if (savedPrompts == null && shots != null) {
+            // 准备风格简语
+            String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
+            styleShort = panelPromptBuilder.buildSceneStylePrefix(visualStyle);
+            if (styleShort.length() > 30) styleShort = styleShort.substring(0, 30);
+
+            // 准备角色外貌信息
+            characterInfos = gatherCharacterInfosByPanel(panel);
+
+            // 准备角色图引用（仅角色名用于 prompt 文本）
+            try {
+                AbstractMap.SimpleEntry<List<String>, List<String>> refPair = collectReferenceImagesWithNames(panel);
+                List<String> allImageUrls = refPair.getKey();
+                charNames = refPair.getValue();
+                int shotImageCount = allImageUrls.size() - charNames.size();
+                charImageUrls = new ArrayList<>();
+                for (int j = shotImageCount; j < allImageUrls.size(); j++) {
+                    charImageUrls.add(allImageUrls.get(j));
+                }
+                totalImages = allImageUrls.size();
+            } catch (BusinessException e) {
+                // 预览阶段参考图可能还未准备好，使用空列表降级
+                log.debug("buildOmniPromptMap: 参考图未就绪, panelId={}, 降级为无图引用模式", panel.getId());
+                charImageUrls = Collections.emptyList();
+                charNames = Collections.emptyList();
+            }
+        }
+
         List<Map<String, Object>> promptList = new ArrayList<>();
         if (shots != null) {
             for (int i = 0; i < shots.size(); i++) {
@@ -508,15 +552,21 @@ public class PanelProductionService {
                         item.put("prompt", p);
                     }
                 } else {
-                    // 自动构建：<<<image_N>>> + 描述
+                    // 自动构建：含画风+运镜+角色外貌的完整 prompt
                     Map<String, Object> shot = shots.get(i);
-                    String desc = getStr(shot, "visualDescription");
-                    if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
-                    if (desc == null) desc = "";
 
-                    StringBuilder sb = new StringBuilder();
-                    sb.append("<<<image_").append(i + 1).append(">>> ").append(desc);
-                    item.put("prompt", sb.toString());
+                    String promptText = buildOmniShotPrompt(shot, i, shots.size(),
+                        charImageUrls != null ? charImageUrls : Collections.emptyList(),
+                        charNames != null ? charNames : Collections.emptyList(),
+                        totalImages,
+                        styleShort != null ? styleShort : "",
+                        characterInfos != null ? characterInfos : Collections.emptyList());
+
+                    // 单镜头 prompt 不超过 512 字符
+                    if (promptText.length() > 512) {
+                        promptText = promptText.substring(0, 512);
+                    }
+                    item.put("prompt", promptText);
 
                     int shotDuration = 3;
                     Object dur = shot.get("duration");
@@ -571,7 +621,12 @@ public class PanelProductionService {
         String videoProvider = getVideoProvider(projectId != null ? projectId : "");
 
         if ("kling".equals(videoProvider) && Boolean.TRUE.equals(info.get("videoRefMode"))) {
-            return enhanceOmniPrompts(panel, info);
+            // 检查 multiPrompt 开关
+            boolean multiPrompt = isKlingMultiPrompt(projectId);
+            if (multiPrompt) {
+                return enhanceOmniPrompts(panel, info);
+            }
+            // 关闭 multiPrompt: 走单 prompt 增强逻辑（fall through 到下面的非 Kling 代码）
         }
 
         // 非 Kling: 原有逻辑
@@ -813,33 +868,25 @@ public class PanelProductionService {
                 }
             }
         } else {
-            // 自动构建（含 <<<image_N>>> 引用）
+            // 自动构建（含 <<<image_N>>> 引用 + 画风 + 运镜 + 角色外貌）
+            String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
+            String styleShort = panelPromptBuilder.buildSceneStylePrefix(visualStyle);
+            // 取前 30 字符作为 Omni 风格简语
+            if (styleShort.length() > 30) styleShort = styleShort.substring(0, 30);
+
+            List<Map<String, String>> characterInfos = gatherCharacterInfosByPanel(panel);
+
             for (int i = 0; i < primaryGroup.shots.size(); i++) {
                 Map<String, Object> shot = primaryGroup.shots.get(i);
-                String desc = getStr(shot, "visualDescription");
-                if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
-                if (desc == null) desc = "";
-
                 int shotDuration = 3;
                 Object dur = shot.get("duration");
                 if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
                 if (shotDuration < 1) shotDuration = 1;
 
-                // 构建 prompt：<<<image_N>>> + 镜头描述
-                StringBuilder promptBuilder = new StringBuilder();
-                if (i < shotCount) {
-                    promptBuilder.append("<<<image_").append(i + 1).append(">>> ");
-                }
-                promptBuilder.append(desc);
-
-                // 角色图引用
-                for (int j = 0; j < charImageUrls.size() && (shotCount + j) < imageList.size(); j++) {
-                    promptBuilder.append(", ").append(charNames.get(j))
-                        .append(" <<<image_").append(shotCount + j + 1).append(">>>");
-                }
+                String promptText = buildOmniShotPrompt(shot, i, shotCount, charImageUrls, charNames,
+                    imageList.size(), styleShort, characterInfos);
 
                 // 单镜头 prompt 不超过 512 字符
-                String promptText = promptBuilder.toString();
                 if (promptText.length() > 512) {
                     promptText = promptText.substring(0, 512);
                     log.debug("Kling Omni shot prompt 截断至 512 字符: panelId={}", panel.getId());
@@ -864,6 +911,90 @@ public class PanelProductionService {
             panel.getId(), imageList.size(), omniPrompts.size(), primaryGroup.totalDuration, groups.size());
 
         return videoService.generateOmniAsync(imageList, omniPrompts, primaryGroup.totalDuration, videoModel, "16:9", true);
+    }
+
+    /**
+     * 构建 Omni 单镜头 prompt：<<<image_N>>> + 画风 + 运镜 + 场景 + 角色声音+外貌
+     */
+    private String buildOmniShotPrompt(Map<String, Object> shot, int shotIndex, int shotCount,
+                                         List<String> charImageUrls, List<String> charNames, int totalImages,
+                                         String styleShort, List<Map<String, String>> characterInfos) {
+        StringBuilder sb = new StringBuilder();
+
+        // 1. 图片引用
+        if (shotIndex < shotCount) {
+            sb.append("<<<image_").append(shotIndex + 1).append(">>> ");
+        }
+
+        // 2. 画风简语
+        sb.append(styleShort).append(". ");
+
+        // 3. 运镜
+        String camera = getStr(shot, "cameraMovement");
+        String angle = getStr(shot, "cameraAngle");
+        if (camera != null || angle != null) {
+            if (angle != null) sb.append(angle);
+            if (camera != null) {
+                if (angle != null) sb.append(", ");
+                sb.append(camera);
+            }
+            sb.append(". ");
+        }
+
+        // 4. 场景描述
+        String desc = getStr(shot, "visualDescription");
+        if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
+        if (desc != null) sb.append(desc);
+
+        // 5. 出场角色声音+外貌（仅该镜头参演角色）
+        @SuppressWarnings("unchecked")
+        List<String> shotChars = (List<String>) shot.get("characters");
+        if (shotChars != null) {
+            for (String charName : shotChars) {
+                Map<String, String> charInfo = findCharacterInfo(characterInfos, charName);
+                if (charInfo != null) {
+                    sb.append(". ").append(charName).append(": ");
+                    String voice = charInfo.get("voice");
+                    String appearance = charInfo.get("appearance");
+                    boolean hasDetail = false;
+                    if (voice != null && !voice.isEmpty()) {
+                        sb.append("声音 ").append(voice);
+                        hasDetail = true;
+                    }
+                    if (appearance != null && !appearance.isEmpty()) {
+                        if (hasDetail) sb.append(", ");
+                        sb.append(appearance);
+                    }
+                }
+            }
+        }
+
+        // 6. 角色图引用
+        for (int j = 0; j < charImageUrls.size() && (shotCount + j) < totalImages; j++) {
+            sb.append(", ").append(charNames.get(j))
+                .append(" <<<image_").append(shotCount + j + 1).append(">>>");
+        }
+
+        return sb.toString();
+    }
+
+    private Map<String, String> findCharacterInfo(List<Map<String, String>> characterInfos, String name) {
+        if (name == null || characterInfos == null) return null;
+        for (Map<String, String> ci : characterInfos) {
+            if (name.equals(ci.get("name"))) {
+                return ci;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 读取 klingMultiPrompt 开关（默认 true）
+     */
+    private boolean isKlingMultiPrompt(String projectId) {
+        Project project = projectId != null ? projectRepository.findByProjectId(projectId) : null;
+        return project != null
+            && !Boolean.FALSE.equals(((Map<String, Object>) project.getProjectInfo()).get(ProjectInfoKeys.KLING_MULTI_PROMPT));
     }
 
     /**
@@ -985,10 +1116,19 @@ public class PanelProductionService {
             String taskId;
             VideoGenerationService pollingService;
             if ("kling".equals(videoProvider)) {
-                // Kling Omni: 多图多镜头贪心分组
-                if (totalDuration > 15) totalDuration = 15;
+                // 读取 multiPrompt 开关（默认 true）
+                boolean multiPrompt = isKlingMultiPrompt(projectId);
+
                 VideoGenerationService klingService = aiServiceConfig.getVideoService(videoProvider);
-                taskId = submitKlingOmniGroups(panel, info, shots, totalDuration, klingService, videoModel);
+                if (multiPrompt) {
+                    // 多镜头分镜模式
+                    if (totalDuration > 15) totalDuration = 15;
+                    taskId = submitKlingOmniGroups(panel, info, shots, totalDuration, klingService, videoModel);
+                } else {
+                    // 单 prompt 模式：用 buildAutoMultiShotPrompt 拼 prompt，走 Omni 单镜头
+                    if (totalDuration > 15) totalDuration = 15;
+                    taskId = klingService.generateAsync(basePrompt, totalDuration, "16:9", null, false, videoModel);
+                }
                 pollingService = klingService;
             } else {
                 // Vidu: 参考图视频生成

@@ -1343,6 +1343,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   }, [projectId, offPeak, refreshProductionStatuses, videoModel, isKling, isVidu]);
 
   const isVideoRefMode = project?.projectInfo?.videoRefMode === true;
+  const [klingMultiPrompt, setKlingMultiPrompt] = useState<boolean>(
+    () => project?.projectInfo?.klingMultiPrompt !== false
+  );
   const [refVideoModel, setRefVideoModel] = useState<string>(() =>
     (project?.projectInfo?.videoModel as string) || 'viduq3-mix'
   );
@@ -1961,6 +1964,20 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 Pro
               </button>
             </div>
+          )}
+          {isKling && (
+            <label style={{ fontSize: 'var(--font-size-sm, 12px)', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={klingMultiPrompt}
+                onChange={async (e) => {
+                  const val = e.target.checked;
+                  setKlingMultiPrompt(val);
+                  if (projectId) await updateProject(projectId, { klingMultiPrompt: val } as any).catch(console.error);
+                }}
+              />
+              多镜头分镜
+            </label>
           )}
         </div>
       </div>

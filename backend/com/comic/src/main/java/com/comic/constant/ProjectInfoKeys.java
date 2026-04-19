@@ -26,6 +26,7 @@ public final class ProjectInfoKeys {
     public static final String NARRATION_VOICE_ID = "narrationVoiceId";
     public static final String PROTAGONIST_VOICE_ID = "protagonistVoiceId";
     public static final String VIDEO_ASPECT_RATIO = "aspectRatio";
+    public static final String KLING_MULTI_PROMPT = "klingMultiPrompt";
 
     private ProjectInfoKeys() {}
 }

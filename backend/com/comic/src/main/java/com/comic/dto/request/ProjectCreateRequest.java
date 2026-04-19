@@ -17,6 +17,7 @@ public class ProjectCreateRequest {
     private String videoProvider;     // "vidu" | "grok"
     private String videoModel;        // "viduq3-pro" | "viduq3-turbo"
     private Boolean videoRefMode;    // true=参考图视频模式, false/null=首帧视频模式
+    private Boolean klingMultiPrompt; // Kling Omni 多镜头分镜模式，默认 true
     /** realtime_animation | comic_commentary，缺省由服务端写 realtime_animation */
     private String productionMode;
     private String narrationPerspective;
