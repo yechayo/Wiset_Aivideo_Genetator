@@ -286,11 +286,10 @@ export async function generateVideo(
   offPeak: boolean = false,
   customPrompt?: string,
   videoModel?: string,
-  customOmniPrompts?: Array<{ prompt: string; duration: number }>,
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video`,
-    { offPeak, customPrompt, videoModel, customOmniPrompts },
+    { offPeak, customPrompt, videoModel },
   );
 }
 

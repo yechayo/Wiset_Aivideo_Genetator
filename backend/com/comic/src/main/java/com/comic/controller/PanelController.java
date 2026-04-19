@@ -179,9 +179,7 @@ public class PanelController {
         boolean offPeak = body != null && Boolean.TRUE.equals(body.get("offPeak"));
         String customPrompt = body != null ? (String) body.get("customPrompt") : null;
         String videoModel = body != null ? (String) body.get("videoModel") : null;
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> customOmniPrompts = body != null ? (List<Map<String, Object>>) body.get("customOmniPrompts") : null;
-        panelProductionService.generateVideoByPanelId(panelId, offPeak, customPrompt, videoModel, customOmniPrompts);
+        panelProductionService.generateVideoByPanelId(panelId, offPeak, customPrompt, videoModel);
         return Result.ok();
     }
 

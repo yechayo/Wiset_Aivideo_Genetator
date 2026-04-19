@@ -1283,8 +1283,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId, loadEpisodes, rejectingEpisodeId]);
 
-  // Generate video per panel
-  const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string, customPrompt?: string, customOmniPrompts?: Array<{ prompt: string; duration: number }>) => {
+  // Generate video per panel (图生视频)
+  const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string, customPrompt?: string) => {
     if (!projectId) return;
     const key = `${episodeId}-${panelId}`;
     setGeneratingVideoKeys(prev => new Set(prev).add(key));
@@ -1334,7 +1334,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       ),
     })));
 
-    generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt, isVidu || isKling ? videoModel : undefined, customOmniPrompts)
+    generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt, isVidu || isKling ? videoModel : undefined)
       .catch((err: any) => {
         abort.abort();
         alert(err?.response?.data?.message || err?.message || '生成视频失败');
@@ -1865,7 +1865,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 Grok
               </button>
             )}
-            {!isVideoRefMode && (
+            {isVideoRefMode && (
               <button
                 className={`${styles.headerVideoProviderTab} ${isKling ? styles.headerVideoProviderTabActive : ''}`}
                 onClick={() => handleVideoProviderChange('kling')}

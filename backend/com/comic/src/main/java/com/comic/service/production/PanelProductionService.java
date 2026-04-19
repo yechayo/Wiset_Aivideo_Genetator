@@ -393,11 +393,6 @@ public class PanelProductionService {
     }
 
     public void generateVideoByPanelId(Long panelId, boolean offPeak, String customPrompt, String videoModel) {
-        generateVideoByPanelId(panelId, offPeak, customPrompt, videoModel, null);
-    }
-
-    public void generateVideoByPanelId(Long panelId, boolean offPeak, String customPrompt, String videoModel,
-                                        List<Map<String, Object>> customOmniPrompts) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
@@ -408,12 +403,6 @@ public class PanelProductionService {
         // 如果提供了自定义提示词，保存到 panelInfo
         if (customPrompt != null && !customPrompt.trim().isEmpty()) {
             info.put("customVideoPrompt", customPrompt);
-            panel.setPanelInfo(info);
-            panelRepository.updateById(panel);
-        }
-        // Kling Omni: 保存 per-shot 自定义 prompts
-        if (customOmniPrompts != null && !customOmniPrompts.isEmpty()) {
-            info.put("customOmniPrompts", customOmniPrompts);
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
         }
