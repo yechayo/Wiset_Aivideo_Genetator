@@ -451,7 +451,7 @@ public class PanelProductionService {
         // 判断是否 Kling Omni 模式
         String projectId = getProjectIdByPanelIdForProvider(panelId);
         String videoProvider = getVideoProvider(projectId != null ? projectId : "");
-        if ("kling".equals(videoProvider)) {
+        if ("kling".equals(videoProvider) && Boolean.TRUE.equals(info.get("videoRefMode"))) {
             return buildOmniPromptMap(panel, info);
         }
 
@@ -575,7 +575,7 @@ public class PanelProductionService {
         String projectId = getProjectIdByPanelIdForProvider(panelId);
         String videoProvider = getVideoProvider(projectId != null ? projectId : "");
 
-        if ("kling".equals(videoProvider)) {
+        if ("kling".equals(videoProvider) && Boolean.TRUE.equals(info.get("videoRefMode"))) {
             return enhanceOmniPrompts(panel, info);
         }
 
@@ -651,8 +651,9 @@ public class PanelProductionService {
             // 先获取 projectId 和 videoProvider（原本在后面声明，需提前）
             String projectId = getProjectIdByPanelIdForProvider(panelId);
             String videoProvider = getVideoProvider(projectId != null ? projectId : "");
-            // 仅非 Kling provider 要求融合图
-            if (!"kling".equals(videoProvider) && fusionImageUrl == null) {
+            // 仅非 Kling 或非 videoRef 模式要求融合图；Kling + videoRef 使用 Omni 多图
+            boolean isKlingOmni = "kling".equals(videoProvider) && Boolean.TRUE.equals(info.get("videoRefMode"));
+            if (!isKlingOmni && fusionImageUrl == null) {
                 throw new BusinessException("融合参考图不存在，请先生成九宫格");
             }
 
@@ -686,13 +687,11 @@ public class PanelProductionService {
                 ? overrideVideoModel
                 : (projectId != null ? getVideoModel(projectId) : null);
 
-            // Kling Omni：多图参考 + 贪心分组；非 Kling：融合图
+            // Kling + videoRef → Omni 多图多镜头；其他 → 融合图
             String taskId;
-            if ("kling".equals(videoProvider)) {
-                // Kling Omni：多图参考 + 贪心分组
+            if (isKlingOmni) {
                 taskId = submitKlingOmniGroups(panel, info, shots, totalDuration, videoService, videoModel);
             } else {
-                // 非 Kling：使用融合图
                 if (fusionImageUrl == null) {
                     throw new BusinessException("融合参考图不存在，请先生成九宫格");
                 }
