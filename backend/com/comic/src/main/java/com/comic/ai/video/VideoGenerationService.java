@@ -75,6 +75,7 @@ public interface VideoGenerationService {
      * @param multiPrompts 每个镜头的 prompt（含 <<<image_N>>> 引用）和 duration
      * @param totalDuration 总时长（秒，3-15）
      * @param model       视频模型（如 "kling-v3-omni-std", "kling-v3-omni-pro"）
+     * @param aspectRatio 宽高比（16:9, 9:16, 1:1）
      * @param soundOn     是否生成声音
      * @return 任务ID
      */
@@ -82,6 +83,7 @@ public interface VideoGenerationService {
                                       java.util.List<MultiShotPrompt> multiPrompts,
                                       int totalDuration,
                                       String model,
+                                      String aspectRatio,
                                       boolean soundOn) {
         throw new UnsupportedOperationException("Omni 多图多镜头视频生成未实现");
     }

@@ -650,6 +650,11 @@ public class PanelProductionService {
         List<KlingOmniGroup> groups = buildOmniGroups(shots, shotImageUrls, totalDuration);
 
         // 4. 暂时只支持单组，多组需要后续拼接
+        if (groups.size() > 1) {
+            log.warn("Kling Omni 面板 {} 被分为 {} 组，当前仅处理第一组（共 {} 镜头），后续镜头被丢弃",
+                panel.getId(), groups.size(),
+                groups.stream().skip(1).mapToInt(g -> g.shots.size()).sum());
+        }
         KlingOmniGroup primaryGroup = groups.get(0);
 
         // 5. 构建 image_list：分镜图优先 + 角色图补位
@@ -659,6 +664,11 @@ public class PanelProductionService {
             if (!imageList.contains(charImageUrls.get(i))) {
                 imageList.add(charImageUrls.get(i));
             }
+        }
+        if (imageList.size() > 7) {
+            log.warn("Kling Omni image_list 超过 7 张限制: panelId={}, size={}, 截断至 7",
+                panel.getId(), imageList.size());
+            imageList = imageList.subList(0, 7);
         }
 
         // 6. 构建 multi_prompt（含 <<<image_N>>> 引用）
@@ -688,7 +698,14 @@ public class PanelProductionService {
                     .append(" <<<image_").append(shotCount + j + 1).append(">>>");
             }
 
-            omniPrompts.add(new VideoGenerationService.MultiShotPrompt(promptBuilder.toString(), shotDuration));
+            // 单镜头 prompt 不超过 512 字符
+            String promptText = promptBuilder.toString();
+            if (promptText.length() > 512) {
+                promptText = promptText.substring(0, 512);
+                log.debug("Kling Omni shot prompt 截断至 512 字符: panelId={}", panel.getId());
+            }
+
+            omniPrompts.add(new VideoGenerationService.MultiShotPrompt(promptText, shotDuration));
         }
 
         // 时长校准
@@ -705,7 +722,7 @@ public class PanelProductionService {
         log.info("Kling Omni 分组: panelId={}, images={}, shots={}, duration={}, groups={}",
             panel.getId(), imageList.size(), omniPrompts.size(), primaryGroup.totalDuration, groups.size());
 
-        return videoService.generateOmniAsync(imageList, omniPrompts, primaryGroup.totalDuration, videoModel, true);
+        return videoService.generateOmniAsync(imageList, omniPrompts, primaryGroup.totalDuration, videoModel, "16:9", true);
     }
 
     /**

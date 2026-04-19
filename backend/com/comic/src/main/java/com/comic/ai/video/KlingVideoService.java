@@ -63,10 +63,9 @@ public class KlingVideoService implements VideoGenerationService {
     @Override
     public String generateAsync(String prompt, int duration, String aspectRatio, String referenceImage, boolean offPeak, String model) {
         // 转调 Omni API: 单图 + 单镜头
-        List<String> imageUrls = Collections.singletonList(referenceImage);
+        List<String> imageUrls = referenceImage != null ? Collections.singletonList(referenceImage) : Collections.emptyList();
         List<MultiShotPrompt> multiPrompts = Collections.singletonList(new MultiShotPrompt(prompt, duration));
-        boolean soundOn = true;
-        return generateOmniAsync(imageUrls, multiPrompts, duration, model, soundOn);
+        return generateOmniAsync(imageUrls, multiPrompts, duration, model, aspectRatio, true);
     }
 
     // ========== 多镜头视频生成（兼容旧接口，内部转调 Omni） ==========
@@ -75,16 +74,15 @@ public class KlingVideoService implements VideoGenerationService {
     public String generateAsyncMultiShot(String referenceImage, List<MultiShotPrompt> multiPrompts,
                                           int totalDuration, String model) {
         // 转调 Omni API: 单图 + 多镜头
-        List<String> imageUrls = Collections.singletonList(referenceImage);
-        boolean soundOn = true;
-        return generateOmniAsync(imageUrls, multiPrompts, totalDuration, model, soundOn);
+        List<String> imageUrls = referenceImage != null ? Collections.singletonList(referenceImage) : Collections.emptyList();
+        return generateOmniAsync(imageUrls, multiPrompts, totalDuration, model, "16:9", true);
     }
 
     // ========== Omni 多图多镜头视频生成（核心方法） ==========
 
     @Override
     public String generateOmniAsync(List<String> imageUrls, List<MultiShotPrompt> multiPrompts,
-                                     int totalDuration, String model, boolean soundOn) {
+                                     int totalDuration, String model, String aspectRatio, boolean soundOn) {
         boolean acquired = false;
         try {
             semaphore.acquire();
@@ -128,6 +126,9 @@ public class KlingVideoService implements VideoGenerationService {
             requestBody.put("multi_prompt", multiPromptList);
             requestBody.put("duration", String.valueOf(totalDuration));
             requestBody.put("mode", effectiveMode);
+            if (aspectRatio != null && !aspectRatio.isEmpty()) {
+                requestBody.put("aspect_ratio", aspectRatio);
+            }
             requestBody.put("sound", soundOn ? "on" : "off");
 
             log.info("Kling Omni 视频提交: images={}, shots={}, totalDuration={}, model={}, mode={}, sound={}",
