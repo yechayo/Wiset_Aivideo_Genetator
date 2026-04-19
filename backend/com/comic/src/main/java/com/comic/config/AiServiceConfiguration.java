@@ -6,6 +6,7 @@ import com.comic.ai.image.SeedreamImageService;
 import com.comic.ai.text.DeepSeekTextService;
 import com.comic.ai.text.TextGenerationService;
 import com.comic.ai.video.GrokVideoService;
+import com.comic.ai.video.KlingVideoService;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.ai.video.ViduVideoService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,7 +36,8 @@ public class AiServiceConfiguration {
             SeedreamImageService seedreamImageService,
             NanobananaImageService nanobananaImageService,
             ViduVideoService viduVideoService,
-            GrokVideoService grokVideoService
+            GrokVideoService grokVideoService,
+            KlingVideoService klingVideoService
     ) {
         Map<String, ImageGenerationService> imageMap = new HashMap<>();
         imageMap.put("seedream", seedreamImageService);
@@ -45,6 +47,7 @@ public class AiServiceConfiguration {
         Map<String, VideoGenerationService> videoMap = new HashMap<>();
         videoMap.put("vidu", viduVideoService);
         videoMap.put("grok", grokVideoService);
+        videoMap.put("kling", klingVideoService);
         this.videoServices = videoMap;
         log.info("AI 服务配置初始化: 图片={}, 视频={}", imageServices.keySet(), videoServices.keySet());
     }
