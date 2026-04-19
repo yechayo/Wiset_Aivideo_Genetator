@@ -84,6 +84,7 @@ public class KlingVideoService implements VideoGenerationService {
             requestBody.put("prompt", prompt);
             requestBody.put("duration", String.valueOf(duration));
             requestBody.put("mode", effectiveMode);
+            requestBody.put("sound", "on");
 
             return submitTask(requestBody);
 
@@ -135,6 +136,7 @@ public class KlingVideoService implements VideoGenerationService {
             requestBody.put("multi_prompt", multiPromptList);
             requestBody.put("duration", String.valueOf(totalDuration));
             requestBody.put("mode", effectiveMode);
+            requestBody.put("sound", "on");
 
             log.info("Kling 多镜头提交: shots={}, totalDuration={}, model={}, mode={}",
                     multiPrompts.size(), totalDuration, effectiveModel, effectiveMode);
