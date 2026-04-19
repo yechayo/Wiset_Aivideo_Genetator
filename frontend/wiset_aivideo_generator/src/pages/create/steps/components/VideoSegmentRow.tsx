@@ -175,8 +175,8 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
             <span className={styles.panelVideoTag}>
               {segment.videoModel === 'pro' ? 'Pro'
                 : segment.videoModel === 'turbo' ? 'Turbo'
-                : segment.videoModel === 'kling-v3-std' ? 'Kling Std'
-                : segment.videoModel === 'kling-v3-pro' ? 'Kling Pro'
+                : segment.videoModel === 'kling-v3-omni-std' ? 'Kling Std'
+                : segment.videoModel === 'kling-v3-omni-pro' ? 'Kling Pro'
                 : segment.videoModel}
             </span>
           )}
