@@ -70,11 +70,11 @@ public class KlingVideoService implements VideoGenerationService {
             String effectiveModel = (model != null && !model.isEmpty()) ? model : klingProperties.getModelName();
             String effectiveMode = klingProperties.getMode();
             // model 格式: "kling-v3-std" 或 "kling-v3-pro" → 提取 model_name 和 mode
-            if (effectiveModel.contains("-std")) {
-                effectiveModel = effectiveModel.replace("-std", "");
+            if (effectiveModel.endsWith("-std")) {
+                effectiveModel = effectiveModel.substring(0, effectiveModel.length() - 4);
                 effectiveMode = "std";
-            } else if (effectiveModel.contains("-pro")) {
-                effectiveModel = effectiveModel.replace("-pro", "");
+            } else if (effectiveModel.endsWith("-pro")) {
+                effectiveModel = effectiveModel.substring(0, effectiveModel.length() - 4);
                 effectiveMode = "pro";
             }
 
@@ -108,11 +108,11 @@ public class KlingVideoService implements VideoGenerationService {
             String effectiveModel = (model != null && !model.isEmpty()) ? model : klingProperties.getModelName();
             String effectiveMode = klingProperties.getMode();
             // model 格式: "kling-v3-std" → model_name="kling-v3", mode="std"
-            if (effectiveModel.contains("-std")) {
-                effectiveModel = effectiveModel.replace("-std", "");
+            if (effectiveModel.endsWith("-std")) {
+                effectiveModel = effectiveModel.substring(0, effectiveModel.length() - 4);
                 effectiveMode = "std";
-            } else if (effectiveModel.contains("-pro")) {
-                effectiveModel = effectiveModel.replace("-pro", "");
+            } else if (effectiveModel.endsWith("-pro")) {
+                effectiveModel = effectiveModel.substring(0, effectiveModel.length() - 4);
                 effectiveMode = "pro";
             }
 

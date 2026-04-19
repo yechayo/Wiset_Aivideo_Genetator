@@ -559,14 +559,27 @@ public class PanelProductionService {
             String taskId;
             if ("kling".equals(videoProvider) && shots != null && shots.size() > 1) {
                 List<VideoGenerationService.MultiShotPrompt> multiPrompts = new ArrayList<>();
+                int shotSum = 0;
                 for (Map<String, Object> shot : shots) {
                     String shotPrompt = getStr(shot, "visualDescription");
                     if (shotPrompt == null || shotPrompt.isEmpty()) shotPrompt = getStr(shot, "sceneDescription");
-                    int shotDuration = 3; // 默认3秒
+                    if (shotPrompt == null) shotPrompt = "";
+                    int shotDuration = 3;
                     Object dur = shot.get("duration");
                     if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
                     if (shotDuration < 1) shotDuration = 1;
                     multiPrompts.add(new VideoGenerationService.MultiShotPrompt(shotPrompt, shotDuration));
+                    shotSum += shotDuration;
+                }
+                // 确保镜头时长之和等于 totalDuration（totalDuration 可能被 clamp 过）
+                if (shotSum != totalDuration && !multiPrompts.isEmpty()) {
+                    int diff = totalDuration - shotSum;
+                    VideoGenerationService.MultiShotPrompt last = multiPrompts.get(multiPrompts.size() - 1);
+                    int adjusted = last.getDuration() + diff;
+                    if (adjusted < 1) adjusted = 1;
+                    multiPrompts.set(multiPrompts.size() - 1,
+                        new VideoGenerationService.MultiShotPrompt(last.getPrompt(), adjusted));
+                }
                 }
                 taskId = videoService.generateAsyncMultiShot(fusionImageUrl, multiPrompts, totalDuration, videoModel);
             } else {

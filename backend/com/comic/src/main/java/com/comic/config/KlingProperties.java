@@ -33,7 +33,7 @@ public class KlingProperties {
     private String modelName = "kling-v3";
 
     /**
-     * 生成模式（std / high）
+     * 生成模式（std / pro）
      */
     private String mode = "std";
 }

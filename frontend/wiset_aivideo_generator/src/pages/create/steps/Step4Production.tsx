@@ -413,9 +413,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId]);
 
-  // Video model toggle (pro/mix/q3/turbo), only for Vidu first-frame mode
-  const [videoModel, setVideoModel] = useState<'pro' | 'mix' | 'q3' | 'turbo'>(() =>
-    (localStorage.getItem('video_model') as 'pro' | 'mix' | 'q3' | 'turbo') || 'turbo'
+  // Video model toggle (pro/mix/q3/turbo for Vidu, kling-v3-std/kling-v3-pro for Kling)
+  const [videoModel, setVideoModel] = useState<'pro' | 'mix' | 'q3' | 'turbo' | 'kling-v3-std' | 'kling-v3-pro'>(() =>
+    (localStorage.getItem('video_model') as 'pro' | 'mix' | 'q3' | 'turbo' | 'kling-v3-std' | 'kling-v3-pro') || 'turbo'
   );
   const toggleVideoModel = useCallback(() => {
     setVideoModel(prev => {
