@@ -535,10 +535,7 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
                 <Select
                   options={klingModelOptions}
                   value={videoModel}
-                  onChange={(val) => {
-                    setVideoModel(val);
-                    if (projectId) updateProject(projectId, { videoModel: val } as any);
-                  }}
+                  onChange={setVideoModel}
                 />
               </div>
             )}
