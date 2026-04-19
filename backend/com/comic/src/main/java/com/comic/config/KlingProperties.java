@@ -30,7 +30,7 @@ public class KlingProperties {
     /**
      * 视频模型名称
      */
-    private String modelName = "kling-v3";
+    private String modelName = "kling-v3-omni";
 
     /**
      * 生成模式（std / pro）
