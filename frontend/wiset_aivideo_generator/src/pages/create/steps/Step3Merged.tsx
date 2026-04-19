@@ -48,7 +48,7 @@ const SPECIES_OPTIONS = [
 ];
 
 const Step3Merged = ({ project }: Step3MergedProps) => {
-  const { statusInfo, isLoadingStatus, syncStatus, markExtractCalled, hasExtractCalled } = useCreateStore();
+  const { statusInfo, isLoadingStatus, syncStatus, markExtractCalled, hasExtractCalled, resetExtractCalled } = useCreateStore();
   const projectId = project.projectId;
 
   const [characters, setCharacters] = useState<CharacterListItem[]>([]);
@@ -646,7 +646,16 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
       ) : isFailed ? (
         <div className={styles.errorState}>
           <p>{statusInfo?.errorMessage || statusInfo?.statusDescription || '操作失败'}</p>
-          <button className={styles.retryButton} onClick={() => { if (projectId) syncStatus(projectId); }}>重试</button>
+          <button className={styles.retryButton} onClick={() => {
+            if (projectId) {
+              // 重置提取标记，允许重新触发 extractCharacters
+              isExtractingRef.current = false;
+              resetExtractCalled(projectId);
+              syncStatus(projectId);
+              setError('');
+              loadCharacters();
+            }
+          }}>重试</button>
         </div>
       ) : error && !characters.length ? (
         <div className={styles.errorState}>

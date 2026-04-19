@@ -10,6 +10,8 @@ interface CreateState {
   extractCalledProjects: Set<string>;
   markExtractCalled: (projectId: string) => void;
   hasExtractCalled: (projectId: string) => boolean;
+  /** 重置指定项目的提取标记，允许重试 */
+  resetExtractCalled: (projectId: string) => void;
   startPolling: (projectId: string) => void;
   stopPolling: () => void;
   syncStatus: (projectId: string) => Promise<void>;
@@ -56,6 +58,14 @@ export const useCreateStore = create<CreateState>()((set, get) => ({
 
   hasExtractCalled: (projectId: string) => {
     return get().extractCalledProjects.has(projectId);
+  },
+
+  resetExtractCalled: (projectId: string) => {
+    set(state => {
+      const next = new Set(state.extractCalledProjects);
+      next.delete(projectId);
+      return { extractCalledProjects: next };
+    });
   },
 
   startPolling: (projectId: string) => {
