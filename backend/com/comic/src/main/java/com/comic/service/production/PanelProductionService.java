@@ -943,10 +943,10 @@ public class PanelProductionService {
         if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
         if (desc != null) sb.append(desc);
 
-        // 4. 台词
+        // 4. 台词 + 说话人声音（仅该镜头有台词时）
         String dialogue = getStr(shot, "dialogue");
+        String speaker = getStr(shot, "speaker");
         if (dialogue != null && !"无".equals(dialogue) && !dialogue.isEmpty()) {
-            String speaker = getStr(shot, "speaker");
             String tone = getStr(shot, "dialogueTone");
             sb.append(". ");
             if (speaker != null && !"无".equals(speaker) && !speaker.isEmpty()) {
@@ -954,27 +954,21 @@ public class PanelProductionService {
                 if (tone != null && !"无".equals(tone) && !tone.isEmpty()) {
                     sb.append("(").append(tone).append(")");
                 }
-                sb.append(": ");
-            }
-            sb.append(dialogue);
-        }
-
-        // 5. 出场角色声音（仅该镜头参演角色）
-        @SuppressWarnings("unchecked")
-        List<String> shotChars = (List<String>) shot.get("characters");
-        if (shotChars != null) {
-            for (String charName : shotChars) {
-                Map<String, String> charInfo = findCharacterInfo(characterInfos, charName);
-                if (charInfo != null) {
-                    String voice = charInfo.get("voice");
+                sb.append(": ").append(dialogue);
+                // 只放说话人的声音描述
+                Map<String, String> speakerInfo = findCharacterInfo(characterInfos, speaker);
+                if (speakerInfo != null) {
+                    String voice = speakerInfo.get("voice");
                     if (voice != null && !voice.isEmpty()) {
-                        sb.append(". ").append(charName).append(" 声音: ").append(voice);
+                        sb.append(". ").append(speaker).append(" 声音: ").append(voice);
                     }
                 }
+            } else {
+                sb.append(dialogue);
             }
         }
 
-        // 6. 角色图引用
+        // 5. 角色图引用
         for (int j = 0; j < charImageUrls.size() && (shotCount + j) < totalImages; j++) {
             sb.append(", ").append(charNames.get(j))
                 .append(" <<<image_").append(shotCount + j + 1).append(">>>");
