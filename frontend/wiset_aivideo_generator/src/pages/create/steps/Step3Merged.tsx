@@ -646,14 +646,21 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
       ) : isFailed ? (
         <div className={styles.errorState}>
           <p>{statusInfo?.errorMessage || statusInfo?.statusDescription || '操作失败'}</p>
-          <button className={styles.retryButton} onClick={() => {
-            if (projectId) {
-              // 重置提取标记，允许重新触发 extractCharacters
-              isExtractingRef.current = false;
-              resetExtractCalled(projectId);
-              syncStatus(projectId);
-              setError('');
+          <button className={styles.retryButton} onClick={async () => {
+            if (!projectId) return;
+            isExtractingRef.current = true;
+            resetExtractCalled(projectId);
+            setIsExtracting(true);
+            setError('');
+            try {
+              await extractCharacters(projectId);
               loadCharacters();
+            } catch (err: any) {
+              setError(err.message || '提取角色失败');
+            } finally {
+              setIsExtracting(false);
+              isExtractingRef.current = false;
+              syncStatus(projectId);
             }
           }}>重试</button>
         </div>

@@ -103,6 +103,7 @@ public class CharacterExtractService {
 
             saveCharacters(projectId, characters);
 
+            progressService.clearError(projectId);
             progressService.unlock(projectId);
 
             log.info("角色提取完成: projectId={}, 角色数={}", projectId, characters.size());
