@@ -250,12 +250,19 @@ export async function composeEpisode(
 // ================= 视频生成 API =================
 
 /** 获取视频生成提示词 */
+/** 视频提示词接口响应（兼容单 prompt 和 Omni 多 shot） */
+export interface VideoPromptResponse {
+  prompt?: string;
+  mode?: string;  // 'omni' for Kling multi-shot
+  prompts?: Array<{ index: number; prompt: string; duration?: number }>;
+}
+
 export async function getVideoPrompt(
   projectId: string,
   episodeId: number,
   panelId: number,
-): Promise<ApiResponse<{ prompt: string }>> {
-  return get<ApiResponse<{ prompt: string }>>(
+): Promise<ApiResponse<VideoPromptResponse>> {
+  return get<ApiResponse<VideoPromptResponse>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video/prompt`,
   );
 }
@@ -265,8 +272,8 @@ export async function enhanceVideoPrompt(
   projectId: string,
   episodeId: number,
   panelId: number,
-): Promise<ApiResponse<{ prompt: string }>> {
-  return post<ApiResponse<{ prompt: string }>>(
+): Promise<ApiResponse<VideoPromptResponse>> {
+  return post<ApiResponse<VideoPromptResponse>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video/prompt/enhance`,
   );
 }
@@ -279,10 +286,11 @@ export async function generateVideo(
   offPeak: boolean = false,
   customPrompt?: string,
   videoModel?: string,
+  customOmniPrompts?: Array<{ prompt: string; duration: number }>,
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video`,
-    { offPeak, customPrompt, videoModel },
+    { offPeak, customPrompt, videoModel, customOmniPrompts },
   );
 }
 

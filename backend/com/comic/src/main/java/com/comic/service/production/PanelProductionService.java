@@ -393,6 +393,11 @@ public class PanelProductionService {
     }
 
     public void generateVideoByPanelId(Long panelId, boolean offPeak, String customPrompt, String videoModel) {
+        generateVideoByPanelId(panelId, offPeak, customPrompt, videoModel, null);
+    }
+
+    public void generateVideoByPanelId(Long panelId, boolean offPeak, String customPrompt, String videoModel,
+                                        List<Map<String, Object>> customOmniPrompts) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
@@ -403,6 +408,12 @@ public class PanelProductionService {
         // 如果提供了自定义提示词，保存到 panelInfo
         if (customPrompt != null && !customPrompt.trim().isEmpty()) {
             info.put("customVideoPrompt", customPrompt);
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+        }
+        // Kling Omni: 保存 per-shot 自定义 prompts
+        if (customOmniPrompts != null && !customOmniPrompts.isEmpty()) {
+            info.put("customOmniPrompts", customOmniPrompts);
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
         }
@@ -430,16 +441,27 @@ public class PanelProductionService {
 
     /**
      * 获取 Panel 的视频生成提示词
+     * Kling Omni 模式返回结构化多 shot 数据，其他模式返回单字符串
      */
-    public String getVideoPrompt(Long panelId) {
+    public Map<String, Object> getVideoPrompt(Long panelId) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
 
+        // 判断是否 Kling Omni 模式
+        String projectId = getProjectIdByPanelIdForProvider(panelId);
+        String videoProvider = getVideoProvider(projectId != null ? projectId : "");
+        if ("kling".equals(videoProvider)) {
+            return buildOmniPromptMap(panel, info);
+        }
+
+        // 非 Kling：原有逻辑
+        Map<String, Object> result = new HashMap<>();
         // 参考图视频模式：优先返回已存储的完整提示词
         String finalPrompt = getStr(info, "finalVideoPrompt");
         if (finalPrompt != null && !finalPrompt.isEmpty()) {
-            return finalPrompt;
+            result.put("prompt", finalPrompt);
+            return result;
         }
 
         String basePrompt = resolveFinalVideoPrompt(info, buildAutoMultiShotPrompt(panel, info));
@@ -448,11 +470,71 @@ public class PanelProductionService {
         if (Boolean.TRUE.equals(info.get("videoRefMode"))) {
             AbstractMap.SimpleEntry<List<String>, List<String>> refPair = collectReferenceImagesWithNames(panel);
             if (refPair.getKey() != null && !refPair.getKey().isEmpty()) {
-                return buildRefImagePromptAnnotation(basePrompt, panel, refPair.getKey(), refPair.getValue());
+                result.put("prompt", buildRefImagePromptAnnotation(basePrompt, panel, refPair.getKey(), refPair.getValue()));
+                return result;
             }
         }
 
-        return basePrompt;
+        result.put("prompt", basePrompt);
+        return result;
+    }
+
+    /**
+     * 构建 Kling Omni 模式的多 shot prompt 结构
+     */
+    private Map<String, Object> buildOmniPromptMap(Panel panel, Map<String, Object> info) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("mode", "omni");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
+
+        // 优先读取用户自定义 / AI 增强的 per-shot prompts
+        List<Map<String, Object>> savedPrompts = null;
+        Object raw = info.get("customOmniPrompts");
+        if (raw == null) raw = info.get("enhancedOmniPrompts");
+        if (raw instanceof List) {
+            savedPrompts = (List<Map<String, Object>>) raw;
+        }
+
+        List<Map<String, Object>> promptList = new ArrayList<>();
+        if (shots != null) {
+            for (int i = 0; i < shots.size(); i++) {
+                Map<String, Object> item = new HashMap<>();
+                item.put("index", i + 1);
+
+                if (savedPrompts != null && i < savedPrompts.size()) {
+                    // 使用已保存的自定义/增强 prompt
+                    Object p = savedPrompts.get(i);
+                    if (p instanceof Map) {
+                        item.put("prompt", ((Map<String, Object>) p).get("prompt"));
+                        item.put("duration", ((Map<String, Object>) p).get("duration"));
+                    } else if (p instanceof String) {
+                        item.put("prompt", p);
+                    }
+                } else {
+                    // 自动构建：<<<image_N>>> + 描述
+                    Map<String, Object> shot = shots.get(i);
+                    String desc = getStr(shot, "visualDescription");
+                    if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
+                    if (desc == null) desc = "";
+
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("<<<image_").append(i + 1).append(">>> ").append(desc);
+                    item.put("prompt", sb.toString());
+
+                    int shotDuration = 3;
+                    Object dur = shot.get("duration");
+                    if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
+                    if (shotDuration < 1) shotDuration = 1;
+                    item.put("duration", shotDuration);
+                }
+                promptList.add(item);
+            }
+        }
+
+        result.put("prompts", promptList);
+        return result;
     }
 
     /**
@@ -481,14 +563,23 @@ public class PanelProductionService {
     }
 
     /**
-     * 手动增强视频生成提示词，存入 panelInfo.enhancedVideoPrompt
+     * 手动增强视频生成提示词
+     * Kling Omni: per-shot 增强，存入 enhancedOmniPrompts
+     * 其他: 整体增强，存入 enhancedVideoPrompt
      */
-    public String enhanceVideoPrompt(Long panelId) {
+    public Map<String, Object> enhanceVideoPrompt(Long panelId) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
 
-        // 先构建原始 prompt
+        String projectId = getProjectIdByPanelIdForProvider(panelId);
+        String videoProvider = getVideoProvider(projectId != null ? projectId : "");
+
+        if ("kling".equals(videoProvider)) {
+            return enhanceOmniPrompts(panel, info);
+        }
+
+        // 非 Kling: 原有逻辑
         String originalPrompt;
         String custom = (String) info.get("customVideoPrompt");
         if (custom != null && !custom.trim().isEmpty()) {
@@ -504,7 +595,45 @@ public class PanelProductionService {
             panelRepository.updateById(panel);
             log.info("手动增强提示词: panelId={}, 原始长度={}, 增强后长度={}", panelId, originalPrompt.length(), enhanced.length());
         }
-        return enhanced;
+        Map<String, Object> result = new HashMap<>();
+        result.put("prompt", enhanced);
+        return result;
+    }
+
+    /**
+     * Kling Omni per-shot 增强
+     */
+    private Map<String, Object> enhanceOmniPrompts(Panel panel, Map<String, Object> info) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
+
+        // 先读取当前已有的 prompts（自定义 > 之前的增强 > 自动构建）
+        Map<String, Object> currentMap = buildOmniPromptMap(panel, info);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> currentPrompts = (List<Map<String, Object>>) currentMap.get("prompts");
+
+        List<Map<String, Object>> enhancedList = new ArrayList<>();
+        for (Map<String, Object> item : currentPrompts) {
+            String original = (String) item.get("prompt");
+            if (original == null || original.isEmpty()) {
+                enhancedList.add(item);
+                continue;
+            }
+            String enhanced = viduVideoService.enhancePrompt(original);
+            Map<String, Object> enhancedItem = new HashMap<>(item);
+            enhancedItem.put("prompt", enhanced);
+            enhancedList.add(enhancedItem);
+        }
+
+        // 保存增强结果到 panelInfo
+        info.put("enhancedOmniPrompts", enhancedList);
+        panel.setPanelInfo(info);
+        panelRepository.updateById(panel);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("mode", "omni");
+        result.put("prompts", enhancedList);
+        return result;
     }
 
     @Async
@@ -671,41 +800,69 @@ public class PanelProductionService {
             imageList = imageList.subList(0, 7);
         }
 
-        // 6. 构建 multi_prompt（含 <<<image_N>>> 引用）
+        // 6. 构建 multi_prompt
+        // 优先级: customOmniPrompts > enhancedOmniPrompts > 自动构建
         int shotCount = primaryGroup.shotImageUrls.size();
         List<VideoGenerationService.MultiShotPrompt> omniPrompts = new ArrayList<>();
-        for (int i = 0; i < primaryGroup.shots.size(); i++) {
-            Map<String, Object> shot = primaryGroup.shots.get(i);
-            String desc = getStr(shot, "visualDescription");
-            if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
-            if (desc == null) desc = "";
 
-            int shotDuration = 3;
-            Object dur = shot.get("duration");
-            if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
-            if (shotDuration < 1) shotDuration = 1;
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> savedPrompts = (List<Map<String, Object>>) info.get("customOmniPrompts");
+        if (savedPrompts == null) {
+            savedPrompts = (List<Map<String, Object>>) info.get("enhancedOmniPrompts");
+        }
 
-            // 构建 prompt：<<<image_N>>> + 镜头描述
-            StringBuilder promptBuilder = new StringBuilder();
-            if (i < shotCount) {
-                promptBuilder.append("<<<image_").append(i + 1).append(">>> ");
+        if (savedPrompts != null && !savedPrompts.isEmpty()) {
+            // 使用已保存的自定义/增强 prompt
+            for (int i = 0; i < primaryGroup.shots.size(); i++) {
+                if (i < savedPrompts.size()) {
+                    Map<String, Object> saved = savedPrompts.get(i);
+                    String promptText = (String) saved.get("prompt");
+                    int shotDuration = 3;
+                    Object dur = saved.get("duration");
+                    if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
+                    if (shotDuration < 1) shotDuration = 1;
+                    if (promptText != null && promptText.length() > 512) {
+                        promptText = promptText.substring(0, 512);
+                    }
+                    omniPrompts.add(new VideoGenerationService.MultiShotPrompt(
+                        promptText != null ? promptText : "", shotDuration));
+                }
             }
-            promptBuilder.append(desc);
+        } else {
+            // 自动构建（含 <<<image_N>>> 引用）
+            for (int i = 0; i < primaryGroup.shots.size(); i++) {
+                Map<String, Object> shot = primaryGroup.shots.get(i);
+                String desc = getStr(shot, "visualDescription");
+                if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
+                if (desc == null) desc = "";
 
-            // 角色图引用
-            for (int j = 0; j < charImageUrls.size() && (shotCount + j) < imageList.size(); j++) {
-                promptBuilder.append(", ").append(charNames.get(j))
-                    .append(" <<<image_").append(shotCount + j + 1).append(">>>");
+                int shotDuration = 3;
+                Object dur = shot.get("duration");
+                if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
+                if (shotDuration < 1) shotDuration = 1;
+
+                // 构建 prompt：<<<image_N>>> + 镜头描述
+                StringBuilder promptBuilder = new StringBuilder();
+                if (i < shotCount) {
+                    promptBuilder.append("<<<image_").append(i + 1).append(">>> ");
+                }
+                promptBuilder.append(desc);
+
+                // 角色图引用
+                for (int j = 0; j < charImageUrls.size() && (shotCount + j) < imageList.size(); j++) {
+                    promptBuilder.append(", ").append(charNames.get(j))
+                        .append(" <<<image_").append(shotCount + j + 1).append(">>>");
+                }
+
+                // 单镜头 prompt 不超过 512 字符
+                String promptText = promptBuilder.toString();
+                if (promptText.length() > 512) {
+                    promptText = promptText.substring(0, 512);
+                    log.debug("Kling Omni shot prompt 截断至 512 字符: panelId={}", panel.getId());
+                }
+
+                omniPrompts.add(new VideoGenerationService.MultiShotPrompt(promptText, shotDuration));
             }
-
-            // 单镜头 prompt 不超过 512 字符
-            String promptText = promptBuilder.toString();
-            if (promptText.length() > 512) {
-                promptText = promptText.substring(0, 512);
-                log.debug("Kling Omni shot prompt 截断至 512 字符: panelId={}", panel.getId());
-            }
-
-            omniPrompts.add(new VideoGenerationService.MultiShotPrompt(promptText, shotDuration));
         }
 
         // 时长校准

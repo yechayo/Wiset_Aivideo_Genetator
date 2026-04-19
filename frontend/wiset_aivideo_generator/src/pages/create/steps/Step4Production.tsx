@@ -276,6 +276,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const [promptModalPanelKey, setPromptModalPanelKey] = useState<string | null>(null);
   const [promptModalTab, setPromptModalTab] = useState<'view' | 'edit'>('view');
   const [promptText, setPromptText] = useState('');
+  const [promptOmniPrompts, setPromptOmniPrompts] = useState<Array<{ index: number; prompt: string; duration: number }>>([]);
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptEnhancing, setPromptEnhancing] = useState(false);
   const [batchEnhancingEpisodeId, setBatchEnhancingEpisodeId] = useState<number | null>(null);
@@ -1283,7 +1284,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   }, [projectId, loadEpisodes, rejectingEpisodeId]);
 
   // Generate video per panel
-  const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string, customPrompt?: string) => {
+  const handleGenerateVideo = useCallback(async (episodeId: number, panelId: string, customPrompt?: string, customOmniPrompts?: Array<{ prompt: string; duration: number }>) => {
     if (!projectId) return;
     const key = `${episodeId}-${panelId}`;
     setGeneratingVideoKeys(prev => new Set(prev).add(key));
@@ -1333,13 +1334,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       ),
     })));
 
-    generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt, isVidu || isKling ? videoModel : undefined)
+    generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt, isVidu || isKling ? videoModel : undefined, customOmniPrompts)
       .catch((err: any) => {
         abort.abort();
         alert(err?.response?.data?.message || err?.message || '生成视频失败');
         setGeneratingVideoKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
       });
-  }, [projectId, offPeak, refreshProductionStatuses, videoModel, isKling]);
+  }, [projectId, offPeak, refreshProductionStatuses, videoModel, isKling, isVidu]);
 
   const isVideoRefMode = project?.projectInfo?.videoRefMode === true;
   const [refVideoModel, setRefVideoModel] = useState<string>(() =>
@@ -1745,10 +1746,19 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     setPromptModalPanelKey(panelKey);
     setPromptModalTab('view');
     setPromptText('');
+    setPromptOmniPrompts([]);
     setPromptLoading(true);
     try {
       const res = await getVideoPrompt(projectId!, episodeId, Number(panelId));
-      setPromptText(res.data?.prompt || '');
+      if (res.data?.mode === 'omni' && res.data.prompts) {
+        setPromptOmniPrompts(res.data.prompts.map(p => ({
+          index: p.index,
+          prompt: p.prompt || '',
+          duration: p.duration || 3,
+        })));
+      } else {
+        setPromptText(res.data?.prompt || '');
+      }
     } catch {
       setPromptText('');
     } finally {
@@ -2390,12 +2400,21 @@ export default function Step4Production({ project, onNextStep }: Step4Production
           const panelId = panelIdStr;
           const ep = chapters.flatMap(ch => ch.episodes).find(e => e.episodeId === episodeId);
           const seg = ep?.segments.find(s => s.panelData?.panelId === panelId);
+          const isOmni = isKling && promptOmniPrompts.length > 0;
 
           const handleEnhance = async () => {
             setPromptEnhancing(true);
             try {
               const res = await enhanceVideoPromptApi(projectId!, episodeId, Number(panelId));
-              setPromptText(res.data?.prompt || '');
+              if (res.data?.mode === 'omni' && res.data.prompts) {
+                setPromptOmniPrompts(res.data.prompts.map(p => ({
+                  index: p.index,
+                  prompt: p.prompt || '',
+                  duration: p.duration || 3,
+                })));
+              } else {
+                setPromptText(res.data?.prompt || '');
+              }
               setPromptModalTab('edit');
             } catch (err: any) {
               alert(err?.response?.data?.message || err?.message || '提示词优化失败');
@@ -2406,9 +2425,23 @@ export default function Step4Production({ project, onNextStep }: Step4Production
           const handleSubmitPrompt = () => {
             if (!panelId) return;
             setPromptModalPanelKey(null);
-            const handler = isVideoRefMode ? handleGenerateVideoRef : handleGenerateVideo;
-            handler(episodeId, panelId, promptModalTab === 'edit' ? promptText : undefined);
+            if (isOmni && promptModalTab === 'edit') {
+              // Kling Omni: 传 customOmniPrompts 数组
+              const handler = isVideoRefMode ? handleGenerateVideoRef : handleGenerateVideo;
+              handler(episodeId, panelId, undefined, promptOmniPrompts.map(p => ({ prompt: p.prompt, duration: p.duration })));
+            } else if (isOmni) {
+              // Omni 原始提示词
+              const handler = isVideoRefMode ? handleGenerateVideoRef : handleGenerateVideo;
+              handler(episodeId, panelId);
+            } else {
+              // 非 Omni：原有逻辑
+              const handler = isVideoRefMode ? handleGenerateVideoRef : handleGenerateVideo;
+              handler(episodeId, panelId, promptModalTab === 'edit' ? promptText : undefined);
+            }
           };
+
+          // 检查 Omni 编辑模式是否有空 prompt
+          const omniHasEmpty = isOmni && promptModalTab === 'edit' && promptOmniPrompts.some(p => !p.prompt.trim());
 
           return (
             <div className={styles.modalOverlay} onClick={() => setPromptModalPanelKey(null)}>
@@ -2418,14 +2451,22 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                   <button className={styles.modalClose} onClick={() => setPromptModalPanelKey(null)}>&times;</button>
                 </div>
 
-                {/* 融合参考图 */}
-                {!isVideoRefMode && seg?.fusionImageUrl && (
+                {/* 融合参考图（仅非 Omni 非 videoRef 模式） */}
+                {!isOmni && !isVideoRefMode && seg?.fusionImageUrl && (
                   <div className={styles.modalFusionWrap}>
                     <span className={styles.modalFusionLabel}>融合参考图</span>
                     <img src={seg.fusionImageUrl} alt="融合参考图" className={styles.modalFusionImg} />
                   </div>
                 )}
-                {isVideoRefMode && (
+                {isOmni && (
+                  <div className={styles.modalFusionWrap}>
+                    <span className={styles.modalFusionLabel}>Kling Omni 多镜头模式</span>
+                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                      每个镜头独立提示词，<<<image_N>>> 引用对应参考图
+                    </span>
+                  </div>
+                )}
+                {!isOmni && isVideoRefMode && (
                   <div className={styles.modalFusionWrap}>
                     <span className={styles.modalFusionLabel}>参考图视频模式</span>
                     <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
@@ -2450,31 +2491,80 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 <div className={styles.modalPromptSection}>
                   {promptLoading ? (
                     <div className={styles.modalLoading}>加载中...</div>
-                  ) : promptModalTab === 'view' ? (
-                    <div className={styles.modalPromptView}>
-                      <div className={styles.modalPromptHeader}>
-                        <div className={styles.modalPromptHint}>以下是 AI 根据分镜内容自动生成的提示词，用于视频生成</div>
-                        <button
-                          className={styles.modalEnhanceBtn}
-                          onClick={handleEnhance}
-                          disabled={promptEnhancing || promptLoading}
-                        >
-                          {promptEnhancing ? '优化中...' : 'AI 优化提示词（消耗1积分）'}
-                        </button>
+                  ) : isOmni ? (
+                    /* ===== Omni 多 shot 提示词 ===== */
+                    promptModalTab === 'view' ? (
+                      <div className={styles.modalPromptView}>
+                        <div className={styles.modalPromptHeader}>
+                          <div className={styles.modalPromptHint}>以下是每个镜头的独立提示词，用于 Kling Omni 视频生成</div>
+                          <button
+                            className={styles.modalEnhanceBtn}
+                            onClick={handleEnhance}
+                            disabled={promptEnhancing || promptLoading}
+                          >
+                            {promptEnhancing ? '优化中...' : 'AI 优化全部提示词（消耗1积分）'}
+                          </button>
+                        </div>
+                        {promptOmniPrompts.map((p, idx) => (
+                          <div key={idx} style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 4 }}>
+                              分镜 {p.index}（{p.duration}s）
+                            </div>
+                            <pre className={styles.modalPromptPre} style={{ minHeight: 40 }}>{p.prompt || '(暂无)'}</pre>
+                          </div>
+                        ))}
                       </div>
-                      <pre className={styles.modalPromptPre}>{promptText || '(暂无提示词)'}</pre>
-                    </div>
+                    ) : (
+                      <div className={styles.modalPromptEdit}>
+                        <div className={styles.modalPromptHint}>编辑每个镜头的提示词，内容会直接下发给 Kling Omni 模型。</div>
+                        {promptOmniPrompts.map((p, idx) => (
+                          <div key={idx} style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 4 }}>
+                              分镜 {p.index}（{p.duration}s）
+                            </div>
+                            <textarea
+                              className={styles.modalTextarea}
+                              value={p.prompt}
+                              onChange={e => {
+                                const next = [...promptOmniPrompts];
+                                next[idx] = { ...next[idx], prompt: e.target.value };
+                                setPromptOmniPrompts(next);
+                              }}
+                              placeholder={`分镜 ${p.index} 提示词...`}
+                              rows={3}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )
                   ) : (
-                    <div className={styles.modalPromptEdit}>
-                      <div className={styles.modalPromptHint}>你编辑的内容会作为最终 Prompt 直接下发给视频模型（覆盖增强版原文）。</div>
-                      <textarea
-                        className={styles.modalTextarea}
-                        value={promptText}
-                        onChange={e => setPromptText(e.target.value)}
-                        placeholder="输入自定义提示词..."
-                        rows={12}
-                      />
-                    </div>
+                    /* ===== 非 Omni 单 prompt ===== */
+                    promptModalTab === 'view' ? (
+                      <div className={styles.modalPromptView}>
+                        <div className={styles.modalPromptHeader}>
+                          <div className={styles.modalPromptHint}>以下是 AI 根据分镜内容自动生成的提示词，用于视频生成</div>
+                          <button
+                            className={styles.modalEnhanceBtn}
+                            onClick={handleEnhance}
+                            disabled={promptEnhancing || promptLoading}
+                          >
+                            {promptEnhancing ? '优化中...' : 'AI 优化提示词（消耗1积分）'}
+                          </button>
+                        </div>
+                        <pre className={styles.modalPromptPre}>{promptText || '(暂无提示词)'}</pre>
+                      </div>
+                    ) : (
+                      <div className={styles.modalPromptEdit}>
+                        <div className={styles.modalPromptHint}>你编辑的内容会作为最终 Prompt 直接下发给视频模型（覆盖增强版原文）。</div>
+                        <textarea
+                          className={styles.modalTextarea}
+                          value={promptText}
+                          onChange={e => setPromptText(e.target.value)}
+                          placeholder="输入自定义提示词..."
+                          rows={12}
+                        />
+                      </div>
+                    )
                   )}
                 </div>
 
@@ -2484,7 +2574,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                   <button
                     className={styles.btnPrimary}
                     onClick={handleSubmitPrompt}
-                    disabled={promptLoading || (promptModalTab === 'edit' && !promptText.trim())}
+                    disabled={promptLoading || omniHasEmpty || (!isOmni && promptModalTab === 'edit' && !promptText.trim())}
                   >
                     {promptModalTab === 'edit' ? '使用修改后的提示词生成' : '使用原提示词生成'}
                   </button>
