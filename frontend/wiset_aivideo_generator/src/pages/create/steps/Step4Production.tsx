@@ -362,6 +362,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   );
   const isVidu = videoProvider.toLowerCase() === 'vidu';
   const isGrok = videoProvider.toLowerCase() === 'grok';
+  const isKling = videoProvider.toLowerCase() === 'kling';
 
   // 同步 videoProvider prop 变化（其他端或 SSE 推送更新后）
   useEffect(() => {
@@ -375,11 +376,17 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const handleVideoProviderChange = useCallback(async (provider: string) => {
     if (!projectId) {
       setVideoProvider(provider);
+      if (provider === 'kling') setVideoModel('kling-v3-std');
       return;
     }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await updateProject(projectId, { videoProvider: provider } as any);
+      const updates: any = { videoProvider: provider };
+      if (provider === 'kling') {
+        updates.videoModel = 'kling-v3-std';
+        setVideoModel('kling-v3-std');
+      }
+      await updateProject(projectId, updates);
       setVideoProvider(provider);
     } catch (err) {
       console.error('更新视频提供商失败:', err);
@@ -1319,7 +1326,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       ),
     })));
 
-    generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt, isVidu ? videoModel : undefined)
+    generateVideo(projectId, episodeId, Number(panelId), offPeak, customPrompt, isVidu || isKling ? videoModel : undefined)
       .catch((err: any) => {
         abort.abort();
         alert(err?.response?.data?.message || err?.message || '生成视频失败');
@@ -1841,6 +1848,14 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 Grok
               </button>
             )}
+            {!isVideoRefMode && (
+              <button
+                className={`${styles.headerVideoProviderTab} ${isKling ? styles.headerVideoProviderTabActive : ''}`}
+                onClick={() => handleVideoProviderChange('kling')}
+              >
+                Kling
+              </button>
+            )}
           </div>
           {/* Vidu 模型选择 */}
           {isVidu && !isVideoRefMode && (
@@ -1904,6 +1919,29 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 }}
               >
                 Q3 Turbo
+              </button>
+            </div>
+          )}
+          {isKling && (
+            <div className={styles.headerVideoModelTabs}>
+              <span className={styles.headerVideoModelLabel}>模式：</span>
+              <button
+                className={`${styles.headerVideoModelTab} ${videoModel === 'kling-v3-std' ? styles.headerVideoModelTabActive : ''}`}
+                onClick={async () => {
+                  setVideoModel('kling-v3-std');
+                  if (projectId) await updateProject(projectId, { videoModel: 'kling-v3-std' } as any);
+                }}
+              >
+                Std
+              </button>
+              <button
+                className={`${styles.headerVideoModelTab} ${videoModel === 'kling-v3-pro' ? styles.headerVideoModelTabActive : ''}`}
+                onClick={async () => {
+                  setVideoModel('kling-v3-pro');
+                  if (projectId) await updateProject(projectId, { videoModel: 'kling-v3-pro' } as any);
+                }}
+              >
+                Pro
               </button>
             </div>
           )}
@@ -1996,7 +2034,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             )}
           </div>
           <div className={styles.toolbarToggles}>
-            {!(isVideoRefMode && isMixModel) && (
+            {!isKling && !(isVideoRefMode && isMixModel) && (
             <button
               className={`${styles.offPeakToggle} ${offPeak ? styles.offPeakActive : ''}`}
               onClick={toggleOffPeak}
