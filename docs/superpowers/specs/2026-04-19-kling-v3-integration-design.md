@@ -149,6 +149,8 @@ default String generateAsyncMultiShot(String referenceImage,
 }
 ```
 
+mode 的解析在 `KlingVideoService` 内部从 model 字符串自动提取（`kling-v3-std` → mode=std）。
+
 - 作为 default 方法，Vidu/Grok 实现无需任何修改
 - 仅 `KlingVideoService` 覆写此方法
 
@@ -157,8 +159,12 @@ default String generateAsyncMultiShot(String referenceImage,
 仅在 `doGenerateVideoByPanelId()` 方法的视频服务调用处（约第 556 行）加分支判断：
 
 ```java
+String videoProvider = getVideoProvider(projectId != null ? projectId : "");
+VideoGenerationService videoService = aiServiceConfig.getVideoService(videoProvider);
+String videoModel = ...;
+
 String taskId;
-if ("kling".equals(getVideoProvider(projectId)) && shots != null && shots.size() > 1) {
+if ("kling".equals(videoProvider) && shots != null && shots.size() > 1) {
     // Kling 多镜头路径
     List<VideoGenerationService.MultiShotPrompt> multiPrompts = ...;
     taskId = videoService.generateAsyncMultiShot(fusionImageUrl, multiPrompts, totalDuration, videoModel);
@@ -167,6 +173,8 @@ if ("kling".equals(getVideoProvider(projectId)) && shots != null && shots.size()
     taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
 }
 ```
+
+时长限制也改为 `int maxDuration = "kling".equals(videoProvider) ? 15 : 10;`
 
 轮询逻辑 `pollNewVideoTask()` 不需要修改，因为 `KlingVideoService.getTaskStatus()` 返回统一的 `TaskStatus`。
 
