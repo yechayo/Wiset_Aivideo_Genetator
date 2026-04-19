@@ -302,10 +302,11 @@ export async function generateVideoRef(
   offPeak: boolean = false,
   customPrompt?: string,
   videoModel?: string,
+  customOmniPrompts?: Array<{ prompt: string; duration: number }>,
 ): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(
     `/api/projects/${projectId}/episodes/${episodeId}/panels/${panelId}/video-ref`,
-    { offPeak, customPrompt, videoModel },
+    { offPeak, customPrompt, videoModel, customOmniPrompts },
   );
 }
 

@@ -1,0 +1,114 @@
+<h2>设计 Part 2：代码改动范围</h2>
+<p class="subtitle">只改两处：Prompt 构建 + 切割丢弃逻辑</p>
+
+<div class="section" style="margin-top: 2rem;">
+  <div style="display: grid; gap: 1.5rem;">
+
+    <div style="background: var(--card); border-radius: 12px; padding: 1.5rem;">
+      <h3>改动 1：PanelPromptBuilder.buildGridPrompt</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 1rem;">替换空格填充逻辑</p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div>
+          <div style="font-size: 0.8rem; color: #f66; font-weight: 600; margin-bottom: 0.5rem;">BEFORE</div>
+          <div style="background: #1a1a2e; border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.75rem; color: #f66;">
+            // 空格填充<br>
+            for (int i = actualCount; i &lt; totalSlots; i++) {<br>
+            &nbsp;&nbsp;sb.append("格子").append(i+1)<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;.append(": 纯黑色填充，不绘制任何内容\n");<br>
+            }
+          </div>
+        </div>
+        <div>
+          <div style="font-size: 0.8rem; color: #4a9; font-weight: 600; margin-bottom: 0.5rem;">AFTER</div>
+          <div style="background: #1a1a2e; border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.75rem; color: #4a9;">
+            // 占位场景填充<br>
+            for (int i = actualCount; i &lt; totalSlots; i++) {<br>
+            &nbsp;&nbsp;String filler = pickFillerScene(<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;visualStyle, i - actualCount);<br>
+            &nbsp;&nbsp;sb.append("格子").append(i+1)<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;.append(": ").append(filler).append("\n");<br>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: var(--card); border-radius: 12px; padding: 1.5rem;">
+      <h3>改动 2：GridImageService.splitGridImage</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 1rem;">切割时丢弃多余格子，只返回实际分镜对应的图片</p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div>
+          <div style="font-size: 0.8rem; color: #f66; font-weight: 600; margin-bottom: 0.5rem;">BEFORE</div>
+          <div style="background: #1a1a2e; border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.75rem; color: #f66;">
+            // 切割所有格子<br>
+            for (int r = 0; r &lt; rows; r++) {<br>
+            &nbsp;&nbsp;for (int c = 0; c &lt; cols; c++) {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;// 切割并上传<br>
+            &nbsp;&nbsp;}<br>
+            }<br>
+            // 返回所有格子图片
+          </div>
+        </div>
+        <div>
+          <div style="font-size: 0.8rem; color: #4a9; font-weight: 600; margin-bottom: 0.5rem;">AFTER</div>
+          <div style="background: #1a1a2e; border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.75rem; color: #4a9;">
+            // 只切割实际分镜数<br>
+            int index = 0;<br>
+            for (int r = 0; r &lt; rows && index &lt; actualCount; r++) {<br>
+            &nbsp;&nbsp;for (int c = 0; c &lt; cols && index &lt; actualCount; c++) {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;// 切割并上传<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;index++;<br>
+            &nbsp;&nbsp;}<br>
+            }<br>
+            // 多余格子直接跳过
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: var(--card); border-radius: 12px; padding: 1.5rem;">
+      <h3>改动 3（新增）：pickFillerScene 方法</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 1rem;">新增一个小方法，根据视觉风格从预设池选取占位场景</p>
+      <div style="background: #1a1a2e; border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.75rem; color: #59b;">
+        private String pickFillerScene(String visualStyle, int index) {<br>
+        &nbsp;&nbsp;List&lt;String&gt; pool = FILLER_POOL.getOrDefault(<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;visualStyle, FILLER_POOL.get("DEFAULT"));<br>
+        &nbsp;&nbsp;return pool.get(index % pool.size());<br>
+        }
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top: 2rem;">
+  <h3>改动总结</h3>
+  <div style="background: var(--card); border-radius: 12px; padding: 1.5rem;">
+    <table style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr style="border-bottom: 2px solid var(--border);">
+          <th style="text-align: left; padding: 0.5rem;">文件</th>
+          <th style="text-align: left; padding: 0.5rem;">改动</th>
+          <th style="text-align: left; padding: 0.5rem;">影响范围</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 0.5rem; font-family: monospace; font-size: 0.85rem;">PanelPromptBuilder.java</td>
+          <td style="padding: 0.5rem; font-size: 0.85rem;">空格指令 → 占位场景</td>
+          <td style="padding: 0.5rem; font-size: 0.85rem;">buildGridPrompt 方法</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 0.5rem; font-family: monospace; font-size: 0.85rem;">PanelPromptBuilder.java</td>
+          <td style="padding: 0.5rem; font-size: 0.85rem;">新增占位场景池 + pickFillerScene</td>
+          <td style="padding: 0.5rem; font-size: 0.85rem;">新增常量和方法</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.5rem; font-family: monospace; font-size: 0.85rem;">GridImageService.java</td>
+          <td style="padding: 0.5rem; font-size: 0.85rem;">切割时跳过多余格子</td>
+          <td style="padding: 0.5rem; font-size: 0.85rem;">splitGridImage 方法</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

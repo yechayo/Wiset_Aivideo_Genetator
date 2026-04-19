@@ -1,0 +1,136 @@
+<h2>宫格图生成改进方案</h2>
+<p class="subtitle">针对「非满格时分隔线缺失 + 空格未正确填充」问题</p>
+
+<div class="section" style="margin-top: 2rem;">
+  <div style="background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+      <span style="background: var(--accent); color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">推荐</span>
+      <h3 style="margin: 0;">方案 A：占位内容填充</h3>
+    </div>
+    <p style="color: var(--text-secondary); margin-bottom: 1rem;">你的想法 — 用无关紧要的场景描述替代黑格指令</p>
+
+    <div class="split">
+      <div class="mockup">
+        <div class="mockup-header">Before: 黑格填充（当前）</div>
+        <div class="mockup-body" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 8px;">
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景1</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景2</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景3</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景4</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景5</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景6</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景7</div>
+          <div style="background: #333; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:#f66;">❌ 黑格</div>
+          <div style="background: #333; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:#f66;">❌ 黑格</div>
+        </div>
+      </div>
+      <div class="mockup">
+        <div class="mockup-header">After: 占位内容填充</div>
+        <div class="mockup-body" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 8px;">
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景1</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景2</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景3</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景4</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景5</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景6</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">场景7</div>
+          <div style="background: #59b; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">✅ 占位</div>
+          <div style="background: #59b; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">✅ 占位</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros-cons" style="margin-top: 1rem;">
+      <div class="pros">
+        <h4>优点</h4>
+        <ul>
+          <li>改动最小 — 只改 prompt 和切割逻辑</li>
+          <li>AI 画内容比画黑格靠谱得多</li>
+          <li>所有格子都有内容，分隔线更一致</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>注意</h4>
+        <ul>
+          <li>需要设计好的占位提示词</li>
+          <li>多消耗一点点 API 资源</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div style="background: var(--card); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+    <h3 style="margin-bottom: 0.75rem;">方案 B：非方形网格</h3>
+    <p style="color: var(--text-secondary); margin-bottom: 1rem;">用矩形网格减少空格数量，比如7个分镜用 4×2（8格，1个空位）替代 3×3（9格，2个空位）</p>
+
+    <div class="split">
+      <div class="mockup">
+        <div class="mockup-header">3×3 方形（当前）= 2空格</div>
+        <div class="mockup-body" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 8px;">
+          <div style="background: #4a9; height: 50px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">1</div>
+          <div style="background: #4a9; height: 50px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">2</div>
+          <div style="background: #4a9; height: 50px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">3</div>
+          <div style="background: #4a9; height: 50px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">4</div>
+          <div style="background: #4a9; height: 50px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">5</div>
+          <div style="background: #4a9; height: 50px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">6</div>
+          <div style="background: #4a9; height: 50px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">7</div>
+          <div style="background: #f66; height: 50px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:white;">空</div>
+          <div style="background: #f66; height: 50px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:white;">空</div>
+        </div>
+      </div>
+      <div class="mockup">
+        <div class="mockup-header">4×2 矩形 = 1空格</div>
+        <div class="mockup-body" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; padding: 8px;">
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">1</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">2</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">3</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">4</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">5</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem;">6</div>
+          <div style="background: #4a9; height: 60px; border-radius: 4px; display-flex; align-items:center; justify-content:center; font-size:0.7rem;">7</div>
+          <div style="background: #f66; height: 60px; border-radius: 4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:white;">空</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros-cons" style="margin-top: 1rem;">
+      <div class="pros">
+        <h4>优点</h4>
+        <ul>
+          <li>减少空格数量，降低出错概率</li>
+          <li>配合方案A效果更好</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>缺点</h4>
+        <ul>
+          <li>需要改 calculateGridSize 逻辑</li>
+          <li>AI对非方形网格可能更难遵循</li>
+          <li>切割逻辑也要适配矩形</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div style="background: var(--card); border-radius: 12px; padding: 1.5rem;">
+    <h3 style="margin-bottom: 0.75rem;">方案 C：Prompt 强化 + 重实验证</h3>
+    <p style="color: var(--text-secondary); margin-bottom: 1rem;">强化提示词约束 + 生成后自动检测分隔线 + 失败自动重试</p>
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>优点</h4>
+        <ul>
+          <li>从根本上提升质量</li>
+          <li>对所有网格尺寸都有帮助</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>缺点</h4>
+        <ul>
+          <li>开发量大（需要图像检测）</li>
+          <li>重试增加成本和延迟</li>
+          <li>复杂度高，效果不一定好</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>

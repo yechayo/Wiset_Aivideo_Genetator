@@ -423,7 +423,8 @@ public class PanelProductionService {
     /**
      * 参考图视频生成（videoRefMode=true 时调用）
      */
-    public void generateVideoRefByPanelId(Long panelId, boolean offPeak, String customPrompt, String videoModel) {
+    public void generateVideoRefByPanelId(Long panelId, boolean offPeak, String customPrompt, String videoModel,
+                                            List<Map<String, Object>> customOmniPrompts) {
         Panel panel = panelRepository.selectById(panelId);
         if (panel == null) throw new BusinessException("分镜不存在");
         Map<String, Object> info = panel.getPanelInfo();
@@ -433,6 +434,11 @@ public class PanelProductionService {
         }
         if (customPrompt != null && !customPrompt.trim().isEmpty()) {
             info.put("customVideoPrompt", customPrompt);
+            panel.setPanelInfo(info);
+            panelRepository.updateById(panel);
+        }
+        if (customOmniPrompts != null && !customOmniPrompts.isEmpty()) {
+            info.put("customOmniPrompts", customOmniPrompts);
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
         }
@@ -648,12 +654,10 @@ public class PanelProductionService {
             if (panel == null) throw new BusinessException("分镜不存在");
             Map<String, Object> info = panel.getPanelInfo();
             String fusionImageUrl = getStr(info, "fusionImageUrl");
-            // 先获取 projectId 和 videoProvider（原本在后面声明，需提前）
+            // 先获取 projectId 和 videoProvider
             String projectId = getProjectIdByPanelIdForProvider(panelId);
             String videoProvider = getVideoProvider(projectId != null ? projectId : "");
-            // 仅非 Kling 或非 videoRef 模式要求融合图；Kling + videoRef 使用 Omni 多图
-            boolean isKlingOmni = "kling".equals(videoProvider) && Boolean.TRUE.equals(info.get("videoRefMode"));
-            if (!isKlingOmni && fusionImageUrl == null) {
+            if (fusionImageUrl == null) {
                 throw new BusinessException("融合参考图不存在，请先生成九宫格");
             }
 
@@ -687,16 +691,8 @@ public class PanelProductionService {
                 ? overrideVideoModel
                 : (projectId != null ? getVideoModel(projectId) : null);
 
-            // Kling + videoRef → Omni 多图多镜头；其他 → 融合图
-            String taskId;
-            if (isKlingOmni) {
-                taskId = submitKlingOmniGroups(panel, info, shots, totalDuration, videoService, videoModel);
-            } else {
-                if (fusionImageUrl == null) {
-                    throw new BusinessException("融合参考图不存在，请先生成九宫格");
-                }
-                taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
-            }
+            // 所有 provider 走融合图（Omni 仅在 videoRef 路径）
+            String taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
             info.put("videoTaskId", taskId);
             info.put("offPeak", offPeak);
             if (videoModel != null && !videoModel.isEmpty()) {
@@ -986,6 +982,7 @@ public class PanelProductionService {
 
             // 获取视频模型
             String projectId = getProjectIdByPanelIdForProvider(panelId);
+            String videoProvider = getVideoProvider(projectId != null ? projectId : "");
             String videoModel = (overrideVideoModel != null && !overrideVideoModel.trim().isEmpty())
                 ? overrideVideoModel
                 : (projectId != null ? getVideoModel(projectId) : null);
@@ -996,10 +993,21 @@ public class PanelProductionService {
                 effectiveOffPeak = false;
             }
 
-            // 调用参考图视频生成服务（发送 basePrompt，服务内部会添加参考图标注）
-            String aspectRatio = getAspectRatio(projectId != null ? projectId : "");
-            String taskId = viduReference2VideoService.generateAsyncMultiImage(
-                basePrompt, totalDuration, aspectRatio, refImages, charNames, effectiveOffPeak, videoModel);
+            String taskId;
+            VideoGenerationService pollingService;
+            if ("kling".equals(videoProvider)) {
+                // Kling Omni: 多图多镜头贪心分组
+                if (totalDuration > 15) totalDuration = 15;
+                VideoGenerationService klingService = aiServiceConfig.getVideoService(videoProvider);
+                taskId = submitKlingOmniGroups(panel, info, shots, totalDuration, klingService, videoModel);
+                pollingService = klingService;
+            } else {
+                // Vidu: 参考图视频生成
+                String aspectRatio = getAspectRatio(projectId != null ? projectId : "");
+                taskId = viduReference2VideoService.generateAsyncMultiImage(
+                    basePrompt, totalDuration, aspectRatio, refImages, charNames, effectiveOffPeak, videoModel);
+                pollingService = viduReference2VideoService;
+            }
 
             info.put("videoTaskId", taskId);
             info.put("offPeak", effectiveOffPeak);
@@ -1009,8 +1017,8 @@ public class PanelProductionService {
             panel.setPanelInfo(info);
             panelRepository.updateById(panel);
 
-            // 使用 viduReference2VideoService 轮询
-            self().pollNewVideoTaskWithService(panelId, taskId, effectiveOffPeak, viduReference2VideoService);
+            // 轮询
+            self().pollNewVideoTaskWithService(panelId, taskId, effectiveOffPeak, pollingService);
             log.info("参考图视频生成已提交: panelId={}, taskId={}, images={}, offPeak={}",
                 panelId, taskId, refImages.size(), effectiveOffPeak);
         } catch (Exception e) {
@@ -1197,7 +1205,7 @@ public class PanelProductionService {
         panelRepository.updateById(panel);
         boolean videoRefMode = Boolean.TRUE.equals(info.get("videoRefMode"));
         if (videoRefMode) {
-            generateVideoRefByPanelId(panelId, false, null, null);
+            generateVideoRefByPanelId(panelId, false, null, null, null);
         } else {
             generateVideoByPanelId(panelId);
         }
@@ -1228,7 +1236,7 @@ public class PanelProductionService {
                     panelRepository.updateById(panel);
                     boolean videoRefMode = Boolean.TRUE.equals(info.get("videoRefMode"));
                     if (videoRefMode) {
-                        generateVideoRefByPanelId(panel.getId(), false, null, null);
+                        generateVideoRefByPanelId(panel.getId(), false, null, null, null);
                     } else {
                         generateVideoByPanelId(panel.getId());
                     }

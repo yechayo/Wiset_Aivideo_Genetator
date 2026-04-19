@@ -1349,7 +1349,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const isMixModel = refVideoModel.includes('mix');
 
   // Generate video per panel (reference image mode - 参考图视频)
-  const handleGenerateVideoRef = useCallback(async (episodeId: number, panelId: string, customPrompt?: string) => {
+  const handleGenerateVideoRef = useCallback(async (episodeId: number, panelId: string, customPrompt?: string, customOmniPrompts?: Array<{ prompt: string; duration: number }>) => {
     if (!projectId) return;
     const key = `${episodeId}-${panelId}`;
     setGeneratingVideoKeys(prev => new Set(prev).add(key));
@@ -1401,7 +1401,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
     // viduq3-mix 强制 offPeak=false
     const effectiveOffPeak = isMixModel ? false : offPeak;
-    generateVideoRef(projectId, episodeId, Number(panelId), effectiveOffPeak, customPrompt, refVideoModel || undefined)
+    generateVideoRef(projectId, episodeId, Number(panelId), effectiveOffPeak, customPrompt, refVideoModel || undefined, customOmniPrompts)
       .catch((err: any) => {
         abort.abort();
         alert(err?.response?.data?.message || err?.message || '生成视频失败');
