@@ -1339,7 +1339,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         alert(err?.response?.data?.message || err?.message || '生成视频失败');
         setGeneratingVideoKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
       });
-  }, [projectId, offPeak, refreshProductionStatuses]);
+  }, [projectId, offPeak, refreshProductionStatuses, videoModel, isKling]);
 
   const isVideoRefMode = project?.projectInfo?.videoRefMode === true;
   const [refVideoModel, setRefVideoModel] = useState<string>(() =>
