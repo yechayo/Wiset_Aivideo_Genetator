@@ -69,6 +69,24 @@ public interface VideoGenerationService {
     }
 
     /**
+     * Omni 多图多镜头视频生成
+     *
+     * @param imageUrls   参考图 URL 列表（分镜图 + 角色图，最多 7 张）
+     * @param multiPrompts 每个镜头的 prompt（含 <<<image_N>>> 引用）和 duration
+     * @param totalDuration 总时长（秒，3-15）
+     * @param model       视频模型（如 "kling-v3-omni-std", "kling-v3-omni-pro"）
+     * @param soundOn     是否生成声音
+     * @return 任务ID
+     */
+    default String generateOmniAsync(java.util.List<String> imageUrls,
+                                      java.util.List<MultiShotPrompt> multiPrompts,
+                                      int totalDuration,
+                                      String model,
+                                      boolean soundOn) {
+        throw new UnsupportedOperationException("Omni 多图多镜头视频生成未实现");
+    }
+
+    /**
      * 查询视频生成任务状态
      *
      * @param taskId 任务ID
