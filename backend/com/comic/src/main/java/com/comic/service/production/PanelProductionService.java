@@ -914,7 +914,7 @@ public class PanelProductionService {
     }
 
     /**
-     * 构建 Omni 单镜头 prompt：<<<image_N>>> + 运镜 + 场景 + 角色声音
+     * 构建 Omni 单镜头 prompt：<<<image_N>>> + 运镜 + 场景 + 台词 + 角色声音
      */
     private String buildOmniShotPrompt(Map<String, Object> shot, int shotIndex, int shotCount,
                                          List<String> charImageUrls, List<String> charNames, int totalImages,
@@ -943,7 +943,23 @@ public class PanelProductionService {
         if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
         if (desc != null) sb.append(desc);
 
-        // 4. 出场角色声音（仅该镜头参演角色）
+        // 4. 台词
+        String dialogue = getStr(shot, "dialogue");
+        if (dialogue != null && !"无".equals(dialogue) && !dialogue.isEmpty()) {
+            String speaker = getStr(shot, "speaker");
+            String tone = getStr(shot, "dialogueTone");
+            sb.append(". ");
+            if (speaker != null && !"无".equals(speaker) && !speaker.isEmpty()) {
+                sb.append(speaker);
+                if (tone != null && !"无".equals(tone) && !tone.isEmpty()) {
+                    sb.append("(").append(tone).append(")");
+                }
+                sb.append(": ");
+            }
+            sb.append(dialogue);
+        }
+
+        // 5. 出场角色声音（仅该镜头参演角色）
         @SuppressWarnings("unchecked")
         List<String> shotChars = (List<String>) shot.get("characters");
         if (shotChars != null) {
@@ -958,7 +974,7 @@ public class PanelProductionService {
             }
         }
 
-        // 5. 角色图引用
+        // 6. 角色图引用
         for (int j = 0; j < charImageUrls.size() && (shotCount + j) < totalImages; j++) {
             sb.append(", ").append(charNames.get(j))
                 .append(" <<<image_").append(shotCount + j + 1).append(">>>");
