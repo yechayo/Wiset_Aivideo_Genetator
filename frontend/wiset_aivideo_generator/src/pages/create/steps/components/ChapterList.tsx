@@ -169,12 +169,46 @@ const ChapterList = ({
   );
 };
 
+/** 将文本中的 [爽点:xxx] 渲染为带下划线的段落 + badge 标签 */
+const renderContentWithMarks = (text: string) => {
+  const parts = text.split(/(\[爽点:[^\]]*\])/g);
+  const elements: React.ReactNode[] = [];
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    const match = part.match(/^\[爽点:([^\]]*)\]$/);
+    if (match) {
+      elements.push(
+        <span key={`m-${i}`} className={styles.shuangdianBadge}>{match[1]}</span>
+      );
+    } else if (part) {
+      const nextPart = parts[i + 1];
+      const hasMark = nextPart?.match(/^\[爽点:[^\]]*\]$/);
+      const cleanText = part.replace(/\n+/g, ' ').replace(/\s+/g, ' ');
+
+      if (hasMark && cleanText.trim()) {
+        elements.push(
+          <span key={`t-${i}`} className={styles.textSegment}>{cleanText}</span>
+        );
+      } else {
+        elements.push(<span key={`t-${i}`}>{cleanText}</span>);
+      }
+    }
+  }
+
+  return elements;
+};
+
 /**
  * 剧集卡片组件
  */
 const EpisodeCard = ({ episode }: { episode: Episode }) => {
   const [expanded, setExpanded] = useState(false);
   const isLongContent = episode.episodeInfo?.content && episode.episodeInfo.content.length > 200;
+
+  const displayContent = expanded
+    ? episode.episodeInfo?.content || ''
+    : episode.episodeInfo?.content?.substring(0, 200) || '';
 
   return (
     <div className={styles.episodeCard}>
@@ -186,10 +220,10 @@ const EpisodeCard = ({ episode }: { episode: Episode }) => {
       <div className={styles.episodeContent}>
         {episode.episodeInfo?.content && (
           <>
-            <p className={styles.content}>
-              {expanded ? episode.episodeInfo.content : episode.episodeInfo.content.substring(0, 200)}
+            <div className={styles.content}>
+              {renderContentWithMarks(displayContent)}
               {isLongContent && !expanded && '...'}
-            </p>
+            </div>
             {isLongContent && (
               <button
                 className={styles.toggleButton}
