@@ -171,7 +171,15 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
       {/* 元信息：积分、任务ID、错峰 */}
       {(segment.videoCredits != null || segment.videoTaskId || segment.videoOffPeak || segment.videoModel) && (
         <div className={styles.panelVideoMeta}>
-          {segment.videoModel && <span className={styles.panelVideoTag}>{segment.videoModel === 'pro' ? 'Pro' : segment.videoModel === 'turbo' ? 'Turbo' : segment.videoModel}</span>}
+          {segment.videoModel && (
+            <span className={styles.panelVideoTag}>
+              {segment.videoModel === 'pro' ? 'Pro'
+                : segment.videoModel === 'turbo' ? 'Turbo'
+                : segment.videoModel === 'kling-v3-std' ? 'Kling Std'
+                : segment.videoModel === 'kling-v3-pro' ? 'Kling Pro'
+                : segment.videoModel}
+            </span>
+          )}
           {segment.videoOffPeak && <span className={styles.panelVideoTag}>错峰</span>}
           {segment.videoCredits != null && <span className={styles.panelVideoTag}>{segment.videoCredits} 积分</span>}
         </div>
