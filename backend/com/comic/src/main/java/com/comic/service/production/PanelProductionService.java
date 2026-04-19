@@ -735,9 +735,9 @@ public class PanelProductionService {
                 ? overrideVideoModel
                 : (projectId != null ? getVideoModel(projectId) : null);
 
-            // vidu 模型名不适用于 kling，置空让 KlingVideoService 用默认值
+            // vidu 模型名不适用于 kling，使用 kling-v3-omni-std
             if ("kling".equals(videoProvider) && videoModel != null && !videoModel.startsWith("kling")) {
-                videoModel = null;
+                videoModel = "kling-v3-omni-std";
             }
 
             // 所有 provider 走融合图（Omni 仅在 videoRef 路径）
@@ -1120,9 +1120,9 @@ public class PanelProductionService {
             String taskId;
             VideoGenerationService pollingService;
             if ("kling".equals(videoProvider)) {
-                // vidu 模型名不适用于 kling，置空让 KlingVideoService 用默认值
+                // vidu 模型名不适用于 kling，使用 kling-v3-omni-std
                 if (videoModel != null && !videoModel.startsWith("kling")) {
-                    videoModel = null;
+                    videoModel = "kling-v3-omni-std";
                 }
 
                 // 读取 multiPrompt 开关（默认 true）
