@@ -372,10 +372,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [project?.projectInfo?.videoProvider]);
 
-  // 同步 videoModel：当 provider 切换到 kling 时，确保 model 是有效的 kling 模型
+  // 同步 videoModel / refVideoModel：当 provider 切换到 kling 时，确保 model 是有效的 kling 模型
   useEffect(() => {
     if (isKling && videoModel !== 'kling-v3-omni-std' && videoModel !== 'kling-v3-omni-pro') {
       setVideoModel('kling-v3-omni-std');
+    }
+    if (isKling && refVideoModel !== 'kling-v3-omni-std' && refVideoModel !== 'kling-v3-omni-pro') {
+      setRefVideoModel('kling-v3-omni-std');
     }
   }, [isKling]);
 
@@ -384,7 +387,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const handleVideoProviderChange = useCallback(async (provider: string) => {
     if (!projectId) {
       setVideoProvider(provider);
-      if (provider === 'kling') setVideoModel('kling-v3-omni-std');
+      if (provider === 'kling') {
+        setVideoModel('kling-v3-omni-std');
+        setRefVideoModel('kling-v3-omni-std');
+      }
       return;
     }
     try {
@@ -393,6 +399,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       if (provider === 'kling') {
         updates.videoModel = 'kling-v3-omni-std';
         setVideoModel('kling-v3-omni-std');
+        setRefVideoModel('kling-v3-omni-std');
       }
       await updateProject(projectId, updates);
       setVideoProvider(provider);
@@ -1949,6 +1956,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 className={`${styles.headerVideoModelTab} ${videoModel === 'kling-v3-omni-std' ? styles.headerVideoModelTabActive : ''}`}
                 onClick={async () => {
                   setVideoModel('kling-v3-omni-std');
+                  setRefVideoModel('kling-v3-omni-std');
                   if (projectId) await updateProject(projectId, { videoModel: 'kling-v3-omni-std' } as any);
                 }}
               >
@@ -1958,6 +1966,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 className={`${styles.headerVideoModelTab} ${videoModel === 'kling-v3-omni-pro' ? styles.headerVideoModelTabActive : ''}`}
                 onClick={async () => {
                   setVideoModel('kling-v3-omni-pro');
+                  setRefVideoModel('kling-v3-omni-pro');
                   if (projectId) await updateProject(projectId, { videoModel: 'kling-v3-omni-pro' } as any);
                 }}
               >
