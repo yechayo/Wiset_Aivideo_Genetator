@@ -126,6 +126,14 @@ comic:
     model: viduq3-pro
     off-peak: false              # 错峰模式（积分更低，48h内生成）
 
+  # ========== Kling 视频生成配置 ==========
+  kling:
+    access-key: ${KLING_ACCESS_KEY:}
+    secret-key: ${KLING_SECRET_KEY:}
+    base-url: https://api-beijing.klingai.com
+    model-name: kling-v3
+    mode: std
+
   # ========== MiniMax TTS 语音合成配置 ==========
   minimax-tts:
     api-key: ${MINIMAX_TTS_API_KEY:sk-cp-8Y3lX1ckVa4OyPLiEPtohT1Y9tnK400fZza4j-eWtGvh-mdwxFrpa6PlXT9ElZqM2GCdCjsSfG9C5qA5k6DAK0f-fDmAgruiuUOxT8A9zBTxWK0VGzSqGgA}
