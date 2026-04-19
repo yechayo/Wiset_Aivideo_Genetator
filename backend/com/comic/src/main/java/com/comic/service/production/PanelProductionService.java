@@ -972,7 +972,7 @@ public class PanelProductionService {
                 sb.append(dialogue);
             }
         } else {
-            sb.append(". 无对白");
+            sb.append(". 无对白，中文语境");
         }
 
         // 5. 角色图引用
