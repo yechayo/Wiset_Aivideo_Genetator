@@ -53,6 +53,22 @@ public interface VideoGenerationService {
     }
 
     /**
+     * 多镜头视频生成（结构化参数模式）
+     *
+     * @param referenceImage 参考图 URL
+     * @param multiPrompts   每个镜头的 prompt 和 duration
+     * @param totalDuration  总时长（秒）
+     * @param model          视频模型（如 "kling-v3-std", "kling-v3-pro"）
+     * @return 任务ID
+     */
+    default String generateAsyncMultiShot(String referenceImage,
+                                           java.util.List<MultiShotPrompt> multiPrompts,
+                                           int totalDuration,
+                                           String model) {
+        throw new UnsupportedOperationException("多镜头视频生成未实现");
+    }
+
+    /**
      * 查询视频生成任务状态
      *
      * @param taskId 任务ID
@@ -122,5 +138,21 @@ public interface VideoGenerationService {
         public boolean isPending() { return "pending".equals(status); }
         public boolean isProcessing() { return "processing".equals(status); }
         public boolean isCancelled() { return "cancelled".equals(status); }
+    }
+
+    /**
+     * 多镜头参数（用于可灵等支持结构化多镜头的模型）
+     */
+    class MultiShotPrompt {
+        private final String prompt;
+        private final int duration;
+
+        public MultiShotPrompt(String prompt, int duration) {
+            this.prompt = prompt;
+            this.duration = duration;
+        }
+
+        public String getPrompt() { return prompt; }
+        public int getDuration() { return duration; }
     }
 }
