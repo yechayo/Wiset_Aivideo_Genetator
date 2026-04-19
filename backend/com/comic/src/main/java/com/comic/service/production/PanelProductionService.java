@@ -597,11 +597,32 @@ public class PanelProductionService {
     private String submitKlingOmniGroups(Panel panel, Map<String, Object> info,
                                          List<Map<String, Object>> shots, int totalDuration,
                                          VideoGenerationService videoService, String videoModel) {
-        // 1. 收集分镜图 URL
+        // 1. 收集分镜图 URL（从 episodeInfo.splitShots 取，与 Vidu collectReferenceImagesWithNames 一致）
         List<String> shotImageUrls = new ArrayList<>();
-        if (shots != null) {
-            for (Map<String, Object> shot : shots) {
-                String url = (String) shot.get("splitImageUrl");
+        Long episodeId = panel.getEpisodeId();
+        Episode episode = episodeRepository.selectById(episodeId);
+        List<Map<String, Object>> allSplitShots = episode != null && episode.getEpisodeInfo() != null
+            ? (List<Map<String, Object>>) episode.getEpisodeInfo().get("splitShots") : null;
+        if (shots != null && !shots.isEmpty() && allSplitShots != null) {
+            int startIndex = 0;
+            Object storedIdx = info.get("splitShotStartIndex");
+            if (storedIdx instanceof Number) {
+                startIndex = ((Number) storedIdx).intValue();
+            } else {
+                // 回退：通过 visualDescription 匹配
+                String firstDesc = (String) shots.get(0).get("visualDescription");
+                if (firstDesc != null) {
+                    for (int i = 0; i < allSplitShots.size(); i++) {
+                        if (firstDesc.equals(allSplitShots.get(i).get("visualDescription"))) {
+                            startIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            int shotCount = shots.size();
+            for (int i = 0; i < shotCount && (startIndex + i) < allSplitShots.size(); i++) {
+                String url = (String) allSplitShots.get(startIndex + i).get("splitImageUrl");
                 if (url != null && !url.isEmpty()) shotImageUrls.add(url);
             }
         }
@@ -616,7 +637,6 @@ public class PanelProductionService {
                 if (chars != null) panelCharNames.addAll(chars);
             }
         }
-        Long episodeId = panel.getEpisodeId();
         List<GridImageService.CharRef> charRefs = gridImageService.getCharacterReferencesWithNamesForEpisode(episodeId);
         for (GridImageService.CharRef cr : charRefs) {
             if (cr.url != null && !cr.url.isEmpty()
