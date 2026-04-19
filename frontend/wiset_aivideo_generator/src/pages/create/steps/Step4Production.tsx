@@ -1091,7 +1091,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
       let totalPages: number;
       try {
         const res = await regenerateEpisodeGrid(projectId, episodeId, fullPrompt, gridPrompts);
-        totalPages = res.data?.data ?? 1;
+        totalPages = res.data ?? 1;
       } catch (err: any) {
         alert(err?.response?.data?.message || err?.message || '重置九宫格失败');
         return;
@@ -1199,7 +1199,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     let genVersion: string | undefined;
     try {
       const res = await regenerateEpisodeGridPage(projectId, episodeId, pageIndex, prompt);
-      genVersion = res.data?.data?.genVersion;
+      genVersion = res.data?.genVersion;
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || '生成宫格图失败');
       setGeneratingPageKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
