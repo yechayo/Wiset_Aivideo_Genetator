@@ -378,13 +378,18 @@ public class GridImageService {
                     existingImages.set(pageIndex, result.imageUrl);
                     freshInfo.put("gridImages", existingImages);
 
-                    // 合并 splitShots
+                    // 从最新数据合并 splitShots（避免并发页互相覆盖）
                     @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> existingShots = (List<Map<String, Object>>) latestInfo.getOrDefault("splitShots", new ArrayList<>());
-                    for (Map<String, Object> ss : splitShots) {
-                        if (ss.containsKey("splitImageUrl")) existingShots.add(ss);
+                    List<Map<String, Object>> latestShots = (List<Map<String, Object>>) latestInfo.getOrDefault("splitShots", new ArrayList<>());
+                    // 将本页 result 按 shotOffset 合并到 latestShots（而非 freshInfo 中的旧快照）
+                    for (int i = 0; i < result.splitShots.size(); i++) {
+                        int idx = shotOffset + i;
+                        while (latestShots.size() <= idx) {
+                            latestShots.add(new HashMap<>());
+                        }
+                        latestShots.set(idx, result.splitShots.get(i));
                     }
-                    freshInfo.put("splitShots", existingShots);
+                    freshInfo.put("splitShots", latestShots);
 
                     // 用最新数据重新计算 per-page 状态
                     @SuppressWarnings("unchecked")
