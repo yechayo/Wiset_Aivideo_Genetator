@@ -468,9 +468,9 @@ public class StoryboardAgentService {
         sb.append("3. 角色动作必须符合当前场景逻辑\n\n");
 
         sb.append("【对话约束 - 硬性要求】\n");
-        sb.append("1. 不是每个镜头都需要 dialogue，约 40-60% 有 dialogue 即可\n");
-        sb.append("2. dialogue 字数必须匹配 duration：1s≤5字, 2s≤8字, 3s≤15字, 4s≤20字\n");
-        sb.append("3. 连续 3 个镜头不能都有 dialogue\n");
+        sb.append("1. 爽剧以台词驱动节奏，至少 70% 的镜头必须有 dialogue\n");
+        sb.append("2. dialogue 字数必须匹配 duration：1s≤5字, 2s≤8字, 3s≤15字, 4s≤20字（字数不变）\n");
+        sb.append("3. 没有 dialogue 的镜头只用于纯动作特写或场景转换，连续无台词镜头不超过 2 个\n");
         sb.append("4. 当 dialogue 为空时，speaker 填 \"无\"，dialogueTone 填 \"无\"，sceneDescription 应更详细\n\n");
 
         sb.append("【快切防翻车指南 - 硬性约束】\n");
@@ -699,20 +699,20 @@ public class StoryboardAgentService {
                 + "  ]\n"
                 + "}\n\n"
                 + "【叙事阶段划分原则】\n"
-                + "1. 开场钩子（前 10% 时长）：强力视觉钩子，dialogueDensity=sparse\n"
-                + "   - 多用纯画面镜头，dialogue 仅 1-2 句极短句\n"
-                + "2. 铺垫/发展（20-30% 时长）：建立情境，dialogueDensity=moderate\n"
-                + "   - 交替使用对话和画面叙事\n"
+                + "1. 开场钩子（前 10% 时长）：强力视觉钩子，dialogueDensity=moderate\n"
+                + "   - 用短台词引入冲突，快速建立角色关系\n"
+                + "2. 铺垫/发展（20-30% 时长）：建立情境，dialogueDensity=dense\n"
+                + "   - 台词驱动叙事推进，大量对话推进剧情\n"
                 + "3. 冲突升级（25-35% 时长）：矛盾激化，dialogueDensity=dense\n"
-                + "   - 对话和动作交替，每 3 个镜头至少 1 个纯画面反应镜头\n"
+                + "   - 对话和动作交替，台词节奏紧凑\n"
                 + "4. 高潮（15-25% 时长）：爆发，dialogueDensity=dense\n"
                 + "   - 混合对话+动作，保留关键反应镜头和氛围镜头\n"
-                + "5. 收束/悬念（10-15% 时长）：dialogueDensity=sparse\n"
-                + "   - 回归画面叙事，留悬念\n\n"
+                + "5. 收束/悬念（10-15% 时长）：dialogueDensity=moderate\n"
+                + "   - 台词收束，留悬念结尾\n\n"
                 + "【对话密度定义】\n"
-                + "- \"sparse\": ≤30% 的镜头有 dialogue\n"
-                + "- \"moderate\": ≤50% 的镜头有 dialogue\n"
-                + "- \"dense\": ≤70% 的镜头有 dialogue\n\n"
+                + "- \"sparse\": ≤50% 的镜头有 dialogue\n"
+                + "- \"moderate\": ≤70% 的镜头有 dialogue\n"
+                + "- \"dense\": ≤85% 的镜头有 dialogue\n\n"
                 + "【约束】\n"
                 + "- 所有 phases 的 allocatedSeconds 之和 = 目标时长 ± 10%\n"
                 + "- 每个 phase 至少覆盖 2 个爽点/剧情节点\n"
@@ -780,16 +780,16 @@ public class StoryboardAgentService {
 
         if (totalBeats == 0) {
             // 无爽点时，仅按时长划分，beat 范围标记为 0
-            phases.add(new NarrativePhase("开场钩子", 0, 0, s1, "sparse",
-                    "3秒镜头≤10字，4秒镜头≤12字", "冲击→悬念", "快切为主，视觉冲击优先"));
-            phases.add(new NarrativePhase("铺垫发展", 0, 0, s2, "moderate",
-                    "3秒镜头≤15字，4秒镜头≤20字", "建立→推进", "交替对话和画面叙事"));
+            phases.add(new NarrativePhase("开场钩子", 0, 0, s1, "moderate",
+                    "3秒镜头≤10字，4秒镜头≤12字", "冲击→悬念", "快切为主，台词引入冲突"));
+            phases.add(new NarrativePhase("铺垫发展", 0, 0, s2, "dense",
+                    "3秒镜头≤15字，4秒镜头≤20字", "建立→推进", "台词驱动叙事推进"));
             phases.add(new NarrativePhase("冲突升级", 0, 0, s3, "dense",
                     "3秒镜头≤15字，4秒镜头≤20字", "紧张→爆发", "节奏加快，对话和动作交替"));
             phases.add(new NarrativePhase("高潮爆发", 0, 0, s4, "dense",
                     "3秒镜头≤15字，4秒镜头≤20字", "爆发→释放", "视觉和情绪并重"));
-            phases.add(new NarrativePhase("收束悬念", 0, 0, s5, "sparse",
-                    "3秒镜头≤10字，4秒镜头≤12字", "沉淀→悬念", "回归画面叙事，留悬念"));
+            phases.add(new NarrativePhase("收束悬念", 0, 0, s5, "moderate",
+                    "3秒镜头≤10字，4秒镜头≤12字", "沉淀→悬念", "台词收束，留悬念"));
         } else {
             // 有爽点时，按实际数量分配到各阶段
             int hookBeats = Math.max(1, totalBeats * 10 / 100);
@@ -799,11 +799,11 @@ public class StoryboardAgentService {
             int resolveBeats = Math.max(1, totalBeats - hookBeats - setupBeats - conflictBeats - climaxBeats);
 
             int idx = 0;
-            phases.add(new NarrativePhase("开场钩子", idx + 1, idx + hookBeats, s1, "sparse",
-                    "3秒镜头≤10字，4秒镜头≤12字", "冲击→悬念", "快切为主，视觉冲击优先"));
+            phases.add(new NarrativePhase("开场钩子", idx + 1, idx + hookBeats, s1, "moderate",
+                    "3秒镜头≤10字，4秒镜头≤12字", "冲击→悬念", "快切为主，台词引入冲突"));
             idx += hookBeats;
-            phases.add(new NarrativePhase("铺垫发展", idx + 1, idx + setupBeats, s2, "moderate",
-                    "3秒镜头≤15字，4秒镜头≤20字", "建立→推进", "交替对话和画面叙事"));
+            phases.add(new NarrativePhase("铺垫发展", idx + 1, idx + setupBeats, s2, "dense",
+                    "3秒镜头≤15字，4秒镜头≤20字", "建立→推进", "台词驱动叙事推进"));
             idx += setupBeats;
             phases.add(new NarrativePhase("冲突升级", idx + 1, idx + conflictBeats, s3, "dense",
                     "3秒镜头≤15字，4秒镜头≤20字", "紧张→爆发", "节奏加快，对话和动作交替"));
@@ -811,8 +811,8 @@ public class StoryboardAgentService {
             phases.add(new NarrativePhase("高潮爆发", idx + 1, idx + climaxBeats, s4, "dense",
                     "3秒镜头≤15字，4秒镜头≤20字", "爆发→释放", "视觉和情绪并重"));
             idx += climaxBeats;
-            phases.add(new NarrativePhase("收束悬念", idx + 1, idx + resolveBeats, s5, "sparse",
-                    "3秒镜头≤10字，4秒镜头≤12字", "沉淀→悬念", "回归画面叙事，留悬念"));
+            phases.add(new NarrativePhase("收束悬念", idx + 1, idx + resolveBeats, s5, "moderate",
+                    "3秒镜头≤10字，4秒镜头≤12字", "沉淀→悬念", "台词收束，留悬念"));
         }
 
         return new NarrativePlan(phases, "兜底叙事规划（AI规划失败时使用）");
@@ -864,7 +864,7 @@ public class StoryboardAgentService {
         }
 
         double dialogueRatio = shots.size() > 0 ? (double) dialogueCount / shots.size() : 0;
-        double maxRatio = 0.6; // 整体上限
+        double maxRatio = 0.85; // 整体上限
         if (plan != null && phaseIndex >= 0 && phaseIndex < plan.phases.size()) {
             maxRatio = getDialogueRatio(plan.phases.get(phaseIndex).dialogueDensity);
         }
@@ -905,12 +905,12 @@ public class StoryboardAgentService {
     }
 
     private double getDialogueRatio(String density) {
-        if (density == null) return 0.5;
+        if (density == null) return 0.7;
         switch (density) {
-            case "sparse": return 0.3;
-            case "moderate": return 0.5;
-            case "dense": return 0.7;
-            default: return 0.5;
+            case "sparse": return 0.5;
+            case "moderate": return 0.7;
+            case "dense": return 0.85;
+            default: return 0.7;
         }
     }
 
@@ -1115,7 +1115,7 @@ public class StoryboardAgentService {
         public int startBeat;
         public int endBeat;
         public int allocatedSeconds;
-        public String dialogueDensity; // "sparse"(≤30%)/"moderate"(≤50%)/"dense"(≤70%)
+        public String dialogueDensity; // "sparse"(≤50%)/"moderate"(≤70%)/"dense"(≤85%)
         public String maxDialogueChars;// "3秒镜头≤15字，4秒镜头≤20字"
         public String emotionalArc;    // 情绪走向
         public String pacingNote;      // 节拍指导
