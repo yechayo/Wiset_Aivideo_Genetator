@@ -971,6 +971,8 @@ public class PanelProductionService {
             } else {
                 sb.append(dialogue);
             }
+        } else {
+            sb.append(". 无对白");
         }
 
         // 5. 角色图引用
