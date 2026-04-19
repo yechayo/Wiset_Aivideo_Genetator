@@ -544,16 +544,34 @@ public class PanelProductionService {
                 }
             }
             if (totalDuration <= 0) totalDuration = 5;
-            if (totalDuration > 10) totalDuration = 10;
-
             String projectId = getProjectIdByPanelIdForProvider(panelId);
-            VideoGenerationService videoService = aiServiceConfig.getVideoService(
-                getVideoProvider(projectId != null ? projectId : ""));
+            String videoProvider = getVideoProvider(projectId != null ? projectId : "");
+            int maxDuration = "kling".equals(videoProvider) ? 15 : 10;
+            if (totalDuration > maxDuration) totalDuration = maxDuration;
+
+            VideoGenerationService videoService = aiServiceConfig.getVideoService(videoProvider);
             // 优先使用请求级别的 videoModel 覆盖，其次使用项目级配置
             String videoModel = (overrideVideoModel != null && !overrideVideoModel.trim().isEmpty())
                 ? overrideVideoModel
                 : (projectId != null ? getVideoModel(projectId) : null);
-            String taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
+
+            // Kling 多镜头：将 shots 转为结构化参数
+            String taskId;
+            if ("kling".equals(videoProvider) && shots != null && shots.size() > 1) {
+                List<VideoGenerationService.MultiShotPrompt> multiPrompts = new ArrayList<>();
+                for (Map<String, Object> shot : shots) {
+                    String shotPrompt = getStr(shot, "visualDescription");
+                    if (shotPrompt == null || shotPrompt.isEmpty()) shotPrompt = getStr(shot, "sceneDescription");
+                    int shotDuration = 3; // 默认3秒
+                    Object dur = shot.get("duration");
+                    if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
+                    if (shotDuration < 1) shotDuration = 1;
+                    multiPrompts.add(new VideoGenerationService.MultiShotPrompt(shotPrompt, shotDuration));
+                }
+                taskId = videoService.generateAsyncMultiShot(fusionImageUrl, multiPrompts, totalDuration, videoModel);
+            } else {
+                taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
+            }
             info.put("videoTaskId", taskId);
             info.put("offPeak", offPeak);
             if (videoModel != null && !videoModel.isEmpty()) {
