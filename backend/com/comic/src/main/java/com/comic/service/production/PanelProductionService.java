@@ -519,7 +519,11 @@ public class PanelProductionService {
             if (panel == null) throw new BusinessException("分镜不存在");
             Map<String, Object> info = panel.getPanelInfo();
             String fusionImageUrl = getStr(info, "fusionImageUrl");
-            if (fusionImageUrl == null) {
+            // 先获取 projectId 和 videoProvider（原本在后面声明，需提前）
+            String projectId = getProjectIdByPanelIdForProvider(panelId);
+            String videoProvider = getVideoProvider(projectId != null ? projectId : "");
+            // 仅非 Kling provider 要求融合图
+            if (!"kling".equals(videoProvider) && fusionImageUrl == null) {
                 throw new BusinessException("融合参考图不存在，请先生成九宫格");
             }
 
@@ -544,8 +548,6 @@ public class PanelProductionService {
                 }
             }
             if (totalDuration <= 0) totalDuration = 5;
-            String projectId = getProjectIdByPanelIdForProvider(panelId);
-            String videoProvider = getVideoProvider(projectId != null ? projectId : "");
             int maxDuration = "kling".equals(videoProvider) ? 15 : 10;
             if (totalDuration > maxDuration) totalDuration = maxDuration;
 
@@ -555,33 +557,16 @@ public class PanelProductionService {
                 ? overrideVideoModel
                 : (projectId != null ? getVideoModel(projectId) : null);
 
-            // Kling 多镜头：将 shots 转为结构化参数
+            // Kling Omni：多图参考 + 贪心分组；非 Kling：融合图
             String taskId;
-            if ("kling".equals(videoProvider) && shots != null && shots.size() > 1) {
-                List<VideoGenerationService.MultiShotPrompt> multiPrompts = new ArrayList<>();
-                int shotSum = 0;
-                for (Map<String, Object> shot : shots) {
-                    String shotPrompt = getStr(shot, "visualDescription");
-                    if (shotPrompt == null || shotPrompt.isEmpty()) shotPrompt = getStr(shot, "sceneDescription");
-                    if (shotPrompt == null) shotPrompt = "";
-                    int shotDuration = 3;
-                    Object dur = shot.get("duration");
-                    if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
-                    if (shotDuration < 1) shotDuration = 1;
-                    multiPrompts.add(new VideoGenerationService.MultiShotPrompt(shotPrompt, shotDuration));
-                    shotSum += shotDuration;
-                }
-                // 确保镜头时长之和等于 totalDuration（totalDuration 可能被 clamp 过）
-                if (shotSum != totalDuration && !multiPrompts.isEmpty()) {
-                    int diff = totalDuration - shotSum;
-                    VideoGenerationService.MultiShotPrompt last = multiPrompts.get(multiPrompts.size() - 1);
-                    int adjusted = last.getDuration() + diff;
-                    if (adjusted < 1) adjusted = 1;
-                    multiPrompts.set(multiPrompts.size() - 1,
-                        new VideoGenerationService.MultiShotPrompt(last.getPrompt(), adjusted));
-                }
-                taskId = videoService.generateAsyncMultiShot(fusionImageUrl, multiPrompts, totalDuration, videoModel);
+            if ("kling".equals(videoProvider)) {
+                // Kling Omni：多图参考 + 贪心分组
+                taskId = submitKlingOmniGroups(panel, info, shots, totalDuration, videoService, videoModel);
             } else {
+                // 非 Kling：使用融合图
+                if (fusionImageUrl == null) {
+                    throw new BusinessException("融合参考图不存在，请先生成九宫格");
+                }
                 taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
             }
             info.put("videoTaskId", taskId);
@@ -601,6 +586,164 @@ public class PanelProductionService {
         } finally {
             generatingVideoLocks.remove(panelId);
         }
+    }
+
+    /**
+     * Kling Omni 贪心分组提交
+     * 约束：每组镜头≤6, 图片≤7, 时长≤15s
+     * image_list 填充策略：分镜图优先 + 角色图补位
+     */
+    @SuppressWarnings("unchecked")
+    private String submitKlingOmniGroups(Panel panel, Map<String, Object> info,
+                                         List<Map<String, Object>> shots, int totalDuration,
+                                         VideoGenerationService videoService, String videoModel) {
+        // 1. 收集分镜图 URL
+        List<String> shotImageUrls = new ArrayList<>();
+        if (shots != null) {
+            for (Map<String, Object> shot : shots) {
+                String url = (String) shot.get("splitImageUrl");
+                if (url != null && !url.isEmpty()) shotImageUrls.add(url);
+            }
+        }
+
+        // 2. 收集角色参考图（仅当前 panel 出场角色）
+        List<String> charImageUrls = new ArrayList<>();
+        List<String> charNames = new ArrayList<>();
+        java.util.Set<String> panelCharNames = new java.util.HashSet<>();
+        if (shots != null) {
+            for (Map<String, Object> shot : shots) {
+                List<String> chars = (List<String>) shot.get("characters");
+                if (chars != null) panelCharNames.addAll(chars);
+            }
+        }
+        Long episodeId = panel.getEpisodeId();
+        List<GridImageService.CharRef> charRefs = gridImageService.getCharacterReferencesWithNamesForEpisode(episodeId);
+        for (GridImageService.CharRef cr : charRefs) {
+            if (cr.url != null && !cr.url.isEmpty()
+                && cr.name != null && panelCharNames.contains(cr.name)) {
+                charImageUrls.add(cr.url);
+                charNames.add(cr.name);
+            }
+        }
+
+        // 3. 贪心分组
+        List<KlingOmniGroup> groups = buildOmniGroups(shots, shotImageUrls, totalDuration);
+
+        // 4. 暂时只支持单组，多组需要后续拼接
+        KlingOmniGroup primaryGroup = groups.get(0);
+
+        // 5. 构建 image_list：分镜图优先 + 角色图补位
+        List<String> imageList = new ArrayList<>(primaryGroup.shotImageUrls);
+        int remaining = 7 - imageList.size();
+        for (int i = 0; i < remaining && i < charImageUrls.size(); i++) {
+            if (!imageList.contains(charImageUrls.get(i))) {
+                imageList.add(charImageUrls.get(i));
+            }
+        }
+
+        // 6. 构建 multi_prompt（含 <<<image_N>>> 引用）
+        int shotCount = primaryGroup.shotImageUrls.size();
+        List<VideoGenerationService.MultiShotPrompt> omniPrompts = new ArrayList<>();
+        for (int i = 0; i < primaryGroup.shots.size(); i++) {
+            Map<String, Object> shot = primaryGroup.shots.get(i);
+            String desc = getStr(shot, "visualDescription");
+            if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
+            if (desc == null) desc = "";
+
+            int shotDuration = 3;
+            Object dur = shot.get("duration");
+            if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
+            if (shotDuration < 1) shotDuration = 1;
+
+            // 构建 prompt：<<<image_N>>> + 镜头描述
+            StringBuilder promptBuilder = new StringBuilder();
+            if (i < shotCount) {
+                promptBuilder.append("<<<image_").append(i + 1).append(">>> ");
+            }
+            promptBuilder.append(desc);
+
+            // 角色图引用
+            for (int j = 0; j < charImageUrls.size() && (shotCount + j) < imageList.size(); j++) {
+                promptBuilder.append(", ").append(charNames.get(j))
+                    .append(" <<<image_").append(shotCount + j + 1).append(">>>");
+            }
+
+            omniPrompts.add(new VideoGenerationService.MultiShotPrompt(promptBuilder.toString(), shotDuration));
+        }
+
+        // 时长校准
+        int shotSum = omniPrompts.stream().mapToInt(VideoGenerationService.MultiShotPrompt::getDuration).sum();
+        if (shotSum != primaryGroup.totalDuration && !omniPrompts.isEmpty()) {
+            int diff = primaryGroup.totalDuration - shotSum;
+            VideoGenerationService.MultiShotPrompt last = omniPrompts.get(omniPrompts.size() - 1);
+            int adjusted = last.getDuration() + diff;
+            if (adjusted < 1) adjusted = 1;
+            omniPrompts.set(omniPrompts.size() - 1,
+                new VideoGenerationService.MultiShotPrompt(last.getPrompt(), adjusted));
+        }
+
+        log.info("Kling Omni 分组: panelId={}, images={}, shots={}, duration={}, groups={}",
+            panel.getId(), imageList.size(), omniPrompts.size(), primaryGroup.totalDuration, groups.size());
+
+        return videoService.generateOmniAsync(imageList, omniPrompts, primaryGroup.totalDuration, videoModel, true);
+    }
+
+    /**
+     * 贪心分组数据结构
+     */
+    private static class KlingOmniGroup {
+        List<Map<String, Object>> shots = new ArrayList<>();
+        List<String> shotImageUrls = new ArrayList<>();
+        int totalDuration = 0;
+    }
+
+    /**
+     * 贪心分组算法
+     * 约束：每组镜头≤6, 时长≤15s
+     */
+    private List<KlingOmniGroup> buildOmniGroups(List<Map<String, Object>> shots,
+                                                  List<String> shotImageUrls, int totalDuration) {
+        if (shots == null || shots.isEmpty()) {
+            KlingOmniGroup single = new KlingOmniGroup();
+            single.totalDuration = Math.max(totalDuration, 3);
+            return Collections.singletonList(single);
+        }
+
+        List<KlingOmniGroup> groups = new ArrayList<>();
+        KlingOmniGroup current = new KlingOmniGroup();
+
+        for (int i = 0; i < shots.size(); i++) {
+            Map<String, Object> shot = shots.get(i);
+            int shotDuration = 3;
+            Object dur = shot.get("duration");
+            if (dur instanceof Number) shotDuration = ((Number) dur).intValue();
+            if (shotDuration < 1) shotDuration = 1;
+
+            boolean wouldExceedShots = current.shots.size() >= 6;
+            boolean wouldExceedDuration = current.totalDuration + shotDuration > 15;
+
+            if ((wouldExceedShots || wouldExceedDuration) && !current.shots.isEmpty()) {
+                groups.add(current);
+                current = new KlingOmniGroup();
+            }
+
+            current.shots.add(shot);
+            if (i < shotImageUrls.size()) {
+                current.shotImageUrls.add(shotImageUrls.get(i));
+            }
+            current.totalDuration += shotDuration;
+        }
+
+        if (!current.shots.isEmpty()) {
+            groups.add(current);
+        }
+
+        // 校正每组最小时长为 3s
+        for (KlingOmniGroup g : groups) {
+            if (g.totalDuration < 3) g.totalDuration = 3;
+        }
+
+        return groups;
     }
 
     @Async
