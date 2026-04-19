@@ -373,8 +373,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
 
   // 同步 videoModel：当 provider 切换到 kling 时，确保 model 是有效的 kling 模型
   useEffect(() => {
-    if (isKling && videoModel !== 'kling-v3-std' && videoModel !== 'kling-v3-pro') {
-      setVideoModel('kling-v3-std');
+    if (isKling && videoModel !== 'kling-v3-omni-std' && videoModel !== 'kling-v3-omni-pro') {
+      setVideoModel('kling-v3-omni-std');
     }
   }, [isKling]);
 
@@ -383,15 +383,15 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const handleVideoProviderChange = useCallback(async (provider: string) => {
     if (!projectId) {
       setVideoProvider(provider);
-      if (provider === 'kling') setVideoModel('kling-v3-std');
+      if (provider === 'kling') setVideoModel('kling-v3-omni-std');
       return;
     }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const updates: any = { videoProvider: provider };
       if (provider === 'kling') {
-        updates.videoModel = 'kling-v3-std';
-        setVideoModel('kling-v3-std');
+        updates.videoModel = 'kling-v3-omni-std';
+        setVideoModel('kling-v3-omni-std');
       }
       await updateProject(projectId, updates);
       setVideoProvider(provider);
@@ -420,9 +420,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId]);
 
-  // Video model toggle (pro/mix/q3/turbo for Vidu, kling-v3-std/kling-v3-pro for Kling)
-  const [videoModel, setVideoModel] = useState<'pro' | 'mix' | 'q3' | 'turbo' | 'kling-v3-std' | 'kling-v3-pro'>(() =>
-    (localStorage.getItem('video_model') as 'pro' | 'mix' | 'q3' | 'turbo' | 'kling-v3-std' | 'kling-v3-pro') || 'turbo'
+  // Video model toggle (pro/mix/q3/turbo for Vidu, kling-v3-omni-std/kling-v3-omni-pro for Kling)
+  const [videoModel, setVideoModel] = useState<'pro' | 'mix' | 'q3' | 'turbo' | 'kling-v3-omni-std' | 'kling-v3-omni-pro'>(() =>
+    (localStorage.getItem('video_model') as 'pro' | 'mix' | 'q3' | 'turbo' | 'kling-v3-omni-std' | 'kling-v3-omni-pro') || 'turbo'
   );
   const toggleVideoModel = useCallback(() => {
     setVideoModel(prev => {
@@ -1933,19 +1933,19 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             <div className={styles.headerVideoModelTabs}>
               <span className={styles.headerVideoModelLabel}>模式：</span>
               <button
-                className={`${styles.headerVideoModelTab} ${videoModel === 'kling-v3-std' ? styles.headerVideoModelTabActive : ''}`}
+                className={`${styles.headerVideoModelTab} ${videoModel === 'kling-v3-omni-std' ? styles.headerVideoModelTabActive : ''}`}
                 onClick={async () => {
-                  setVideoModel('kling-v3-std');
-                  if (projectId) await updateProject(projectId, { videoModel: 'kling-v3-std' } as any);
+                  setVideoModel('kling-v3-omni-std');
+                  if (projectId) await updateProject(projectId, { videoModel: 'kling-v3-omni-std' } as any);
                 }}
               >
                 Std
               </button>
               <button
-                className={`${styles.headerVideoModelTab} ${videoModel === 'kling-v3-pro' ? styles.headerVideoModelTabActive : ''}`}
+                className={`${styles.headerVideoModelTab} ${videoModel === 'kling-v3-omni-pro' ? styles.headerVideoModelTabActive : ''}`}
                 onClick={async () => {
-                  setVideoModel('kling-v3-pro');
-                  if (projectId) await updateProject(projectId, { videoModel: 'kling-v3-pro' } as any);
+                  setVideoModel('kling-v3-omni-pro');
+                  if (projectId) await updateProject(projectId, { videoModel: 'kling-v3-omni-pro' } as any);
                 }}
               >
                 Pro
