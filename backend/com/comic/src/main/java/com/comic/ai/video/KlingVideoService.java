@@ -43,7 +43,7 @@ public class KlingVideoService implements VideoGenerationService {
                 .setIssuer(klingProperties.getAccessKey())
                 .setIssuedAt(new Date(now))
                 .setExpiration(new Date(now + 1800 * 1000L))
-                .setNotBefore(new Date(now))
+                .setNotBefore(new Date(now - 5000L))
                 .signWith(key)
                 .compact();
     }

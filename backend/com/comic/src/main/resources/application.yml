@@ -128,8 +128,8 @@ comic:
 
   # ========== Kling 视频生成配置 ==========
   kling:
-    access-key: ${KLING_ACCESS_KEY:}
-    secret-key: ${KLING_SECRET_KEY:}
+    access-key: ${KLING_ACCESS_KEY:ARQneJtTMHMNAyhLNA4m94ytfgQggDJL}
+    secret-key: ${KLING_SECRET_KEY:bNdCMGJCFDTkQDAmGPB4et8yRPPMPNQT}
     base-url: https://api-beijing.klingai.com
     model-name: kling-v3
     mode: std
