@@ -580,7 +580,6 @@ public class PanelProductionService {
                     multiPrompts.set(multiPrompts.size() - 1,
                         new VideoGenerationService.MultiShotPrompt(last.getPrompt(), adjusted));
                 }
-                }
                 taskId = videoService.generateAsyncMultiShot(fusionImageUrl, multiPrompts, totalDuration, videoModel);
             } else {
                 taskId = videoService.generateAsync(prompt, totalDuration, "16:9", fusionImageUrl, offPeak, videoModel);
