@@ -64,6 +64,7 @@ const imageProviderOptions = [
 const videoProviderOptions = [
   { value: 'vidu', label: 'Vidu' },
   { value: 'grok', label: 'Grok' },
+  { value: 'kling', label: 'Kling V3' },
 ];
 
 // 旁白音色选项
@@ -105,6 +106,12 @@ const viduRefModelOptions = [
   { value: 'viduq3-mix', label: 'Vidu Q3 Mix（推荐）' },
   { value: 'viduq3', label: 'Vidu Q3' },
   { value: 'viduq3-turbo', label: 'Vidu Q3 Turbo' },
+];
+
+// Kling V3 模型选项
+const klingModelOptions = [
+  { value: 'kling-v3-std', label: 'Kling V3 Std（标准）' },
+  { value: 'kling-v3-pro', label: 'Kling V3 Pro（高品质）' },
 ];
 
 // 视频模式选项
@@ -479,6 +486,7 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
                   setVideoProvider(val);
                   // 切换到非 Vidu 时清除参考图视频模式
                   if (val !== 'vidu') setVideoRefMode(false);
+                  if (val === 'kling') setVideoModel('kling-v3-std');
                 }}
               />
             </div>
@@ -516,6 +524,21 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
                   options={videoRefMode ? viduRefModelOptions : viduModelOptions}
                   value={videoModel}
                   onChange={setVideoModel}
+                />
+              </div>
+            )}
+
+            {/* Kling 模型选择 */}
+            {videoProvider === 'kling' && (
+              <div className={styles.configSection}>
+                <label className={styles.configLabel}>视频模型</label>
+                <Select
+                  options={klingModelOptions}
+                  value={videoModel}
+                  onChange={(val) => {
+                    setVideoModel(val);
+                    if (projectId) updateProject(projectId, { videoModel: val } as any);
+                  }}
                 />
               </div>
             )}
