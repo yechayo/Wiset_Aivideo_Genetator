@@ -278,7 +278,7 @@ public class CharacterExtractService {
                     objStart = (c == '{') ? i : i + 1;
                     break;
                 }
-                if (!Character.isWhitespace(c)) break;
+                if (!java.lang.Character.isWhitespace(c)) break;
             }
             if (objStart < 0) objStart = pos;
             nameStarts.add(objStart);
