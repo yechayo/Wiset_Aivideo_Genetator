@@ -371,6 +371,13 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [project?.projectInfo?.videoProvider]);
 
+  // 同步 videoModel：当 provider 切换到 kling 时，确保 model 是有效的 kling 模型
+  useEffect(() => {
+    if (isKling && videoModel !== 'kling-v3-std' && videoModel !== 'kling-v3-pro') {
+      setVideoModel('kling-v3-std');
+    }
+  }, [isKling]);
+
   // 切换视频提供商（先调 API，成功后再更新 UI 状态）
   // 注意：updateProject 是 PATCH 接口，支持部分字段更新
   const handleVideoProviderChange = useCallback(async (provider: string) => {
