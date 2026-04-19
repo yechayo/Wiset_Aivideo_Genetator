@@ -71,6 +71,80 @@ public class NanobananaImageService implements ImageGenerationService {
         return "Nanobanana-Image";
     }
 
+    /** 仅提交任务，返回 taskId（用于异步测试） */
+    public String submitOnly(String prompt, int width, int height, List<String> urls) throws IOException {
+        String aspectRatio = computeAspectRatio(width, height);
+        String size = computeSize(width);
+        return submitTask(prompt, size, aspectRatio, urls);
+    }
+
+    /**
+     * 单次查询任务状态（非阻塞）
+     * @return Map: status(submitted/generating/done/failed), imageUrl(仅done时), error(仅failed时)
+     */
+    public Map<String, Object> checkStatus(String taskId) throws IOException {
+        String url = wuyinkejiProperties.getBaseUrl() + "/api/async/detail?key=" + wuyinkejiProperties.getApiKey() + "&id=" + taskId;
+        Request request = new Request.Builder().url(url).get().build();
+        Map<String, Object> result = new HashMap<>();
+        result.put("taskId", taskId);
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+            if (!response.isSuccessful()) {
+                result.put("status", "error");
+                result.put("error", "HTTP " + response.code() + ": " + responseBody);
+                return result;
+            }
+            JsonNode root = objectMapper.readTree(responseBody);
+            int code = root.path("code").asInt(-1);
+            if (code != 200) {
+                result.put("status", "error");
+                result.put("error", "API code=" + code + ": " + responseBody);
+                return result;
+            }
+            JsonNode data = root.path("data");
+            int status = data.path("status").asInt(-1);
+            log.info("Nanobanana2 状态查询: taskId={}, status={}", taskId, status);
+
+            switch (status) {
+                case 0:
+                    result.put("status", "queued");
+                    break;
+                case 3:
+                    result.put("status", "generating");
+                    break;
+                case 1: {
+                    String imageUrl = extractImageUrl(data);
+                    result.put("status", "done");
+                    result.put("imageUrl", imageUrl);
+                    break;
+                }
+                case 2: {
+                    String imageUrl = extractImageUrl(data);
+                    if (imageUrl != null && !imageUrl.isEmpty()) {
+                        result.put("status", "done");
+                        result.put("imageUrl", imageUrl);
+                    } else {
+                        String failReason = data.path("fail_reason").asText("");
+                        String message = data.path("message").asText("");
+                        result.put("status", "failed");
+                        result.put("error", !failReason.isEmpty() ? failReason : (!message.isEmpty() ? message : "未知原因"));
+                    }
+                    break;
+                }
+                default:
+                    result.put("status", "unknown");
+                    result.put("rawStatus", status);
+            }
+        }
+        return result;
+    }
+
+    /** 转存 OSS */
+    public String transferToOss(String remoteUrl) {
+        return ossService.uploadImageFromUrl(remoteUrl, null);
+    }
+
     @Override
     public int getAvailableConcurrentSlots() {
         return Integer.MAX_VALUE;
@@ -105,8 +179,13 @@ public class NanobananaImageService implements ImageGenerationService {
         }
     }
 
+    // 重试次数
+    private static final int MAX_RETRIES = 3;
+    // 重试退避基数（毫秒）
+    private static final long RETRY_BACKOFF_BASE_MS = 5000;
+
     /**
-     * 提交异步图片生成任务
+     * 提交异步图片生成任务（含重试机制）
      */
     private String submitTask(String prompt, String size, String aspectRatio, List<String> urls) throws IOException {
         Map<String, Object> requestBody = new HashMap<>();
@@ -118,7 +197,7 @@ public class NanobananaImageService implements ImageGenerationService {
         }
 
         String jsonBody = objectMapper.writeValueAsString(requestBody);
-        log.info("Nanobanana2 提交任务参数: {}", jsonBody);
+        log.info("Nanobanana2 提交任务参数: {} (prompt长度={})", jsonBody.substring(0, Math.min(jsonBody.length(), 200)) + "...", prompt.length());
 
         Request request = new Request.Builder()
                 .url(wuyinkejiProperties.getBaseUrl() + "/api/async/image_nanoBanana2")
@@ -127,27 +206,54 @@ public class NanobananaImageService implements ImageGenerationService {
                 .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
                 .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            String responseBody = response.body() != null ? response.body().string() : "";
-            if (!response.isSuccessful()) {
-                log.error("Nanobanana2 提交任务失败: {} - {}", response.code(), responseBody);
-                throw new RuntimeException("Nanobanana2 提交任务失败: " + response.code() + " - " + responseBody);
-            }
+        RuntimeException lastException = null;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                try (Response response = httpClient.newCall(request).execute()) {
+                    String responseBody = response.body() != null ? response.body().string() : "";
+                    if (!response.isSuccessful()) {
+                        log.error("Nanobanana2 提交任务失败: {} - {}", response.code(), responseBody);
+                        throw new RuntimeException("Nanobanana2 提交任务失败: " + response.code() + " - " + responseBody);
+                    }
 
-            JsonNode root = objectMapper.readTree(responseBody);
-            int code = root.path("code").asInt(-1);
-            if (code != 200) {
-                log.error("Nanobanana2 提交任务返回错误: code={}, body={}", code, responseBody);
-                throw new RuntimeException("Nanobanana2 提交任务失败: " + responseBody);
-            }
+                    JsonNode root = objectMapper.readTree(responseBody);
+                    int code = root.path("code").asInt(-1);
+                    if (code != 200) {
+                        log.error("Nanobanana2 提交任务返回错误: code={}, body={}", code, responseBody);
+                        // 只对上游超时（500 + Connection timed out）进行重试
+                        if (code == 500 && responseBody.contains("timed out") && attempt < MAX_RETRIES) {
+                            lastException = new RuntimeException("Nanobanana2 提交任务失败: " + responseBody);
+                            long backoff = RETRY_BACKOFF_BASE_MS * (1L << attempt);
+                            log.warn("Nanobanana2 上游超时，第{}次重试，等待{}ms", attempt + 1, backoff);
+                            try { sleep(backoff); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); throw new RuntimeException("重试被中断", ie); }
+                            continue;
+                        }
+                        throw new RuntimeException("Nanobanana2 提交任务失败: " + responseBody);
+                    }
 
-            JsonNode data = root.path("data");
-            String taskId = data.path("id").asText();
-            if (taskId == null || taskId.isEmpty()) {
-                throw new RuntimeException("Nanobanana2 提交任务返回空 taskId: " + responseBody);
+                    JsonNode data = root.path("data");
+                    String taskId = data.path("id").asText();
+                    if (taskId == null || taskId.isEmpty()) {
+                        throw new RuntimeException("Nanobanana2 提交任务返回空 taskId: " + responseBody);
+                    }
+                    if (attempt > 0) {
+                        log.info("Nanobanana2 第{}次重试成功, taskId={}", attempt, taskId);
+                    }
+                    return taskId;
+                }
+            } catch (IOException e) {
+                // 网络层异常也重试
+                if (attempt < MAX_RETRIES) {
+                    lastException = new RuntimeException("Nanobanana2 提交任务网络异常: " + e.getMessage(), e);
+                    long backoff = RETRY_BACKOFF_BASE_MS * (1L << attempt);
+                    log.warn("Nanobanana2 网络异常，第{}次重试，等待{}ms: {}", attempt + 1, backoff, e.getMessage());
+                    try { sleep(backoff); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); throw new RuntimeException("重试被中断", ie); }
+                    continue;
+                }
+                throw new RuntimeException("Nanobanana2 提交任务网络异常: " + e.getMessage(), e);
             }
-            return taskId;
         }
+        throw lastException;
     }
 
     /**

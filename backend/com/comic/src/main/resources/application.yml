@@ -117,6 +117,7 @@ comic:
     base-url: https://ark.cn-beijing.volces.com/api/v3
     seedream-model: doubao-seedream-5-0-lite-260128  # Seedream 图片模型
     seedance-model: doubao-seedance-1-5-pro-251215  # Seedance 视频模型
+    seedream-max-concurrent: 2  # Seedream 图片生成并发数
 
   # ========== Vidu 视频生成配置 ==========
   vidu:

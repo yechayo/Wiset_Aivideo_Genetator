@@ -1660,7 +1660,16 @@ public class PanelProductionService {
                     episode.getId(), episodeNum, shots.size());
                 gridImageService.updateEpisodeGridStatus(episode.getId(), "generating");
                 String imageProvider = getImageProvider(projectId);
-                gridImageService.generateGridsForEpisode(episode.getId(), shots, visualStyle, imageProvider);
+
+                // 逐页触发生成
+                int remaining = shots.size();
+                int pageIndex = 0;
+                while (remaining > 0) {
+                    int[] gridSize = com.comic.service.panel.GridImageService.calculateGridSize(remaining);
+                    gridImageService.generateGridPage(episode.getId(), pageIndex, imageProvider, null);
+                    remaining -= gridSize[0] * gridSize[1];
+                    pageIndex++;
+                }
                 generatedCount++;
             }
 

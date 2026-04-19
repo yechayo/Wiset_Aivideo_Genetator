@@ -32,4 +32,9 @@ public class ArkProperties {
      * Seedance 视频模型
      */
     private String seedanceModel = "doubao-seedance-1-5-pro-251215";
+
+    /**
+     * Seedream 图片生成并发数
+     */
+    private int seedreamMaxConcurrent = 2;
 }

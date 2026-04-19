@@ -247,13 +247,17 @@ public class EpisodeController {
                     info.put("gridStatus", "generating");
                     ep.setEpisodeInfo(info);
                     episodeRepository.updateById(ep);
-                    gridImageService.generateGridsForEpisode(
-                        ep.getId(),
-                        shots,
-                        visualStyle,
-                        panelProductionService.getImageProvider(projectId),
-                        (gridPromptHint != null && !gridPromptHint.isEmpty()) ? gridPromptHint : null
-                    );
+                    // 逐页触发生成
+                    String imageProvider = panelProductionService.getImageProvider(projectId);
+                    int remaining = shots.size();
+                    int pageIndex = 0;
+                    while (remaining > 0) {
+                        int[] gridSize = com.comic.service.panel.GridImageService.calculateGridSize(remaining);
+                        gridImageService.generateGridPage(ep.getId(), pageIndex, imageProvider,
+                            (gridPromptHint != null && !gridPromptHint.isEmpty()) ? gridPromptHint : null);
+                        remaining -= gridSize[0] * gridSize[1];
+                        pageIndex++;
+                    }
                 }
             }
         }
@@ -434,8 +438,8 @@ public class EpisodeController {
     }
 
     @PostMapping("/{episodeId}/grid/regenerate")
-    @Operation(summary = "重新生成整集九宫格（不重新生成分镜脚本）")
-    public Result<Void> regenerateEpisodeGrid(
+    @Operation(summary = "重置九宫格状态并清旧数据（前端随后逐页调用 page 端点）")
+    public Result<Integer> regenerateEpisodeGrid(
             @PathVariable String projectId,
             @PathVariable Long episodeId,
             @RequestBody(required = false) Map<String, Object> body) {
@@ -443,9 +447,7 @@ public class EpisodeController {
         if (episode == null) throw new BusinessException("剧集不存在");
         Map<String, Object> info = episode.getEpisodeInfo();
 
-        String effectiveCustomHint = info.get("gridPromptHint") instanceof String
-            ? (String) info.get("gridPromptHint")
-            : null;
+        // 处理自定义提示词
         String requestedHint = body != null && body.get("customHint") instanceof String
             ? (String) body.get("customHint")
             : null;
@@ -453,14 +455,11 @@ public class EpisodeController {
             String normalized = requestedHint.trim();
             if (normalized.isEmpty()) {
                 info.remove("gridPromptHint");
-                effectiveCustomHint = null;
             } else {
                 info.put("gridPromptHint", normalized);
-                effectiveCustomHint = normalized;
             }
         }
 
-        // 处理完整的自定义 prompt（用户直接编辑的 prompt - 单页兼容）
         String requestedFullPrompt = body != null && body.get("fullPrompt") instanceof String
             ? (String) body.get("fullPrompt")
             : null;
@@ -473,7 +472,6 @@ public class EpisodeController {
             }
         }
 
-        // 处理多页自定义 prompts（每页一个 prompt）
         @SuppressWarnings("unchecked")
         List<String> requestedGridPrompts = body != null && body.get("gridPrompts") instanceof List
             ? (List<String>) body.get("gridPrompts")
@@ -481,13 +479,23 @@ public class EpisodeController {
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
-        String visualStyle = (String) info.getOrDefault("visualStyle", "ANIME");
-
         if (shots == null || shots.isEmpty()) {
             throw new BusinessException("分镜数据为空，无法重新生成九宫格");
         }
 
+        // 计算总页数（返回给前端，前端据此逐页调用）
+        int totalShots = shots.size();
+        int pageCount = com.comic.service.panel.GridImageService.computePageCount(totalShots);
+
         // 重置状态
+        List<String> pageStatuses = new ArrayList<>();
+        List<String> pageErrors = new ArrayList<>();
+        for (int i = 0; i < pageCount; i++) {
+            pageStatuses.add("pending");
+            pageErrors.add(null);
+        }
+        info.put("gridPageStatuses", pageStatuses);
+        info.put("gridPageErrors", pageErrors);
         info.put("gridStatus", "generating");
         info.put("gridImages", new ArrayList<>());
         info.put("splitShots", new ArrayList<>());
@@ -496,23 +504,13 @@ public class EpisodeController {
         episode.setEpisodeInfo(info);
         episodeRepository.updateById(episode);
 
-        // 清理已有的 Panel，避免重新审核后重复创建
+        // 清理已有的 Panel
         List<Panel> existingPanels = panelRepository.findByEpisodeId(episodeId);
         for (Panel p : existingPanels) {
             panelRepository.deleteById(p.getId());
         }
 
-        // 异步重新生成（传入多页 prompts）
-        gridImageService.generateGridsForEpisode(
-            episodeId,
-            shots,
-            visualStyle,
-            panelProductionService.getImageProvider(projectId),
-            (effectiveCustomHint != null && !effectiveCustomHint.trim().isEmpty()) ? effectiveCustomHint.trim() : null,
-            requestedGridPrompts
-        );
-
-        return Result.ok();
+        return Result.ok(pageCount);
     }
 
     @PostMapping("/{episodeId}/grid/regenerate/page/{pageIndex}")
@@ -530,6 +528,17 @@ public class EpisodeController {
         String genVersion = String.valueOf(System.currentTimeMillis());
         info.put("gridStatus", "generating");
         info.put("gridGenPageVersion_" + pageIndex, genVersion);
+        // 更新 per-page 状态为 generating（pad 到完整页数）
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> shots = (List<Map<String, Object>>) info.get("shots");
+        int totalShots = shots != null ? shots.size() : 0;
+        int totalPages = com.comic.service.panel.GridImageService.computePageCount(totalShots);
+
+        @SuppressWarnings("unchecked")
+        List<String> gridPageStatuses = (List<String>) info.getOrDefault("gridPageStatuses", new ArrayList<>());
+        while (gridPageStatuses.size() < totalPages) gridPageStatuses.add("pending");
+        gridPageStatuses.set(pageIndex, "generating");
+        info.put("gridPageStatuses", gridPageStatuses);
         episode.setEpisodeInfo(info);
         episodeRepository.updateById(episode);
 

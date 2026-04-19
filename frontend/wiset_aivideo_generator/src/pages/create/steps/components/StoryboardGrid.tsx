@@ -6,10 +6,10 @@ export interface StoryboardGridProps {
   gridImages: string[];
   /** 当前页的分镜（不是全部） */
   shots: StoryboardShot[];
-  gridStatus: string;
-  currentPage: number;
-  onPageChange: (page: number) => void;
-  totalPages: number;
+  /** 当前页状态: pending | generating | generated | failed */
+  currentPageStatus: string;
+  /** 当前页是否在生成中（包含本地乐观状态） */
+  isCurrentPageGenerating: boolean;
 }
 
 const ShotSizeIcon: React.FC<{ size: string }> = ({ size }) => {
@@ -25,42 +25,40 @@ const ShotSizeIcon: React.FC<{ size: string }> = ({ size }) => {
 export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
   gridImages,
   shots,
-  gridStatus,
-  currentPage,
-  onPageChange,
-  totalPages,
+  currentPageStatus,
+  isCurrentPageGenerating,
 }) => {
-  const isGenerating = gridStatus === 'generating';
-  const isFailed = gridStatus === 'failed';
   const isEmpty = gridImages.length === 0;
+  const showSpinner = isCurrentPageGenerating;
+  const showFailed = currentPageStatus === 'failed' && !isCurrentPageGenerating;
 
   return (
     <div className={styles.storyboardGrid}>
       {/* Grid display */}
       <div className={styles.gridContainer}>
-        {isGenerating && (
+        {showSpinner && (
           <div className={styles.overlay}>
             <div className={styles.spinner} />
             <span>宫格图生成中...</span>
           </div>
         )}
 
-        {isFailed && (
+        {showFailed && (
           <div className={`${styles.overlay} ${styles.failed}`}>
             <span>生成失败，请重新生成</span>
           </div>
         )}
 
-        {isEmpty && !isGenerating && !isFailed && (
+        {isEmpty && !showSpinner && !showFailed && (
           <div className={styles.overlay}>
             <span>暂无宫格图片</span>
           </div>
         )}
 
-        {!isEmpty && !isGenerating && (
+        {!isEmpty && !showSpinner && (
           <img
-            src={gridImages[currentPage - 1] || gridImages[0]}
-            alt={`宫格第 ${currentPage} 页`}
+            src={gridImages[0]}
+            alt="宫格图"
             className={styles.gridImage}
           />
         )}
@@ -96,29 +94,6 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
               )}
             </div>
           ))}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className={styles.pagination}>
-          <button
-            className={styles.pageButton}
-            onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-            disabled={currentPage <= 1}
-          >
-            上一页
-          </button>
-          <span className={styles.pageInfo}>
-            {currentPage} / {totalPages}
-          </span>
-          <button
-            className={styles.pageButton}
-            onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-            disabled={currentPage >= totalPages}
-          >
-            下一页
-          </button>
         </div>
       )}
     </div>

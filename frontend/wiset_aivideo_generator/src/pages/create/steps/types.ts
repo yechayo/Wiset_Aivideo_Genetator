@@ -129,6 +129,10 @@ export interface EpisodeState {
   gridPrompts?: string[];
   /** 每页宫格布局配置（自适应：2×2 / 3×3） */
   gridConfigs?: GridConfig[];
+  /** 每页生成状态: "pending" | "generating" | "generated" | "failed" */
+  gridPageStatuses?: string[];
+  /** 每页错误信息 */
+  gridPageErrors?: string[];
   /** 角色参考图信息（后端生成九宫格时保存） */
   characterReferences?: { name: string; url: string; role: string }[];
   /** 分镜脚本审核通过标记（4a 审核通过后由后端设置） */

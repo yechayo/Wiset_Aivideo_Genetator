@@ -260,6 +260,7 @@ public class PanelPromptBuilder {
         sb.append("细腻的面部表情和肢体语言、精心设计的构图与景深关系。画面要有电影级质感。\n\n");
 
         Map<String, Object> prevShot = null;
+        boolean isLargeGrid = gridCols >= 5 && gridRows >= 5;
         for (int i = 0; i < shots.size(); i++) {
             Map<String, Object> shot = shots.get(i);
             int row = i / gridCols + 1;
@@ -268,6 +269,10 @@ public class PanelPromptBuilder {
 
             String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
             if (sceneDescription != null && !sceneDescription.isEmpty()) {
+                // 5×5 大宫格时裁剪描述，避免 prompt 过长导致上游超时
+                if (isLargeGrid && sceneDescription.length() > 80) {
+                    sceneDescription = sceneDescription.substring(0, 80) + "…";
+                }
                 sb.append(sceneDescription);
             } else {
                 String visualDescription = getShotValue(shot, "visualDescription", "visual_description");

@@ -17,7 +17,6 @@ import com.comic.repository.ProjectRepository;
 import com.comic.util.ProjectProductionMode;
 import com.comic.service.oss.OssService;
 import com.comic.statemachine.service.StateChangeEventPublisher;
-import com.comic.util.NumberFormatter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -34,20 +33,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 public class GridImageService {
 
-    /** 内存锁：正在生成整集九宫格的 episodeId 集合，防止重复提交 */
-    private static final java.util.Set<Long> generatingEpisodeLocks = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** 内存锁：正在生成单页九宫格的 "episodeId-pageIndex" 集合，防止同一页重复提交 */
+    private static final java.util.Set<String> generatingPageLocks = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** 内存锁：正在生成单 Panel 九宫格的 panelId 集合，防止重复提交 */
     private static final java.util.Set<Long> generatingPanelGridLocks = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** episode 级 DB 写锁：防止多页并发完成时互相覆盖 episodeInfo */
+    private static final ConcurrentHashMap<Long, ReentrantLock> episodeUpdateLocks = new ConcurrentHashMap<>();
 
     private static final int GRID_SEPARATOR_PIXELS = 8;
     private static final Color FUSION_BG_COLOR = new Color(0x1a, 0x1a, 0x1c);
@@ -217,24 +216,52 @@ public class GridImageService {
     }
 
     /**
-     * 为整个 Episode 生成九宫格图 → 切割 → 构建 splitShots
-     * 与 generateGridsForPanel 逻辑类似，但操作的是 episodeInfo 而非 panelInfo
+     * 核心方法：同步生成单页九宫格（生图 → 下载 → 切割 → 上传 OSS）
+     * 不写 DB，调用方负责持久化。
+     *
+     * @return GridPageResult（含 imageUrl、prompt、splitShots），生成失败抛异常
      */
-    @Async
-    public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle, String imageProvider) {
-        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, null, null);
-    }
+    private GridPageResult generateSinglePageSync(Long episodeId, int pageIndex, String prompt,
+                                                   ImageGenerationService imageService,
+                                                   List<String> characterRefUrls,
+                                                   String visualStyle,
+                                                   List<Map<String, Object>> shots,
+                                                   List<int[]> pageGridSizes) {
+        int shotOffset = 0;
+        for (int i = 0; i < pageIndex; i++) {
+            shotOffset += shotsPerPage(pageGridSizes.get(i)[0], pageGridSizes.get(i)[1]);
+        }
 
-    @Async
-    public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle,
-                                        String imageProvider, String customHint) {
-        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, customHint, null);
-    }
+        int[] gridSize = pageGridSizes.get(pageIndex);
+        int gridCols = gridSize[0];
+        int gridRows = gridSize[1];
+        int pageCapacity = shotsPerPage(gridCols, gridRows);
+        int toIdx = Math.min(shotOffset + pageCapacity, shots.size());
+        List<Map<String, Object>> pageShots = shots.subList(shotOffset, toIdx);
 
-    @Async
-    public void generateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle,
-                                        String imageProvider, String customHint, List<String> gridPrompts) {
-        doGenerateGridsForEpisode(episodeId, shots, visualStyle, imageProvider, customHint, gridPrompts);
+        // 生成九宫格图片
+        String imageUrl;
+        if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
+            imageUrl = imageService.generateWithMultipleReferences(
+                prompt, characterRefUrls, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT);
+        } else {
+            imageUrl = imageService.generate(prompt, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT, visualStyle);
+        }
+
+        // 切割九宫格
+        BufferedImage gridImage = downloadImage(imageUrl);
+        List<BufferedImage> subImages = splitGridImage(gridImage, gridCols, gridRows);
+
+        // 上传切割后的子图到 OSS
+        List<Map<String, Object>> pageSplitShots = new ArrayList<>();
+        for (int i = 0; i < subImages.size() && (shotOffset + i) < shots.size(); i++) {
+            String ossUrl = uploadToOssEpisode(subImages.get(i), episodeId, shotOffset + i);
+            Map<String, Object> shot = new HashMap<>(shots.get(shotOffset + i));
+            shot.put("splitImageUrl", ossUrl);
+            pageSplitShots.add(shot);
+        }
+
+        return new GridPageResult(pageIndex, imageUrl, prompt, pageSplitShots);
     }
 
     /**
@@ -244,6 +271,12 @@ public class GridImageService {
     @Async
     public void generateGridPage(Long episodeId, int pageIndex, String imageProvider, String customPrompt) {
         String gridProjectId = null;
+        // per-page 锁：同一页防重复提交，不同页可并发
+        String pageLockKey = episodeId + "-" + pageIndex;
+        if (!generatingPageLocks.add(pageLockKey)) {
+            log.info("九宫格已在生成中，跳过单页请求: episodeId={}, pageIndex={}", episodeId, pageIndex);
+            return;
+        }
         try {
             Episode episode = episodeRepository.selectById(episodeId);
             if (episode == null) throw new BusinessException("Episode 不存在: " + episodeId);
@@ -260,132 +293,163 @@ public class GridImageService {
             List<CharRef> charRefsWithNames = getCharacterReferencesWithNames(episodeId);
 
             // 计算分页布局
-            List<int[]> pageGridSizes = new ArrayList<>();
-            List<Map<String, Object>> gridConfigs = new ArrayList<>();
-            int remaining = shots.size();
-            while (remaining > 0) {
-                int[] gridSize = calculateGridSize(remaining);
-                int capacity = shotsPerPage(gridSize[0], gridSize[1]);
-                int actualShots = Math.min(capacity, remaining);
-                pageGridSizes.add(gridSize);
-                Map<String, Object> config = new HashMap<>();
-                config.put("page", pageGridSizes.size() - 1);
-                config.put("gridCols", gridSize[0]);
-                config.put("gridRows", gridSize[1]);
-                config.put("shotCount", actualShots);
-                gridConfigs.add(config);
-                remaining -= actualShots;
-            }
+            List<int[]> pageGridSizes = computePageGridSizes(shots.size());
 
             if (pageIndex < 0 || pageIndex >= pageGridSizes.size()) {
                 throw new BusinessException("页码超出范围: " + pageIndex + ", 总页数: " + pageGridSizes.size());
             }
-
-            // 计算 shotOffset
-            int shotOffset = 0;
-            for (int i = 0; i < pageIndex; i++) {
-                shotOffset += shotsPerPage(pageGridSizes.get(i)[0], pageGridSizes.get(i)[1]);
-            }
-
-            int[] gridSize = pageGridSizes.get(pageIndex);
-            int gridCols = gridSize[0];
-            int gridRows = gridSize[1];
-            int pageCapacity = shotsPerPage(gridCols, gridRows);
-            int toIdx = Math.min(shotOffset + pageCapacity, shots.size());
-            List<Map<String, Object>> pageShots = shots.subList(shotOffset, toIdx);
 
             // 构建 prompt
             String prompt;
             if (customPrompt != null && !customPrompt.isEmpty()) {
                 prompt = customPrompt;
             } else {
-                prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames, gridCols, gridRows);
+                int[] gridSize = pageGridSizes.get(pageIndex);
+                int shotOffset = computeShotOffset(pageIndex, pageGridSizes);
+                int pageCapacity = shotsPerPage(gridSize[0], gridSize[1]);
+                int toIdx = Math.min(shotOffset + pageCapacity, shots.size());
+                List<Map<String, Object>> pageShots = shots.subList(shotOffset, toIdx);
+                prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames, gridSize[0], gridSize[1]);
             }
 
-            // 生成九宫格图片
-            String imageUrl;
-            if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
-                imageUrl = imageService.generateWithMultipleReferences(
-                    prompt, characterRefUrls, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT);
-            } else {
-                imageUrl = imageService.generate(prompt, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT, visualStyle);
-            }
+            // 调用核心生成方法
+            GridPageResult result = generateSinglePageSync(episodeId, pageIndex, prompt,
+                imageService, characterRefUrls, visualStyle, shots, pageGridSizes);
 
-            // 切割九宫格
-            BufferedImage gridImage = downloadImage(imageUrl);
-            List<BufferedImage> subImages = splitGridImage(gridImage, gridCols, gridRows);
-
-            // 重新读取 episode（可能已被其他操作修改）
+            // 重新读取 episode（fresh snapshot）
             Episode freshEpisode = episodeRepository.selectById(episodeId);
             if (freshEpisode == null) throw new BusinessException("Episode 不存在: " + episodeId);
             Map<String, Object> freshInfo = freshEpisode.getEpisodeInfo();
 
-            // 更新 gridImages
+            // 合并 splitShots
+            int shotOffset = computeShotOffset(pageIndex, pageGridSizes);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> splitShots = (List<Map<String, Object>>) freshInfo.getOrDefault("splitShots", new ArrayList<>());
+            for (int i = 0; i < result.splitShots.size(); i++) {
+                int idx = shotOffset + i;
+                while (splitShots.size() <= idx) {
+                    splitShots.add(new HashMap<>());
+                }
+                splitShots.set(idx, result.splitShots.get(i));
+            }
+
+            // 合并 gridImages
             @SuppressWarnings("unchecked")
             List<String> gridImages = (List<String>) freshInfo.getOrDefault("gridImages", new ArrayList<>());
-            // 确保 gridImages 长度足够
             while (gridImages.size() <= pageIndex) {
                 gridImages.add(null);
             }
-            gridImages.set(pageIndex, imageUrl);
+            gridImages.set(pageIndex, result.imageUrl);
 
-            // 更新 splitShots
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> splitShots = (List<Map<String, Object>>) freshInfo.getOrDefault("splitShots", new ArrayList<>());
-            for (int i = 0; i < subImages.size() && (shotOffset + i) < shots.size(); i++) {
-                String ossUrl = uploadToOssEpisode(subImages.get(i), episodeId, shotOffset + i);
-                Map<String, Object> shot = new HashMap<>(shots.get(shotOffset + i));
-                shot.put("splitImageUrl", ossUrl);
-                // 确保 splitShots 长度足够
-                while (splitShots.size() <= shotOffset + i) {
-                    splitShots.add(new HashMap<>());
-                }
-                splitShots.set(shotOffset + i, shot);
-            }
-
-            // 更新 prompts
+            // 合并 gridPrompts
             @SuppressWarnings("unchecked")
             List<String> gridPrompts = (List<String>) freshInfo.getOrDefault("gridPrompts", new ArrayList<>());
             while (gridPrompts.size() <= pageIndex) {
                 gridPrompts.add(null);
             }
-            gridPrompts.set(pageIndex, prompt);
+            gridPrompts.set(pageIndex, result.prompt);
 
-            // 重新生成融合图（使用所有 splitShots）
-            BufferedImage fusionImage = createFusionImage(
-                splitShots.stream().filter(s -> s.containsKey("splitImageUrl")).collect(java.util.stream.Collectors.toList()),
-                charRefsWithNames);
-            String fusionUrl = uploadToOssEpisode(fusionImage, episodeId, "fusion");
+            // 合并 gridConfigs
+            List<Map<String, Object>> gridConfigs = buildGridConfigs(pageGridSizes, shots.size());
 
-            // 判断是否所有页都已完成
-            boolean allPagesDone = true;
-            for (int i = 0; i < pageGridSizes.size(); i++) {
-                if (i < gridImages.size() && gridImages.get(i) != null) continue;
-                allPagesDone = false;
-                break;
+            // 重新生成融合图
+            String fusionUrl = null;
+            List<Map<String, Object>> shotsWithUrl = splitShots.stream()
+                .filter(s -> s.containsKey("splitImageUrl")).collect(Collectors.toList());
+            if (!shotsWithUrl.isEmpty()) {
+                BufferedImage fusionImage = createFusionImage(shotsWithUrl, charRefsWithNames);
+                fusionUrl = uploadToOssEpisode(fusionImage, episodeId, "fusion");
             }
 
-            // 写入 episodeInfo
-            freshInfo.put("gridImages", gridImages);
-            freshInfo.put("splitShots", splitShots);
-            freshInfo.put("gridPrompts", gridPrompts);
-            freshInfo.put("gridConfigs", gridConfigs);
-            freshInfo.put("gridPageCount", pageGridSizes.size());
-            freshInfo.put("fusionImageUrl", fusionUrl);
-            if (allPagesDone) {
-                freshInfo.put("gridStatus", "generated");
-            } else if (!"generating".equals(freshInfo.get("gridStatus"))) {
-                freshInfo.put("gridStatus", "generating");
-            }
-            freshEpisode.setEpisodeInfo(freshInfo);
-            episodeRepository.updateById(freshEpisode);
+            // 写入 fresh episode（加 episode 级锁，防止并发页互相覆盖）
+            ReentrantLock updateLock = episodeUpdateLocks.computeIfAbsent(episodeId, k -> new ReentrantLock());
+            boolean allDone = false;
+            List<String> finalPageStatuses = new ArrayList<>();
+            updateLock.lock();
+            try {
+                // 重新读取最新数据，合并本页结果
+                Episode latestEp = episodeRepository.selectById(episodeId);
+                if (latestEp != null) {
+                    Map<String, Object> latestInfo = latestEp.getEpisodeInfo();
+                    // 合并 gridImages（保留其他页的图片）
+                    @SuppressWarnings("unchecked")
+                    List<String> existingImages = (List<String>) latestInfo.getOrDefault("gridImages", new ArrayList<>());
+                    while (existingImages.size() <= pageIndex) existingImages.add(null);
+                    existingImages.set(pageIndex, result.imageUrl);
+                    freshInfo.put("gridImages", existingImages);
 
+                    // 合并 splitShots
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> existingShots = (List<Map<String, Object>>) latestInfo.getOrDefault("splitShots", new ArrayList<>());
+                    for (Map<String, Object> ss : splitShots) {
+                        if (ss.containsKey("splitImageUrl")) existingShots.add(ss);
+                    }
+                    freshInfo.put("splitShots", existingShots);
+
+                    // 用最新数据重新计算 per-page 状态
+                    @SuppressWarnings("unchecked")
+                    List<String> latestPageStatuses = (List<String>) latestInfo.getOrDefault("gridPageStatuses", new ArrayList<>());
+                    while (latestPageStatuses.size() < pageGridSizes.size()) latestPageStatuses.add("pending");
+                    latestPageStatuses.set(pageIndex, "generated");
+                    freshInfo.put("gridPageStatuses", latestPageStatuses);
+
+                    @SuppressWarnings("unchecked")
+                    List<String> latestPageErrors = (List<String>) latestInfo.getOrDefault("gridPageErrors", new ArrayList<>());
+                    while (latestPageErrors.size() < pageGridSizes.size()) latestPageErrors.add(null);
+                    latestPageErrors.set(pageIndex, null);
+                    freshInfo.put("gridPageErrors", latestPageErrors);
+
+                    // 保留其他页的 gridPrompts
+                    @SuppressWarnings("unchecked")
+                    List<String> existingGridPrompts = (List<String>) latestInfo.getOrDefault("gridPrompts", new ArrayList<>());
+                    while (existingGridPrompts.size() <= pageIndex) existingGridPrompts.add(null);
+                    existingGridPrompts.set(pageIndex, result.prompt);
+                    freshInfo.put("gridPrompts", existingGridPrompts);
+
+                    // 保留 fusionImageUrl
+                    if (latestInfo.containsKey("fusionImageUrl") && fusionUrl == null) {
+                        freshInfo.put("fusionImageUrl", latestInfo.get("fusionImageUrl"));
+                    }
+                    if (fusionUrl != null) {
+                        freshInfo.put("fusionImageUrl", fusionUrl);
+                    }
+
+                    // gridConfigs/pageCount
+                    freshInfo.put("gridConfigs", gridConfigs);
+                    freshInfo.put("gridPageCount", pageGridSizes.size());
+
+                    // 推导全局 gridStatus
+                    allDone = latestPageStatuses.stream().allMatch("generated"::equals);
+                    boolean hasFailed = latestPageStatuses.stream().anyMatch("failed"::equals);
+                    if (allDone) {
+                        freshInfo.put("gridStatus", "generated");
+                        freshInfo.remove("errorMessage");
+                    } else if (hasFailed) {
+                        freshInfo.put("gridStatus", "failed");
+                    } else {
+                        freshInfo.put("gridStatus", "generating");
+                    }
+                    finalPageStatuses = latestPageStatuses;
+
+                    latestEp.setEpisodeInfo(freshInfo);
+                    episodeRepository.updateById(latestEp);
+                } else {
+                    freshInfo.put("gridImages", gridImages);
+                    freshInfo.put("gridConfigs", gridConfigs);
+                    freshInfo.put("gridPageCount", pageGridSizes.size());
+                    freshEpisode.setEpisodeInfo(freshInfo);
+                    episodeRepository.updateById(freshEpisode);
+                }
+            } finally {
+                updateLock.unlock();
+            }
+
+            String sseStatus = allDone ? "generated" : "generating";
             if (gridProjectId != null) {
-                String status = allPagesDone ? "generated" : "generating";
-                eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, status);
+                eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, sseStatus);
             }
 
-            log.info("Episode {} 第 {} 页九宫格完成, {} 分镜, 全部完成: {}", episodeId, pageIndex, pageShots.size(), allPagesDone);
+            log.info("Episode {} 第 {} 页九宫格完成, gridPageStatuses={}", episodeId, pageIndex, finalPageStatuses);
 
         } catch (Exception e) {
             log.error("Episode {} 第 {} 页九宫格失败", episodeId, pageIndex, e);
@@ -393,215 +457,46 @@ public class GridImageService {
                 if (gridProjectId != null) {
                     eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, "failed");
                 }
-                Episode ep = episodeRepository.selectById(episodeId);
-                if (ep != null) {
-                    Map<String, Object> info = ep.getEpisodeInfo();
-                    info.put("errorMessage", "第" + (pageIndex + 1) + "页生成失败: " + e.getMessage());
-                    ep.setEpisodeInfo(info);
-                    episodeRepository.updateById(ep);
-                }
-            } catch (Exception ex) {
-                log.error("更新失败状态异常: episodeId={}", episodeId, ex);
-            }
-        }
-    }
+                // 加 episode 级锁写入失败状态
+                ReentrantLock failLock = episodeUpdateLocks.computeIfAbsent(episodeId, k -> new ReentrantLock());
+                failLock.lock();
+                try {
+                    Episode ep = episodeRepository.selectById(episodeId);
+                    if (ep != null) {
+                        Map<String, Object> info = ep.getEpisodeInfo();
+                        String errorMsg = "第" + (pageIndex + 1) + "页生成失败: " + e.getMessage();
 
-    private void doGenerateGridsForEpisode(Long episodeId, List<Map<String, Object>> shots, String visualStyle,
-                                           String imageProvider, String customHint, List<String> gridPrompts) {
-        // 获取 projectId（在 try 外声明，catch 中也需要用）
-        String gridProjectId = null;
-        // 内存锁防重复：add 返回 false 表示已在生成中
-        if (!generatingEpisodeLocks.add(episodeId)) {
-            log.info("九宫格已在生成中，跳过: episodeId={}", episodeId);
-            return;
-        }
-        try {
-            Episode episode = episodeRepository.selectById(episodeId);
-            if (episode == null) throw new BusinessException("Episode 不存在: " + episodeId);
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> failShots = (List<Map<String, Object>>) info.get("shots");
+                        int failTotalPages = computePageCount(failShots != null ? failShots.size() : 0);
 
-            gridProjectId = episode.getProjectId();
+                        List<String> gridPageStatuses = (List<String>) info.getOrDefault("gridPageStatuses", new ArrayList<>());
+                        while (gridPageStatuses.size() < failTotalPages) gridPageStatuses.add("pending");
+                        gridPageStatuses.set(pageIndex, "failed");
+                        info.put("gridPageStatuses", gridPageStatuses);
 
-            // 发布九宫格生成开始事件
-            if (gridProjectId != null) {
-                eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, "generating");
-            }
+                        List<String> gridPageErrors = (List<String>) info.getOrDefault("gridPageErrors", new ArrayList<>());
+                        while (gridPageErrors.size() < failTotalPages) gridPageErrors.add(null);
+                        gridPageErrors.set(pageIndex, errorMsg);
+                        info.put("gridPageErrors", gridPageErrors);
 
-            ImageGenerationService imageService = aiServiceConfig.getImageService(imageProvider != null ? imageProvider : "seedream");
-
-            Map<String, Object> episodeInfo = episode.getEpisodeInfo();
-            List<String> characterRefUrls = getCharacterReferenceUrls(episodeId);
-            List<CharRef> charRefsWithNames = getCharacterReferencesWithNames(episodeId);
-
-            // 动态分页：根据每页剩余分镜数选择最优网格尺寸
-            List<int[]> pageGridSizes = new ArrayList<>();
-            List<Map<String, Object>> gridConfigs = new ArrayList<>();
-            int remaining = shots.size();
-            while (remaining > 0) {
-                int[] gridSize = calculateGridSize(remaining);
-                int capacity = shotsPerPage(gridSize[0], gridSize[1]);
-                int actualShots = Math.min(capacity, remaining);
-                pageGridSizes.add(gridSize);
-                Map<String, Object> config = new HashMap<>();
-                config.put("page", pageGridSizes.size() - 1);
-                config.put("gridCols", gridSize[0]);
-                config.put("gridRows", gridSize[1]);
-                config.put("shotCount", actualShots);
-                gridConfigs.add(config);
-                remaining -= actualShots;
-            }
-            int pageCount = pageGridSizes.size();
-
-            List<String> gridImageUrls = new ArrayList<>();
-            List<String> allPagePrompts = new ArrayList<>();
-
-            // 检查是否有用户自定义的 prompt 覆盖（直接编辑后的完整 prompt）
-            // 优先使用传入的 gridPrompts 数组（多页独立编辑），否则降级到单页 promptOverride
-            String promptOverride = episodeInfo.containsKey("gridPromptOverride")
-                ? (String) episodeInfo.get("gridPromptOverride") : null;
-
-            // 预先构建所有页的 prompt 和分镜数据
-            List<String> pagePrompts = new ArrayList<>();
-            int shotOffset = 0;
-            for (int page = 0; page < pageCount; page++) {
-                int[] gridSize = pageGridSizes.get(page);
-                int gridCols = gridSize[0];
-                int gridRows = gridSize[1];
-                int pageCapacity = shotsPerPage(gridCols, gridRows);
-                int toIdx = Math.min(shotOffset + pageCapacity, shots.size());
-                List<Map<String, Object>> pageShots = shots.subList(shotOffset, toIdx);
-
-                String prompt;
-                if (gridPrompts != null && page < gridPrompts.size() && gridPrompts.get(page) != null && !gridPrompts.get(page).isEmpty()) {
-                    prompt = gridPrompts.get(page);
-                } else if (promptOverride != null && page == 0) {
-                    prompt = promptOverride;
-                } else {
-                    prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames, gridCols, gridRows);
-                    prompt = appendUserHintToPrompt(prompt, customHint);
-                }
-                pagePrompts.add(prompt);
-                shotOffset = toIdx;
-            }
-
-            // 并行生成所有页的九宫格图片
-            ExecutorService pageExecutor = Executors.newFixedThreadPool(
-                Math.min(pageCount, 2));  // 最多2个并发，匹配 Seedream Semaphore(2)
-            try {
-                String[] imageUrlResults = new String[pageCount];
-                CountDownLatch latch = new CountDownLatch(pageCount);
-                for (int page = 0; page < pageCount; page++) {
-                    final int pageIdx = page;
-                    final String prompt = pagePrompts.get(pageIdx);
-                    pageExecutor.submit(() -> {
-                        try {
-                            String imageUrl;
-                            if (characterRefUrls != null && !characterRefUrls.isEmpty()) {
-                                imageUrl = imageService.generateWithMultipleReferences(
-                                    prompt, characterRefUrls, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT);
-                            } else {
-                                imageUrl = imageService.generate(prompt, GRID_IMAGE_WIDTH, GRID_IMAGE_HEIGHT, visualStyle);
-                            }
-                            imageUrlResults[pageIdx] = imageUrl;
-                        } catch (Exception e) {
-                            log.error("Episode {} 第 {} 页九宫格生成失败", episodeId, pageIdx, e);
-                            imageUrlResults[pageIdx] = null;
-                        } finally {
-                            latch.countDown();
+                        boolean hasGenerating = gridPageStatuses.stream().anyMatch("generating"::equals);
+                        if (!hasGenerating) {
+                            info.put("gridStatus", "failed");
                         }
-                    });
-                }
-                latch.await(10, TimeUnit.MINUTES);
-                for (int page = 0; page < pageCount; page++) {
-                    if (imageUrlResults[page] == null) {
-                        throw new RuntimeException("第 " + (page + 1) + " 页九宫格生成失败");
+                        info.put("errorMessage", errorMsg);
+
+                        ep.setEpisodeInfo(info);
+                        episodeRepository.updateById(ep);
                     }
-                    gridImageUrls.add(imageUrlResults[page]);
-                }
-            } finally {
-                pageExecutor.shutdownNow();
-            }
-            allPagePrompts.addAll(pagePrompts);
-
-            // 切割九宫格 → 构建 splitShots
-            List<Map<String, Object>> splitShots = new ArrayList<>();
-            shotOffset = 0;
-            for (int page = 0; page < gridImageUrls.size(); page++) {
-                BufferedImage gridImage = downloadImage(gridImageUrls.get(page));
-                int[] gridSize = pageGridSizes.get(page);
-                List<BufferedImage> subImages = splitGridImage(gridImage, gridSize[0], gridSize[1]);
-                for (int i = 0; i < subImages.size() && (shotOffset + i) < shots.size(); i++) {
-                    Map<String, Object> shot = shots.get(shotOffset + i);
-                    String ossUrl = uploadToOssEpisode(subImages.get(i), episodeId, shotOffset + i);
-                    Map<String, Object> splitShot = new HashMap<>(shot);
-                    splitShot.put("splitImageUrl", ossUrl);
-                    splitShots.add(splitShot);
-                }
-                shotOffset += shotsPerPage(gridSize[0], gridSize[1]);
-            }
-
-            // 写入前检查：如果 gridStatus 已被改为非 "generating" 的其他终态（说明被新的重新生成请求覆盖），放弃写入
-            Episode freshEpisode = episodeRepository.selectById(episodeId);
-            if (freshEpisode != null) {
-                String freshStatus = (String) freshEpisode.getEpisodeInfo().getOrDefault("gridStatus", "");
-                // 只有当状态被改为其他终态时才放弃（如用户再次点击生成，状态仍为 generating，不应放弃）
-                if (!"generating".equals(freshStatus) && !"generated".equals(freshStatus)) {
-                    log.warn("Episode {} 九宫格状态已变为 {}，放弃写入旧结果", episodeId, freshStatus);
-                    return;
-                }
-            }
-
-            // 更新 episodeInfo
-            episodeInfo.put("gridImages", gridImageUrls);
-            episodeInfo.put("splitShots", splitShots);
-            episodeInfo.put("gridStatus", "generated");
-            episodeInfo.put("gridPageCount", pageCount);
-            episodeInfo.put("gridConfigs", gridConfigs);
-            // 保存角色参考图信息（供前端展示）
-            List<Map<String, String>> charRefInfoList = new ArrayList<>();
-            for (CharRef cr : charRefsWithNames) {
-                Map<String, String> crMap = new HashMap<>();
-                crMap.put("name", cr.name);
-                crMap.put("url", cr.url);
-                crMap.put("role", cr.role);
-                charRefInfoList.add(crMap);
-            }
-            episodeInfo.put("characterReferences", charRefInfoList);
-            // 保存最后一个 page 的 prompt（包含完整九宫格布局信息）
-            episodeInfo.put("gridPrompt", allPagePrompts.isEmpty() ? null : allPagePrompts.get(allPagePrompts.size() - 1));
-            episodeInfo.put("gridPrompts", allPagePrompts);
-            // 清除用户覆盖的 prompt，下次生成需重新编辑
-            episodeInfo.remove("gridPromptOverride");
-            episode.setEpisodeInfo(episodeInfo);
-            episodeRepository.updateById(episode);
-
-            if (gridProjectId != null) {
-                eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, "generated");
-            }
-
-            log.info("Episode {} 整集九宫格完成, {} 页, {} 分镜", episodeId, pageCount, shots.size());
-
-        } catch (Exception e) {
-            log.error("Episode {} 整集九宫格失败", episodeId, e);
-            try {
-                updateEpisodeGridStatus(episodeId, "failed");
-
-                // 发布九宫格生成失败事件
-                if (gridProjectId != null) {
-                    eventPublisher.publishEpisodeGridStatus(gridProjectId, episodeId, 0, "failed");
-                }
-
-                Episode episode = episodeRepository.selectById(episodeId);
-                if (episode != null) {
-                    Map<String, Object> info = episode.getEpisodeInfo();
-                    info.put("errorMessage", e.getMessage());
-                    episode.setEpisodeInfo(info);
-                    episodeRepository.updateById(episode);
+                } finally {
+                    failLock.unlock();
                 }
             } catch (Exception ex) {
                 log.error("更新失败状态异常: episodeId={}", episodeId, ex);
             }
         } finally {
-            generatingEpisodeLocks.remove(episodeId);
+            generatingPageLocks.remove(pageLockKey);
         }
     }
 
@@ -660,6 +555,92 @@ public class GridImageService {
     }
 
     /**
+     * 计算总分页数（供 Controller 等外部调用）
+     */
+    public static int computePageCount(int totalShots) {
+        return computePageGridSizes(totalShots).size();
+    }
+
+    /**
+     * 计算分页布局（提取公共逻辑）
+     */
+    static List<int[]> computePageGridSizes(int totalShots) {
+        List<int[]> pageGridSizes = new ArrayList<>();
+        int remaining = totalShots;
+        while (remaining > 0) {
+            int[] gridSize = calculateGridSize(remaining);
+            pageGridSizes.add(gridSize);
+            remaining -= shotsPerPage(gridSize[0], gridSize[1]);
+        }
+        return pageGridSizes;
+    }
+
+    /**
+     * 构建 gridConfigs（提取公共逻辑）
+     */
+    static List<Map<String, Object>> buildGridConfigs(List<int[]> pageGridSizes, int totalShots) {
+        List<Map<String, Object>> gridConfigs = new ArrayList<>();
+        int remaining = totalShots;
+        for (int i = 0; i < pageGridSizes.size(); i++) {
+            int[] gridSize = pageGridSizes.get(i);
+            int capacity = shotsPerPage(gridSize[0], gridSize[1]);
+            int actualShots = Math.min(capacity, remaining);
+            Map<String, Object> config = new HashMap<>();
+            config.put("page", i);
+            config.put("gridCols", gridSize[0]);
+            config.put("gridRows", gridSize[1]);
+            config.put("shotCount", actualShots);
+            gridConfigs.add(config);
+            remaining -= actualShots;
+        }
+        return gridConfigs;
+    }
+
+    /**
+     * 构建所有页的 prompt（提取公共逻辑）
+     */
+    private List<String> buildAllPagePrompts(Long episodeId, String visualStyle,
+                                             List<Map<String, Object>> shots, List<CharRef> charRefsWithNames,
+                                             List<int[]> pageGridSizes,
+                                             List<String> gridPrompts, String promptOverride, String customHint) {
+        List<String> pagePrompts = new ArrayList<>();
+        int shotOffset = 0;
+        for (int page = 0; page < pageGridSizes.size(); page++) {
+            int[] gridSize = pageGridSizes.get(page);
+            int gridCols = gridSize[0];
+            int gridRows = gridSize[1];
+            int pageCapacity = shotsPerPage(gridCols, gridRows);
+            int toIdx = Math.min(shotOffset + pageCapacity, shots.size());
+            List<Map<String, Object>> pageShots = shots.subList(shotOffset, toIdx);
+
+            String prompt;
+            if (gridPrompts != null && page < gridPrompts.size() && gridPrompts.get(page) != null && !gridPrompts.get(page).isEmpty()) {
+                prompt = gridPrompts.get(page);
+            } else if (promptOverride != null && page == 0) {
+                prompt = promptOverride;
+            } else {
+                prompt = buildGridPromptForProject(episodeId, visualStyle, pageShots, charRefsWithNames, gridCols, gridRows);
+                prompt = appendUserHintToPrompt(prompt, customHint);
+            }
+            pagePrompts.add(prompt);
+            shotOffset = toIdx;
+        }
+        return pagePrompts;
+    }
+
+    /**
+     * 计算指定页的 shotOffset
+     */
+    static int computeShotOffset(int pageIndex, List<int[]> pageGridSizes) {
+        int offset = 0;
+        for (int i = 0; i < pageIndex; i++) {
+            offset += shotsPerPage(pageGridSizes.get(i)[0], pageGridSizes.get(i)[1]);
+        }
+        return offset;
+    }
+
+
+    /**
      * 为指定 Panel 的 splitShots 创建融合参考图（仅 URL 版本）
      */
     public BufferedImage createFusionImageForPanel(List<Map<String, Object>> panelShots, List<String> charRefUrls) {
@@ -677,6 +658,23 @@ public class GridImageService {
      */
     public BufferedImage createFusionImageForPanelWithNames(List<Map<String, Object>> panelShots, List<CharRef> charRefs) {
         return createFusionImage(panelShots, charRefs != null ? charRefs : new ArrayList<>());
+    }
+
+    /**
+     * 单页生成结果（纯数据，不写 DB）
+     */
+    public static class GridPageResult {
+        public final int pageIndex;
+        public final String imageUrl;
+        public final String prompt;
+        public final List<Map<String, Object>> splitShots; // 本页切割后的 shot 列表（带 splitImageUrl）
+
+        public GridPageResult(int pageIndex, String imageUrl, String prompt, List<Map<String, Object>> splitShots) {
+            this.pageIndex = pageIndex;
+            this.imageUrl = imageUrl;
+            this.prompt = prompt;
+            this.splitShots = splitShots;
+        }
     }
 
     /**

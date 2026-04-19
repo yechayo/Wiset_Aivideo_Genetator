@@ -18,8 +18,10 @@ import com.comic.statemachine.service.StateChangeEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
@@ -37,6 +39,7 @@ public class CharacterImageGenerationService {
     private final AiServiceConfiguration aiServiceConfig;
     private final ImageGenerationService imageGenerationService;
     private final CharacterPromptManager characterPromptManager;
+    private final ApplicationContext applicationContext;
 
     @Lazy
     @Autowired
@@ -371,14 +374,38 @@ public class CharacterImageGenerationService {
 
         log.info("角色已确认: charId={}, name={}", charId, getCharInfoStr(character, CharacterInfoKeys.NAME));
 
-        // 异步触发图片生成
+        // 异步触发图片生成（通过代理调用，确保 @Async 和事务分离生效）
+        applicationContext.getBean(CharacterImageGenerationService.class).triggerGenerateAsync(projectId, charId);
+    }
+
+    /**
+     * 异步生成角色图片（事务外执行）
+     * confirmSingleCharacter 调用此方法，确保 @Transactional 提交后再开始长耗时生成。
+     * progress lock 由 checkAndAdvanceProjectState 在全部角色完成时释放，或在异常时主动释放。
+     */
+    @Async
+    public void triggerGenerateAsync(String projectId, String charId) {
         try {
             progressService.clearError(projectId);
-            progressService.tryLock(projectId, "asset_image");
+            if (!progressService.tryLock(projectId, "asset_image")) {
+                log.info("已有角色图片生成任务在执行，角色进入排队等待: projectId={}, charId={}", projectId, charId);
+                // 回退状态为 review，让前端展示为"待审核"，用户可稍后手动重试
+                Character waitingChar = characterRepository.findByCharId(charId);
+                if (waitingChar != null) {
+                    Map<String, Object> info = ensureCharInfo(waitingChar);
+                    info.put(CharacterInfoKeys.CHAR_STATUS, "review");
+                    characterRepository.updateById(waitingChar);
+                }
+                return;
+            }
             doGenerateAll(charId);
-        } catch (Exception e) {
-            progressService.unlock(projectId);
-            log.warn("角色确认后触发生成失败（用户可手动重试）: charId={}, error={}", charId, e.getMessage());
+        } catch (Throwable t) {
+            log.error("角色确认后触发生成失败: charId={}, error={}", charId, t.getMessage(), t);
+            try {
+                progressService.unlock(projectId);
+            } catch (Throwable unlockEx) {
+                log.error("释放进度锁失败: projectId={}", projectId, unlockEx);
+            }
         }
     }
 

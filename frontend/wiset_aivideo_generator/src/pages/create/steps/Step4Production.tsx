@@ -285,7 +285,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     return saved ? (saved === '-1' ? -1 : Number(saved)) : null;
   });
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-  const [generatingGrid, setGeneratingGrid] = useState<number | null>(null);
+
+
   /** 逐页生成中的 { "episodeId-pageIndex": true } */
   const [generatingPageKeys, setGeneratingPageKeys] = useState<Set<string>>(new Set());
   // 按 episodeId 索引的逐页生成 Set，避免渲染时 IIFE 创建新引用破坏 memo
@@ -386,6 +387,25 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId]);
 
+  // 图片提供商状态（支持 Seedream / Nanobanana 切换）
+  const [imageProvider, setImageProvider] = useState<string>(
+    (project?.projectInfo?.imageProvider as string) || 'seedream'
+  );
+  useEffect(() => {
+    if (project?.projectInfo?.imageProvider) {
+      setImageProvider(project.projectInfo.imageProvider as string);
+    }
+  }, [project?.projectInfo?.imageProvider]);
+  const handleImageProviderChange = useCallback(async (provider: string) => {
+    if (!projectId) { setImageProvider(provider); return; }
+    try {
+      await updateProject(projectId, { imageProvider: provider } as any);
+      setImageProvider(provider);
+    } catch (err) {
+      console.error('更新图片提供商失败:', err);
+    }
+  }, [projectId]);
+
   // Video model toggle (pro/mix/q3/turbo), only for Vidu first-frame mode
   const [videoModel, setVideoModel] = useState<'pro' | 'mix' | 'q3' | 'turbo'>(() =>
     (localStorage.getItem('video_model') as 'pro' | 'mix' | 'q3' | 'turbo') || 'turbo'
@@ -409,13 +429,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
   const generateVideoAbortRef = useRef<AbortController | null>(null);
   // 滚动位置恢复：防止 chapters 更新时列表跳回顶部
   const tabContentScrollRef = useRef<number>(0);
-  // 九宫格轮询定时器引用（用于 unmount 时清理）
-  const gridPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       generateVideoAbortRef.current?.abort();
-      if (gridPollTimerRef.current) clearTimeout(gridPollTimerRef.current);
     };
   }, []);
 
@@ -536,6 +553,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
             gridPrompt: ep.episodeInfo?.gridPrompt || '',
             gridPrompts: ep.episodeInfo?.gridPrompts || [],
             gridConfigs: ep.episodeInfo?.gridConfigs,
+            gridPageStatuses: ep.episodeInfo?.gridPageStatuses || [],
+            gridPageErrors: ep.episodeInfo?.gridPageErrors || [],
             characterReferences: ep.episodeInfo?.characterReferences,
             panelApproved: ep.episodeInfo?.panelApproved ?? false,
             isNewFlow: !!ep.episodeInfo?.gridStatus,
@@ -918,6 +937,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                           gridPrompt: updatedEp.episodeInfo?.gridPrompt || '',
                           gridPrompts: updatedEp.episodeInfo?.gridPrompts || [],
                           characterReferences: updatedEp.episodeInfo?.characterReferences,
+                          gridPageStatuses: updatedEp.episodeInfo?.gridPageStatuses || ep.gridPageStatuses || [],
+                          gridPageErrors: updatedEp.episodeInfo?.gridPageErrors || ep.gridPageErrors || [],
                           episodeInfo: updatedEp.episodeInfo,
                         }
                       : ep
@@ -1022,42 +1043,132 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     }
   }, [projectId, loadEpisodes, approvingEpisodeId]);
 
-  // Generate grid per episode
-  const handleGenerateGrid = useCallback(async (episodeId: number, fullPrompt?: string, gridPrompts?: string[]) => {
-    if (!projectId || generatingGrid) return;
-    // 清理上一次未完成的轮询
-    if (gridPollTimerRef.current) {
-      clearTimeout(gridPollTimerRef.current);
-      gridPollTimerRef.current = null;
-    }
-    setGeneratingGrid(episodeId);
+  // Generate grid per episode: only generate pending/failed pages, skip already generated
+  // 超时安全清理：只移除已到达终态（generated/failed）的 key，不碰仍在进行中的
+  const clearTerminalKeys = useCallback(async (pageKeys: string[], pageIndices: number[]) => {
     try {
-      await regenerateEpisodeGrid(projectId, episodeId, fullPrompt, gridPrompts);
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || '生成九宫格失败');
-      setGeneratingGrid(null);
-      return;
-    }
-    // 轮询等待九宫格生成完成（SSE 可能断连）
-    const pollGrid = async () => {
-      for (let i = 0; i < 60; i++) {
-        await new Promise(r => setTimeout(r, 5000));
-        const res = await getEpisodes(projectId);
-        const ep = (res.data?.items || []).find((e: any) => e.id === episodeId);
-        if (!ep) continue;
-        const status = ep.episodeInfo?.gridStatus;
-        if (status === 'generated' || status === 'approved' || status === 'failed' || status === 'rejected') {
-          setGeneratingGrid(null);
-          loadEpisodes();
-          return;
+      const res = await getEpisodes(projectId!);
+      for (const ep of (res.data?.items || [])) {
+        const ps: string[] = ep.episodeInfo?.gridPageStatuses || [];
+        const terminalKeys = pageKeys.filter((_, i) => {
+          const pi = pageIndices[i];
+          return ps[pi] === 'generated' || ps[pi] === 'failed';
+        });
+        if (terminalKeys.length > 0) {
+          setGeneratingPageKeys(prev => { const n = new Set(prev); terminalKeys.forEach(k => n.delete(k)); return n; });
         }
       }
-      // 超时后也清除生成状态并刷新
-      setGeneratingGrid(null);
-      loadEpisodes();
+    } catch {}
+    loadEpisodes();
+  }, [projectId, loadEpisodes]);
+
+  const handleGenerateGrid = useCallback(async (episodeId: number, fullPrompt?: string, gridPrompts?: string[]) => {
+    if (!projectId) return;
+
+    // 1. 获取当前 episode 的 gridPageStatuses 来决定哪些页需要生成
+    const targetEp = chapters.flatMap(c => c.episodes).find(e => e.episodeId === episodeId);
+    const currentPageStatuses = targetEp?.gridPageStatuses || [];
+
+    // 如果完全没有状态数据（首次生成），走 reset 流程
+    const hasAnyGenerated = currentPageStatuses.some(s => s === 'generated');
+    if (!hasAnyGenerated && currentPageStatuses.length === 0) {
+      // 首次生成：调 reset 端点初始化，然后逐页生成
+      let totalPages: number;
+      try {
+        const res = await regenerateEpisodeGrid(projectId, episodeId, fullPrompt, gridPrompts);
+        totalPages = res.data?.data ?? 1;
+      } catch (err: any) {
+        alert(err?.response?.data?.message || err?.message || '重置九宫格失败');
+        return;
+      }
+      const pageKeys: string[] = [];
+      for (let i = 0; i < totalPages; i++) pageKeys.push(`${episodeId}-${i}`);
+      setGeneratingPageKeys(prev => { const n = new Set(prev); pageKeys.forEach(k => n.add(k)); return n; });
+
+      const MAX_CONCURRENT = 2;
+      let nextIdx = 0;
+      let activeCount = 0;
+      const tryLaunchNext = () => {
+        while (activeCount < MAX_CONCURRENT && nextIdx < totalPages) {
+          const idx = nextIdx++;
+          activeCount++;
+          regenerateEpisodeGridPage(projectId, episodeId, idx, gridPrompts?.[idx])
+            .catch(() => {})
+            .finally(() => { activeCount--; tryLaunchNext(); if (nextIdx >= totalPages && activeCount === 0) void pollAllDone(totalPages, pageKeys); });
+        }
+      };
+      tryLaunchNext();
+
+      const pollAllDone = async (tp: number, pk: string[]) => {
+        for (let i = 0; i < 72; i++) {
+          await new Promise(r => setTimeout(r, 5000));
+          try {
+            const res = await getEpisodes(projectId);
+            const ep = (res.data?.items || []).find((e: any) => e.id === episodeId);
+            if (!ep) continue;
+            const ps: string[] = ep.episodeInfo?.gridPageStatuses || [];
+            if (ps.length >= tp && ps.slice(0, tp).every((s: string) => s === 'generated' || s === 'failed')) {
+              setGeneratingPageKeys(prev => { const n = new Set(prev); pk.forEach(k => n.delete(k)); return n; });
+              loadEpisodes();
+              return;
+            }
+          } catch {}
+        }
+        // 超时：只清理已到达终态的 key，不清用户后续手动触发的
+        clearTerminalKeys(pk, Array.from({ length: tp }, (_, i) => i));
+      };
+      return;
+    }
+
+    // 2. 已有部分页完成：只生成 pending/failed 的页
+    const pagesToGenerate: number[] = [];
+    for (let i = 0; i < currentPageStatuses.length; i++) {
+      if (currentPageStatuses[i] !== 'generated') {
+        pagesToGenerate.push(i);
+      }
+    }
+    if (pagesToGenerate.length === 0) return; // 全部已完成
+
+    const pageKeys = pagesToGenerate.map(i => `${episodeId}-${i}`);
+    setGeneratingPageKeys(prev => { const n = new Set(prev); pageKeys.forEach(k => n.add(k)); return n; });
+
+    const MAX_CONCURRENT = 2;
+    let nextIdx = 0;
+    let activeCount = 0;
+    const tryLaunchNext = () => {
+      while (activeCount < MAX_CONCURRENT && nextIdx < pagesToGenerate.length) {
+        const idx = pagesToGenerate[nextIdx++];
+        activeCount++;
+        regenerateEpisodeGridPage(projectId, episodeId, idx, gridPrompts?.[idx])
+          .catch(() => {})
+          .finally(() => { activeCount--; tryLaunchNext(); if (nextIdx >= pagesToGenerate.length && activeCount === 0) void pollRemaining(pageKeys); });
+      }
     };
-    void pollGrid();
-  }, [projectId, generatingGrid, loadEpisodes]);
+    tryLaunchNext();
+
+    const pollRemaining = async (pk: string[]) => {
+      for (let i = 0; i < 72; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          const res = await getEpisodes(projectId);
+          const ep = (res.data?.items || []).find((e: any) => e.id === episodeId);
+          if (!ep) continue;
+          const ps: string[] = ep.episodeInfo?.gridPageStatuses || [];
+          const allTerminal = pagesToGenerate.every(pi => {
+            const s = ps[pi];
+            return s === 'generated' || s === 'failed';
+          });
+          if (allTerminal) {
+            setGeneratingPageKeys(prev => { const n = new Set(prev); pk.forEach(k => n.delete(k)); return n; });
+            loadEpisodes();
+            return;
+          }
+        } catch {}
+      }
+      // 超时：只清理已到达终态的 key
+      clearTerminalKeys(pk, pagesToGenerate);
+    };
+  }, [projectId, chapters, loadEpisodes]);
 
   // Per-page grid generation
   const pagePollCancelledRef = useRef<Set<string>>(new Set());
@@ -1083,19 +1194,29 @@ export default function Step4Production({ project, onNextStep }: Step4Production
     const pollPage = async () => {
       for (let i = 0; i < 60; i++) {
         await new Promise(r => setTimeout(r, 5000));
-        if (pagePollCancelledRef.current.has(myGenVersion)) return; // cancelled
+        if (pagePollCancelledRef.current.has(myGenVersion)) return;
         const res = await getEpisodes(projectId);
         if (pagePollCancelledRef.current.has(myGenVersion)) return;
         const ep = (res.data?.items || []).find((e: any) => e.id === episodeId);
         if (!ep) continue;
-        // 如果后端返回了 genVersion，检查版本是否匹配
-        const pageVersion = ep.episodeInfo?.['gridGenPageVersion_' + pageIndex];
-        if (genVersion && pageVersion !== genVersion) continue; // 图片尚未更新
-        const gridImages = ep.episodeInfo?.gridImages;
-        if (gridImages && gridImages[pageIndex]) {
+        // 优先检查 per-page 状态（终态立即停止）
+        const pageStatuses: string[] = ep.episodeInfo?.gridPageStatuses || [];
+        const pageStatus = pageStatuses[pageIndex];
+        if (pageStatus === 'generated' || pageStatus === 'failed') {
           setGeneratingPageKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
           loadEpisodes();
           return;
+        }
+        // 兼容旧数据：无 gridPageStatuses 时回退检查 gridImages
+        if (!pageStatuses.length) {
+          const pageVersion = ep.episodeInfo?.['gridGenPageVersion_' + pageIndex];
+          if (genVersion && pageVersion !== genVersion) continue;
+          const gridImages = ep.episodeInfo?.gridImages;
+          if (gridImages && gridImages[pageIndex]) {
+            setGeneratingPageKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
+            loadEpisodes();
+            return;
+          }
         }
       }
       setGeneratingPageKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
@@ -1688,6 +1809,20 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         <div className={styles.titleSection}>
           <h1 className={styles.pageTitle}>分镜生产</h1>
         </div>
+        {/* 图片提供商选择 */}
+        <div className={styles.headerImageProviderSelector}>
+          <span className={styles.headerVideoModelLabel}>图片：</span>
+          <div className={styles.headerVideoProviderTabs}>
+            <button
+              className={`${styles.headerVideoProviderTab} ${imageProvider === 'seedream' ? styles.headerVideoProviderTabActive : ''}`}
+              onClick={() => handleImageProviderChange('seedream')}
+            >Seedream</button>
+            <button
+              className={`${styles.headerVideoProviderTab} ${imageProvider === 'nanobanana' ? styles.headerVideoProviderTabActive : ''}`}
+              onClick={() => handleImageProviderChange('nanobanana')}
+            >Nanobanana</button>
+          </div>
+        </div>
         {/* 视频提供商 + 模型选择器 */}
         <div className={styles.headerVideoModelSelector}>
           {/* 视频提供商选择（参考图视频仅支持 Vidu，隐藏 Grok） */}
@@ -2002,7 +2137,6 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                         key={ep.episodeId}
                         projectId={projectId}
                         episode={ep}
-                        generatingGrid={generatingGrid}
                         generatingPages={generatingPagesByEpisode.get(ep.episodeId) || new Set()}
                         approvingEpisodeId={approvingEpisodeId}
                         rejectingEpisodeId={rejectingEpisodeId}
@@ -2013,6 +2147,8 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                         onRejectToScript={handleRejectToScript}
                         onOpenLightbox={setLightboxUrl}
                         buildGridPromptText={buildGridPromptText}
+                        gridPageStatuses={ep.gridPageStatuses}
+                        gridPageErrors={ep.gridPageErrors}
                       />
                     ))}
                   </div>

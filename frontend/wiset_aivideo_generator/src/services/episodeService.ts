@@ -106,11 +106,11 @@ export async function regenerateEpisodeGrid(
   fullPrompt?: string,
   /** 多页提示词数组（每页一个 prompt） */
   gridPrompts?: string[],
-): Promise<ApiResponse<void>> {
+): Promise<ApiResponse<number>> {
   const body: Record<string, any> = {};
   if (fullPrompt !== undefined) body.fullPrompt = fullPrompt;
   if (gridPrompts !== undefined) body.gridPrompts = gridPrompts;
-  return post<ApiResponse<void>>(
+  return post<ApiResponse<number>>(
     `/api/projects/${projectId}/episodes/${episodeId}/grid/regenerate`,
     Object.keys(body).length > 0 ? body : undefined,
   );
@@ -122,10 +122,10 @@ export async function regenerateEpisodeGridPage(
   episodeId: number,
   pageIndex: number,
   prompt?: string,
-): Promise<ApiResponse<void>> {
+): Promise<ApiResponse<{ genVersion: string }>> {
   const body: Record<string, any> = {};
   if (prompt !== undefined) body.prompt = prompt;
-  return post<ApiResponse<void>>(
+  return post<ApiResponse<{ genVersion: string }>>(
     `/api/projects/${projectId}/episodes/${episodeId}/grid/regenerate/page/${pageIndex}`,
     Object.keys(body).length > 0 ? body : undefined,
   );

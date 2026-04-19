@@ -16,9 +16,9 @@ public class OkHttpConfig {
     @Bean
     public OkHttpClient okHttpClient() {
         return new OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(300, TimeUnit.SECONDS)  // DeepSeek 思考模式响应较慢，需要 5 分钟
-                .writeTimeout(60, TimeUnit.SECONDS)
+                .connectTimeout(120, TimeUnit.SECONDS)  // Nanobanana 等上游转发可能超过 30s，避免客户端先断开
+                .readTimeout(600, TimeUnit.SECONDS)  // 10 分钟，兼容 DeepSeek 思考模式 + 长耗时生图
+                .writeTimeout(120, TimeUnit.SECONDS)  // 大 prompt + 多参考图上传
                 .build();
     }
 }

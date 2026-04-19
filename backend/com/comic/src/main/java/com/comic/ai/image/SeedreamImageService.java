@@ -4,7 +4,6 @@ import com.comic.config.ArkProperties;
 import com.comic.service.oss.OssService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,6 @@ import java.util.concurrent.Semaphore;
  */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class SeedreamImageService implements ImageGenerationService {
 
     private final ArkProperties arkProperties;
@@ -29,8 +27,18 @@ public class SeedreamImageService implements ImageGenerationService {
     private final ObjectMapper objectMapper;
     private final OssService ossService;
 
-    // 并发控制
-    private final Semaphore semaphore = new Semaphore(2);
+    // 并发控制（通过配置文件 comic.ark.seedream-max-concurrent 调整）
+    private final Semaphore semaphore;
+
+    public SeedreamImageService(ArkProperties arkProperties, OkHttpClient httpClient,
+                                ObjectMapper objectMapper, OssService ossService) {
+        this.arkProperties = arkProperties;
+        this.httpClient = httpClient;
+        this.objectMapper = objectMapper;
+        this.ossService = ossService;
+        this.semaphore = new Semaphore(arkProperties.getSeedreamMaxConcurrent());
+        log.info("Seedream 并发控制初始化: maxConcurrent={}", arkProperties.getSeedreamMaxConcurrent());
+    }
 
     @Override
     public String generate(String prompt, int width, int height, String style) {
