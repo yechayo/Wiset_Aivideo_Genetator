@@ -948,7 +948,7 @@ public class PanelProductionService {
         String speaker = getStr(shot, "speaker");
         if (dialogue != null && !"无".equals(dialogue) && !dialogue.isEmpty()) {
             String tone = getStr(shot, "dialogueTone");
-            sb.append(". ");
+            sb.append(". 对白语言为中文. ");
             if (speaker != null && !"无".equals(speaker) && !speaker.isEmpty()) {
                 sb.append(speaker);
                 if (tone != null && !"无".equals(tone) && !tone.isEmpty()) {
