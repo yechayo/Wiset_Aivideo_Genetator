@@ -214,10 +214,17 @@ public class CharacterExtractService {
             String cleanJson = extractJsonFromResponse(jsonResult);
             log.info("清理后的JSON: {}", cleanJson);
 
-            List<Map<String, Object>> dataList = objectMapper.readValue(
-                cleanJson,
-                new TypeReference<List<Map<String, Object>>>() {}
-            );
+            List<Map<String, Object>> dataList;
+            try {
+                dataList = objectMapper.readValue(
+                    cleanJson,
+                    new TypeReference<List<Map<String, Object>>>() {}
+                );
+            } catch (Exception parseEx) {
+                // LLM 输出畸形 JSON（如缺少 }，{ 连接），尝试修复
+                log.warn("首次解析失败，尝试修复畸形JSON: {}", parseEx.getMessage());
+                dataList = repairAndParseJson(cleanJson);
+            }
 
             List<CharacterDraftModel> result = new ArrayList<>();
             for (Map<String, Object> data : dataList) {
@@ -240,6 +247,70 @@ public class CharacterExtractService {
             log.error("解析角色数据失败, AI返回原始内容: {}", jsonResult, e);
             throw new BusinessException("解析角色数据失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 修复 LLM 输出的畸形 JSON 数组。
+     * 典型问题：相邻对象之间缺少 "}, {" 分隔，如 "...\"voice\":\"...\", \"name\":\"影鸦\"..."
+     * 策略：用正则按 "name" 字段分割，逐个提取角色对象。
+     */
+    private List<Map<String, Object>> repairAndParseJson(String json) {
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        // 去掉外层 [ ]
+        String inner = json.trim();
+        if (inner.startsWith("[")) inner = inner.substring(1);
+        if (inner.endsWith("]")) inner = inner.substring(0, inner.length() - 1);
+
+        // 按 "name" key 的出现位置分割为各个角色片段
+        java.util.regex.Pattern namePattern = java.util.regex.Pattern.compile("\"name\"\\s*:");
+        java.util.regex.Matcher m = namePattern.matcher(inner);
+
+        List<Integer> nameStarts = new ArrayList<>();
+        while (m.find()) {
+            // 回退到这个对象的起始 { 或 ,
+            int pos = m.start();
+            // 向前找到最近的 { 或 ,（但跳过字符串内部）
+            int objStart = -1;
+            for (int i = pos - 1; i >= 0; i--) {
+                char c = inner.charAt(i);
+                if (c == '{' || c == ',') {
+                    objStart = (c == '{') ? i : i + 1;
+                    break;
+                }
+                if (!Character.isWhitespace(c)) break;
+            }
+            if (objStart < 0) objStart = pos;
+            nameStarts.add(objStart);
+        }
+
+        for (int i = 0; i < nameStarts.size(); i++) {
+            int start = nameStarts.get(i);
+            // 下一个 name 的起始位置（去掉尾部逗号）
+            int end = (i + 1 < nameStarts.size()) ? nameStarts.get(i + 1) : inner.length();
+
+            String segment = inner.substring(start, end).trim();
+            // 去掉尾部逗号
+            if (segment.endsWith(",")) segment = segment.substring(0, segment.length() - 1);
+
+            // 确保是完整的 JSON 对象
+            if (!segment.startsWith("{")) segment = "{" + segment;
+            if (!segment.endsWith("}")) segment = segment + "}";
+
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> obj = objectMapper.readValue(segment, Map.class);
+                result.add(obj);
+            } catch (Exception e) {
+                log.warn("无法解析角色片段 {}: {}", i, e.getMessage());
+            }
+        }
+
+        if (result.isEmpty()) {
+            throw new BusinessException("修复JSON后仍无法解析任何角色数据");
+        }
+        log.info("修复JSON成功，解析到 {} 个角色", result.size());
+        return result;
     }
 
     private String extractJsonFromResponse(String response) {
