@@ -205,8 +205,40 @@ comic:
 - 多镜头模式：每个镜头最短 1 秒，所有镜头时长之和等于总时长
 - `PanelProductionService` 中现有限制为 max 10s，kling provider 下需放宽到 15s
 
-## 待确认事项
+## 已确认事项
 
-- [ ] 可灵 JWT token 生成方式（需 access_key + secret_key 签名，还是直接用 API Key？）
-- [ ] 可灵 v3 pro 模式是否需要额外配置
-- [ ] 前端是否需要增加 kling 相关的 UI（如模型选择、参数配置）
+- std/pro 通过 `mode` 参数控制，作为项目级或请求级配置
+- 前端需要增加模型选择 UI（kling-v3 std/pro 等选项）
+- 前端有多个位置需要单独适配
+
+## 前端适配清单
+
+### Step1Content.tsx（项目创建页）
+
+| 位置 | 改动 |
+|------|------|
+| `videoProviderOptions` 数组 | 添加 `{ value: 'kling', label: 'Kling V3' }` |
+| 模型选项数组 | 新增 `klingModelOptions`：`kling-v3` std/pro |
+| 视频模式选择 | Kling 暂仅支持首帧模式，不显示模式切换 |
+| 模型选择 UI | provider=kling 时显示 kling 模型选项 |
+
+### Step4Production.tsx（生产页）
+
+| 位置 | 改动 |
+|------|------|
+| provider 判断 | 新增 `const isKling = videoProvider.toLowerCase() === 'kling'` |
+| 提供商 Tab | 添加 Kling 按钮 |
+| 模型标签 | provider=kling 时显示 Std/Pro 两个标签 |
+| videoModel 存储 | Kling 用完整标识 `kling-v3-std` / `kling-v3-pro` |
+| 错峰模式 | Kling 不支持错峰，隐藏错峰开关 |
+| 时长限制 | Kling v3 最大 15s，UI 上放宽提示 |
+
+### VideoSegmentRow.tsx（视频片段行）
+
+| 位置 | 改动 |
+|------|------|
+| 模型标签显示 | 兼容 Kling 模型名显示（`kling-v3-std` → "Kling V3 Std"） |
+
+### episodeService.ts
+
+不需要修改 — API 参数已通用（`videoModel` 字段透传）
