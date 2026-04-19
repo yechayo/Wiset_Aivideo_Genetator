@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.function.Consumer;
 
 @Service
 @Slf4j
@@ -127,6 +128,11 @@ public class DeepSeekTextService implements TextGenerationService {
 
     @Override
     public String generateStream(String systemPrompt, String userPrompt) {
+        return generateStream(systemPrompt, userPrompt, null);
+    }
+
+    @Override
+    public String generateStream(String systemPrompt, String userPrompt, Consumer<String> chunkConsumer) {
         try {
             semaphore.acquire();
             log.info("DeepSeek stream generation: permits={}, queue={}",
@@ -174,7 +180,15 @@ public class DeepSeekTextService implements TextGenerationService {
                                         reasoningBuilder.append(delta.get("reasoning_content").asText());
                                     }
                                     if (delta.has("content") && !delta.get("content").isNull()) {
-                                        contentBuilder.append(delta.get("content").asText());
+                                        String contentChunk = delta.get("content").asText();
+                                        contentBuilder.append(contentChunk);
+                                        if (chunkConsumer != null) {
+                                            try {
+                                                chunkConsumer.accept(contentChunk);
+                                            } catch (Exception ce) {
+                                                log.warn("chunkConsumer error: {}", ce.getMessage());
+                                            }
+                                        }
                                     }
                                     if (choices.get(0).hasNonNull("finish_reason")) {
                                         finishReason = choices.get(0).get("finish_reason").asText();

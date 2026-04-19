@@ -78,6 +78,29 @@ public class StateChangeEventPublisher {
 
     // ===== 细粒度事件（Step5 SSE 使用） =====
 
+    /**
+     * 推送剧本生成的文本 chunk（流式实时预览）
+     */
+    public void publishScriptChunk(String projectId, int episodeNum, String chunk) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeNum", episodeNum);
+        payload.put("chunk", chunk);
+        publishToRedis(projectId, "episode:script_chunk", payload);
+    }
+
+    /**
+     * 推送单集生成完成事件（逐集模式）
+     */
+    public void publishSingleEpisodeDone(String projectId, int episodeNum, String title,
+                                          int currentInChapter, int totalInChapter) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("episodeNum", episodeNum);
+        payload.put("title", title);
+        payload.put("currentInChapter", currentInChapter);
+        payload.put("totalInChapter", totalInChapter);
+        publishToRedis(projectId, "episode:single_done", payload);
+    }
+
     public void publishEpisodeScriptDone(String projectId, int episodeNum, String title, int totalEpisodes, int completedEpisodes, String stage) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("episodeNum", episodeNum);

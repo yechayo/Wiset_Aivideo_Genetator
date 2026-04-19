@@ -66,6 +66,11 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
   // 防止重复自动触发大纲生成
   const autoTriggerRef = useRef(false);
 
+  // 流式文本预览
+  const [streamingText, setStreamingText] = useState('');
+  const [streamingEpisodeNum, setStreamingEpisodeNum] = useState<number | null>(null);
+  const streamingRef = useRef<HTMLPreElement>(null);
+
   // Store
   const getProjectId = useProjectStore((state) => state.getProjectId);
   const { statusInfo, syncStatus } = useCreateStore();
@@ -84,6 +89,23 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       // 某集生成完成，刷新 script 数据
       refreshScript();
       // 同时同步状态，让 phase 能正确推导（显示/隐藏下一步按钮）
+      const pid = projectIdRef.current;
+      if (pid) syncStatus(pid);
+    },
+    onEpisodeScriptChunk(data) {
+      // 流式文本 chunk：追加到预览
+      if (data.episodeNum !== streamingEpisodeNum) {
+        setStreamingEpisodeNum(data.episodeNum);
+        setStreamingText(data.chunk);
+      } else {
+        setStreamingText(prev => prev + data.chunk);
+      }
+    },
+    onSingleEpisodeDone(data) {
+      // 单集完成：清空流式预览，刷新数据
+      setStreamingText('');
+      setStreamingEpisodeNum(null);
+      refreshScript();
       const pid = projectIdRef.current;
       if (pid) syncStatus(pid);
     },
@@ -446,6 +468,25 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
     }
   }, [scriptData?.pendingChapters?.length, isBatchGenerating]);
 
+  /** 将流式文本中的 [爽点:xxx] 渲染为下标 */
+  const renderStreamingText = (text: string) => {
+    const parts = text.split(/(\[爽点:[^\]]*\])/g);
+    return parts.map((part, i) => {
+      const match = part.match(/^\[爽点:([^\]]*)\]$/);
+      if (match) {
+        return <sub key={i} className={styles.shuangdianMark}>{match[1]}</sub>;
+      }
+      return part;
+    });
+  };
+
+  // 流式文本自动滚动到底部
+  useEffect(() => {
+    if (streamingText && streamingRef.current) {
+      streamingRef.current.scrollTop = streamingRef.current.scrollHeight;
+    }
+  }, [streamingText]);
+
   // ======== 渲染 ========
   return (
     <div className={styles.content}>
@@ -569,6 +610,20 @@ const Step2page = ({ project, onComplete }: Step2pageProps) => {
       {/* Phase 3: 剧情生成 */}
       {(phase === 'episode_generating' || phase === 'episode_review') && (
         <>
+          {/* 流式文本预览 */}
+          {streamingText && (
+            <div className={styles.streamingPreview}>
+              <div className={styles.streamingHeader}>
+                <span className={styles.spinner}></span>
+                <span>正在生成第 {streamingEpisodeNum} 集...</span>
+              </div>
+              <div
+                ref={streamingRef}
+                className={styles.streamingContent}
+              >{renderStreamingText(streamingText)}</div>
+            </div>
+          )}
+
           {isLoading && !scriptData && (
             <div className={styles.loadingState}>
               <div className={styles.spinner}></div>

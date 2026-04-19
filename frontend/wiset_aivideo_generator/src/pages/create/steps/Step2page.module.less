@@ -235,3 +235,55 @@
 .backButton {
   // deprecated
 }
+
+// 流式文本预览
+.streamingPreview {
+  flex-shrink: 0;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(114, 183, 255, 0.2);
+  border-radius: 0.375rem;
+  background: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.streamingHeader {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(114, 183, 255, 0.08);
+  font-size: 0.75rem;
+  color: var(--color-accent);
+  font-weight: 500;
+
+  .spinner {
+    width: 0.875rem;
+    height: 0.875rem;
+    border-width: 1.5px;
+  }
+}
+
+.streamingContent {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: rgba(247, 249, 252, 0.7);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.shuangdianMark {
+  display: block;
+  font-size: 0.55em;
+  color: rgba(114, 183, 255, 0.4);
+  line-height: 1;
+  padding-left: 1em;
+}

@@ -162,6 +162,77 @@ public class ScriptPromptBuilder {
         return sb.toString();
     }
 
+    /**
+     * 单集生成的 system prompt：只输出 1 集 JSON 对象（非数组）
+     */
+    public String buildSingleEpisodeSystemPrompt(String scriptStyle) {
+        String base = "你是一名专业的剧集剧本编剧。\n"
+                + "根据全局大纲和章节信息，生成其中一集的剧本。\n"
+                + "【硬约束】仅输出 1 集，输出一个 JSON 对象（不要数组），包含字段：title、content、characters、keyItems、visualStyleNote、continuityNote。\n";
+
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
+            base += "【内容量与时长匹配（爽剧模式 - 最高优先级）】\n"
+                    + "- 每秒需要约 12-16 个字的剧本内容（含场景描述、台词、动作描写）\n"
+                    + "- 爽点节拍数量是硬性要求，必须达标：\n"
+                    + "  60秒 → content 约 720-960 字，必须包含至少 20 个 [爽点:XX] 标记\n"
+                    + "  90秒 → content 约 1080-1440 字，必须包含至少 30 个 [爽点:XX] 标记\n"
+                    + "  120秒 → content 约 1440-1920 字，必须包含至少 40 个 [爽点:XX] 标记\n"
+                    + "  180秒 → content 约 2160-2880 字，必须包含至少 60 个 [爽点:XX] 标记\n"
+                    + "  300秒 → content 约 3600-4800 字，必须包含至少 100 个 [爽点:XX] 标记\n"
+                    + "- 爽点标记格式严格为 [爽点:描述]，不得省略方括号，不得用其他格式代替\n"
+                    + "- 如果字数或爽点数量不足，你的输出将被退回重做\n"
+                    + "【大纲与剧本的关系（关键）】\n"
+                    + "- 大纲中每集只有约 8-10 个高level爽点节拍，这只是骨架\n"
+                    + "- 你必须将每个大纲爽点展开为 4-5 个具体子爽点\n"
+                    + "【爽剧短句格式约束】\n"
+                    + "- 全文使用短句，每句不超过 20 个字\n"
+                    + "- 台词简短有力，每句台词不超过 15 个字\n"
+                    + "- 书写格式：(场景描述) 角色(情绪):台词 [爽点:XX]\n";
+        } else {
+            base += "【内容量与时长匹配（最高优先级）】\n"
+                    + "- 每秒需要约 5-7 个字的剧本内容（含对话、动作描写、场景描述）\n"
+                    + "- 不要概括压缩剧情，要展开每个场景的具体对话、角色动作、情绪变化和视觉细节\n"
+                    + "- 使用「（场景描述）」「角色（情绪）：台词」「（动作描写）」格式\n";
+        }
+
+        base += "【叙事节奏原则】\n"
+                + "- 有叙事弧线：铺垫→冲突升级→高潮→收束\n"
+                + "- 结尾设置钩子（悬念/反转/情绪留白），驱动观众看下一集\n";
+
+        return base;
+    }
+
+    /**
+     * 单集生成的 user prompt
+     */
+    public String buildSingleEpisodeUserPrompt(String outline, String chapter, String globalCharacters,
+                                                String globalItems, String previousSummary,
+                                                int currentEpInChapter, int totalEpsInChapter,
+                                                int duration, String modificationSuggestion, String scriptStyle) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("完整大纲：\n").append(outline).append("\n\n");
+        sb.append("目标章节：").append(chapter).append("\n");
+        sb.append("这是本章第 ").append(currentEpInChapter).append(" 集（共 ").append(totalEpsInChapter).append(" 集）。\n");
+        sb.append("【硬性要求】只输出 1 集 JSON 对象，不要输出数组。\n");
+        int charsPerSec = ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle) ? 12 : 5;
+        int charsPerSecMax = ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle) ? 16 : 7;
+        int minWords = duration * charsPerSec;
+        int maxWords = duration * charsPerSecMax;
+        sb.append("【时长硬性要求】").append(duration).append(" 秒，content 字段必须 ").append(minWords).append("-").append(maxWords).append(" 字。\n");
+        if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
+            int minBeats = duration / 3;
+            sb.append("【爽点数量硬性要求】content 中必须包含至少 ").append(minBeats).append(" 个 [爽点:XX] 标记。\n");
+        }
+        sb.append("\n");
+        if (modificationSuggestion != null && !modificationSuggestion.isEmpty()) {
+            sb.append("修改建议：").append(modificationSuggestion).append("\n\n");
+        }
+        sb.append("全局角色：\n").append(globalCharacters).append("\n\n");
+        sb.append("全局物品：\n").append(globalItems).append("\n\n");
+        sb.append("前一集剧情摘要：\n").append(previousSummary).append("\n");
+        return sb.toString();
+    }
+
     public ScriptParams calculateScriptParameters(int totalEpisodes) {
         if (totalEpisodes == 1) {
             int minCharacters = (int) Math.round(10 + (totalEpisodes * 0.15));

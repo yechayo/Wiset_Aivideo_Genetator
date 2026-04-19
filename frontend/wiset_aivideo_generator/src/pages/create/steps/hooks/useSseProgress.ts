@@ -18,6 +18,10 @@ interface SseProgressCallbacks {
   onStatusChange: (data: { from?: string; to?: string }) => void;
   /** SSE 重连后触发全量数据刷新 */
   onReconnect?: () => void;
+  /** 流式文本 chunk（剧本生成实时预览） */
+  onEpisodeScriptChunk?: (data: { episodeNum: number; chunk: string }) => void;
+  /** 单集生成完成（逐集模式） */
+  onSingleEpisodeDone?: (data: { episodeNum: number; title: string; currentInChapter: number; totalInChapter: number }) => void;
 }
 
 /**
@@ -64,6 +68,10 @@ export function useSseProgress(
 
         if (eventType === 'episode:script_done') {
           cbRef.current.onEpisodeScriptDone(data);
+        } else if (eventType === 'episode:script_chunk') {
+          cbRef.current.onEpisodeScriptChunk?.(data);
+        } else if (eventType === 'episode:single_done') {
+          cbRef.current.onSingleEpisodeDone?.(data);
         } else if (eventType === 'episode:storyboard_done') {
           cbRef.current.onEpisodeStoryboardDone(data);
         } else if (eventType === 'episode:panel_done') {

@@ -273,51 +273,63 @@ public class ScriptService {
             String globalCharacters = extractCharactersFromOutline(outline);
             String globalItems = extractItemsFromOutline(outline);
 
-            // 获取前序剧集摘要（保持连贯性）
-            String previousSummary = buildPreviousEpisodesSummary(projectId);
-
             Integer episodeDuration = getProjectInfoInt(project, ProjectInfoKeys.EPISODE_DURATION);
+            int duration = episodeDuration != null ? episodeDuration : 60;
 
             boolean comicMode = ProjectProductionMode.isComicCommentary(project);
             String scriptStyle = (String) project.getProjectInfo().getOrDefault(ProjectInfoKeys.SCRIPT_STYLE, "standard");
-            String systemPrompt = comicMode
-                    ? comicCommentaryScriptPromptBuilder.buildScriptEpisodeSystemPrompt()
-                    : scriptPromptBuilder.buildScriptEpisodeSystemPrompt(scriptStyle);
-            String userPrompt = comicMode
-                    ? comicCommentaryScriptPromptBuilder.buildScriptEpisodeUserPrompt(
-                            outline,
-                            chapter,
-                            globalCharacters,
-                            globalItems,
-                            previousSummary,
-                            resolvedEpisodeCount,
-                            episodeDuration != null ? episodeDuration : 60,
-                            modificationSuggestion
-                    )
-                    : scriptPromptBuilder.buildScriptEpisodeUserPrompt(
-                            outline,
-                            chapter,
-                            globalCharacters,
-                            globalItems,
-                            previousSummary,
-                            resolvedEpisodeCount,
-                            episodeDuration != null ? episodeDuration : 60,
-                            modificationSuggestion,
-                            scriptStyle
-                    );
 
-            // 调用文本生成服务生成分集
-            String episodesJson = textGenerationService.generate(systemPrompt, userPrompt);
+            List<Episode> allEpisodes = new ArrayList<>();
 
-            // 解析并保存剧集
-            List<Episode> episodes = parseAndSaveEpisodes(project, episodesJson, chapter);
+            // ===== 逐集生成（解决长章节输出截断问题）=====
+            for (int epInChapter = 1; epInChapter <= resolvedEpisodeCount; epInChapter++) {
+                // 每集重新获取前序摘要（包含前面已生成的集）
+                String previousSummary = buildPreviousEpisodesSummary(projectId);
+
+                String systemPrompt;
+                String userPrompt;
+                if (comicMode) {
+                    systemPrompt = comicCommentaryScriptPromptBuilder.buildSingleEpisodeSystemPrompt();
+                    userPrompt = comicCommentaryScriptPromptBuilder.buildSingleEpisodeUserPrompt(
+                            outline, chapter, globalCharacters, globalItems, previousSummary,
+                            epInChapter, resolvedEpisodeCount, duration, modificationSuggestion);
+                } else {
+                    systemPrompt = scriptPromptBuilder.buildSingleEpisodeSystemPrompt(scriptStyle);
+                    userPrompt = scriptPromptBuilder.buildSingleEpisodeUserPrompt(
+                            outline, chapter, globalCharacters, globalItems, previousSummary,
+                            epInChapter, resolvedEpisodeCount, duration, modificationSuggestion, scriptStyle);
+                }
+
+                // 计算当前集的全局编号
+                int episodeNum = getNextEpisodeNum(projectId);
+
+                // 流式生成 + 实时推送 chunk（带节流，避免高频 Redis 发布）
+                ChunkThrottle throttle = new ChunkThrottle(
+                        batch -> eventPublisher.publishScriptChunk(projectId, episodeNum, batch)
+                );
+                String episodeJson = textGenerationService.generateStream(
+                        systemPrompt, userPrompt, throttle::accept
+                );
+                throttle.flush();
+
+                // 解析并保存单集
+                Episode episode = parseAndSaveOneEpisode(project, episodeJson, chapter, episodeNum);
+                allEpisodes.add(episode);
+
+                // 推送单集完成事件
+                String title = getEpisodeInfoStr(episode, EpisodeInfoKeys.TITLE);
+                eventPublisher.publishSingleEpisodeDone(projectId, episodeNum,
+                        title != null ? title : "", epInChapter, resolvedEpisodeCount);
+
+                log.info("逐集生成进度: {}/{}, episode={}", epInChapter, resolvedEpisodeCount, episodeNum);
+            }
 
             // 成功：释放锁 + SSE 推送完成
             progressService.unlock(projectId);
             eventPublisher.publishTaskComplete(projectId, "episode", null);
 
             log.info("分集生成完成: projectId={}, chapter={}, episodes={}",
-                    projectId, chapter, episodes.size());
+                    projectId, chapter, allEpisodes.size());
 
         } catch (Exception e) {
             // 失败：释放锁 + 设置错误 + SSE 推送失败
@@ -1014,6 +1026,46 @@ public class ScriptService {
         }
 
         return episodes;
+    }
+
+    /**
+     * 解析并保存单个剧集（逐集生成模式）
+     */
+    private Episode parseAndSaveOneEpisode(Project project, String episodeJson, String chapterTitle, int episodeNum) {
+        log.info("========== 单集生成结果 ==========");
+        log.info("ProjectId: {}", project.getProjectId());
+        log.info("Raw Content (first 500 chars):\n{}", episodeJson.substring(0, Math.min(500, episodeJson.length())));
+        log.info("========== 内容结束 ==========");
+
+        try {
+            EpisodeJsonCleaner cleaner = new EpisodeJsonCleaner(objectMapper);
+            JsonNode episodeNode = cleaner.cleanAndParse(episodeJson);
+
+            Episode episode = new Episode();
+            episode.setProjectId(project.getProjectId());
+            episode.setStatus("DRAFT");
+
+            Map<String, Object> epInfo = new HashMap<>();
+            epInfo.put(EpisodeInfoKeys.EPISODE_NUM, episodeNum);
+            epInfo.put(EpisodeInfoKeys.TITLE, EpisodeJsonCleaner.getField(episodeNode, "title", "第" + episodeNum + "集"));
+            epInfo.put(EpisodeInfoKeys.CONTENT, EpisodeJsonCleaner.getField(episodeNode, "content", ""));
+            epInfo.put(EpisodeInfoKeys.CHARACTERS, EpisodeJsonCleaner.getField(episodeNode, "characters", ""));
+            epInfo.put(EpisodeInfoKeys.KEY_ITEMS, EpisodeJsonCleaner.getField(episodeNode, "keyItems", ""));
+            epInfo.put(EpisodeInfoKeys.CONTINUITY_NOTE, EpisodeJsonCleaner.getField(episodeNode, "continuityNote", ""));
+            epInfo.put(EpisodeInfoKeys.VISUAL_STYLE_NOTE, EpisodeJsonCleaner.getField(episodeNode, "visualStyleNote", ""));
+            epInfo.put(EpisodeInfoKeys.CHAPTER_TITLE, chapterTitle);
+            epInfo.put(EpisodeInfoKeys.RETRY_COUNT, 0);
+            episode.setEpisodeInfo(epInfo);
+
+            episodeRepository.insert(episode);
+            return episode;
+
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("解析单集JSON失败", e);
+            throw new BusinessException("解析剧集内容失败: " + e.getMessage());
+        }
     }
 
     /**

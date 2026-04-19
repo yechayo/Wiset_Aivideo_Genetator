@@ -97,6 +97,42 @@ public class ComicCommentaryScriptPromptBuilder {
         return sb.toString();
     }
 
+    /** 单集生成的 system prompt（漫剧解说模式） */
+    public String buildSingleEpisodeSystemPrompt() {
+        return "你是一名「漫剧解说」分集编剧。\n"
+                + "在保持剧情连贯的前提下，根据大纲和章节信息生成其中一集的剧本。\n"
+                + "【硬约束】仅输出 1 集，输出一个 JSON 对象（不要数组），包含字段：title、content、characters、keyItems、visualStyleNote、continuityNote。\n"
+                + "【内容量与时长匹配（最高优先级）】\n"
+                + "- 每秒需要约 5-7 个字的剧本内容（含旁白解说、对话、场景描述）\n"
+                + "- 不要概括压缩剧情，要展开每个场景的具体旁白解说、对话、动作描写\n"
+                + "- 使用「（场景描述）」「角色（情绪）：台词」「旁白：解说词」格式\n"
+                + "【叙事节奏原则】\n"
+                + "- 有叙事弧线：铺垫→冲突升级→高潮→收束\n"
+                + "- 结尾设置钩子（悬念/反转/情绪留白），驱动观众看下一集\n";
+    }
+
+    /** 单集生成的 user prompt（漫剧解说模式） */
+    public String buildSingleEpisodeUserPrompt(String outline, String chapter, String globalCharacters,
+                                                String globalItems, String previousSummary,
+                                                int currentEpInChapter, int totalEpsInChapter,
+                                                int duration, String modificationSuggestion) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("完整大纲：\n").append(outline).append("\n\n");
+        sb.append("目标章节：").append(chapter).append("\n");
+        sb.append("这是本章第 ").append(currentEpInChapter).append(" 集（共 ").append(totalEpsInChapter).append(" 集）。\n");
+        sb.append("【硬性要求】只输出 1 集 JSON 对象，不要输出数组。\n");
+        int minWords = duration * 5;
+        int maxWords = duration * 7;
+        sb.append("【时长硬性要求】").append(duration).append(" 秒，content 字段必须 ").append(minWords).append("-").append(maxWords).append(" 字。\n\n");
+        if (modificationSuggestion != null && !modificationSuggestion.isEmpty()) {
+            sb.append("修改建议：").append(modificationSuggestion).append("\n\n");
+        }
+        sb.append("全局角色：\n").append(globalCharacters).append("\n\n");
+        sb.append("全局物品：\n").append(globalItems).append("\n\n");
+        sb.append("前一集剧情摘要：\n").append(previousSummary).append("\n");
+        return sb.toString();
+    }
+
     /** 与 {@link ScriptPromptBuilder#calculateScriptParameters(int)} 逻辑一致，避免跨 builder 依赖。 */
     public ScriptPromptBuilder.ScriptParams calculateScriptParameters(int totalEpisodes) {
         if (totalEpisodes == 1) {
