@@ -914,7 +914,7 @@ public class PanelProductionService {
     }
 
     /**
-     * 构建 Omni 单镜头 prompt：<<<image_N>>> + 画风 + 运镜 + 场景 + 角色声音+外貌
+     * 构建 Omni 单镜头 prompt：<<<image_N>>> + 运镜 + 场景 + 角色声音
      */
     private String buildOmniShotPrompt(Map<String, Object> shot, int shotIndex, int shotCount,
                                          List<String> charImageUrls, List<String> charNames, int totalImages,
@@ -926,10 +926,7 @@ public class PanelProductionService {
             sb.append("<<<image_").append(shotIndex + 1).append(">>> ");
         }
 
-        // 2. 画风简语
-        sb.append(styleShort).append(". ");
-
-        // 3. 运镜
+        // 2. 运镜
         String camera = getStr(shot, "cameraMovement");
         String angle = getStr(shot, "cameraAngle");
         if (camera != null || angle != null) {
@@ -941,35 +938,27 @@ public class PanelProductionService {
             sb.append(". ");
         }
 
-        // 4. 场景描述
+        // 3. 场景描述
         String desc = getStr(shot, "visualDescription");
         if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
         if (desc != null) sb.append(desc);
 
-        // 5. 出场角色声音+外貌（仅该镜头参演角色）
+        // 4. 出场角色声音（仅该镜头参演角色）
         @SuppressWarnings("unchecked")
         List<String> shotChars = (List<String>) shot.get("characters");
         if (shotChars != null) {
             for (String charName : shotChars) {
                 Map<String, String> charInfo = findCharacterInfo(characterInfos, charName);
                 if (charInfo != null) {
-                    sb.append(". ").append(charName).append(": ");
                     String voice = charInfo.get("voice");
-                    String appearance = charInfo.get("appearance");
-                    boolean hasDetail = false;
                     if (voice != null && !voice.isEmpty()) {
-                        sb.append("声音 ").append(voice);
-                        hasDetail = true;
-                    }
-                    if (appearance != null && !appearance.isEmpty()) {
-                        if (hasDetail) sb.append(", ");
-                        sb.append(appearance);
+                        sb.append(". ").append(charName).append(" 声音: ").append(voice);
                     }
                 }
             }
         }
 
-        // 6. 角色图引用
+        // 5. 角色图引用
         for (int j = 0; j < charImageUrls.size() && (shotCount + j) < totalImages; j++) {
             sb.append(", ").append(charNames.get(j))
                 .append(" <<<image_").append(shotCount + j + 1).append(">>>");
