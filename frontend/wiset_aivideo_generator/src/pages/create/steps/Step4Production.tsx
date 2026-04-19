@@ -2462,7 +2462,7 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                   <div className={styles.modalFusionWrap}>
                     <span className={styles.modalFusionLabel}>Kling Omni 多镜头模式</span>
                     <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
-                      每个镜头独立提示词，<<<image_N>>> 引用对应参考图
+                      每个镜头独立提示词，{'<<<image_N>>>'} 引用对应参考图
                     </span>
                   </div>
                 )}
