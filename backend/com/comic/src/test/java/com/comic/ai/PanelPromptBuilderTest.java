@@ -9,8 +9,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PanelPromptBuilderTest {
 
@@ -26,8 +27,8 @@ class PanelPromptBuilderTest {
 
         String prompt = builder.buildGridPrompt("ANIME", Arrays.asList(shot), Collections.emptyList());
 
-        assertTrue(prompt.contains("虚化边框"), "回忆镜头未要求虚化边框时间态标识");
-        assertTrue(prompt.contains("回忆") || prompt.contains("闪回"), "回忆镜头未在 prompt 中显式标记");
+        assertTrue(prompt.contains("虚化边框"), "回忆镜头应要求虚化边框时间态标识");
+        assertTrue(prompt.contains("回忆") || prompt.contains("闪回"), "回忆镜头应在 prompt 中显式标记");
     }
 
     @Test
@@ -38,7 +39,7 @@ class PanelPromptBuilderTest {
 
         String prompt = builder.buildGridPrompt("ANIME", Arrays.asList(shot), Collections.emptyList());
 
-        assertTrue(prompt.contains("胶片颗粒感"), "image_prompt_hint 未注入图片 prompt");
+        assertTrue(prompt.contains("胶片颗粒感"), "image_prompt_hint 应注入图像 prompt");
     }
 
     @Test
@@ -56,13 +57,12 @@ class PanelPromptBuilderTest {
 
         String prompt = builder.buildMultiShotPrompt("ANIME", panelInfo);
 
-        assertTrue(prompt.contains("虚化边框"), "多镜头视频 prompt 未要求回忆镜头虚化边框");
-        assertTrue(prompt.contains("镜头边缘柔和暗角"), "video_prompt_hint 未注入视频 prompt");
+        assertTrue(prompt.contains("虚化边框"), "多镜头视频 prompt 应要求回忆镜头虚化边框");
+        assertTrue(prompt.contains("镜头边缘柔和暗角"), "video_prompt_hint 应注入视频 prompt");
     }
 
     @Test
-    void buildGridPrompt_should_contain_filler_scenes_for_empty_slots() {
-        // 7个分镜 + 3x3网格 = 2个空格，应填充占位场景而非黑格
+    void buildGridPrompt_shouldContainFillerScenesForEmptySlots() {
         List<Map<String, Object>> shots = new ArrayList<>();
         for (int i = 0; i < 7; i++) {
             Map<String, Object> shot = new HashMap<>();
@@ -72,20 +72,14 @@ class PanelPromptBuilderTest {
 
         String prompt = builder.buildGridPrompt("ANIME", shots, Collections.emptyList(), 3, 3);
 
-        // 不应包含"纯黑色填充"
         assertFalse(prompt.contains("纯黑色填充"), "不应包含黑格填充指令");
-
-        // 应包含占位场景关键词
         assertTrue(prompt.contains("无角色"), "占位场景应包含'无角色'标记");
-
-        // 应有第3行第1列和第3行第2列
         assertTrue(prompt.contains("第3行第1列"), "应有第3行第1列占位");
         assertTrue(prompt.contains("第3行第2列"), "应有第3行第2列占位");
     }
 
     @Test
-    void buildGridPrompt_full_grid_should_have_no_filler() {
-        // 恰好9个分镜填满3x3，不应有任何占位
+    void buildGridPrompt_fullGrid_shouldHaveNoFiller() {
         List<Map<String, Object>> shots = new ArrayList<>();
         for (int i = 0; i < 9; i++) {
             Map<String, Object> shot = new HashMap<>();
@@ -95,9 +89,53 @@ class PanelPromptBuilderTest {
 
         String prompt = builder.buildGridPrompt("ANIME", shots, Collections.emptyList(), 3, 3);
 
-        // 不应包含"纯黑色填充"
         assertFalse(prompt.contains("纯黑色填充"));
-        // 应有完整的9个格子
         assertTrue(prompt.contains("第3行第3列"));
+    }
+
+    @Test
+    void buildGridPrompt_shouldFlattenMultilineSceneDescriptionInGridInstruction() {
+        Map<String, Object> shot = new HashMap<>();
+        shot.put("sceneDescription", "标签模板：角色A\n动作：抬手\n情绪：坚定");
+
+        String prompt = builder.buildGridPrompt("ANIME", Arrays.asList(shot), Collections.emptyList(), 1, 1);
+
+        String line = findGridLine(prompt, "第1行第1列");
+        assertNotNull(line);
+        assertTrue(line.contains("标签模板：角色A 动作：抬手 情绪：坚定"), "sceneDescription 应在单格指令中单行化");
+    }
+
+    @Test
+    void buildGridPrompt_shouldFlattenMultilineVisualDescriptionInGridInstruction() {
+        Map<String, Object> shot = new HashMap<>();
+        shot.put("visualDescription", "镜头描述A\n镜头描述B");
+
+        String prompt = builder.buildGridPrompt("ANIME", Arrays.asList(shot), Collections.emptyList(), 1, 1);
+
+        String line = findGridLine(prompt, "第1行第1列");
+        assertNotNull(line);
+        assertTrue(line.contains("镜头描述A 镜头描述B"), "visualDescription 回退分支应单行化");
+    }
+
+    @Test
+    void buildGridPrompt_shouldFlattenMultilineImagePromptHintInGridInstruction() {
+        Map<String, Object> shot = new HashMap<>();
+        shot.put("visualDescription", "主体站立");
+        shot.put("image_prompt_hint", "细节A\n细节B");
+
+        String prompt = builder.buildGridPrompt("ANIME", Arrays.asList(shot), Collections.emptyList(), 1, 1);
+
+        String line = findGridLine(prompt, "第1行第1列");
+        assertNotNull(line);
+        assertTrue(line.contains("细节A 细节B"), "image_prompt_hint 应单行化");
+    }
+
+    private String findGridLine(String prompt, String cellPrefix) {
+        for (String line : prompt.split("\\n")) {
+            if (line.contains(cellPrefix)) {
+                return line;
+            }
+        }
+        return null;
     }
 }

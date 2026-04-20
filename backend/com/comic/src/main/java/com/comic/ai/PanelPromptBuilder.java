@@ -269,6 +269,7 @@ public class PanelPromptBuilder {
 
             String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
             if (sceneDescription != null && !sceneDescription.isEmpty()) {
+                sceneDescription = flattenMultilineText(sceneDescription);
                 // 5×5 大宫格时裁剪描述，避免 prompt 过长导致上游超时
                 if (isLargeGrid && sceneDescription.length() > 80) {
                     sceneDescription = sceneDescription.substring(0, 80) + "…";
@@ -276,7 +277,7 @@ public class PanelPromptBuilder {
                 sb.append(sceneDescription);
             } else {
                 String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
-                sb.append(visualDescription != null ? visualDescription : "");
+                sb.append(flattenMultilineText(visualDescription != null ? visualDescription : ""));
                 String cameraMovement = getShotValue(shot, "cameraMovement", "camera_movement");
                 if (cameraMovement != null && !cameraMovement.isEmpty()) {
                     sb.append("，").append(cameraMovement);
@@ -299,7 +300,7 @@ public class PanelPromptBuilder {
             }
             String imageHint = getShotValue(shot, "image_prompt_hint");
             if (imageHint != null && !imageHint.isEmpty()) {
-                sb.append("，画面补充提示: ").append(imageHint);
+                sb.append("，画面补充提示: ").append(flattenMultilineText(imageHint));
             }
             sb.append(" ").append(buildTransitionTag(prevShot, shot));
             sb.append("\n");
@@ -637,5 +638,18 @@ public class PanelPromptBuilder {
             return "";
         }
         return value.toString().toLowerCase(Locale.ROOT).trim();
+    }
+
+    /**
+     * Keep per-cell instruction content in one line so row/column boundaries stay unambiguous.
+     */
+    private String flattenMultilineText(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        return text
+                .replaceAll("\\s*\\R+\\s*", " ")
+                .replaceAll("\\s{2,}", " ")
+                .trim();
     }
 }

@@ -1988,6 +1988,7 @@ public class PanelProductionService {
             throw new RuntimeException("分镜 Agent 未生成任何分镜: episode=" + episodeNum + " (" + title + ")");
         }
 
+        StoryboardLabelTemplateFormatter.applyToShots(shots);
         return shots;
     }
 
@@ -2053,6 +2054,10 @@ public class PanelProductionService {
             log.info("[Pipeline-Text] 合并后总 shots={}", finalShots.size());
         } else {
             finalShots = shots;
+        }
+
+        if (isRefinement && lockedShots != null && !lockedShots.isEmpty()) {
+            StoryboardLabelTemplateFormatter.applyToShots(finalShots);
         }
 
         // 注入角色ID（失败不阻塞，保留分镜数据）

@@ -1,6 +1,6 @@
 package com.comic.service.production;
 
-import com.comic.ai.text.DeepSeekTextService;
+import com.comic.constant.ProjectInfoKeys;
 import com.comic.config.AiServiceConfiguration;
 import com.comic.entity.*;
 import com.comic.repository.*;
@@ -22,10 +22,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Tests for PanelProductionService.resolveShots() — the routing decision method
- * that chooses between the original DeepSeek path and the new storyboard agent path.
- *
- * RED phase: these tests are written before resolveShots() exists in production code.
+ * Tests for PanelProductionService.resolveShots() after storyboard-path unification.
+ * All shot generation should route through StoryboardAgentService.
  */
 @ExtendWith(MockitoExtension.class)
 class PanelProductionServiceAgentTest {
@@ -42,7 +40,6 @@ class PanelProductionServiceAgentTest {
     @Mock private com.comic.ai.video.ViduReference2VideoService viduReference2VideoService;
     @Mock private OssService ossService;
     @Mock private ApplicationContext applicationContext;
-    @Mock private DeepSeekTextService deepSeekTextService;
     @Mock private StoryboardAgentService storyboardAgentService;
     @Mock private ProgressService progressService;
     @Mock private StateChangeEventPublisher eventPublisher;
@@ -76,24 +73,24 @@ class PanelProductionServiceAgentTest {
                 viduReference2VideoService,
                 ossService,
                 applicationContext,
-                deepSeekTextService,
                 storyboardAgentService,
                 progressService,
                 eventPublisher,
                 transactionManager);
     }
 
-    // ==================== Test 1: Refinement + locked shots + non-comic → original DeepSeek path ====================
+    // ==================== Test 1: Refinement + locked shots + non-comic → agent path ====================
 
     @Test
-    void resolveShots_shouldUseOriginalPath_whenRefinementWithLockedShots() {
+    void resolveShots_shouldUseAgentPath_whenRefinementWithLockedShots_nonComic() {
         // Given: refinement mode with locked shots, non-comic
         List<Map<String, Object>> lockedShots = buildLockedShots(2);
         List<Map<String, Object>> newShots = buildShots(3, 3);
 
-        when(deepSeekTextService.generateStoryboard(
+        when(storyboardAgentService.generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(false), anyString(), eq(lockedShots)))
+                eq(false), eq(NARRATION_PERSPECTIVE), eq("standard"),
+                eq(lockedShots), isNull()))
                 .thenReturn(newShots);
 
         // When
@@ -103,26 +100,39 @@ class PanelProductionServiceAgentTest {
                 lockedShots, true,
                 Collections.emptyMap(), PROJECT_ID, TITLE, EPISODE_NUM);
 
-        // Then: deepSeekTextService was called, agent was NOT
-        verify(deepSeekTextService).generateStoryboard(
+        // Then: storyboardAgentService was called with lockedShots
+        verify(storyboardAgentService).generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(false), anyString(), eq(lockedShots));
-        verifyNoInteractions(storyboardAgentService);
+                eq(false), eq(NARRATION_PERSPECTIVE), eq("standard"),
+                eq(lockedShots), isNull());
         assertNotNull(result);
+        assertEquals(3, result.size());
+        assertEquals(3, ((Number) result.get(0).get("shotNumber")).intValue());
+        assertEquals(4, ((Number) result.get(1).get("shotNumber")).intValue());
+        assertEquals(5, ((Number) result.get(2).get("shotNumber")).intValue());
+        for (Map<String, Object> shot : result) {
+            String sceneDescription = (String) shot.get("sceneDescription");
+            String visualDescription = (String) shot.get("visualDescription");
+            assertNotNull(sceneDescription);
+            assertTrue(sceneDescription.contains("（场景）"));
+            assertTrue(sceneDescription.contains("（出场）"));
+            assertEquals(sceneDescription, visualDescription);
+        }
     }
 
-    // ==================== Test 2: Refinement + locked shots + comic mode → DeepSeek panel-aware path ====================
+    // ==================== Test 2: Refinement + locked shots + comic mode → agent path ====================
 
     @Test
-    void resolveShots_shouldUseOriginalPath_whenRefinementComicMode() {
+    void resolveShots_shouldUseAgentPath_whenRefinementWithLockedShots_comicMode() {
         // Given: refinement mode with locked shots, comic mode
         List<Map<String, Object>> lockedShots = buildLockedShots(2);
-        List<List<Map<String, Object>>> panelGroups = buildPanelGroups(2, 2);
+        List<Map<String, Object>> newShots = buildShotsWithNarration(4);
 
-        when(deepSeekTextService.generatePanelAwareStoryboard(
+        when(storyboardAgentService.generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                anyString(), eq(NARRATION_PERSPECTIVE), eq(lockedShots)))
-                .thenReturn(panelGroups);
+                eq(true), eq(NARRATION_PERSPECTIVE), eq("standard"),
+                eq(lockedShots), isNull()))
+                .thenReturn(newShots);
 
         // When
         List<Map<String, Object>> result = service.resolveShots(
@@ -131,15 +141,27 @@ class PanelProductionServiceAgentTest {
                 lockedShots, true,
                 Collections.emptyMap(), PROJECT_ID, TITLE, EPISODE_NUM);
 
-        // Then: deepSeekTextService panel-aware was called, agent was NOT
-        verify(deepSeekTextService).generatePanelAwareStoryboard(
+        // Then
+        verify(storyboardAgentService).generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                anyString(), eq(NARRATION_PERSPECTIVE), eq(lockedShots));
-        verifyNoInteractions(storyboardAgentService);
+                eq(true), eq(NARRATION_PERSPECTIVE), eq("standard"),
+                eq(lockedShots), isNull());
         assertNotNull(result);
+        assertEquals(4, result.size());
+        assertEquals(1, ((Number) result.get(0).get("shotNumber")).intValue());
+        assertEquals(4, ((Number) result.get(3).get("shotNumber")).intValue());
+        for (Map<String, Object> shot : result) {
+            assertTrue(shot.containsKey("narration"));
+            String sceneDescription = (String) shot.get("sceneDescription");
+            String visualDescription = (String) shot.get("visualDescription");
+            assertNotNull(sceneDescription);
+            assertTrue(sceneDescription.contains("（场景）"));
+            assertTrue(sceneDescription.contains("（出场）"));
+            assertEquals(sceneDescription, visualDescription);
+        }
     }
 
-    // ==================== Test 3: Normal mode + non-comic → agent path ====================
+    // ==================== Test 3: Normal mode + non-comic → agent path (lockedShots should be null) ====================
 
     @Test
     void resolveShots_shouldUseAgentPath_whenNormalMode() {
@@ -148,23 +170,22 @@ class PanelProductionServiceAgentTest {
 
         when(storyboardAgentService.generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(false), anyString(), anyString()))
+                eq(false), eq(NARRATION_PERSPECTIVE), eq("standard"),
+                isNull(), isNull()))
                 .thenReturn(agentShots);
 
         // When
         List<Map<String, Object>> result = service.resolveShots(
                 CONTENT, CHARACTERS, TARGET_DURATION, VISUAL_STYLE,
                 false, null, NARRATION_PERSPECTIVE,
-                Collections.emptyList(), false,
+                buildLockedShots(1), false, // should be ignored when not refinement
                 Collections.emptyMap(), PROJECT_ID, TITLE, EPISODE_NUM);
 
-        // Then: agent was called, deepSeekTextService generateStoryboard was NOT
+        // Then: agent was called with lockedShots = null
         verify(storyboardAgentService).generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(false), anyString(), anyString());
-        verify(deepSeekTextService, never()).generateStoryboard(
-                anyString(), anyString(), anyInt(), anyString(),
-                anyBoolean(), anyString(), anyList());
+                eq(false), eq(NARRATION_PERSPECTIVE), eq("standard"),
+                isNull(), isNull());
         assertNotNull(result);
     }
 
@@ -177,10 +198,9 @@ class PanelProductionServiceAgentTest {
 
         when(storyboardAgentService.generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(true), eq(NARRATION_PERSPECTIVE), anyString()))
+                eq(true), eq(NARRATION_PERSPECTIVE), eq("standard"),
+                isNull(), isNull()))
                 .thenReturn(agentShots);
-        // narration refinement disabled for simplicity in this test
-        when(deepSeekTextService.isNarrationRefinementEnabled()).thenReturn(false);
 
         // When
         List<Map<String, Object>> result = service.resolveShots(
@@ -189,13 +209,11 @@ class PanelProductionServiceAgentTest {
                 Collections.emptyList(), false,
                 Collections.emptyMap(), PROJECT_ID, TITLE, EPISODE_NUM);
 
-        // Then: agent was called, deepSeekTextService generateStoryboard was NOT
+        // Then: agent was called with comicMode=true
         verify(storyboardAgentService).generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(true), eq(NARRATION_PERSPECTIVE), anyString());
-        verify(deepSeekTextService, never()).generatePanelAwareStoryboard(
-                anyString(), anyString(), anyInt(), anyString(),
-                anyString(), anyString(), anyList());
+                eq(true), eq(NARRATION_PERSPECTIVE), eq("standard"),
+                isNull(), isNull());
         assertNotNull(result);
     }
 
@@ -206,7 +224,8 @@ class PanelProductionServiceAgentTest {
         // Given: agent returns empty list
         when(storyboardAgentService.generate(
                 anyString(), anyString(), anyInt(), anyString(),
-                anyBoolean(), anyString(), anyString()))
+                anyBoolean(), anyString(), anyString(),
+                nullable(List.class), nullable(String.class)))
                 .thenReturn(Collections.emptyList());
 
         // When + Then
@@ -222,36 +241,78 @@ class PanelProductionServiceAgentTest {
                 "Exception message should contain '未生成任何分镜' but was: " + ex.getMessage());
     }
 
-    // ==================== Test 6: Comic mode + agent path + narration refinement enabled ====================
+    // ==================== Test 6: refinement args should be forwarded (revision + scriptStyle + lockedShots) ====================
 
     @Test
-    void resolveShots_shouldRunNarrationRefinement_whenComicMode() {
-        // Given: comic mode, narration refinement enabled
-        List<Map<String, Object>> agentShots = buildShotsWithNarration(4);
-        List<List<Map<String, Object>>> wrappedPanelGroups = wrapShotsIntoPanelGroups(agentShots, 2);
-        List<List<Map<String, Object>>> refinedPanelGroups = buildRefinedPanelGroups(2, 2);
+    void resolveShots_shouldForwardRevisionAndScriptStyle_whenRefinement() {
+        // Given
+        List<Map<String, Object>> lockedShots = buildLockedShots(2);
+        List<Map<String, Object>> agentShots = buildShots(4, 1);
+        String revisionNote = "请增强冲突张力，保持第一镜不变";
+        Map<String, Object> projectInfo = new HashMap<>();
+        projectInfo.put(ProjectInfoKeys.SCRIPT_STYLE, ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU);
 
         when(storyboardAgentService.generate(
                 eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
-                eq(true), eq(NARRATION_PERSPECTIVE), anyString()))
+                eq(false), eq(NARRATION_PERSPECTIVE), eq(ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU),
+                eq(lockedShots), eq(revisionNote)))
                 .thenReturn(agentShots);
-        when(deepSeekTextService.isNarrationRefinementEnabled()).thenReturn(true);
-        when(deepSeekTextService.refineNarrationsSequentially(
-                anyList(), eq(CONTENT), eq(NARRATION_PERSPECTIVE)))
-                .thenReturn(refinedPanelGroups);
 
         // When
         List<Map<String, Object>> result = service.resolveShots(
                 CONTENT, CHARACTERS, TARGET_DURATION, VISUAL_STYLE,
-                true, null, NARRATION_PERSPECTIVE,
+                false, revisionNote, NARRATION_PERSPECTIVE,
+                lockedShots, true,
+                projectInfo, PROJECT_ID, TITLE, EPISODE_NUM);
+
+        // Then
+        verify(storyboardAgentService).generate(
+                eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
+                eq(false), eq(NARRATION_PERSPECTIVE), eq(ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU),
+                eq(lockedShots), eq(revisionNote));
+        assertNotNull(result);
+    }
+
+    // ==================== Test 7: resolveShots output should be labeled before return ====================
+
+    @Test
+    void resolveShots_shouldLabelSceneDescriptionAndSyncVisualDescription_beforeReturn() {
+        // Given: agent returns raw shot text without labels
+        Map<String, Object> rawShot = new HashMap<>();
+        rawShot.put("shotNumber", 1);
+        rawShot.put("scene", "雨夜街道");
+        rawShot.put("sceneDescription", "雨夜街道，小明奔跑，阿华在路口出现。");
+        rawShot.put("speaker", "小明");
+        rawShot.put("dialogue", "快跑！");
+        List<Map<String, Object>> agentShots = Collections.singletonList(rawShot);
+
+        when(storyboardAgentService.generate(
+                eq(CONTENT), eq(CHARACTERS), eq(TARGET_DURATION), eq(VISUAL_STYLE),
+                eq(false), eq(NARRATION_PERSPECTIVE), eq("standard"),
+                isNull(), isNull()))
+                .thenReturn(agentShots);
+
+        // When
+        List<Map<String, Object>> result = service.resolveShots(
+                CONTENT, CHARACTERS, TARGET_DURATION, VISUAL_STYLE,
+                false, null, NARRATION_PERSPECTIVE,
                 Collections.emptyList(), false,
                 Collections.emptyMap(), PROJECT_ID, TITLE, EPISODE_NUM);
 
-        // Then: narration refinement was called
-        verify(deepSeekTextService).isNarrationRefinementEnabled();
-        verify(deepSeekTextService).refineNarrationsSequentially(
-                anyList(), eq(CONTENT), eq(NARRATION_PERSPECTIVE));
+        // Then: output should already be labeled and visualDescription should mirror sceneDescription
         assertNotNull(result);
+        assertFalse(result.isEmpty());
+        Map<String, Object> firstShot = result.get(0);
+        String sceneDescription = (String) firstShot.get("sceneDescription");
+        String visualDescription = (String) firstShot.get("visualDescription");
+
+        assertNotNull(sceneDescription);
+        assertTrue(sceneDescription.contains("（场景）"),
+                "sceneDescription should contain （场景）, but was: " + sceneDescription);
+        assertTrue(sceneDescription.contains("（出场）"),
+                "sceneDescription should contain （出场）, but was: " + sceneDescription);
+        assertEquals(sceneDescription, visualDescription,
+                "visualDescription should equal sceneDescription");
     }
 
     // ==================== Helper methods for building test data ====================
@@ -291,48 +352,4 @@ class PanelProductionServiceAgentTest {
         return shots;
     }
 
-    private List<List<Map<String, Object>>> buildPanelGroups(int groupCount, int shotsPerGroup) {
-        List<List<Map<String, Object>>> groups = new ArrayList<>();
-        int shotNum = 1;
-        for (int g = 0; g < groupCount; g++) {
-            List<Map<String, Object>> group = new ArrayList<>();
-            for (int s = 0; s < shotsPerGroup; s++) {
-                Map<String, Object> shot = new HashMap<>();
-                shot.put("shotNumber", shotNum++);
-                shot.put("description", "Panel " + (g + 1) + " Shot " + (s + 1));
-                group.add(shot);
-            }
-            groups.add(group);
-        }
-        return groups;
-    }
-
-    private List<List<Map<String, Object>>> wrapShotsIntoPanelGroups(List<Map<String, Object>> shots, int groupSize) {
-        List<List<Map<String, Object>>> groups = new ArrayList<>();
-        for (int i = 0; i < shots.size(); i += groupSize) {
-            List<Map<String, Object>> group = new ArrayList<>();
-            for (int j = i; j < Math.min(i + groupSize, shots.size()); j++) {
-                group.add(shots.get(j));
-            }
-            groups.add(group);
-        }
-        return groups;
-    }
-
-    private List<List<Map<String, Object>>> buildRefinedPanelGroups(int groupCount, int shotsPerGroup) {
-        List<List<Map<String, Object>>> groups = new ArrayList<>();
-        int shotNum = 1;
-        for (int g = 0; g < groupCount; g++) {
-            List<Map<String, Object>> group = new ArrayList<>();
-            for (int s = 0; s < shotsPerGroup; s++) {
-                Map<String, Object> shot = new HashMap<>();
-                shot.put("shotNumber", shotNum++);
-                shot.put("description", "精修后分镜 " + shotNum);
-                shot.put("narration", "精修后旁白 " + shotNum);
-                group.add(shot);
-            }
-            groups.add(group);
-        }
-        return groups;
-    }
 }
