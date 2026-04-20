@@ -184,8 +184,7 @@ public class CharacterImageGenerationService {
     }
 
     /**
-     * 生成角色图片（含锁）
-     * 前端手动触发时调用，自动获取锁
+     * 生成角色图片（前端手动触发时调用）
      */
     public void generateAll(String charId) {
         Character character = characterRepository.findByCharId(charId);
@@ -193,16 +192,7 @@ public class CharacterImageGenerationService {
             throw new BusinessException("角色不存在: " + charId);
         }
 
-        if (!progressService.tryLock(character.getProjectId(), "asset_image")) {
-            throw new BusinessException("角色图片生成正在进行中");
-        }
-
-        try {
-            doGenerateAll(charId);
-        } catch (Exception e) {
-            progressService.unlock(character.getProjectId());
-            throw e;
-        }
+        doGenerateAll(charId);
     }
 
     /**
@@ -366,6 +356,18 @@ public class CharacterImageGenerationService {
             throw new BusinessException("当前状态不能确认角色");
         }
 
+        // 幂等：已确认且图片已完成的角色跳过
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.CONFIRMED))) {
+            if (isCharacterImageComplete(character)) {
+                log.info("角色已确认且图片已完成，跳过: charId={}", charId);
+                return;
+            }
+            // 已确认但图片不完整（失败/被覆盖），重新触发生成
+            log.info("角色已确认但图片不完整，重新触发生成: charId={}", charId);
+            applicationContext.getBean(CharacterImageGenerationService.class).triggerGenerateAsync(projectId, charId);
+            return;
+        }
+
         Map<String, Object> info = ensureCharInfo(character);
         info.put(CharacterInfoKeys.CONFIRMED, true);
         info.put(CharacterInfoKeys.CHAR_STATUS, "generating");
@@ -380,31 +382,25 @@ public class CharacterImageGenerationService {
 
     /**
      * 异步生成角色图片（事务外执行）
-     * confirmSingleCharacter 调用此方法，确保 @Transactional 提交后再开始长耗时生成。
-     * progress lock 由 checkAndAdvanceProjectState 在全部角色完成时释放，或在异常时主动释放。
+     * 每个角色独立并发，不使用全局锁
      */
-    @Async
+    @Async("characterImageExecutor")
     public void triggerGenerateAsync(String projectId, String charId) {
         try {
             progressService.clearError(projectId);
-            if (!progressService.tryLock(projectId, "asset_image")) {
-                log.info("已有角色图片生成任务在执行，角色进入排队等待: projectId={}, charId={}", projectId, charId);
-                // 回退状态为 review，让前端展示为"待审核"，用户可稍后手动重试
-                Character waitingChar = characterRepository.findByCharId(charId);
-                if (waitingChar != null) {
-                    Map<String, Object> info = ensureCharInfo(waitingChar);
-                    info.put(CharacterInfoKeys.CHAR_STATUS, "review");
-                    characterRepository.updateById(waitingChar);
-                }
-                return;
-            }
             doGenerateAll(charId);
         } catch (Throwable t) {
             log.error("角色确认后触发生成失败: charId={}, error={}", charId, t.getMessage(), t);
+            // 回退角色状态为 review，防止前端永远显示"生成中"
             try {
-                progressService.unlock(projectId);
-            } catch (Throwable unlockEx) {
-                log.error("释放进度锁失败: projectId={}", projectId, unlockEx);
+                Character c = characterRepository.findByCharId(charId);
+                if (c != null) {
+                    Map<String, Object> info = ensureCharInfo(c);
+                    info.put(CharacterInfoKeys.CHAR_STATUS, "review");
+                    characterRepository.updateById(c);
+                }
+            } catch (Exception e2) {
+                log.error("回退角色状态也失败: charId={}", charId, e2);
             }
         }
     }
@@ -432,11 +428,11 @@ public class CharacterImageGenerationService {
 
         log.info("角色图片已锁定: charId={}, name={}", charId, getCharInfoStr(character, CharacterInfoKeys.NAME));
 
-        // 检查是否所有角色都已锁定 → 推进状态机
+        // 检查是否所有角色都已锁定 → 推进状态机（原子防重复）
         List<Character> allCharacters = characterRepository.findByProjectId(projectId);
         boolean allLocked = allCharacters.stream()
                 .allMatch(c -> Boolean.TRUE.equals(getCharInfoBool(c, CharacterInfoKeys.IMAGES_LOCKED)));
-        if (allLocked) {
+        if (allLocked && progressService.trySetOnce(projectId, "asset_lock_sent")) {
             milestoneStateMachineService.sendEvent(projectId, ProjectMilestoneEventType.CONFIRM_ASSETS);
             log.info("所有角色已锁定，推进到素材确认: projectId={}", projectId);
         }
@@ -471,6 +467,11 @@ public class CharacterImageGenerationService {
         // 有失败状态也视为待审核（可以重试）
         if ("FAILED".equals(exprStatus) || "FAILED".equals(threeViewStatus)) {
             return "review";
+        }
+
+        // 已确认但尚未开始生成 → 仍在排队中
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.CONFIRMED))) {
+            return "generating";
         }
 
         return "configuring";
@@ -523,17 +524,11 @@ public class CharacterImageGenerationService {
             return;
         }
 
-        // 幂等：仅持有锁时才处理（防止多个角色并发完成时重复触发）
-        if (!progressService.isGenerating(projectId)) {
-            return;
-        }
-
         List<Character> allCharacters = characterRepository.findByProjectId(projectId);
         boolean allDone = allCharacters.stream().allMatch(c -> isCharacterImageComplete(c));
 
-        if (allDone) {
+        if (allDone && progressService.trySetOnce(projectId, "asset_complete_sent")) {
             log.info("所有角色图片生成完成: projectId={}", projectId);
-            progressService.unlock(projectId);
             eventPublisher.publishTaskComplete(projectId, "asset_image", null);
         }
     }

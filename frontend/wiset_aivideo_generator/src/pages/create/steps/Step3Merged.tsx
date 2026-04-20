@@ -530,7 +530,7 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
             <button className={styles.rejectBtn} onClick={() => handleRejectChar(char.charId)}>
               驳回
             </button>
-            <button className={styles.approveBtn} onClick={() => projectId && lockSingleCharacter(projectId, char.charId).then(loadCharacters)}>
+            <button className={styles.approveBtn} onClick={() => projectId && lockSingleCharacter(projectId, char.charId).then(() => { loadCharacters(); syncStatus(projectId); })}>
               通过
             </button>
           </div>
@@ -595,6 +595,7 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
         try { await lockSingleCharacter(projectId, char.charId); } catch { /* 单个失败不阻断 */ }
       }
       loadCharacters();
+      syncStatus(projectId);
     } finally {
       setBatchLoading(false);
     }

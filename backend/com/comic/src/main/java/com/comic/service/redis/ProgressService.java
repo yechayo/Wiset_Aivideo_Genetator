@@ -98,6 +98,15 @@ public class ProgressService {
         return Boolean.TRUE.equals(redis.hasKey(batchLockKey(projectId)));
     }
 
+    // ===== One-shot 标记（原子 SETNX，防并发重复触发） =====
+
+    /** 原子标记，仅第一次调用返回 true，用于防重复发事件 */
+    public boolean trySetOnce(String projectId, String marker) {
+        Boolean ok = redis.opsForValue().setIfAbsent(
+            "project:" + projectId + ":" + marker, "1", 5, TimeUnit.MINUTES);
+        return Boolean.TRUE.equals(ok);
+    }
+
     // ===== Error =====
 
     public void setError(String projectId, String error) {
