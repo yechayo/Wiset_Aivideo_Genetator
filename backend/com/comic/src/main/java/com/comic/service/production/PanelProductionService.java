@@ -3,7 +3,7 @@ package com.comic.service.production;
 import com.comic.ai.CharacterPromptManager;
 import com.comic.ai.ComicCommentaryPanelPromptBuilder;
 import com.comic.ai.PanelPromptBuilder;
-import com.comic.ai.text.DeepSeekTextService;
+
 import com.comic.ai.text.NarrationAllocator;
 import com.comic.ai.video.VideoGenerationService;
 import com.comic.ai.video.ViduReference2VideoService;
@@ -69,7 +69,6 @@ public class PanelProductionService {
     private final ViduReference2VideoService viduReference2VideoService;
     private final OssService ossService;
     private final ApplicationContext applicationContext;
-    private final DeepSeekTextService deepSeekTextService;
     private final StoryboardAgentService storyboardAgentService;
     private final ProgressService progressService;
     private final StateChangeEventPublisher eventPublisher;
@@ -95,7 +94,6 @@ public class PanelProductionService {
                                    ViduReference2VideoService viduReference2VideoService,
                                    OssService ossService,
                                    ApplicationContext applicationContext,
-                                   DeepSeekTextService deepSeekTextService,
                                    StoryboardAgentService storyboardAgentService,
                                    ProgressService progressService,
                                    StateChangeEventPublisher eventPublisher,
@@ -112,7 +110,6 @@ public class PanelProductionService {
         this.viduReference2VideoService = viduReference2VideoService;
         this.ossService = ossService;
         this.applicationContext = applicationContext;
-        this.deepSeekTextService = deepSeekTextService;
         this.storyboardAgentService = storyboardAgentService;
         this.progressService = progressService;
         this.eventPublisher = eventPublisher;
@@ -1973,7 +1970,8 @@ public class PanelProductionService {
     }
 
     /**
-     * 路由分镜生成：精修模式走原有 DeepSeek 路径，普通模式走 Agent 路径。
+     * 分镜生成：统一走 StoryboardAgent 路径。
+     * lockedShots 和 revisionNote 会注入到 Agent Phase4 prompt 作为上下文约束。
      */
     List<Map<String, Object>> resolveShots(
             String content, String characters, int targetDuration, String visualStyle,
@@ -1981,49 +1979,16 @@ public class PanelProductionService {
             List<Map<String, Object>> lockedShots, boolean isRefinement,
             Map<String, Object> projectInfo, String projectId, String title, int episodeNum) {
 
-        String safeRevisionNote = revisionNote != null ? revisionNote : "";
+        String scriptStyle = (String) projectInfo.getOrDefault(ProjectInfoKeys.SCRIPT_STYLE, "standard");
+        List<Map<String, Object>> shots = storyboardAgentService.generate(
+                content, characters, targetDuration, visualStyle, comicMode, narrationPerspective, scriptStyle,
+                isRefinement ? lockedShots : null, revisionNote);
 
-        if (isRefinement && lockedShots != null && !lockedShots.isEmpty()) {
-            // 原有路径：DeepSeek
-            if (comicMode) {
-                List<List<Map<String, Object>>> panelGroups = deepSeekTextService.generatePanelAwareStoryboard(
-                        content, characters, targetDuration, visualStyle, safeRevisionNote, narrationPerspective, lockedShots);
-                List<Map<String, Object>> shots = new ArrayList<>();
-                for (List<Map<String, Object>> panelShots : panelGroups) {
-                    shots.addAll(panelShots);
-                }
-                return shots;
-            } else {
-                return deepSeekTextService.generateStoryboard(
-                        content, characters, targetDuration, visualStyle, false, safeRevisionNote, lockedShots);
-            }
-        } else {
-            // Agent 路径
-            String scriptStyle = (String) projectInfo.getOrDefault(ProjectInfoKeys.SCRIPT_STYLE, "standard");
-            List<Map<String, Object>> shots = storyboardAgentService.generate(
-                    content, characters, targetDuration, visualStyle, comicMode, narrationPerspective, scriptStyle);
-
-            if (shots.isEmpty()) {
-                throw new RuntimeException("分镜 Agent 未生成任何分镜: episode=" + episodeNum + " (" + title + ")");
-            }
-
-            if (comicMode) {
-                // 包装成 panelGroups，做旁白精修，再展平
-                List<List<Map<String, Object>>> panelGroups = new ArrayList<>();
-                for (Map<String, Object> shot : shots) {
-                    panelGroups.add(java.util.Collections.singletonList(shot));
-                }
-                if (deepSeekTextService.isNarrationRefinementEnabled()) {
-                    panelGroups = deepSeekTextService.refineNarrationsSequentially(
-                            panelGroups, content, narrationPerspective);
-                }
-                shots = new ArrayList<>();
-                for (List<Map<String, Object>> panelShots : panelGroups) {
-                    shots.addAll(panelShots);
-                }
-            }
-            return shots;
+        if (shots.isEmpty()) {
+            throw new RuntimeException("分镜 Agent 未生成任何分镜: episode=" + episodeNum + " (" + title + ")");
         }
+
+        return shots;
     }
 
     /**
@@ -2044,7 +2009,7 @@ public class PanelProductionService {
         }
         String revisionNote = rejectionReasons.get(episodeNum);
 
-        log.info("[Pipeline-Text] 调用DeepSeek生成分镜: projectId={}, episode={}({}), comicMode={}, hasRevision={}",
+        log.info("[Pipeline-Text] 生成分镜: projectId={}, episode={}({}), comicMode={}, hasRevision={}",
                 projectId, episodeNum, title, comicMode, revisionNote != null);
 
         String narrationPerspective = (String) projectInfo.get("narrationPerspective");

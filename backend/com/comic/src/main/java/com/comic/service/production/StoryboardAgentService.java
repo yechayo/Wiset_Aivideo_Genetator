@@ -393,7 +393,9 @@ public class StoryboardAgentService {
                                                 StoryStructure structure, NarrativePlan plan,
                                                 String characters, String visualStyle,
                                                 boolean comicMode, String narrationPerspective,
-                                                String scriptStyle) {
+                                                String scriptStyle,
+                                                List<Map<String, Object>> lockedShots,
+                                                String revisionNote) {
         List<Map<String, Object>> allRefined = new ArrayList<>();
         List<Map<String, Object>> lastRefined = new ArrayList<>();
 
@@ -404,7 +406,8 @@ public class StoryboardAgentService {
             List<Map<String, Object>> segment = new ArrayList<>(skeletons.subList(segStart, segEnd));
 
             String refineUser = buildRefineUserPrompt(segment, structure, plan, lastRefined,
-                    characters, visualStyle, comicMode, narrationPerspective, scriptStyle, segStart);
+                    characters, visualStyle, comicMode, narrationPerspective, scriptStyle, segStart,
+                    lockedShots, revisionNote);
 
             List<Map<String, Object>> refined = refineSegment(refineSystem, refineUser, comicMode, scriptStyle);
             if (refined == null || refined.isEmpty()) {
@@ -434,7 +437,7 @@ public class StoryboardAgentService {
 
         if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             sb.append("你是一位爽剧分镜精修师。你的任务是将 shot 骨架精修为完整的分镜。\n");
-            sb.append("节奏极快，三秒一个爽点。\n\n");
+            sb.append("节奏快，剧情事件密集推进。\n\n");
         } else if (comicMode) {
             sb.append("你是一位漫剧解说分镜精修师。你的任务是将 shot 骨架精修为完整的分镜。\n\n");
         } else {
@@ -526,7 +529,9 @@ public class StoryboardAgentService {
                                           List<Map<String, Object>> lastRefined,
                                           String characters, String visualStyle,
                                           boolean comicMode, String narrationPerspective,
-                                          String scriptStyle, int globalOffset) {
+                                          String scriptStyle, int globalOffset,
+                                          List<Map<String, Object>> lockedShots,
+                                          String revisionNote) {
         StringBuilder sb = new StringBuilder();
 
         if (structure != null && structure.storyArc != null && !structure.storyArc.isEmpty()) {
@@ -562,6 +567,24 @@ public class StoryboardAgentService {
                 }
                 sb.append("\n");
             }
+        }
+
+        // 注入锁定分镜作为上下文约束
+        if (lockedShots != null && !lockedShots.isEmpty()) {
+            sb.append("## 锁定分镜（必须原样保留，不可修改）\n");
+            try {
+                sb.append(objectMapper.writeValueAsString(lockedShots)).append("\n\n");
+            } catch (Exception e) {
+                for (Map<String, Object> shot : lockedShots) {
+                    sb.append("- [LOCKED] 第").append(shot.get("shotNumber")).append("镜: ")
+                      .append(shot.getOrDefault("sceneDescription", "")).append("\n");
+                }
+                sb.append("\n");
+            }
+        }
+
+        if (revisionNote != null && !revisionNote.isEmpty()) {
+            sb.append("## 用户反馈（请据此改进）\n").append(revisionNote).append("\n\n");
         }
 
         if (!lastRefined.isEmpty()) {
@@ -921,7 +944,17 @@ public class StoryboardAgentService {
                                                boolean comicMode, String narrationPerspective,
                                                String scriptStyle) {
         return generateV2(episodeContent, characters, targetDuration, visualStyle,
-                comicMode, narrationPerspective, scriptStyle);
+                comicMode, narrationPerspective, scriptStyle, null, null);
+    }
+
+    public List<Map<String, Object>> generate(String episodeContent, String characters,
+                                               int targetDuration, String visualStyle,
+                                               boolean comicMode, String narrationPerspective,
+                                               String scriptStyle,
+                                               List<Map<String, Object>> lockedShots,
+                                               String revisionNote) {
+        return generateV2(episodeContent, characters, targetDuration, visualStyle,
+                comicMode, narrationPerspective, scriptStyle, lockedShots, revisionNote);
     }
 
     /**
@@ -931,9 +964,14 @@ public class StoryboardAgentService {
     private List<Map<String, Object>> generateV2(String episodeContent, String characters,
                                                    int targetDuration, String visualStyle,
                                                    boolean comicMode, String narrationPerspective,
-                                                   String scriptStyle) {
-        log.info("[StoryboardAgent] V2 启动: target={}s, mode={}", targetDuration,
-                ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle) ? "爽剧" : (comicMode ? "解说" : "标准"));
+                                                   String scriptStyle,
+                                                   List<Map<String, Object>> lockedShots,
+                                                   String revisionNote) {
+        log.info("[StoryboardAgent] V2 启动: target={}s, mode={}, lockedShots={}, hasRevision={}",
+                targetDuration,
+                ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle) ? "爽剧" : (comicMode ? "解说" : "标准"),
+                lockedShots != null ? lockedShots.size() : 0,
+                revisionNote != null && !revisionNote.isEmpty());
 
         // === Phase 1: LLM 结构分析 ===
         StoryStructure structure = analyzeStoryStructure(episodeContent, characters, targetDuration);
@@ -959,7 +997,8 @@ public class StoryboardAgentService {
 
         // === Phase 4: 接续式分段精修 ===
         List<Map<String, Object>> refinedShots = refineSkeletons(skeletons, structure, plan,
-                characters, visualStyle, comicMode, narrationPerspective, scriptStyle);
+                characters, visualStyle, comicMode, narrationPerspective, scriptStyle,
+                lockedShots, revisionNote);
 
         // 赋予全局编号和时间戳
         int t = 0;

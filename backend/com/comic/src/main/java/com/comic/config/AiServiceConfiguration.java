@@ -74,7 +74,7 @@ public class AiServiceConfiguration {
             setField(reasoner, "baseUrl", env.getProperty("comic.deepseek-reasoner.base-url", "https://api.deepseek.com"));
             setField(reasoner, "model", env.getProperty("comic.deepseek-reasoner.model", "deepseek-reasoner"));
             setField(reasoner, "maxTokens", Integer.parseInt(env.getProperty("comic.deepseek-reasoner.max-tokens", "4096")));
-            setField(reasoner, "narrationRefinementEnabled", false);
+
         } catch (Exception e) {
             throw new RuntimeException("Failed to configure DeepSeek Reasoner", e);
         }
