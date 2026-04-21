@@ -28,14 +28,20 @@
 
 ### 1.2 删除字段
 
-| 字段 | 原因 |
-|------|------|
-| `visualDescription` | 与 sceneDescription 重复，标签模板已覆盖 |
+| 字段 | 原因 | 迁移策略 |
+|------|------|---------|
+| `visualDescription` | 与 sceneDescription 重复 | 所有读取点改为使用 `sceneDescription`；后端：`PanelPromptBuilder`(L279,L380)、`PanelProductionService`(L782,L944,L1473)、`ComicCommentaryPanelPromptBuilder`(L192,L277) 全部改为读 `sceneDescription`；前端：`ShotDetail.tsx`(L51) 改为读 `sceneDescription`，`episode.types.ts`(L157) 删除 `visualDescription` 字段 |
 
 ### 1.3 字段职责划分
 
 - **描述层**（sceneDescription 标签模板）：给图片/视频模型的视觉指令
 - **参数层**（dialogue, speaker, audioEffects, hookPoint, narration 等）：给 TTS、分组、质量检查等系统逻辑用
+
+### 1.4 内声与 dialogue 字段同步规则
+
+- LLM 同时填写 sceneDescription 中的内声标签和 `dialogue`/`speaker` 字段
+- 两者内容应保持一致，以 `dialogue`/`speaker` 字段为权威来源（供 TTS 和质量检查使用）
+- 内声标签是描述性呈现，dialogue 字段是功能性参数
 
 ## 2. 标签模板格式
 
@@ -102,7 +108,7 @@ LLM 直接输出以下标签行，不含（场景）和（出场）：
 
 ## 3. 图片提示词提取
 
-从 sceneDescription 中提取可视标签，跳过非视觉标签：
+通过 `StoryboardTemplateParser.extractVisualLabels()` 提取可视标签文本，返回纯文本（非原始模板），跳过非视觉标签：
 
 | 标签 | 图片提示词 |
 |------|-----------|
@@ -115,6 +121,8 @@ LLM 直接输出以下标签行，不含（场景）和（出场）：
 | （音效） | 跳过 |
 
 （场景）从 shot 的 `scene` 字段取，简化为单句描述。
+
+**重要**：`PanelPromptBuilder.buildGridPrompt` 中不再对 sceneDescription 调用 `flattenMultilineText()`，而是先调用 `extractVisualLabels()` 得到已提取的可视标签文本再拼入 prompt。大宫格截断逻辑作用于提取后的可视标签文本而非原始模板。
 
 ## 4. 模式标签策略
 
@@ -151,8 +159,23 @@ public final class StoryboardTemplateParser {
     // 提取走位信息
     public static List<BlockingInfo> extractBlocking(String template);
 
-    // 判断是否为标签模板文本
+    // 判断是否为标签模板文本（兼容旧格式和新格式）
     public static boolean isTemplateText(String text);
+}
+
+// 数据类定义
+public static class DialogueLine {
+    public String speaker;    // 说话人
+    public String content;    // 台词内容
+    public String tone;       // 语气（从音效标签提取）
+}
+
+public static class BlockingInfo {
+    public String characterName;  // 角色名
+    public String position;       // 位置锁
+    public String posture;        // 姿态锁
+    public String orientation;    // 朝向锁
+    public String prop;           // 道具锁
 }
 ```
 
@@ -196,18 +219,37 @@ public final class StoryboardTemplateAssembler {
 
 ## 7. 改动文件清单
 
+### 7.1 后端
+
 | 文件 | 改动类型 | 说明 |
 |------|---------|------|
 | `StoryboardAgentService.java` | 修改 | Phase 4 system/user prompt 适配新模板格式 |
-| `StoryboardLabelTemplateFormatter.java` | 重写 → `StoryboardTemplateParser.java` | 从模板生成器改为解析器 |
+| `StoryboardLabelTemplateFormatter.java` | 重写 → `StoryboardTemplateParser.java` | 从模板生成器改为解析器，支持半角/全角混合容错 |
 | 新增 `StoryboardTemplateAssembler.java` | 新增 | 视频/图片提示词模板拼装 |
-| `PanelPromptBuilder.java` | 修改 | 图片提示词从解析器提取可视标签；视频提示词从拼装器获取完整模板 |
-| `PanelProductionService.java` | 修改 | 相关字段读取适配 |
-| 前端 `ShotDetail.tsx` | 修改 | 展示 sceneDescription 标签文本 |
+| `PanelPromptBuilder.java` | 修改 | 图片提示词调用 `extractVisualLabels()` 而非 `flattenMultilineText()`；视频提示词从拼装器获取完整模板 |
+| `ComicCommentaryPanelPromptBuilder.java` | 修改 | 同 PanelPromptBuilder，九宫格/视频 prompt 适配新标签模板 |
+| `PanelProductionService.java` | 修改 | `visualDescription` 读取点改为 `sceneDescription` |
+
+### 7.2 前端
+
+| 文件 | 改动类型 | 说明 |
+|------|---------|------|
+| `ShotDetail.tsx` | 修改 | 展示改为直接渲染 `sceneDescription` 标签文本（纯文本展示，按行显示） |
+| `episode.types.ts` | 修改 | `StoryboardShot` 接口删除 `visualDescription` 字段 |
+
+### 7.3 测试
+
+| 文件 | 改动类型 | 说明 |
+|------|---------|------|
+| `StoryboardLabelTemplateFormatterTest.java` | 重写 | 适配新的 `StoryboardTemplateParser` |
+| `StoryboardLabelTemplateRealTest.java` | 重写 | 适配新的 `StoryboardTemplateParser` |
+| 新增 `StoryboardTemplateAssemblerTest.java` | 新增 | 拼装器测试 |
 
 ## 8. 向后兼容
 
 - 骨架阶段（Phase 1-3）不受影响，内部中间格式不变
 - 已有的 storyStructure / narrativePlan / shotSkeletons 数据结构不变
 - `isTemplateText()` 方法需同时识别旧格式和新格式，确保兼容已有数据
+- `isTemplateText()` 对半角括号 `()` / 半角竖线 `|` 做归一化处理后再判断
 - `dialogue` / `speaker` 字段保留，TTS 等下游无需改动
+- 已有数据库中的旧格式 sceneDescription（自由文本）仍能被旧 `StoryboardLabelTemplateFormatter` 兼容处理，无需数据迁移
