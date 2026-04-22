@@ -779,11 +779,15 @@ public class PanelProductionService {
             if (storedIdx instanceof Number) {
                 startIndex = ((Number) storedIdx).intValue();
             } else {
-                // 回退：通过 visualDescription 匹配
-                String firstDesc = (String) shots.get(0).get("visualDescription");
+                // 回退：通过描述匹配
+                String firstDesc = (String) shots.get(0).get("sceneDescription");
+                if (firstDesc == null) firstDesc = (String) shots.get(0).get("visualDescription");
                 if (firstDesc != null) {
+                    String firstDescFinal = firstDesc;
                     for (int i = 0; i < allSplitShots.size(); i++) {
-                        if (firstDesc.equals(allSplitShots.get(i).get("visualDescription"))) {
+                        String splitDesc = (String) allSplitShots.get(i).get("sceneDescription");
+                        if (splitDesc == null) splitDesc = (String) allSplitShots.get(i).get("visualDescription");
+                        if (firstDescFinal.equals(splitDesc)) {
                             startIndex = i;
                             break;
                         }
@@ -941,8 +945,8 @@ public class PanelProductionService {
         }
 
         // 3. 场景描述
-        String desc = getStr(shot, "visualDescription");
-        if (desc == null || desc.isEmpty()) desc = getStr(shot, "sceneDescription");
+        String desc = getStr(shot, "sceneDescription");
+        if (desc == null || desc.isEmpty()) desc = getStr(shot, "visualDescription");
         if (desc != null) sb.append(desc);
 
         // 4. 台词 + 说话人声音（仅该镜头有台词时）
@@ -1470,11 +1474,15 @@ public class PanelProductionService {
             if (storedIdx instanceof Number) {
                 startIndex = ((Number) storedIdx).intValue();
             } else {
-                // 回退：通过 visualDescription 匹配（兼容旧数据）
-                String firstShotDesc = (String) panelShots.get(0).get("visualDescription");
+                // 回退：通过描述匹配（兼容旧数据）
+                String firstShotDesc = (String) panelShots.get(0).get("sceneDescription");
+                if (firstShotDesc == null) firstShotDesc = (String) panelShots.get(0).get("visualDescription");
                 if (firstShotDesc != null) {
+                    String firstShotDescFinal = firstShotDesc;
                     for (int i = 0; i < allSplitShots.size(); i++) {
-                        if (firstShotDesc.equals(allSplitShots.get(i).get("visualDescription"))) {
+                        String splitDesc = (String) allSplitShots.get(i).get("sceneDescription");
+                        if (splitDesc == null) splitDesc = (String) allSplitShots.get(i).get("visualDescription");
+                        if (firstShotDescFinal.equals(splitDesc)) {
                             startIndex = i;
                             break;
                         }
@@ -1988,7 +1996,7 @@ public class PanelProductionService {
             throw new RuntimeException("分镜 Agent 未生成任何分镜: episode=" + episodeNum + " (" + title + ")");
         }
 
-        StoryboardLabelTemplateFormatter.applyToShots(shots);
+        // LLM 直接输出标签模板格式，无需后处理
         return shots;
     }
 
@@ -2057,7 +2065,7 @@ public class PanelProductionService {
         }
 
         if (isRefinement && lockedShots != null && !lockedShots.isEmpty()) {
-            StoryboardLabelTemplateFormatter.applyToShots(finalShots);
+            // LLM 直接输出标签模板格式，无需后处理
         }
 
         // 注入角色ID（失败不阻塞，保留分镜数据）
@@ -2433,7 +2441,7 @@ public class PanelProductionService {
     // ==================== 分镜编辑 ====================
 
     private static final java.util.Set<String> SHOT_EDITABLE_FIELDS = new java.util.HashSet<>(java.util.Arrays.asList(
-        "sceneDescription", "visualDescription", "narration", "dialogue", "speaker",
+        "sceneDescription", "narration", "dialogue", "speaker",
         "narrationTone", "dialogueTone", "shotSize", "cameraAngle",
         "cameraMovement", "scene", "visualEffects", "audioEffects", "transitionHint",
         "locked", "hookPoint"

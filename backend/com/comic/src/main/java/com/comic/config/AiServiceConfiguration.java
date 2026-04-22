@@ -1,5 +1,6 @@
 package com.comic.config;
 
+import com.comic.ai.image.GptImage2Service;
 import com.comic.ai.image.ImageGenerationService;
 import com.comic.ai.image.NanobananaImageService;
 import com.comic.ai.image.SeedreamImageService;
@@ -35,6 +36,7 @@ public class AiServiceConfiguration {
     public AiServiceConfiguration(
             SeedreamImageService seedreamImageService,
             NanobananaImageService nanobananaImageService,
+            GptImage2Service gptImage2Service,
             ViduVideoService viduVideoService,
             GrokVideoService grokVideoService,
             KlingVideoService klingVideoService
@@ -42,6 +44,7 @@ public class AiServiceConfiguration {
         Map<String, ImageGenerationService> imageMap = new HashMap<>();
         imageMap.put("seedream", seedreamImageService);
         imageMap.put("nanobanana", nanobananaImageService);
+        imageMap.put("gpt-image2", gptImage2Service);
         this.imageServices = imageMap;
 
         Map<String, VideoGenerationService> videoMap = new HashMap<>();

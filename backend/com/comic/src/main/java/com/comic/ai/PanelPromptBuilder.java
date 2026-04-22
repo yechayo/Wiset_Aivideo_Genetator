@@ -1,5 +1,6 @@
 package com.comic.ai;
 
+import com.comic.service.production.StoryboardTemplateParser;
 import com.comic.util.NumberFormatter;
 import org.springframework.stereotype.Component;
 
@@ -189,14 +190,6 @@ public class PanelPromptBuilder {
         sb.append("整张图必须严格保持统一的视觉风格，色调、光影、线条粗细、");
         sb.append("色彩饱和度在所有格子中必须完全一致，禁止任何格子偏离此风格。\n\n");
 
-        // ===== 第2层：叙事上下文 =====
-        String narrativeContext = buildNarrativeContext(shots);
-        if (!narrativeContext.isEmpty()) {
-            sb.append("【叙事上下文】\n");
-            sb.append(narrativeContext);
-            sb.append("\n");
-        }
-
         // ===== 风格前缀 =====
         sb.append(buildSceneStylePrefix(visualStyle));
         sb.append("专业动画关键帧级别，电影级画面构图，精致光影与色彩。\n\n");
@@ -255,9 +248,8 @@ public class PanelPromptBuilder {
         sb.append("图片中不包含任何文字、数字、标号或水印。\n\n");
         sb.append("【时间态标识】若分镜属于回忆/闪回（字段标记或描述语义显示为回忆），该格必须使用柔和虚化边框/暗角区分时间线；非回忆格禁止使用该效果。\n\n");
 
-        sb.append("【分镜内容 - 按从左到右、从上到下填入格子，每个格子必须是精致的关键帧画面】\n");
-        sb.append("每个分镜必须包含：完整的场景环境细节（光影、色调、空间纵深）、角色的精确外貌与服装、");
-        sb.append("细腻的面部表情和肢体语言、精心设计的构图与景深关系。画面要有电影级质感。\n\n");
+        sb.append("【分镜内容 - 按从左到右、从上到下填入格子】\n");
+        sb.append("每格画一个关键帧：角色做什么动作、什么表情、在什么环境里。描述必须直白具体，画什么写什么。\n\n");
 
         Map<String, Object> prevShot = null;
         boolean isLargeGrid = gridCols >= 5 && gridRows >= 5;
@@ -269,12 +261,17 @@ public class PanelPromptBuilder {
 
             String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
             if (sceneDescription != null && !sceneDescription.isEmpty()) {
-                sceneDescription = flattenMultilineText(sceneDescription);
-                // 5×5 大宫格时裁剪描述，避免 prompt 过长导致上游超时
-                if (isLargeGrid && sceneDescription.length() > 80) {
-                    sceneDescription = sceneDescription.substring(0, 80) + "…";
+                String visualText;
+                if (StoryboardTemplateParser.isTemplateText(sceneDescription)) {
+                    visualText = StoryboardTemplateParser.extractVisualLabels(sceneDescription);
+                } else {
+                    visualText = flattenMultilineText(sceneDescription);
                 }
-                sb.append(sceneDescription);
+                // 5×5 大宫格时裁剪描述，避免 prompt 过长导致上游超时
+                if (isLargeGrid && visualText.length() > 80) {
+                    visualText = visualText.substring(0, 80) + "…";
+                }
+                sb.append(visualText);
             } else {
                 String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
                 sb.append(flattenMultilineText(visualDescription != null ? visualDescription : ""));
@@ -367,7 +364,7 @@ public class PanelPromptBuilder {
                                         Map<String, Object> previousPanelLastShot) {
         StringBuilder sb = new StringBuilder();
         sb.append(buildSceneStylePrefix(visualStyle));
-        sb.append(" 专业电影级画面。\n\n");
+        sb.append(" 清晰稳定的实拍风格画面。\n\n");
 
         // 前一个面板的承接上下文
         if (previousPanelLastShot != null && !previousPanelLastShot.isEmpty()) {
@@ -377,7 +374,10 @@ public class PanelPromptBuilder {
             if (prevScene != null && !prevScene.isEmpty()) {
                 sb.append("- 结束场景：").append(prevScene).append("\n");
             }
-            String prevDesc = (String) previousPanelLastShot.get("visualDescription");
+            String prevDesc = (String) previousPanelLastShot.get("sceneDescription");
+            if (prevDesc == null || prevDesc.isEmpty()) {
+                prevDesc = (String) previousPanelLastShot.get("visualDescription");
+            }
             if (prevDesc != null && !prevDesc.isEmpty()) {
                 sb.append("- 画面状态：").append(prevDesc).append("\n");
             }
@@ -431,11 +431,16 @@ public class PanelPromptBuilder {
                                 String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
                                 if (sceneDescription != null && !sceneDescription.isEmpty()) {
                                     sb.append("Scene: ").append(sceneDescription).append("\n");
+                                } else if (visualDescription != null && !visualDescription.isEmpty()) {
+                                    sb.append("Scene: ").append(shotSize != null ? shotSize : "")
+                                        .append("，").append(cameraAngle != null ? cameraAngle : "")
+                                        .append("，").append(cameraMovement != null ? cameraMovement : "")
+                                        .append("，").append(visualDescription).append("\n");
                                 } else {
                                     sb.append("Scene: ").append(shotSize != null ? shotSize : "")
                                         .append("，").append(cameraAngle != null ? cameraAngle : "")
                                         .append("，").append(cameraMovement != null ? cameraMovement : "")
-                                        .append("，").append(visualDescription != null ? visualDescription : "").append("\n");
+                                        .append("\n");
                                 }
 
                                 if (isFlashbackShot(shot)) {

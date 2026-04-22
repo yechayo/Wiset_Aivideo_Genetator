@@ -48,7 +48,7 @@ export const ShotDetail: React.FC<ShotDetailProps> = ({
         <FieldRow label="景别" value={shot.shotSize} />
         <FieldRow label="镜头角度" value={shot.cameraAngle} />
         <FieldRow label="运镜描述" value={shot.cameraMovement} />
-        <FieldRow label="画面描述" value={shot.visualDescription} />
+        <FieldRow label="分镜描述" value={shot.sceneDescription} />
         <FieldRow label="台词" value={shot.dialogue} />
         {shot.dialogueTone && shot.dialogueTone !== '无' && (
           <FieldRow label="对白语气" value={shot.dialogueTone} />

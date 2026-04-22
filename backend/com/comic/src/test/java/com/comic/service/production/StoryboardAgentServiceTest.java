@@ -4,6 +4,7 @@ import com.comic.ai.text.DeepSeekTextService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -224,6 +225,127 @@ class StoryboardAgentServiceTest {
     }
 
     // ==================== 质量检查 ====================
+
+    @Test
+    void refineSystemPrompt_shouldNotContainDialogueTone() {
+        Map<String, Object> skeleton = new HashMap<>();
+        skeleton.put("shotNumber", 1);
+        skeleton.put("duration", 3);
+        skeleton.put("beatId", 1);
+        skeleton.put("sceneHint", "开场");
+        skeleton.put("mood", "紧张");
+        skeleton.put("narrativePhase", "开场");
+
+        Map<String, String> character = new HashMap<>();
+        character.put("name", "A");
+        character.put("state", "警惕");
+        character.put("position", "工厂");
+        skeleton.put("characters", Collections.singletonList(character));
+
+        when(mockExecutor.generate(anyString(), anyString()))
+                .thenReturn("[{\"shotNumber\":1,\"duration\":3,\"scene\":\"工厂\",\"characters\":[\"A\"],"
+                        + "\"shotSize\":\"MEDIUM\",\"cameraAngle\":\"eye_level\",\"cameraMovement\":\"static\","
+                        + "\"sceneDescription\":\"描述\",\"dialogue\":\"\",\"speaker\":\"无\","
+                        + "\"visualEffects\":\"无\",\"audioEffects\":\"无\",\"transitionHint\":\"硬切\"}]");
+
+        agent.refineSkeletons(
+                Collections.singletonList(skeleton),
+                null,
+                null,
+                "A",
+                "cinematic",
+                false,
+                null,
+                "standard",
+                Collections.emptyList(),
+                null
+        );
+
+        ArgumentCaptor<String> systemPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mockExecutor, atLeastOnce()).generate(systemPromptCaptor.capture(), anyString());
+        String systemPrompt = systemPromptCaptor.getValue();
+        assertFalse(systemPrompt.contains("dialogueTone"));
+        assertTrue(systemPrompt.contains("当 dialogue 为空时，speaker 填 \"无\"，sceneDescription 应更详细"));
+    }
+
+    @Test
+    void refineSkeletons_fallbackSceneDescriptionShouldUseActionPrefix() {
+        Map<String, Object> withHint = new HashMap<>();
+        withHint.put("shotNumber", 1);
+        withHint.put("duration", 3);
+        withHint.put("sceneHint", "挥拳");
+        withHint.put("dialogueTone", "紧张");
+        withHint.put("characters", Collections.emptyList());
+
+        Map<String, Object> emptyHint = new HashMap<>();
+        emptyHint.put("shotNumber", 2);
+        emptyHint.put("duration", 2);
+        emptyHint.put("sceneHint", "");
+        emptyHint.put("characters", Collections.emptyList());
+
+        Map<String, Object> nullHint = new HashMap<>();
+        nullHint.put("shotNumber", 3);
+        nullHint.put("duration", 2);
+        nullHint.put("sceneHint", null);
+        nullHint.put("characters", Collections.emptyList());
+
+        when(mockExecutor.generate(anyString(), anyString())).thenReturn("not-json");
+
+        List<Map<String, Object>> result = agent.refineSkeletons(
+                Arrays.asList(withHint, emptyHint, nullHint),
+                null,
+                null,
+                "A",
+                "cinematic",
+                false,
+                null,
+                "standard",
+                Collections.emptyList(),
+                null
+        );
+
+        assertEquals("（动作）挥拳", result.get(0).get("sceneDescription"));
+        assertEquals("（动作）无", result.get(1).get("sceneDescription"));
+        assertEquals("（动作）无", result.get(2).get("sceneDescription"));
+        assertFalse(result.get(0).containsKey("dialogueTone"));
+        assertFalse(result.get(1).containsKey("dialogueTone"));
+        assertFalse(result.get(2).containsKey("dialogueTone"));
+    }
+
+    @Test
+    void refineSkeletons_successShouldDropDialogueToneField() {
+        Map<String, Object> skeleton = new HashMap<>();
+        skeleton.put("shotNumber", 1);
+        skeleton.put("duration", 3);
+        skeleton.put("beatId", 1);
+        skeleton.put("sceneHint", "开场");
+        skeleton.put("mood", "紧张");
+        skeleton.put("narrativePhase", "开场");
+        skeleton.put("characters", Collections.emptyList());
+
+        when(mockExecutor.generate(anyString(), anyString()))
+                .thenReturn("[{\"shotNumber\":1,\"duration\":3,\"scene\":\"工厂\",\"characters\":[\"A\"],"
+                        + "\"shotSize\":\"MEDIUM\",\"cameraAngle\":\"eye_level\",\"cameraMovement\":\"static\","
+                        + "\"sceneDescription\":\"描述\",\"dialogue\":\"\",\"speaker\":\"无\","
+                        + "\"dialogueTone\":\"平静\",\"visualEffects\":\"无\",\"audioEffects\":\"无\","
+                        + "\"transitionHint\":\"硬切\"}]");
+
+        List<Map<String, Object>> result = agent.refineSkeletons(
+                Collections.singletonList(skeleton),
+                null,
+                null,
+                "A",
+                "cinematic",
+                false,
+                null,
+                "standard",
+                Collections.emptyList(),
+                null
+        );
+
+        assertFalse(result.isEmpty());
+        assertFalse(result.get(0).containsKey("dialogueTone"));
+    }
 
     @Test
     void checkBatchQuality_shouldReportOverLength() {

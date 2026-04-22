@@ -67,7 +67,7 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = ({
                 </span>
               )}
               <span className={styles.shotDesc}>
-                {shot.visualDescription || shot.scene || ''}
+                {shot.sceneDescription || shot.scene || ''}
               </span>
             </div>
           ))}

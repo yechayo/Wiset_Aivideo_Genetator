@@ -49,7 +49,7 @@ const VideoSegmentRow = React.memo(function VideoSegmentRow({
 
   const shotEntries = (segment.shots || [])
     .map((s: any) => {
-      const desc = s.visualDescription || s.visual_description || s.scene || '';
+      const desc = s.sceneDescription || s.scene || '';
       let dialogueText = '';
       if (typeof s.dialogue === 'string' && s.dialogue && s.dialogue !== '无') {
         const speaker = s.speaker && s.speaker !== '无' ? `${s.speaker}：` : '';

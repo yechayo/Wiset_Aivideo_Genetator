@@ -323,7 +323,7 @@ const EpisodeCard = ({
                     {episode.splitShots.map((shot, idx) => (
                       <div key={idx} className={styles.splitShotItem}>
                         <span className={styles.splitShotNumber}>#{shot.shotNumber}</span>
-                        <span className={styles.splitShotDesc}>{shot.visualDescription}</span>
+                        <span className={styles.splitShotDesc}>{shot.sceneDescription}</span>
                         <span className={styles.splitShotDuration}>{shot.duration}s</span>
                       </div>
                     ))}

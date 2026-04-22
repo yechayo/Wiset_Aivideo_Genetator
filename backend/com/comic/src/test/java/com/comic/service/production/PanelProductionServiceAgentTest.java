@@ -10,11 +10,13 @@ import com.comic.statemachine.service.StateChangeEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationContext;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import java.lang.reflect.Method;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -111,12 +113,8 @@ class PanelProductionServiceAgentTest {
         assertEquals(4, ((Number) result.get(1).get("shotNumber")).intValue());
         assertEquals(5, ((Number) result.get(2).get("shotNumber")).intValue());
         for (Map<String, Object> shot : result) {
-            String sceneDescription = (String) shot.get("sceneDescription");
-            String visualDescription = (String) shot.get("visualDescription");
-            assertNotNull(sceneDescription);
-            assertTrue(sceneDescription.contains("（场景）"));
-            assertTrue(sceneDescription.contains("（出场）"));
-            assertEquals(sceneDescription, visualDescription);
+            assertFalse(shot.containsKey("visualDescription"),
+                    "resolveShots should not inject visualDescription in normal agent pass-through");
         }
     }
 
@@ -152,12 +150,8 @@ class PanelProductionServiceAgentTest {
         assertEquals(4, ((Number) result.get(3).get("shotNumber")).intValue());
         for (Map<String, Object> shot : result) {
             assertTrue(shot.containsKey("narration"));
-            String sceneDescription = (String) shot.get("sceneDescription");
-            String visualDescription = (String) shot.get("visualDescription");
-            assertNotNull(sceneDescription);
-            assertTrue(sceneDescription.contains("（场景）"));
-            assertTrue(sceneDescription.contains("（出场）"));
-            assertEquals(sceneDescription, visualDescription);
+            assertFalse(shot.containsKey("visualDescription"),
+                    "resolveShots should not inject visualDescription in comic agent pass-through");
         }
     }
 
@@ -273,11 +267,11 @@ class PanelProductionServiceAgentTest {
         assertNotNull(result);
     }
 
-    // ==================== Test 7: resolveShots output should be labeled before return ====================
+    // ==================== Test 7: resolveShots should return agent output without extra label post-process ====================
 
     @Test
-    void resolveShots_shouldLabelSceneDescriptionAndSyncVisualDescription_beforeReturn() {
-        // Given: agent returns raw shot text without labels
+    void resolveShots_shouldReturnAgentOutputWithoutLabelFormatting() {
+        // Given: agent returns raw shot text
         Map<String, Object> rawShot = new HashMap<>();
         rawShot.put("shotNumber", 1);
         rawShot.put("scene", "雨夜街道");
@@ -299,20 +293,74 @@ class PanelProductionServiceAgentTest {
                 Collections.emptyList(), false,
                 Collections.emptyMap(), PROJECT_ID, TITLE, EPISODE_NUM);
 
-        // Then: output should already be labeled and visualDescription should mirror sceneDescription
+        // Then: output should keep raw sceneDescription and should not inject visualDescription mirror
         assertNotNull(result);
         assertFalse(result.isEmpty());
         Map<String, Object> firstShot = result.get(0);
         String sceneDescription = (String) firstShot.get("sceneDescription");
-        String visualDescription = (String) firstShot.get("visualDescription");
 
         assertNotNull(sceneDescription);
-        assertTrue(sceneDescription.contains("（场景）"),
-                "sceneDescription should contain （场景）, but was: " + sceneDescription);
-        assertTrue(sceneDescription.contains("（出场）"),
-                "sceneDescription should contain （出场）, but was: " + sceneDescription);
-        assertEquals(sceneDescription, visualDescription,
-                "visualDescription should equal sceneDescription");
+        assertEquals("雨夜街道，小明奔跑，阿华在路口出现。", sceneDescription);
+        assertFalse(firstShot.containsKey("visualDescription"),
+                "resolveShots should not inject visualDescription when agent output does not provide it");
+    }
+
+    // ==================== Test 8: updateShot should not allow editing visualDescription ====================
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateShot_shouldIgnoreVisualDescriptionUpdate() {
+        Episode episode = new Episode();
+        episode.setId(100L);
+        Map<String, Object> shot = new HashMap<>();
+        shot.put("sceneDescription", "old-scene");
+        shot.put("visualDescription", "old-visual");
+
+        List<Map<String, Object>> shots = new ArrayList<>();
+        shots.add(shot);
+        Map<String, Object> episodeInfo = new HashMap<>();
+        episodeInfo.put("shots", shots);
+        episode.setEpisodeInfo(episodeInfo);
+
+        when(episodeRepository.selectById(100L)).thenReturn(episode);
+
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("sceneDescription", "new-scene");
+        updates.put("visualDescription", "new-visual");
+
+        service.updateShot(PROJECT_ID, 100L, 0, updates);
+
+        ArgumentCaptor<Episode> captor = ArgumentCaptor.forClass(Episode.class);
+        verify(episodeRepository).updateById(captor.capture());
+
+        Episode saved = captor.getValue();
+        Map<String, Object> savedInfo = saved.getEpisodeInfo();
+        List<Map<String, Object>> savedShots = (List<Map<String, Object>>) savedInfo.get("shots");
+        Map<String, Object> savedShot = savedShots.get(0);
+        assertEquals("new-scene", savedShot.get("sceneDescription"));
+        assertEquals("old-visual", savedShot.get("visualDescription"),
+                "visualDescription should not be editable in updateShot");
+    }
+
+    // ==================== Test 9: buildOmniShotPrompt should prefer sceneDescription ====================
+
+    @Test
+    void buildOmniShotPrompt_shouldPreferSceneDescriptionOverVisualDescription() throws Exception {
+        Map<String, Object> shot = new HashMap<>();
+        shot.put("sceneDescription", "SCENE_DESC_TOKEN");
+        shot.put("visualDescription", "VISUAL_DESC_TOKEN");
+
+        Method method = PanelProductionService.class.getDeclaredMethod(
+                "buildOmniShotPrompt",
+                Map.class, int.class, int.class, List.class, List.class, int.class, String.class, List.class);
+        method.setAccessible(true);
+
+        String prompt = (String) method.invoke(
+                service, shot, 0, 1, Collections.emptyList(), Collections.emptyList(), 1, "STYLE", Collections.emptyList());
+
+        assertTrue(prompt.contains("SCENE_DESC_TOKEN"));
+        assertFalse(prompt.contains("VISUAL_DESC_TOKEN"),
+                "Omni shot prompt should prefer sceneDescription when both fields are present");
     }
 
     // ==================== Helper methods for building test data ====================

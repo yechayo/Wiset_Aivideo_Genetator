@@ -58,6 +58,7 @@ const durationOptions = [
 const imageProviderOptions = [
   { value: 'seedream', label: 'Seedream' },
   { value: 'nanobanana', label: 'Nanobanana2' },
+  { value: 'gpt-image2', label: 'GPT-Image-2' },
 ];
 
 // 视频生成商选项

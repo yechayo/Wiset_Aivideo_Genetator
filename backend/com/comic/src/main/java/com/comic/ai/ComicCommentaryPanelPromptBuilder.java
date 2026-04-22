@@ -1,5 +1,6 @@
 package com.comic.ai;
 
+import com.comic.service.production.StoryboardTemplateParser;
 import com.comic.util.NumberFormatter;
 import org.springframework.stereotype.Component;
 
@@ -120,12 +121,6 @@ public class ComicCommentaryPanelPromptBuilder {
         sb.append("色彩饱和度在所有格子中必须完全一致，禁止任何格子偏离此风格。\n\n");
         sb.append(panelPromptBuilder.buildSceneStylePrefix(visualStyle));
         sb.append("漫剧解说风格关键帧：每格为独立「漫画分镜式」画面，适合旁白解说与字幕叠加，构图清晰、主体突出。\n\n");
-        String narrativeContext = buildNarrativeContext(shots);
-        if (!narrativeContext.isEmpty()) {
-            sb.append("【叙事上下文】\n");
-            sb.append(narrativeContext);
-            sb.append("\n");
-        }
 
         sb.append("【重要：以下所有说明均为中文，请使用中文理解并执行】\n");
         sb.append("【布局要求 - 必须严格遵守】\n");
@@ -177,8 +172,8 @@ public class ComicCommentaryPanelPromptBuilder {
         sb.append("【景别约束】解说模式以中景、近景、特写为主；远景/大远景仅用于开场或转场，总数不超过 2 格。\n");
         sb.append("【字幕安全区】构图需留出上方约 1/4 区域，避免关键内容被花字遮挡。\n\n");
 
-        sb.append("【分镜内容 - 从左到右、从上到下填入格子；每格信息密度适中，利于口播节奏】\n");
-        sb.append("每格需交代清楚场景氛围与角色状态，情绪对比可略夸张以增强解说张力。\n\n");
+        sb.append("【分镜内容 - 从左到右、从上到下填入格子】\n");
+        sb.append("每格画一个关键帧：角色在做什么、什么表情、周围环境是什么。描述直白具体，画什么写什么。\n\n");
         Map<String, Object> prevShot = null;
         for (int i = 0; i < shots.size(); i++) {
             Map<String, Object> shot = shots.get(i);
@@ -187,7 +182,13 @@ public class ComicCommentaryPanelPromptBuilder {
             sb.append("第").append(row).append("行第").append(col).append("列: ");
             String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
             if (sceneDescription != null && !sceneDescription.isEmpty()) {
-                sb.append(sceneDescription);
+                String visualText;
+                if (StoryboardTemplateParser.isTemplateText(sceneDescription)) {
+                    visualText = StoryboardTemplateParser.extractVisualLabels(sceneDescription);
+                } else {
+                    visualText = sceneDescription;
+                }
+                sb.append(visualText);
             } else {
                 String visualDescription = getShotValue(shot, "visualDescription", "visual_description");
                 sb.append(visualDescription != null ? visualDescription : "");
@@ -265,7 +266,7 @@ public class ComicCommentaryPanelPromptBuilder {
                                        Map<String, Object> previousPanelLastShot) {
         StringBuilder sb = new StringBuilder();
         sb.append(panelPromptBuilder.buildSceneStylePrefix(visualStyle));
-        sb.append(" 漫剧风格连续视频：画面节奏服务于叙事与情绪递进。\n\n");
+        sb.append(" 漫剧解说向连续视频，画面清晰稳定。\n\n");
 
         if (previousPanelLastShot != null && !previousPanelLastShot.isEmpty()) {
             sb.append("## 承接上一段画面\n");
@@ -274,7 +275,10 @@ public class ComicCommentaryPanelPromptBuilder {
             if (prevScene != null && !prevScene.isEmpty()) {
                 sb.append("- 结束场景：").append(prevScene).append("\n");
             }
-            String prevDesc = (String) previousPanelLastShot.get("visualDescription");
+            String prevDesc = (String) previousPanelLastShot.get("sceneDescription");
+            if (prevDesc == null || prevDesc.isEmpty()) {
+                prevDesc = (String) previousPanelLastShot.get("visualDescription");
+            }
             if (prevDesc != null && !prevDesc.isEmpty()) {
                 sb.append("- 画面状态：").append(prevDesc).append("\n");
             }
@@ -325,11 +329,16 @@ public class ComicCommentaryPanelPromptBuilder {
             String sceneDescription = getShotValue(shot, "sceneDescription", "scene_description");
             if (sceneDescription != null && !sceneDescription.isEmpty()) {
                 sb.append("Scene: ").append(sceneDescription).append("\n");
+            } else if (visualDescription != null && !visualDescription.isEmpty()) {
+                sb.append("Scene: ").append(shotSize != null ? shotSize : "")
+                    .append("，").append(cameraAngle != null ? cameraAngle : "")
+                    .append("，").append(cameraMovement != null ? cameraMovement : "")
+                    .append("，").append(visualDescription).append("\n");
             } else {
                 sb.append("Scene: ").append(shotSize != null ? shotSize : "")
                     .append("，").append(cameraAngle != null ? cameraAngle : "")
                     .append("，").append(cameraMovement != null ? cameraMovement : "")
-                    .append("，").append(visualDescription != null ? visualDescription : "").append("\n");
+                    .append("\n");
             }
 
             if (isFlashbackShot(shot)) {

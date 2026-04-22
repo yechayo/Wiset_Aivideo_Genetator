@@ -84,6 +84,15 @@ const toCircledNumber = (n: number): string => {
 };
 
 /** 构建九宫格图片生成提示词（与后端 PanelPromptBuilder / ComicCommentaryPanelPromptBuilder 一致） */
+/** 从 sceneDescription 标签模板中提取可视标签（动作/环境/状态/表情），过滤掉走位/内声/音效 */
+const extractVisualLabels = (text: string): string => {
+  if (!text) return '';
+  const visualPrefixes = ['（动作）', '(动作)', '（环境）', '(环境)', '（状态）', '(状态)', '（表情）', '(表情)'];
+  return text.split('\n')
+    .filter(line => visualPrefixes.some(p => line.trim().startsWith(p)))
+    .join(' ');
+};
+
 const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentary?: boolean, gridCols?: number, gridRows?: number): string => {
   const cols = gridCols ?? 3;
   const rows = gridRows ?? 3;
@@ -122,17 +131,18 @@ const buildGridPromptText = (visualStyle: string, shots: any[], isComicCommentar
     lines.push('');
   }
 
-  lines.push(`【分镜内容 - 按从左到右、从上到下填入${cols}×${rows}宫格，每个格子必须是精致的关键帧画面】`);
-  lines.push('每个分镜必须包含：完整的场景环境细节（光影、色调、空间纵深）、角色的精确外貌与服装、细腻的面部表情和肢体语言、精心设计的构图与景深关系。画面要有电影级质感。');
+  lines.push(`【分镜内容 - 按从左到右、从上到下填入${cols}×${rows}宫格】`);
+  lines.push('每格画一个关键帧：角色做什么动作、什么表情、在什么环境里。描述必须直白具体，画什么写什么。');
   lines.push('');
 
   shots.forEach((shot, i) => {
     const row = Math.floor(i / cols) + 1;
     const col = i % cols + 1;
-    let line = `第${row}行第${col}列: ${shot.sceneDescription || shot.visualDescription || ''}`;
+    const visualText = extractVisualLabels(shot.sceneDescription);
+    let line = `第${row}行第${col}列: ${visualText}`;
     if (shot.shotSize) line += `，${shot.shotSize}`;
     if (shot.cameraAngle) line += `，${shot.cameraAngle}`;
-    if (!shot.sceneDescription && shot.cameraMovement) line += `，${shot.cameraMovement}`;
+    if (!visualText && shot.cameraMovement) line += `，${shot.cameraMovement}`;
     if (shot.scene) line += `，场景: ${shot.scene}`;
     lines.push(line);
     if (isComicCommentary) {
@@ -173,8 +183,8 @@ const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicComm
   const n = shots.length;
 
   lines.push(isComicCommentary
-    ? stylePrefix + ' 漫剧解说向连续视频：镜头以清晰叙事与情绪递进为主。'
-    : stylePrefix + ' 专业电影级画面。');
+    ? stylePrefix + ' 漫剧解说向连续视频，画面清晰稳定。'
+    : stylePrefix + ' 清晰稳定的实拍风格画面。');
   lines.push('');
 
   lines.push(`多镜头连续拍摄指令，以下 ${n} 个镜头必须在同一视频中连续呈现：`);
@@ -186,7 +196,7 @@ const buildMultiShotPromptText = (visualStyle: string, shots: any[], isComicComm
     if (shot.sceneDescription) {
       lines.push(`Scene: ${shot.sceneDescription}`);
     } else {
-      lines.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || ''}`);
+      lines.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}`);
     }
 
     const dialogue = typeof shot.dialogue === 'string' ? shot.dialogue : '';
@@ -520,9 +530,9 @@ export default function Step4Production({ project, onNextStep }: Step4Production
                 dialogueText = shot.dialogue.map((d: any) => d.speaker ? `${d.speaker}：${d.text}` : d.text).join('\n');
               }
 
-              // Build synopsis: prefer sceneDescription, fallback to visualDescription, then scene, then scene_summary
+              // Build synopsis: prefer sceneDescription, fallback to scene, then scene_summary
               const synopsis = shot.sceneDescription
-                || shot.visualDescription || shot.sceneSummary || shot.scene || '';
+                || shot.sceneSummary || shot.scene || '';
 
               textSegments.push({
                 segmentIndex: sIdx,
@@ -703,10 +713,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
         const synopsis = isGroupedPanel
           ? shots.map((s: any) => {
               const speaker = s.speaker && s.speaker !== '无' ? `【${s.speaker}】` : '';
-              const desc = s.visualDescription || s.scene || '';
+              const desc = s.sceneDescription || s.scene || '';
               return speaker ? `${speaker} ${desc}` : desc;
             }).filter(Boolean).join('\n')
-          : (info.scene_summary || shots[0]?.visualDescription || '');
+          : (info.scene_summary || shots[0]?.sceneDescription || '');
         const thumbnail = info.fusionImageUrl || shots[0]?.splitImageUrl || (info.gridImages?.[0] || null);
 
         return {
@@ -1855,6 +1865,10 @@ export default function Step4Production({ project, onNextStep }: Step4Production
               className={`${styles.headerVideoProviderTab} ${imageProvider === 'nanobanana' ? styles.headerVideoProviderTabActive : ''}`}
               onClick={() => handleImageProviderChange('nanobanana')}
             >Nanobanana</button>
+            <button
+              className={`${styles.headerVideoProviderTab} ${imageProvider === 'gpt-image2' ? styles.headerVideoProviderTabActive : ''}`}
+              onClick={() => handleImageProviderChange('gpt-image2')}
+            >GPT-Image-2</button>
           </div>
         </div>
         {/* 视频提供商 + 模型选择器 */}
