@@ -54,13 +54,6 @@ const durationOptions = [
   { value: 300, label: '5分钟' },
 ];
 
-// 图片生成商选项
-const imageProviderOptions = [
-  { value: 'seedream', label: 'Seedream' },
-  { value: 'nanobanana', label: 'Nanobanana2' },
-  { value: 'gpt-image2', label: 'GPT-Image-2' },
-];
-
 // 视频生成商选项
 const videoProviderOptions = [
   { value: 'vidu', label: 'Vidu' },
@@ -467,15 +460,6 @@ const Step1Content = ({ onProjectCreated, project }: Step1ContentProps) => {
               />
             </div>
 
-            {/* 图片生成商 */}
-            <div className={styles.configSection}>
-              <label className={styles.configLabel}>图片生成商</label>
-              <Select
-                options={imageProviderOptions}
-                value={imageProvider}
-                onChange={setImageProvider}
-              />
-            </div>
 
             {/* 视频生成商 */}
             <div className={styles.configSection}>
