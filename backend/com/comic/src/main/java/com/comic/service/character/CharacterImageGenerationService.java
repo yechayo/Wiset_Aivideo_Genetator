@@ -11,6 +11,7 @@ import com.comic.entity.Character;
 import com.comic.entity.Project;
 import com.comic.repository.CharacterRepository;
 import com.comic.repository.ProjectRepository;
+import com.comic.service.oss.OssService;
 import com.comic.service.redis.ProgressService;
 import com.comic.statemachine.enums.ProjectMilestoneEventType;
 import com.comic.statemachine.service.ProjectMilestoneStateMachineService;
@@ -23,7 +24,11 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -40,6 +45,7 @@ public class CharacterImageGenerationService {
     private final ImageGenerationService imageGenerationService;
     private final CharacterPromptManager characterPromptManager;
     private final ApplicationContext applicationContext;
+    private final OssService ossService;
 
     @Lazy
     @Autowired
@@ -180,6 +186,125 @@ public class CharacterImageGenerationService {
             info.put(CharacterInfoKeys.IS_GENERATING_THREE_VIEW, false);
             characterRepository.updateById(character);
             throw new BusinessException("三视图大全图生成失败: " + e.getMessage());
+        }
+    }
+
+    @Transactional
+    public void uploadUserThreeView(String projectId, String charId, MultipartFile file) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在: " + charId);
+        }
+        if (!projectId.equals(character.getProjectId())) {
+            throw new BusinessException("角色不属于该项目");
+        }
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IMAGES_LOCKED))) {
+            throw new BusinessException("角色图片已锁定，无法上传");
+        }
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_THREE_VIEW))) {
+            throw new BusinessException("三视图正在生成中，请稍后");
+        }
+        validateImageFile(file);
+
+        progressService.clearError(projectId);
+        String ossUrl = ossService.uploadMultipartFile(file, "character");
+        log.info("用户上传三视图: charId={}, url={}", charId, ossUrl);
+
+        Map<String, Object> info = ensureCharInfo(character);
+        info.put(CharacterInfoKeys.THREE_VIEW_GRID_URL, ossUrl);
+        info.put(CharacterInfoKeys.THREE_VIEW_STATUS, "COMPLETED");
+        info.put(CharacterInfoKeys.IS_GENERATING_THREE_VIEW, false);
+        info.remove(CharacterInfoKeys.THREE_VIEW_ERROR);
+        info.remove(CharacterInfoKeys.THREE_VIEW_GRID_PROMPT);
+
+        if (isCharacterImageComplete(character)) {
+            info.put(CharacterInfoKeys.CHAR_STATUS, "review");
+            info.put(CharacterInfoKeys.CONFIRMED, true);
+        }
+        characterRepository.updateById(character);
+
+        rebuildCompositeIfNeeded(character);
+        checkAndAdvanceProjectState(character);
+    }
+
+    @Transactional
+    public void uploadUserExpression(String projectId, String charId, MultipartFile file) {
+        Character character = characterRepository.findByCharId(charId);
+        if (character == null) {
+            throw new BusinessException("角色不存在: " + charId);
+        }
+        if (!projectId.equals(character.getProjectId())) {
+            throw new BusinessException("角色不属于该项目");
+        }
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IMAGES_LOCKED))) {
+            throw new BusinessException("角色图片已锁定，无法上传");
+        }
+        if (Boolean.TRUE.equals(getCharInfoBool(character, CharacterInfoKeys.IS_GENERATING_EXPRESSION))) {
+            throw new BusinessException("表情图正在生成中，请稍后");
+        }
+        if ("配角".equals(getCharInfoStr(character, CharacterInfoKeys.ROLE))) {
+            throw new BusinessException("配角不需要上传表情图");
+        }
+        validateImageFile(file);
+
+        progressService.clearError(projectId);
+        String ossUrl = ossService.uploadMultipartFile(file, "character");
+        log.info("用户上传表情图: charId={}, url={}", charId, ossUrl);
+
+        Map<String, Object> info = ensureCharInfo(character);
+        info.put(CharacterInfoKeys.EXPRESSION_GRID_URL, ossUrl);
+        info.put(CharacterInfoKeys.EXPRESSION_STATUS, "COMPLETED");
+        info.put(CharacterInfoKeys.IS_GENERATING_EXPRESSION, false);
+        info.remove(CharacterInfoKeys.EXPRESSION_ERROR);
+        info.remove(CharacterInfoKeys.EXPRESSION_GRID_PROMPT);
+
+        if (isCharacterImageComplete(character)) {
+            info.put(CharacterInfoKeys.CHAR_STATUS, "review");
+            info.put(CharacterInfoKeys.CONFIRMED, true);
+        }
+        characterRepository.updateById(character);
+
+        rebuildCompositeIfNeeded(character);
+        checkAndAdvanceProjectState(character);
+    }
+
+    private static final long MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB
+
+    private void validateImageFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException("上传文件不能为空");
+        }
+        if (file.getSize() > MAX_UPLOAD_SIZE) {
+            throw new BusinessException("文件大小不能超过 10MB");
+        }
+        try {
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(file.getBytes()));
+            if (img == null) {
+                throw new BusinessException("文件不是有效的图片格式（仅支持 JPG/PNG/WebP）");
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("文件不是有效的图片格式（仅支持 JPG/PNG/WebP）");
+        }
+    }
+
+    private void rebuildCompositeIfNeeded(Character character) {
+        String role = getCharInfoStr(character, CharacterInfoKeys.ROLE);
+        if ("配角".equals(role)) return;
+
+        String threeViewUrl = getCharInfoStr(character, CharacterInfoKeys.THREE_VIEW_GRID_URL);
+        String expressionUrl = getCharInfoStr(character, CharacterInfoKeys.EXPRESSION_GRID_URL);
+        if (threeViewUrl == null || threeViewUrl.isEmpty() || expressionUrl == null || expressionUrl.isEmpty()) return;
+
+        try {
+            String compositeUrl = ossService.combineImagesVertical(threeViewUrl, expressionUrl);
+            Map<String, Object> info = ensureCharInfo(character);
+            info.put(CharacterInfoKeys.COMPOSITE_REFERENCE_URL, compositeUrl);
+            characterRepository.updateById(character);
+            log.info("重建 compositeReferenceUrl: charId={}", getCharInfoStr(character, CharacterInfoKeys.CHAR_ID));
+        } catch (Exception e) {
+            log.warn("重建 compositeReferenceUrl 失败，忽略: {}", e.getMessage());
         }
     }
 
