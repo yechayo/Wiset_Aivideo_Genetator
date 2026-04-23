@@ -1,0 +1,45 @@
+接口地址： https://api.wuyinkeji.com/api/async/image_gpt 
+
+返回格式： application/json
+
+请求方式： HTTPPOST
+
+请求示例： https://api.wuyinkeji.com/api/async/image_gpt?key=你的密钥
+
+请求HEADER：
+名称	值
+Authorization	接口密钥,在控制台->密钥管理查看
+Content-Type	application/json
+请求参数说明：
+名称	必填	类型	示例值	说明
+prompt	是	string	
+提示词
+size	否	string	auto	
+输出图像比例，可选："auto"、"1:1"、"3:2"、"2:3"
+
+urls	否	
+
+
+array
+
+
+
+["xx.jpg","xx.jpg"]	参考图片的URL，支持多张图片
+返回参数说明：
+名称	类型	说明
+code	int	状态码
+msg	string	状态信息
+data	string	请求结果数据集
+data.id	string	请求结果id
+exec_time	float	执行耗时
+user_ip	string	客户端IP
+返回示例：
+{
+  "code": 200,
+  "msg": "成功",
+  "data": {
+    "id": "image_4d39239e-776a-4cbd-a8eb-e2d9b4816829",
+    "count": 10
+  },
+  "exec_time": 0.290186,
+  "ip": "119.6.176.239"

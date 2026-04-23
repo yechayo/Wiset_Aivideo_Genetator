@@ -7,7 +7,7 @@ import styles from '../Step4Production.module.less';
 const SpinIcon = () => <span className={styles.btnSpinner} />;
 
 const EDITABLE_FIELDS = [
-  'sceneDescription', 'visualDescription', 'narration', 'dialogue', 'speaker',
+  'sceneDescription', 'narration', 'dialogue', 'speaker',
   'narrationTone', 'dialogueTone', 'shotSize', 'cameraAngle',
   'cameraMovement', 'scene', 'visualEffects', 'audioEffects', 'transitionHint',
   'hookPoint',
@@ -15,7 +15,6 @@ const EDITABLE_FIELDS = [
 
 const FIELD_LABELS: Record<string, string> = {
   sceneDescription: '分镜描述',
-  visualDescription: '画面描述',
   narration: '旁白',
   dialogue: '对白',
   speaker: '说话人',
@@ -31,7 +30,7 @@ const FIELD_LABELS: Record<string, string> = {
   hookPoint: '爽点',
 };
 
-const MULTI_LINE_FIELDS = new Set(['sceneDescription', 'visualDescription', 'narration', 'dialogue', 'scene']);
+const MULTI_LINE_FIELDS = new Set(['sceneDescription', 'narration', 'dialogue', 'scene']);
 
 interface ScriptEpisodeCardProps {
   episode: EpisodeState;
@@ -78,7 +77,7 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
       }
     };
 
-    trySet('visualDescription', seg?.synopsis);
+    trySet('sceneDescription', seg?.synopsis);
     trySet('sceneDescription', shot?.sceneDescription);
     trySet('narration', shot?.narration);
     trySet('dialogue', pd?.dialogue);
@@ -245,7 +244,7 @@ const ScriptEpisodeCard = React.memo(function ScriptEpisodeCard({
                       {isEditing ? (
                         <textarea
                           className={styles.shotInlineInput}
-                          value={editData['sceneDescription'] ?? editData['visualDescription'] ?? seg.synopsis ?? ''}
+                          value={editData['sceneDescription'] ?? seg.synopsis ?? ''}
                           onChange={e => handleFieldChange('sceneDescription', e.target.value)}
                           rows={4}
                         />

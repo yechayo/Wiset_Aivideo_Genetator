@@ -136,3 +136,29 @@ export async function setVisualStyle(
 export async function confirmImages(projectId: string): Promise<ApiResponse<void>> {
   return post<ApiResponse<void>>(`/api/projects/${projectId}/characters/images/confirm`);
 }
+
+/**
+ * 上传三视图图片（替代 AI 生成）
+ */
+export async function uploadThreeView(
+  projectId: string,
+  charId: string,
+  file: File
+): Promise<ApiResponse<void>> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return post(`/api/projects/${projectId}/characters/${charId}/upload/three-view`, formData);
+}
+
+/**
+ * 上传表情图（替代 AI 生成）
+ */
+export async function uploadExpression(
+  projectId: string,
+  charId: string,
+  file: File
+): Promise<ApiResponse<void>> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return post(`/api/projects/${projectId}/characters/${charId}/upload/expression`, formData);
+}

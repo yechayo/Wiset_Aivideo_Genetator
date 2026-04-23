@@ -83,8 +83,7 @@ export interface SplitShot {
   shotSize: string;
   cameraAngle: string;
   cameraMovement: string;
-  visualDescription: string;
-  sceneDescription?: string;
+  sceneDescription: string;
   dialogue: string;
   visualEffects: string;
   audioEffects: string;

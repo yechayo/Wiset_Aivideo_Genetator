@@ -416,6 +416,7 @@ public class StoryboardAgentService {
             }
 
             for (Map<String, Object> shot : refined) {
+                shot.remove("dialogueTone");
                 int d = Math.max(1, Math.min(5, ((Number) shot.getOrDefault("duration", 3)).intValue()));
                 shot.put("duration", d);
             }
@@ -435,6 +436,10 @@ public class StoryboardAgentService {
     private String buildRefineSystemPrompt(boolean comicMode, String scriptStyle, String narrationPerspective) {
         StringBuilder sb = new StringBuilder();
 
+        sb.append("你是热门短视频脚本撰写专家。你有很多创意和idea，掌握各种网络流行梗，\n");
+        sb.append("深厚积累了有关短视频平台上游戏、时尚、服饰、健身、食品、美妆等热门领域的知识、新闻信息；\n");
+        sb.append("短视频脚本创作时，你需要充分融合这些专业背景知识，根据剧本主题创作出有网感、有爆点的分镜内容。\n\n");
+
         if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             sb.append("你是一位爽剧分镜精修师。你的任务是将 shot 骨架精修为完整的分镜。\n");
             sb.append("节奏快，剧情事件密集推进。\n\n");
@@ -449,7 +454,7 @@ public class StoryboardAgentService {
         sb.append("你需要输出相同数量的完整 shot JSON 数组，每个 shot 包含：\n");
         sb.append("shotNumber, duration(保持不变), scene, characters(必须使用骨架中的角色全名),\n");
         sb.append("shotSize, cameraAngle, cameraMovement, sceneDescription,\n");
-        sb.append("dialogue, speaker, dialogueTone, visualEffects, audioEffects, transitionHint\n");
+        sb.append("dialogue, speaker, visualEffects, audioEffects, transitionHint\n");
         if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             sb.append(", hookPoint\n");
         }
@@ -458,29 +463,66 @@ public class StoryboardAgentService {
         }
         sb.append("\n");
 
+        sb.append("【sceneDescription 标签模板格式 - 必须严格遵守】\n");
+        sb.append("sceneDescription 必须使用以下标签模板格式，每行一个标签，不要写自由文本：\n\n");
+        sb.append("格式规范：\n");
+        sb.append("（走位）{角色名}｜位置锁={位置}｜姿态锁={姿态}｜朝向锁={朝向}｜道具锁={道具}\n");
+        sb.append("（动作）{角色名}{简单句描述一个原子动作}\n");
+        sb.append("（环境）{简单句描述环境细节}\n");
+        sb.append("（状态）{角色名}{简单句描述状态}\n");
+        sb.append("（表情）{角色名}{简单句描述表情变化}\n");
+        sb.append("内声：「{角色名}：{台词}」\n");
+        sb.append("（音效）{音效描述}\n\n");
+        sb.append("规则：\n");
+        sb.append("1. 每个标签只用一个简单句，禁止复合句\n");
+        sb.append("2. 同类标签可出现多次，每次描述一个原子事件\n");
+        sb.append("3. （动作）/（状态）/（表情）内容必须以角色名开头\n");
+        sb.append("4. 不需要写（场景）和（出场），系统会自动拼装\n");
+        sb.append("5. 内声和（音效）可以交错出现\n");
+        sb.append("6. 该类别无内容时写（动作）无\n");
+        sb.append("7. 【直白描述】只写肉眼可见的具体事实，禁止比喻（「般的」、「像...」）、禁止文学修辞（「袅袅」、「微不可查」）、禁止模糊形容（「淡淡」、「微微」）。用具体颜色、形状、动作代替抽象描述\n");
+        sb.append("   错误示例：皮肤泛起岩石般的灰白色 / 温热茶雾袅袅升起 / 盾牌表面荡开一圈淡蓝色涟漪\n");
+        sb.append("   正确示例：皮肤变成灰白色 / 茶杯上方冒出白色蒸汽 / 盾牌表面出现蓝色光圈\n");
+        sb.append("8. 【数据源清洗红线】绝对禁止出现：三视图排版、文字标签、纯白背景、「全身三视图」、「面部特写」等参考图专用词。所有画面必须是真实场景中的纯净画面，禁止任何 UI 元素或标注文字\n\n");
+        sb.append("示例：\n");
+        sb.append("（走位）纪兰嫣｜位置锁=玉石台阶边｜姿态锁=坐着｜朝向锁=侧对广场中央｜道具锁=无\n");
+        sb.append("（走位）谢长音｜位置锁=广场中央席位｜姿态锁=端坐｜朝向锁=面向玉石台阶边｜道具锁=茶盏\n");
+        sb.append("（动作）谢长音端起茶盏\n");
+        sb.append("（动作）谢长音将茶盏凑近嘴边\n");
+        sb.append("（环境）茶杯上方冒出白色蒸汽\n");
+        sb.append("（状态）纪兰嫣坐在台阶上，双腿伸直\n");
+        sb.append("（表情）纪兰嫣皱起眉头\n");
+        sb.append("内声：「谢长音：天品水灵根，甚是少见。」\n");
+        sb.append("（音效）内声贴耳\n\n");
+
         sb.append("【角色一致性 - 硬性约束】\n");
         sb.append("1. 每个 shot 的 characters 必须使用骨架中的角色名，禁止换名或用泛称（如\"主角\"\"反派\"\"路人\"）\n");
         sb.append("2. 只有骨架中列出的角色才能出现，不能凭空增减角色\n");
-        sb.append("3. 角色状态必须连贯：如果上一个 shot 角色在\"奔跑\"，本 shot 不能突然\"坐着喝茶\"\n");
+        sb.append("3. 角色状态必须连贯：如果上一个 shot 角色在\"奔跑\"，本 shot 不能突然\"坐着喝茶\"——每个分镜的起幅必须 100% 无缝承接上一镜的落幅状态\n");
         sb.append("4. 角色位置变化必须合理：如果上一个 shot 在\"工厂大厅\"，本 shot 不能突然在\"地下实验室\"（除非有 transition 过渡）\n");
-        sb.append("5. 骨架中的 characters 数组列出了本 beat 中在场的角色，这是唯一合法角色来源\n\n");
+        sb.append("5. 骨架中的 characters 数组列出了本 beat 中在场的角色，这是唯一合法角色来源\n");
+        sb.append("6. 双人同框时，（走位）标签必须明确两人在画面中的绝对物理方位（如：左侧是A，右侧是B），严防特征融合\n");
+        sb.append("7. 若角色有不同服装版本（如「林辰」和「林辰-病号服版」），必须根据当前剧情自动使用正确版本，保持脸部特征与原版绝对一致\n\n");
 
         sb.append("【场景一致性】\n");
         sb.append("1. 相邻 shot 的场景不能凭空跳转，必须通过 transition 过渡\n");
         sb.append("2. sceneDescription 必须与骨架中的 mood 和 position 匹配\n");
-        sb.append("3. 角色动作必须符合当前场景逻辑\n\n");
+        sb.append("3. 角色动作必须符合当前场景逻辑\n");
+        sb.append("4. 时空咬合：严格参照「前段接续」中最后一个 shot 的场景状态起笔，上一镜角色「坐在椅子上」本镜不能变成「站在门口」\n\n");
 
         sb.append("【对话约束 - 硬性要求】\n");
         sb.append("1. 爽剧以台词驱动节奏，至少 70% 的镜头必须有 dialogue\n");
         sb.append("2. dialogue 字数必须匹配 duration：1s≤5字, 2s≤8字, 3s≤15字, 4s≤20字（字数不变）\n");
         sb.append("3. 没有 dialogue 的镜头只用于纯动作特写或场景转换，连续无台词镜头不超过 2 个\n");
-        sb.append("4. 当 dialogue 为空时，speaker 填 \"无\"，dialogueTone 填 \"无\"，sceneDescription 应更详细\n\n");
+        sb.append("4. 当 dialogue 为空时，speaker 填 \"无\"，sceneDescription 应更详细\n");
+        sb.append("5. 超长对白必须拆分到下个镜头：本镜说前半句 → 下镜用过肩/反应镜头接后半句，并在 dialogue 开头标注「（接上）」\n\n");
 
         sb.append("【快切防翻车指南 - 硬性约束】\n");
         sb.append("一、动作设计：做减法\n");
         sb.append("1. 一个镜头只做一个单一变化（位置、姿势、表情，三选一）\n");
         sb.append("2. 禁止复合动作（如\"拔刀+冲刺+劈砍\"），必须拆成多个镜头\n");
-        sb.append("3. 切\"结果\"不切\"过程\"：写\"男主背对镜头，刀已入鞘\"而非\"男主转身收刀\"\n\n");
+        sb.append("3. 切\"结果\"不切\"过程\"：写\"男主背对镜头，刀已入鞘\"而非\"男主转身收刀\"\n");
+        sb.append("4. 禁止静止无事件镜头：每个镜头必须有明确的物理变化推进。1-2s 只做单一动作，3-5s 允许动作链（起幅→推进→落幅）但必须连续不跳跃\n\n");
         sb.append("二、镜头语言：贴脸\n");
         sb.append("1. 快切镜头（1-2s）必须用特写或极特写，禁止全景\n");
         sb.append("2. 用\"局部的动\"代替\"全局的动\"：脚踩碎地砖、刀刃划过鼻尖、手腕翻转\n");
@@ -501,7 +543,8 @@ public class StoryboardAgentService {
         if (ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle)) {
             sb.append("【爽剧模式】\n");
             sb.append("- hookPoint 字段必须填写，标注本镜头的爽点类型\n");
-            sb.append("- 节奏极快，多用 1-2 秒快切镜头\n\n");
+            sb.append("- 节奏极快，多用 1-2 秒快切镜头\n");
+            sb.append("【标签策略】以（动作）和（表情）为主，每个镜头1-3个原子动作。内声密集（70%+镜头有台词）。环境描写精简。1-2s镜头只写1个（动作）+1个（表情）。走位可简略。\n\n");
         }
         if (comicMode) {
             sb.append("【解说模式】\n");
@@ -510,6 +553,7 @@ public class StoryboardAgentService {
             sb.append("- narration 和 dialogue 不能同时存在\n");
             sb.append("- 当有 dialogue 时，narration 填 \"无\"\n");
             sb.append("- narration 优先级高于 dialogue：关键剧情节点用 narration 推进\n");
+            sb.append("【标签策略】以（环境）和（状态）为主，营造画面氛围。内声使用旁白格式「内声：（旁白）「…」」。不用角色对话。走位可简略。每个镜头2-3个环境/状态标签。\n");
             if (narrationPerspective != null) {
                 if ("third_person".equals(narrationPerspective)) {
                     sb.append("- 旁白必须使用第三人称叙述\n");
@@ -518,6 +562,10 @@ public class StoryboardAgentService {
                 }
             }
             sb.append("\n");
+        }
+
+        if (!ProjectInfoKeys.SCRIPT_STYLE_SHUANGJU.equals(scriptStyle) && !comicMode) {
+            sb.append("【标签策略】动作、环境、状态、表情平衡使用，内声适度。\n\n");
         }
 
         sb.append("输出纯 JSON 数组，不要 markdown 代码块。保持骨架的 shotNumber 不变，duration 可在骨架基础上 ±1s 微调（范围 1-5s）。");
@@ -644,14 +692,16 @@ public class StoryboardAgentService {
         List<Map<String, Object>> result = new ArrayList<>();
         for (Map<String, Object> sk : skeletons) {
             Map<String, Object> shot = new HashMap<>(sk);
+            shot.remove("dialogueTone");
             shot.putIfAbsent("scene", sk.getOrDefault("sceneHint", ""));
-            shot.putIfAbsent("sceneDescription", sk.getOrDefault("sceneHint", ""));
+            Object sceneHint = sk.get("sceneHint");
+            String hint = sceneHint == null ? "" : String.valueOf(sceneHint).trim();
+            shot.putIfAbsent("sceneDescription", "（动作）" + (hint.isEmpty() ? "无" : hint));
             shot.putIfAbsent("shotSize", "MEDIUM");
             shot.putIfAbsent("cameraAngle", "eye_level");
             shot.putIfAbsent("cameraMovement", "static");
             shot.putIfAbsent("dialogue", "");
             shot.putIfAbsent("speaker", "无");
-            shot.putIfAbsent("dialogueTone", "无");
             shot.putIfAbsent("visualEffects", "无");
             shot.putIfAbsent("audioEffects", "无");
             shot.putIfAbsent("transitionHint", "过渡到下一镜");

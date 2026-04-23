@@ -76,10 +76,10 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
                 <ShotSizeIcon size={shot.shotSize} />
                 <span className={styles.shotScene}>{shot.scene || ''}</span>
               </div>
-              {(shot.visualDescription || shot.dialogue) && (
+              {(shot.sceneDescription || shot.dialogue) && (
                 <div className={styles.shotItemDetail}>
-                  {shot.visualDescription && (
-                    <div className={styles.shotDesc}>{shot.visualDescription}</div>
+                  {shot.sceneDescription && (
+                    <div className={styles.shotDesc}>{shot.sceneDescription}</div>
                   )}
                   {shot.dialogue && (
                     <div className={styles.shotDialogue}>

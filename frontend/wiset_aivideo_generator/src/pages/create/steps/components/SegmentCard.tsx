@@ -312,7 +312,7 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
                   const shotNum = shot.shotNumber || idx + 1;
                   videoParts.push(`【分镜${shotNum}】\n`);
                   videoParts.push(`duration: ${shot.duration}s\n`);
-                  videoParts.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.visualDescription || ''}\n`);
+                  videoParts.push(`Scene: ${shot.shotSize || ''}，${shot.cameraAngle || ''}，${shot.cameraMovement || ''}，${shot.sceneDescription || ''}\n`);
                   const dialogue = shot.dialogue;
                   if (dialogue && dialogue !== '无') {
                     const speaker = shot.speaker;
@@ -366,7 +366,7 @@ export const SegmentCard: React.FC<SegmentCardProps> = ({
                             <div key={idx} className={`${styles.promptFieldItem} ${styles.promptFieldItemFull}`}>
                               <span className={styles.pfLabel}>分镜 {shot.shotNumber || idx + 1}</span>
                               <span className={styles.pfValue}>
-                                {shot.duration}s · {shot.shotSize || ''} · {shot.cameraAngle || ''} · {shot.cameraMovement || ''} · {shot.visualDescription || ''}
+                                {shot.duration}s · {shot.shotSize || ''} · {shot.cameraAngle || ''} · {shot.cameraMovement || ''} · {shot.sceneDescription || ''}
                               </span>
                             </div>
                           ))
