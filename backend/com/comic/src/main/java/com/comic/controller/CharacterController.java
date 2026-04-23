@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -165,6 +166,26 @@ public class CharacterController {
             @PathVariable String charId,
             @PathVariable String type) {
         characterImageGenerationService.retryGeneration(charId, type);
+        return Result.ok();
+    }
+
+    @PostMapping("/{charId}/upload/three-view")
+    @Operation(summary = "上传三视图图片", description = "用户手动上传三视图图片替代 AI 生成")
+    public Result<Void> uploadThreeView(
+            @PathVariable String projectId,
+            @PathVariable String charId,
+            @RequestParam("file") MultipartFile file) {
+        characterImageGenerationService.uploadUserThreeView(projectId, charId, file);
+        return Result.ok();
+    }
+
+    @PostMapping("/{charId}/upload/expression")
+    @Operation(summary = "上传表情图图片", description = "用户手动上传九宫格表情图替代 AI 生成")
+    public Result<Void> uploadExpression(
+            @PathVariable String projectId,
+            @PathVariable String charId,
+            @RequestParam("file") MultipartFile file) {
+        characterImageGenerationService.uploadUserExpression(projectId, charId, file);
         return Result.ok();
     }
 
