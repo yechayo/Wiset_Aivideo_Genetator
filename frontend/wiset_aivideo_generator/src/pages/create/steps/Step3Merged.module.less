@@ -14,6 +14,47 @@
   margin-bottom: var(--space-6);
 }
 
+// 图片提供商选择器（与 Step4 风格一致）
+.imageProviderSelector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: var(--space-3);
+}
+
+.imageProviderLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.imageProviderTabs {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.imageProviderTab {
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--easing-standard);
+
+  &:hover {
+    color: var(--color-text-primary);
+  }
+}
+
+.imageProviderTabActive {
+  background: rgba(114, 183, 255, 0.2);
+  color: var(--color-accent);
+}
+
 .title {
   font-size: 24px;
   font-weight: var(--font-weight-bold);
@@ -802,5 +843,28 @@
   .bottomActions {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+.uploadBtn {
+  padding: var(--space-2) var(--space-4);
+  border: 1px dashed rgba(114, 183, 255, 0.5);
+  border-radius: var(--radius-sm);
+  background: rgba(114, 183, 255, 0.08);
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--easing-standard);
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: rgba(114, 183, 255, 0.15);
+    border-color: var(--color-accent);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }

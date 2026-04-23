@@ -12,11 +12,14 @@ import {
   deleteCharacter,
   generateImage,
   retryGeneration,
+  uploadThreeView,
+  uploadExpression,
   confirmSingleCharacter,
   lockSingleCharacter,
   rejectSingleCharacter,
   setVisualStyle,
 } from '../../../services/characterService';
+import { updateProject } from '../../../services/projectService';
 import { useCreateStore } from '../../../stores/createStore';
 
 interface Step3MergedProps {
@@ -50,6 +53,25 @@ const SPECIES_OPTIONS = [
 const Step3Merged = ({ project }: Step3MergedProps) => {
   const { statusInfo, isLoadingStatus, syncStatus, markExtractCalled, hasExtractCalled, resetExtractCalled } = useCreateStore();
   const projectId = project.projectId;
+
+  // 图片提供商选择（与 Step4 一致）
+  const [imageProvider, setImageProvider] = useState<string>(
+    (project?.projectInfo?.imageProvider as string) || 'seedream'
+  );
+  useEffect(() => {
+    if (project?.projectInfo?.imageProvider) {
+      setImageProvider(project.projectInfo.imageProvider as string);
+    }
+  }, [project?.projectInfo?.imageProvider]);
+  const handleImageProviderChange = useCallback(async (provider: string) => {
+    if (!projectId) { setImageProvider(provider); return; }
+    try {
+      await updateProject(projectId, { imageProvider: provider } as any);
+      setImageProvider(provider);
+    } catch (err) {
+      console.error('更新图片提供商失败:', err);
+    }
+  }, [projectId]);
 
   const [characters, setCharacters] = useState<CharacterListItem[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -285,6 +307,36 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
     }
   };
 
+  const handleUpload = async (charId: string, type: 'threeView' | 'expression') => {
+    if (!projectId) return;
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/webp';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) {
+        alert('文件大小不能超过 10MB');
+        return;
+      }
+      setGeneratingIds(prev => new Set(prev).add(charId));
+      try {
+        if (type === 'threeView') {
+          await uploadThreeView(projectId, charId, file);
+        } else {
+          await uploadExpression(projectId, charId, file);
+        }
+        loadCharacters();
+      } catch (err: any) {
+        alert(err.message || '上传失败');
+        setGeneratingIds(prev => { const next = new Set(prev); next.delete(charId); return next; });
+        loadCharacters();
+      }
+    };
+    input.click();
+  };
+
   // 驳回角色：回到配置阶段，允许修改描述后重新生成
   const handleRejectChar = async (charId: string) => {
     if (!projectId) return;
@@ -460,6 +512,14 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
             }} disabled={generatingIds.has(char.charId)}>
               {generatingIds.has(char.charId) ? '生成中...' : '生成素材'}
             </button>
+            <button className={styles.uploadBtn} onClick={() => handleUpload(char.charId, 'threeView')} disabled={generatingIds.has(char.charId)}>
+              上传三视图
+            </button>
+            {char.role !== '配角' && (
+              <button className={styles.uploadBtn} onClick={() => handleUpload(char.charId, 'expression')} disabled={generatingIds.has(char.charId)}>
+                上传表情图
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -627,6 +687,24 @@ const Step3Merged = ({ project }: Step3MergedProps) => {
       <div className={styles.header}>
         <h1 className={styles.title}>角色与素材</h1>
         <p className={styles.subtitle}>共 {characters.length} 个角色，点击角色卡片管理配置与素材</p>
+        {/* 图片提供商选择 */}
+        <div className={styles.imageProviderSelector}>
+          <span className={styles.imageProviderLabel}>图片：</span>
+          <div className={styles.imageProviderTabs}>
+            <button
+              className={`${styles.imageProviderTab} ${imageProvider === 'seedream' ? styles.imageProviderTabActive : ''}`}
+              onClick={() => handleImageProviderChange('seedream')}
+            >Seedream</button>
+            <button
+              className={`${styles.imageProviderTab} ${imageProvider === 'nanobanana' ? styles.imageProviderTabActive : ''}`}
+              onClick={() => handleImageProviderChange('nanobanana')}
+            >Nanobanana</button>
+            <button
+              className={`${styles.imageProviderTab} ${imageProvider === 'gpt-image2' ? styles.imageProviderTabActive : ''}`}
+              onClick={() => handleImageProviderChange('gpt-image2')}
+            >GPT-Image-2</button>
+          </div>
+        </div>
       </div>
 
       {/* 进度统计 */}
