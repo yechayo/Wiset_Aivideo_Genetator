@@ -149,7 +149,7 @@ comic:
   deepseek:
     api-key: ${DEEPSEEK_API_KEY:}
     base-url: https://api.deepseek.com
-    model: deepseek-chat
+    model: deepseek-v4-flash
     max-tokens: 8192
     narration-refinement:
       enabled: true
@@ -158,7 +158,7 @@ comic:
   deepseek-reasoner:
     api-key: ${DEEPSEEK_API_KEY:}      # 复用同一 key
     base-url: https://api.deepseek.com
-    model: deepseek-reasoner
+    model: deepseek-v4-flash
     max-tokens: 4096
 
 

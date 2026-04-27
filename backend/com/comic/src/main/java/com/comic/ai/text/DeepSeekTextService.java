@@ -32,7 +32,7 @@ public class DeepSeekTextService implements TextGenerationService {
     @Value("${comic.deepseek.base-url:https://api.deepseek.com}")
     private String baseUrl;
 
-    @Value("${comic.deepseek.model:deepseek-chat}")
+    @Value("${comic.deepseek.model:deepseek-v4-flash}")
     private String model;
 
     @Value("${comic.deepseek.max-tokens:16384}")

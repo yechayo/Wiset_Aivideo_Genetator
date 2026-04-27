@@ -63,13 +63,13 @@ class StoryboardLabelTemplateRealTest {
         DeepSeekTextService executor = new DeepSeekTextService(client, objectMapper);
         setField(executor, "apiKey", apiKey);
         setField(executor, "baseUrl", "https://api.deepseek.com");
-        setField(executor, "model", "deepseek-chat");
+        setField(executor, "model", "deepseek-v4-flash");
         setField(executor, "maxTokens", 8192);
 
         DeepSeekTextService reasoner = new DeepSeekTextService(client, objectMapper);
         setField(reasoner, "apiKey", apiKey);
         setField(reasoner, "baseUrl", "https://api.deepseek.com");
-        setField(reasoner, "model", "deepseek-reasoner");
+        setField(reasoner, "model", "deepseek-v4-flash");
         setField(reasoner, "maxTokens", 4096);
 
         service = new StoryboardAgentService(reasoner, executor, objectMapper);

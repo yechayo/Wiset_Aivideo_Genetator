@@ -320,7 +320,8 @@ public class ProjectService {
                 } else if (total > 0) {
                     effectiveState = "panel_producing";
                     frontendStep = 4;
-                    isGenerating = failed == 0;
+                    // isGenerating 由下方 Redis 锁统一决定，避免后端重启后 DB 中间状态误判为"生成中"
+                    isGenerating = false;
                     availableActions = Arrays.asList("retry_failed_panels");
                 } else if (gridGeneratingCount > 0) {
                     effectiveState = "grid_generating";

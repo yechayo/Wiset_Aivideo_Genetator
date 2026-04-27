@@ -4,11 +4,14 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -144,6 +147,34 @@ public class ProgressService {
         } catch (Exception e) {
             log.error("读取批量进度失败: projectId={}", projectId, e);
             return null;
+        }
+    }
+
+    // ===== 启动清锁 =====
+
+    /**
+     * 后端启动完成后自动清理所有遗留的生成锁。
+     * 防止后端异常重启后锁未释放导致任务无法提交。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void clearStaleLocks() {
+        String[] patterns = {
+            "project:*:generating",
+            "project:*:batch_lock"
+        };
+        int total = 0;
+        for (String pattern : patterns) {
+            Set<String> keys = redis.keys(pattern);
+            if (keys != null && !keys.isEmpty()) {
+                redis.delete(keys);
+                total += keys.size();
+                log.info("启动清锁: 删除 {} 个遗留 key（pattern={}）: {}", keys.size(), pattern, keys);
+            }
+        }
+        if (total == 0) {
+            log.info("启动清锁: 无遗留锁，跳过");
+        } else {
+            log.warn("启动清锁: 共清理 {} 个遗留锁", total);
         }
     }
 

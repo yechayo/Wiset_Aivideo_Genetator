@@ -65,7 +65,7 @@ public class AiServiceConfiguration {
     }
 
     /**
-     * DeepSeek Reasoner Bean — 用于分镜 Agent 的规划决策（deepseek-reasoner 模型）
+     * DeepSeek Reasoner Bean — 用于分镜 Agent 的规划决策（deepseek-v4-flash 模型）
      */
     @Bean("reasoner")
     public DeepSeekTextService deepseekReasonerTextService(OkHttpClient httpClient,
@@ -73,15 +73,15 @@ public class AiServiceConfiguration {
                                                             Environment env) {
         DeepSeekTextService reasoner = new DeepSeekTextService(httpClient, objectMapper);
         try {
-            setField(reasoner, "apiKey", env.getProperty("comic.deepseek-reasoner.api-key", ""));
-            setField(reasoner, "baseUrl", env.getProperty("comic.deepseek-reasoner.base-url", "https://api.deepseek.com"));
-            setField(reasoner, "model", env.getProperty("comic.deepseek-reasoner.model", "deepseek-reasoner"));
-            setField(reasoner, "maxTokens", Integer.parseInt(env.getProperty("comic.deepseek-reasoner.max-tokens", "4096")));
+            setField(reasoner, "apiKey", env.getProperty("comic.deepseek-v4-flash.api-key", ""));
+            setField(reasoner, "baseUrl", env.getProperty("comic.deepseek-v4-flash.base-url", "https://api.deepseek.com"));
+            setField(reasoner, "model", env.getProperty("comic.deepseek-v4-flash.model", "deepseek-v4-flash"));
+            setField(reasoner, "maxTokens", Integer.parseInt(env.getProperty("comic.deepseek-v4-flash.max-tokens", "4096")));
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to configure DeepSeek Reasoner", e);
         }
-        log.info("DeepSeek Reasoner 配置完成: model={}", env.getProperty("comic.deepseek-reasoner.model", "deepseek-reasoner"));
+        log.info("DeepSeek Reasoner 配置完成: model={}", env.getProperty("comic.deepseek-v4-flash.model", "deepseek-v4-flash"));
         return reasoner;
     }
 

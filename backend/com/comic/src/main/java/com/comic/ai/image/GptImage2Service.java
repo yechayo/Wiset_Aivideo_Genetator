@@ -97,9 +97,19 @@ public class GptImage2Service implements ImageGenerationService {
                 case 0:
                     result.put("status", "queued");
                     break;
-                case 3:
-                    result.put("status", "generating");
+                case 3: {
+                    String msg3 = data.path("message").asText("");
+                    JsonNode result3 = data.path("result");
+                    boolean resultEmpty3 = result3.isNull() || result3.isMissingNode()
+                            || (result3.isArray() && result3.size() == 0);
+                    if (msg3.toLowerCase().contains("fail") || resultEmpty3 && !msg3.isEmpty()) {
+                        result.put("status", "failed");
+                        result.put("error", !msg3.isEmpty() ? msg3 : "未知原因(status=3)");
+                    } else {
+                        result.put("status", "generating");
+                    }
                     break;
+                }
                 case 1: {
                     String imageUrl = extractImageUrl(data);
                     result.put("status", "done");
@@ -303,10 +313,24 @@ public class GptImage2Service implements ImageGenerationService {
                         throw new RuntimeException("GptImage-2 图片生成失败: " + reason + ", taskId=" + taskId);
                     }
 
+                    case 3: {
+                        // status=3 有时表示失败（message 含 "failed" 或 result 为空）
+                        String msg3 = data.path("message").asText("");
+                        JsonNode result3 = data.path("result");
+                        boolean resultEmpty = result3.isNull() || result3.isMissingNode()
+                                || (result3.isArray() && result3.size() == 0);
+                        if (msg3.toLowerCase().contains("fail") || resultEmpty && !msg3.isEmpty()) {
+                            String reason3 = !msg3.isEmpty() ? msg3 : "未知原因(status=3)";
+                            throw new RuntimeException("GptImage-2 图片生成失败: " + reason3 + ", taskId=" + taskId);
+                        }
+                        log.info("GptImage-2 任务状态: status={}, taskId={}", status, taskId);
+                        sleep(POLL_INTERVAL_MS);
+                        break;
+                    }
+
                     case 0:
-                    case 3:
                     default:
-                        // 排队中(0) / 生成中(3)，继续轮询
+                        // 排队中(0)，继续轮询
                         log.info("GptImage-2 任务状态: status={}, taskId={}", status, taskId);
                         sleep(POLL_INTERVAL_MS);
                         break;
